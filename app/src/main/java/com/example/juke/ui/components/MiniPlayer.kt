@@ -3,8 +3,7 @@ package com.example.juke.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -54,7 +53,7 @@ fun MiniPlayer(
                         )
                     } else {
                         Icon(
-                            Icons.Default.PlayArrow,
+                            painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
                             contentDescription = null,
                             modifier = Modifier.size(24.dp)
                         )
@@ -85,8 +84,9 @@ fun MiniPlayer(
                     onClick = { musicViewModel.togglePlayPause() }
                 ) {
                     Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = if (uiState.isPlaying) "Pause" else "Play"
+                        painter = painterResource(if (uiState.isPlaying) com.example.juke.R.drawable.baseline_pause_24 else com.example.juke.R.drawable.baseline_play_24),
+                        contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }

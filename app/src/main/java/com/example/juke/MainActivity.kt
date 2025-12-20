@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -32,10 +33,10 @@ import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
 
-sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    object Home : Screen("home", "Home", Icons.Default.Home)
-    object Search : Screen("search", "Search", Icons.Default.Search)
-    object Library : Screen("library", "Library", Icons.Default.Search)
+sealed class Screen(val route: String, val title: String, val icon: @Composable () -> Unit) {
+    object Home : Screen("home", "Home", { Icon(Icons.Default.Home, contentDescription = "Home") })
+    object Search : Screen("search", "Search", { Icon(Icons.Default.Search, contentDescription = "Search") })
+    object Library : Screen("library", "Library", { Icon(painter = painterResource(R.drawable.library_svgrepo_com), contentDescription = "Library") })
 }
 
 class MainActivity : ComponentActivity() {
@@ -71,7 +72,7 @@ class MainActivity : ComponentActivity() {
                                 
                                 items.forEach { screen ->
                                     NavigationBarItem(
-                                        icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                        icon = { screen.icon() },
                                         label = { Text(screen.title) },
                                         selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                                         onClick = {

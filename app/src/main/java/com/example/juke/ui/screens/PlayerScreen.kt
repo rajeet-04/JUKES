@@ -25,6 +25,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
@@ -166,7 +167,10 @@ fun PlayerScreen(
                                             contentScale = ContentScale.Crop
                                         )
                                     } else {
-                                        Icon(Icons.Default.PlayArrow, null)
+                                        Icon(
+                                            painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
+                                            contentDescription = null
+                                        )
                                     }
                                 }
                                 
@@ -216,14 +220,14 @@ fun PlayerScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
-                        } else {
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(120.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                            } else {
+                                Icon(
+                                    painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(120.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         
                         // Lyrics overlay
                         if (showLyrics && (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null)) {
@@ -364,7 +368,7 @@ fun PlayerScreen(
                             modifier = Modifier.size(64.dp)
                         ) {
                             Icon(
-                                Icons.Default.ArrowBack,
+                                painter = painterResource(com.example.juke.R.drawable.prev_svgrepo_com),
                                 contentDescription = "Previous",
                                 modifier = Modifier.size(48.dp)
                             )
@@ -375,7 +379,7 @@ fun PlayerScreen(
                             modifier = Modifier.size(80.dp)
                         ) {
                             Icon(
-                                if (uiState.isPlaying) Icons.Default.PlayArrow else Icons.Default.PlayArrow,
+                                painter = painterResource(if (uiState.isPlaying) com.example.juke.R.drawable.baseline_pause_24 else com.example.juke.R.drawable.baseline_play_24),
                                 contentDescription = if (uiState.isPlaying) "Pause" else "Play",
                                 modifier = Modifier.size(48.dp)
                             )
@@ -386,7 +390,7 @@ fun PlayerScreen(
                             modifier = Modifier.size(64.dp)
                         ) {
                             Icon(
-                                Icons.Default.ArrowForward,
+                                painter = painterResource(com.example.juke.R.drawable.next_svgrepo_com),
                                 contentDescription = "Next",
                                 modifier = Modifier.size(48.dp)
                             )
