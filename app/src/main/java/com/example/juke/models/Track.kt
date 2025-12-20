@@ -30,7 +30,8 @@ data class SpotdownSong(
     val artist: String,
     val thumbnail: String,
     val url: String,
-    val duration: String
+    val duration: String,
+    val cached: Boolean = false
 )
 
 /**

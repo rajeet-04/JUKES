@@ -184,19 +184,20 @@ class MusicService(private val context: Context) {
             val searchQuery = "$title $artist"
             Log.d(TAG, "[downloadRecommendedTrack] Searching Spotify for: $searchQuery")
             
-            val searchResult = retryWithBackoff(
+            val tracks = retryWithBackoff(
                 maxRetries = 5,
                 operationName = "Spotify search for \"$searchQuery\""
             ) {
                 SpotifyApi.searchSongs(searchQuery)
             }
             
-            if (searchResult.songs.isEmpty()) {
+            if (tracks.isEmpty()) {
                 Log.d(TAG, "[downloadRecommendedTrack] No Spotify results for: $searchQuery")
                 return null
             }
             
-            val topSong = searchResult.songs.first()
+            val topTrack = tracks.first()
+            val topSong = SpotifyApi.spotifyTrackToSong(topTrack)
             Log.d(TAG, "[downloadRecommendedTrack] Found Spotify track: ${topSong.title} by ${topSong.artist}")
             
             val track = retryWithBackoff(

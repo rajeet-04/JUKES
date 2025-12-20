@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
 android {
     namespace = "com.example.juke"
     compileSdk = 35
@@ -18,6 +21,24 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Load Spotify credentials from local.properties
+        val properties = Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            properties.load(FileInputStream(localPropertiesFile))
+        }
+        
+        buildConfigField(
+            "String", 
+            "SPOTIFY_CLIENT_ID", 
+            "\"${properties.getProperty("SPOTIFY_CLIENT_ID", "")}\""
+        )
+        buildConfigField(
+            "String", 
+            "SPOTIFY_CLIENT_SECRET", 
+            "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
+        )
     }
 
     buildTypes {
@@ -38,6 +59,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

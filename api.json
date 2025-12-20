@@ -1,0 +1,1658 @@
+{
+    "tracks": {
+        "href": "https://api.spotify.com/v1/search?offset=0&limit=10&query=AUR&type=track&market=NP",
+        "limit": 10,
+        "next": "https://api.spotify.com/v1/search?offset=10&limit=10&query=AUR&type=track&market=NP",
+        "offset": 0,
+        "previous": null,
+        "total": 11,
+        "items": [
+            {
+                "album": {
+                    "album_type": "single",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                            "id": "2cjQTf2J5yCaNY8qHpW855",
+                            "name": "AUR",
+                            "type": "artist",
+                            "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/2UnoNjV8gXzHcOLpVx2yHX"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/2UnoNjV8gXzHcOLpVx2yHX",
+                    "id": "2UnoNjV8gXzHcOLpVx2yHX",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b2732297d77fe723a5a3c8f41ed3"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e022297d77fe723a5a3c8f41ed3"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d000048512297d77fe723a5a3c8f41ed3"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Chal Diye Tum Kahan (From \"Kabhi Main Kabhi Tum\")",
+                    "release_date": "2024-06-27",
+                    "release_date_precision": "day",
+                    "total_tracks": 1,
+                    "type": "album",
+                    "uri": "spotify:album:2UnoNjV8gXzHcOLpVx2yHX"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 275200,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "TCAIK2476766"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/0C8SMUhJhFXzr4PICotjyB"
+                },
+                "href": "https://api.spotify.com/v1/tracks/0C8SMUhJhFXzr4PICotjyB",
+                "id": "0C8SMUhJhFXzr4PICotjyB",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Chal Diye Tum Kahan (From \"Kabhi Main Kabhi Tum\")",
+                "popularity": 63,
+                "preview_url": null,
+                "track_number": 1,
+                "type": "track",
+                "uri": "spotify:track:0C8SMUhJhFXzr4PICotjyB"
+            },
+            {
+                "album": {
+                    "album_type": "single",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/4AQBP2wx7hAGBomsebicPQ"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/4AQBP2wx7hAGBomsebicPQ",
+                            "id": "4AQBP2wx7hAGBomsebicPQ",
+                            "name": "Akki On The Mic",
+                            "type": "artist",
+                            "uri": "spotify:artist:4AQBP2wx7hAGBomsebicPQ"
+                        },
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/3BW5i53ZmRhYH9g5GB5QbD"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/3BW5i53ZmRhYH9g5GB5QbD",
+                            "id": "3BW5i53ZmRhYH9g5GB5QbD",
+                            "name": "Karya .",
+                            "type": "artist",
+                            "uri": "spotify:artist:3BW5i53ZmRhYH9g5GB5QbD"
+                        },
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/1kte9apGeUrJK6cbNGLfrE"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/1kte9apGeUrJK6cbNGLfrE",
+                            "id": "1kte9apGeUrJK6cbNGLfrE",
+                            "name": "Prodbykb",
+                            "type": "artist",
+                            "uri": "spotify:artist:1kte9apGeUrJK6cbNGLfrE"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/3rq9Df2fVyGAJSysOyHkmS"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/3rq9Df2fVyGAJSysOyHkmS",
+                    "id": "3rq9Df2fVyGAJSysOyHkmS",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b273cc0245a1cf8ad75b9b5242f0"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e02cc0245a1cf8ad75b9b5242f0"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d00004851cc0245a1cf8ad75b9b5242f0"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Shikayat",
+                    "release_date": "2025-07-11",
+                    "release_date_precision": "day",
+                    "total_tracks": 3,
+                    "type": "album",
+                    "uri": "spotify:album:3rq9Df2fVyGAJSysOyHkmS"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/4AQBP2wx7hAGBomsebicPQ"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/4AQBP2wx7hAGBomsebicPQ",
+                        "id": "4AQBP2wx7hAGBomsebicPQ",
+                        "name": "Akki On The Mic",
+                        "type": "artist",
+                        "uri": "spotify:artist:4AQBP2wx7hAGBomsebicPQ"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/3BW5i53ZmRhYH9g5GB5QbD"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/3BW5i53ZmRhYH9g5GB5QbD",
+                        "id": "3BW5i53ZmRhYH9g5GB5QbD",
+                        "name": "Karya .",
+                        "type": "artist",
+                        "uri": "spotify:artist:3BW5i53ZmRhYH9g5GB5QbD"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 209874,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "GBLLT2508959"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/5tGJlsQVqJtJQNeKknf3cA"
+                },
+                "href": "https://api.spotify.com/v1/tracks/5tGJlsQVqJtJQNeKknf3cA",
+                "id": "5tGJlsQVqJtJQNeKknf3cA",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Shikayat",
+                "popularity": 58,
+                "preview_url": null,
+                "track_number": 1,
+                "type": "track",
+                "uri": "spotify:track:5tGJlsQVqJtJQNeKknf3cA"
+            },
+            {
+                "album": {
+                    "album_type": "single",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/1yMP2gzEFgUkib4khXN6hi"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/1yMP2gzEFgUkib4khXN6hi",
+                            "id": "1yMP2gzEFgUkib4khXN6hi",
+                            "name": "Taimour Baig",
+                            "type": "artist",
+                            "uri": "spotify:artist:1yMP2gzEFgUkib4khXN6hi"
+                        },
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/7rEwKApsZMo8cXVxAndmvD"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/7rEwKApsZMo8cXVxAndmvD",
+                            "id": "7rEwKApsZMo8cXVxAndmvD",
+                            "name": "Raffey Anwar",
+                            "type": "artist",
+                            "uri": "spotify:artist:7rEwKApsZMo8cXVxAndmvD"
+                        },
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                            "id": "2cjQTf2J5yCaNY8qHpW855",
+                            "name": "AUR",
+                            "type": "artist",
+                            "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/5qBulMP2DP48SEyNwsXY79"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/5qBulMP2DP48SEyNwsXY79",
+                    "id": "5qBulMP2DP48SEyNwsXY79",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b2733829f3d2e72a904be8561cbb"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e023829f3d2e72a904be8561cbb"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d000048513829f3d2e72a904be8561cbb"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Long time no see",
+                    "release_date": "2023-07-16",
+                    "release_date_precision": "day",
+                    "total_tracks": 1,
+                    "type": "album",
+                    "uri": "spotify:album:5qBulMP2DP48SEyNwsXY79"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/1yMP2gzEFgUkib4khXN6hi"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/1yMP2gzEFgUkib4khXN6hi",
+                        "id": "1yMP2gzEFgUkib4khXN6hi",
+                        "name": "Taimour Baig",
+                        "type": "artist",
+                        "uri": "spotify:artist:1yMP2gzEFgUkib4khXN6hi"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/7rEwKApsZMo8cXVxAndmvD"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/7rEwKApsZMo8cXVxAndmvD",
+                        "id": "7rEwKApsZMo8cXVxAndmvD",
+                        "name": "Raffey Anwar",
+                        "type": "artist",
+                        "uri": "spotify:artist:7rEwKApsZMo8cXVxAndmvD"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 218600,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "QZNWU2351662"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/6V4N3h4HYD1Ask9cUTxjjg"
+                },
+                "href": "https://api.spotify.com/v1/tracks/6V4N3h4HYD1Ask9cUTxjjg",
+                "id": "6V4N3h4HYD1Ask9cUTxjjg",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Long time no see",
+                "popularity": 65,
+                "preview_url": null,
+                "track_number": 1,
+                "type": "track",
+                "uri": "spotify:track:6V4N3h4HYD1Ask9cUTxjjg"
+            },
+            {
+                "album": {
+                    "album_type": "single",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/0DHOOKfXu4aU7LsWjTdrIN"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/0DHOOKfXu4aU7LsWjTdrIN",
+                            "id": "0DHOOKfXu4aU7LsWjTdrIN",
+                            "name": "Paresh Pahuja",
+                            "type": "artist",
+                            "uri": "spotify:artist:0DHOOKfXu4aU7LsWjTdrIN"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/5ajvlIWZj5aHiZhSuQLXNe"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/5ajvlIWZj5aHiZhSuQLXNe",
+                    "id": "5ajvlIWZj5aHiZhSuQLXNe",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b273b4ff5804409a8257c0ecb861"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e02b4ff5804409a8257c0ecb861"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d00004851b4ff5804409a8257c0ecb861"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Aur Kya Chahiye",
+                    "release_date": "2025-11-12",
+                    "release_date_precision": "day",
+                    "total_tracks": 1,
+                    "type": "album",
+                    "uri": "spotify:album:5ajvlIWZj5aHiZhSuQLXNe"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/0DHOOKfXu4aU7LsWjTdrIN"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/0DHOOKfXu4aU7LsWjTdrIN",
+                        "id": "0DHOOKfXu4aU7LsWjTdrIN",
+                        "name": "Paresh Pahuja",
+                        "type": "artist",
+                        "uri": "spotify:artist:0DHOOKfXu4aU7LsWjTdrIN"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 233677,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "INUM72501410"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/6BudRkYZ0VxGnKJbmBVEq3"
+                },
+                "href": "https://api.spotify.com/v1/tracks/6BudRkYZ0VxGnKJbmBVEq3",
+                "id": "6BudRkYZ0VxGnKJbmBVEq3",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Aur Kya Chahiye",
+                "popularity": 59,
+                "preview_url": null,
+                "track_number": 1,
+                "type": "track",
+                "uri": "spotify:track:6BudRkYZ0VxGnKJbmBVEq3"
+            },
+            {
+                "album": {
+                    "album_type": "album",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/5r3wPya2PpeTTsXsGhQU8O"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/5r3wPya2PpeTTsXsGhQU8O",
+                            "id": "5r3wPya2PpeTTsXsGhQU8O",
+                            "name": "Shubh",
+                            "type": "artist",
+                            "uri": "spotify:artist:5r3wPya2PpeTTsXsGhQU8O"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/2JpU8VtlJR0XFkkLeHjNzl"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/2JpU8VtlJR0XFkkLeHjNzl",
+                    "id": "2JpU8VtlJR0XFkkLeHjNzl",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b2738e1bd9f2ca754ace0396d72f"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e028e1bd9f2ca754ace0396d72f"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d000048518e1bd9f2ca754ace0396d72f"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Sicario",
+                    "release_date": "2025-01-17",
+                    "release_date_precision": "day",
+                    "total_tracks": 10,
+                    "type": "album",
+                    "uri": "spotify:album:2JpU8VtlJR0XFkkLeHjNzl"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/5r3wPya2PpeTTsXsGhQU8O"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/5r3wPya2PpeTTsXsGhQU8O",
+                        "id": "5r3wPya2PpeTTsXsGhQU8O",
+                        "name": "Shubh",
+                        "type": "artist",
+                        "uri": "spotify:artist:5r3wPya2PpeTTsXsGhQU8O"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 165466,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "INW262500022"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/0fAPcsD7qrEAfO2EH0ce4V"
+                },
+                "href": "https://api.spotify.com/v1/tracks/0fAPcsD7qrEAfO2EH0ce4V",
+                "id": "0fAPcsD7qrEAfO2EH0ce4V",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Aura",
+                "popularity": 72,
+                "preview_url": null,
+                "track_number": 8,
+                "type": "track",
+                "uri": "spotify:track:0fAPcsD7qrEAfO2EH0ce4V"
+            },
+            {
+                "album": {
+                    "album_type": "single",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/0LyfQWJT6nXafLPZqxe9Of"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/0LyfQWJT6nXafLPZqxe9Of",
+                            "id": "0LyfQWJT6nXafLPZqxe9Of",
+                            "name": "Various Artists",
+                            "type": "artist",
+                            "uri": "spotify:artist:0LyfQWJT6nXafLPZqxe9Of"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/7BDuL4Ca5r5EHnyR8uJ6OY"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/7BDuL4Ca5r5EHnyR8uJ6OY",
+                    "id": "7BDuL4Ca5r5EHnyR8uJ6OY",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b2730217dbd38af8e9a677ee0599"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e020217dbd38af8e9a677ee0599"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d000048510217dbd38af8e9a677ee0599"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Kabhi Main Kabhi Tum (Original Motion Picture Soundtrack)",
+                    "release_date": "2024-06-27",
+                    "release_date_precision": "day",
+                    "total_tracks": 5,
+                    "type": "album",
+                    "uri": "spotify:album:7BDuL4Ca5r5EHnyR8uJ6OY"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 275200,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "TCAIK2476766"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/6RRMrws5dVKALzhTvH8GFL"
+                },
+                "href": "https://api.spotify.com/v1/tracks/6RRMrws5dVKALzhTvH8GFL",
+                "id": "6RRMrws5dVKALzhTvH8GFL",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Chal Diye Tum Kahan",
+                "popularity": 62,
+                "preview_url": null,
+                "track_number": 2,
+                "type": "track",
+                "uri": "spotify:track:6RRMrws5dVKALzhTvH8GFL"
+            },
+            {
+                "album": {
+                    "album_type": "album",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/1mYsTxnqsietFxj1OgoGbG"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/1mYsTxnqsietFxj1OgoGbG",
+                            "id": "1mYsTxnqsietFxj1OgoGbG",
+                            "name": "A.R. Rahman",
+                            "type": "artist",
+                            "uri": "spotify:artist:1mYsTxnqsietFxj1OgoGbG"
+                        },
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/3GdSQUH1BRtl9UrrtuwJlP"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/3GdSQUH1BRtl9UrrtuwJlP",
+                            "id": "3GdSQUH1BRtl9UrrtuwJlP",
+                            "name": "Irshad Kamil",
+                            "type": "artist",
+                            "uri": "spotify:artist:3GdSQUH1BRtl9UrrtuwJlP"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/3RZxrS2dDZlbsYtMRM89v8"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/3RZxrS2dDZlbsYtMRM89v8",
+                    "id": "3RZxrS2dDZlbsYtMRM89v8",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b27354e544672baa16145d67612b"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e0254e544672baa16145d67612b"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d0000485154e544672baa16145d67612b"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Rockstar",
+                    "release_date": "2011-10-01",
+                    "release_date_precision": "day",
+                    "total_tracks": 15,
+                    "type": "album",
+                    "uri": "spotify:album:3RZxrS2dDZlbsYtMRM89v8"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/5GnnSrwNCGyfAU4zuIytiS"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/5GnnSrwNCGyfAU4zuIytiS",
+                        "id": "5GnnSrwNCGyfAU4zuIytiS",
+                        "name": "Mohit Chauhan",
+                        "type": "artist",
+                        "uri": "spotify:artist:5GnnSrwNCGyfAU4zuIytiS"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/6Rzshn9onqSCEuGCUIZ6WP"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/6Rzshn9onqSCEuGCUIZ6WP",
+                        "id": "6Rzshn9onqSCEuGCUIZ6WP",
+                        "name": "Alma Ferovic",
+                        "type": "artist",
+                        "uri": "spotify:artist:6Rzshn9onqSCEuGCUIZ6WP"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 332410,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "INS181103504"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/3n5KN8FDe1sFC0O9V5ZBha"
+                },
+                "href": "https://api.spotify.com/v1/tracks/3n5KN8FDe1sFC0O9V5ZBha",
+                "id": "3n5KN8FDe1sFC0O9V5ZBha",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Aur Ho",
+                "popularity": 51,
+                "preview_url": null,
+                "track_number": 7,
+                "type": "track",
+                "uri": "spotify:track:3n5KN8FDe1sFC0O9V5ZBha"
+            },
+            {
+                "album": {
+                    "album_type": "single",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/1wRPtKGflJrBx9BmLsSwlU"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/1wRPtKGflJrBx9BmLsSwlU",
+                            "id": "1wRPtKGflJrBx9BmLsSwlU",
+                            "name": "Pritam",
+                            "type": "artist",
+                            "uri": "spotify:artist:1wRPtKGflJrBx9BmLsSwlU"
+                        },
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/4YRxDV8wJFPHPTeXepOstw"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/4YRxDV8wJFPHPTeXepOstw",
+                            "id": "4YRxDV8wJFPHPTeXepOstw",
+                            "name": "Arijit Singh",
+                            "type": "artist",
+                            "uri": "spotify:artist:4YRxDV8wJFPHPTeXepOstw"
+                        },
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/7qATomOqJzoJiuEpAaxOXd"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/7qATomOqJzoJiuEpAaxOXd",
+                            "id": "7qATomOqJzoJiuEpAaxOXd",
+                            "name": "Sandeep Shrivastava",
+                            "type": "artist",
+                            "uri": "spotify:artist:7qATomOqJzoJiuEpAaxOXd"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/0qw6c6SD4zDzm2l3Xx3cSH"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/0qw6c6SD4zDzm2l3Xx3cSH",
+                    "id": "0qw6c6SD4zDzm2l3Xx3cSH",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b273114e03dcb192736b33a42cb5"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e02114e03dcb192736b33a42cb5"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d00004851114e03dcb192736b33a42cb5"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Aur Mohabbat Kitni Karoon (From \"Metro ... In Dino\")",
+                    "release_date": "2025-06-20",
+                    "release_date_precision": "day",
+                    "total_tracks": 1,
+                    "type": "album",
+                    "uri": "spotify:album:0qw6c6SD4zDzm2l3Xx3cSH"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/1wRPtKGflJrBx9BmLsSwlU"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/1wRPtKGflJrBx9BmLsSwlU",
+                        "id": "1wRPtKGflJrBx9BmLsSwlU",
+                        "name": "Pritam",
+                        "type": "artist",
+                        "uri": "spotify:artist:1wRPtKGflJrBx9BmLsSwlU"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/4YRxDV8wJFPHPTeXepOstw"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/4YRxDV8wJFPHPTeXepOstw",
+                        "id": "4YRxDV8wJFPHPTeXepOstw",
+                        "name": "Arijit Singh",
+                        "type": "artist",
+                        "uri": "spotify:artist:4YRxDV8wJFPHPTeXepOstw"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/7qATomOqJzoJiuEpAaxOXd"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/7qATomOqJzoJiuEpAaxOXd",
+                        "id": "7qATomOqJzoJiuEpAaxOXd",
+                        "name": "Sandeep Shrivastava",
+                        "type": "artist",
+                        "uri": "spotify:artist:7qATomOqJzoJiuEpAaxOXd"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 236101,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "INS182502425"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/3EIMdrD4DstJVklUH9Ai7Y"
+                },
+                "href": "https://api.spotify.com/v1/tracks/3EIMdrD4DstJVklUH9Ai7Y",
+                "id": "3EIMdrD4DstJVklUH9Ai7Y",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Aur Mohabbat Kitni Karoon (From \"Metro ... In Dino\")",
+                "popularity": 60,
+                "preview_url": null,
+                "track_number": 1,
+                "type": "track",
+                "uri": "spotify:track:3EIMdrD4DstJVklUH9Ai7Y"
+            },
+            {
+                "album": {
+                    "album_type": "album",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/1wRPtKGflJrBx9BmLsSwlU"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/1wRPtKGflJrBx9BmLsSwlU",
+                            "id": "1wRPtKGflJrBx9BmLsSwlU",
+                            "name": "Pritam",
+                            "type": "artist",
+                            "uri": "spotify:artist:1wRPtKGflJrBx9BmLsSwlU"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/6lzbOHCYz5zP6P66LtdWcM"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/6lzbOHCYz5zP6P66LtdWcM",
+                    "id": "6lzbOHCYz5zP6P66LtdWcM",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b273c143807ae8bcde3ca124abbd"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e02c143807ae8bcde3ca124abbd"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d00004851c143807ae8bcde3ca124abbd"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "Metro ... In Dino (Side A)",
+                    "release_date": "2025-06-23",
+                    "release_date_precision": "day",
+                    "total_tracks": 9,
+                    "type": "album",
+                    "uri": "spotify:album:6lzbOHCYz5zP6P66LtdWcM"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/1wRPtKGflJrBx9BmLsSwlU"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/1wRPtKGflJrBx9BmLsSwlU",
+                        "id": "1wRPtKGflJrBx9BmLsSwlU",
+                        "name": "Pritam",
+                        "type": "artist",
+                        "uri": "spotify:artist:1wRPtKGflJrBx9BmLsSwlU"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/4YRxDV8wJFPHPTeXepOstw"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/4YRxDV8wJFPHPTeXepOstw",
+                        "id": "4YRxDV8wJFPHPTeXepOstw",
+                        "name": "Arijit Singh",
+                        "type": "artist",
+                        "uri": "spotify:artist:4YRxDV8wJFPHPTeXepOstw"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/7qATomOqJzoJiuEpAaxOXd"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/7qATomOqJzoJiuEpAaxOXd",
+                        "id": "7qATomOqJzoJiuEpAaxOXd",
+                        "name": "Sandeep Shrivastava",
+                        "type": "artist",
+                        "uri": "spotify:artist:7qATomOqJzoJiuEpAaxOXd"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 236101,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "INS182502425"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/4720h6axuBgYkmESfedyEc"
+                },
+                "href": "https://api.spotify.com/v1/tracks/4720h6axuBgYkmESfedyEc",
+                "id": "4720h6axuBgYkmESfedyEc",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Aur Mohabbat Kitni Karoon",
+                "popularity": 60,
+                "preview_url": null,
+                "track_number": 4,
+                "type": "track",
+                "uri": "spotify:track:4720h6axuBgYkmESfedyEc"
+            },
+            {
+                "album": {
+                    "album_type": "album",
+                    "artists": [
+                        {
+                            "external_urls": {
+                                "spotify": "https://open.spotify.com/artist/2FKWNmZWDBZR4dE5KX4plR"
+                            },
+                            "href": "https://api.spotify.com/v1/artists/2FKWNmZWDBZR4dE5KX4plR",
+                            "id": "2FKWNmZWDBZR4dE5KX4plR",
+                            "name": "Diljit Dosanjh",
+                            "type": "artist",
+                            "uri": "spotify:artist:2FKWNmZWDBZR4dE5KX4plR"
+                        }
+                    ],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/album/1qP2ICZGtjDGBayZ7JuQcT"
+                    },
+                    "href": "https://api.spotify.com/v1/albums/1qP2ICZGtjDGBayZ7JuQcT",
+                    "id": "1qP2ICZGtjDGBayZ7JuQcT",
+                    "images": [
+                        {
+                            "height": 640,
+                            "width": 640,
+                            "url": "https://i.scdn.co/image/ab67616d0000b273e60418359b299f1e237ee7da"
+                        },
+                        {
+                            "height": 300,
+                            "width": 300,
+                            "url": "https://i.scdn.co/image/ab67616d00001e02e60418359b299f1e237ee7da"
+                        },
+                        {
+                            "height": 64,
+                            "width": 64,
+                            "url": "https://i.scdn.co/image/ab67616d00004851e60418359b299f1e237ee7da"
+                        }
+                    ],
+                    "is_playable": true,
+                    "name": "AURA",
+                    "release_date": "2025-10-15",
+                    "release_date_precision": "day",
+                    "total_tracks": 10,
+                    "type": "album",
+                    "uri": "spotify:album:1qP2ICZGtjDGBayZ7JuQcT"
+                },
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2FKWNmZWDBZR4dE5KX4plR"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2FKWNmZWDBZR4dE5KX4plR",
+                        "id": "2FKWNmZWDBZR4dE5KX4plR",
+                        "name": "Diljit Dosanjh",
+                        "type": "artist",
+                        "uri": "spotify:artist:2FKWNmZWDBZR4dE5KX4plR"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/05dG9pMLRWenxzvSmefE6U"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/05dG9pMLRWenxzvSmefE6U",
+                        "id": "05dG9pMLRWenxzvSmefE6U",
+                        "name": "MixSingh",
+                        "type": "artist",
+                        "uri": "spotify:artist:05dG9pMLRWenxzvSmefE6U"
+                    },
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/183DgO92lAqgpVVNKI7ZKF"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/183DgO92lAqgpVVNKI7ZKF",
+                        "id": "183DgO92lAqgpVVNKI7ZKF",
+                        "name": "Raj Ranjodh",
+                        "type": "artist",
+                        "uri": "spotify:artist:183DgO92lAqgpVVNKI7ZKF"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 158000,
+                "explicit": false,
+                "external_ids": {
+                    "isrc": "INW262543651"
+                },
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/7oODxqLHmajTXnGK0hWfj1"
+                },
+                "href": "https://api.spotify.com/v1/tracks/7oODxqLHmajTXnGK0hWfj1",
+                "id": "7oODxqLHmajTXnGK0hWfj1",
+                "is_local": false,
+                "is_playable": true,
+                "name": "Kufar",
+                "popularity": 77,
+                "preview_url": null,
+                "track_number": 2,
+                "type": "track",
+                "uri": "spotify:track:7oODxqLHmajTXnGK0hWfj1"
+            }
+        ]
+    },
+    "artists": {
+        "href": "https://api.spotify.com/v1/search?offset=0&limit=10&query=AUR&type=artist&market=NP",
+        "limit": 10,
+        "next": "https://api.spotify.com/v1/search?offset=10&limit=10&query=AUR&type=artist&market=NP",
+        "offset": 0,
+        "previous": null,
+        "total": 16,
+        "items": [
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 1719222
+                },
+                "genres": [
+                    "hindi indie",
+                    "indian indie",
+                    "hindi hip hop"
+                ],
+                "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                "id": "2cjQTf2J5yCaNY8qHpW855",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5ebd3285f46d890c938885f499c",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616100005174d3285f46d890c938885f499c",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f178d3285f46d890c938885f499c",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "AUR",
+                "popularity": 58,
+                "type": "artist",
+                "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/2W4I7PFzMsSXVpNNhvGF3A"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 345945
+                },
+                "genres": [
+                    "bangla pop"
+                ],
+                "href": "https://api.spotify.com/v1/artists/2W4I7PFzMsSXVpNNhvGF3A",
+                "id": "2W4I7PFzMsSXVpNNhvGF3A",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5eb9c0de58a39137ac43f442620",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab676161000051749c0de58a39137ac43f442620",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f1789c0de58a39137ac43f442620",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "Aurthohin",
+                "popularity": 34,
+                "type": "artist",
+                "uri": "spotify:artist:2W4I7PFzMsSXVpNNhvGF3A"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/1WgXqy2Dd70QQOU7Ay074N"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 4789561
+                },
+                "genres": [
+                    "norwegian pop",
+                    "art pop"
+                ],
+                "href": "https://api.spotify.com/v1/artists/1WgXqy2Dd70QQOU7Ay074N",
+                "id": "1WgXqy2Dd70QQOU7Ay074N",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5ebeefc6f13cec94fe613a6c1c8",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616100005174eefc6f13cec94fe613a6c1c8",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f178eefc6f13cec94fe613a6c1c8",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "AURORA",
+                "popularity": 75,
+                "type": "artist",
+                "uri": "spotify:artist:1WgXqy2Dd70QQOU7Ay074N"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/4XDyBIDUXpxtmDzbZ2g0Xj"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 128
+                },
+                "genres": [],
+                "href": "https://api.spotify.com/v1/artists/4XDyBIDUXpxtmDzbZ2g0Xj",
+                "id": "4XDyBIDUXpxtmDzbZ2g0Xj",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab67616d0000b273baf70c690a1e567afe2a0b6a",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616d00001e02baf70c690a1e567afe2a0b6a",
+                        "height": 300,
+                        "width": 300
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616d00004851baf70c690a1e567afe2a0b6a",
+                        "height": 64,
+                        "width": 64
+                    }
+                ],
+                "name": "AUR",
+                "popularity": 0,
+                "type": "artist",
+                "uri": "spotify:artist:4XDyBIDUXpxtmDzbZ2g0Xj"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/0A1Qr8l43fIqhB5aItVaMy"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 118554
+                },
+                "genres": [],
+                "href": "https://api.spotify.com/v1/artists/0A1Qr8l43fIqhB5aItVaMy",
+                "id": "0A1Qr8l43fIqhB5aItVaMy",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5ebcc3a2bf4cc8c6c49a6dd4e81",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616100005174cc3a2bf4cc8c6c49a6dd4e81",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f178cc3a2bf4cc8c6c49a6dd4e81",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "Arthur Gunn",
+                "popularity": 38,
+                "type": "artist",
+                "uri": "spotify:artist:0A1Qr8l43fIqhB5aItVaMy"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/6OB7PzOSbC30b8E5uGjRBo"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 70053
+                },
+                "genres": [
+                    "dark r&b"
+                ],
+                "href": "https://api.spotify.com/v1/artists/6OB7PzOSbC30b8E5uGjRBo",
+                "id": "6OB7PzOSbC30b8E5uGjRBo",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5ebbb9c3fbdeacc88083f9e14b1",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616100005174bb9c3fbdeacc88083f9e14b1",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f178bb9c3fbdeacc88083f9e14b1",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "Aurora Olivas",
+                "popularity": 64,
+                "type": "artist",
+                "uri": "spotify:artist:6OB7PzOSbC30b8E5uGjRBo"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/5tdj2iG5DX5U0DXm4mD2BS"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 249
+                },
+                "genres": [],
+                "href": "https://api.spotify.com/v1/artists/5tdj2iG5DX5U0DXm4mD2BS",
+                "id": "5tdj2iG5DX5U0DXm4mD2BS",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5eb821b33a695dc2c63d28dc1e0",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616100005174821b33a695dc2c63d28dc1e0",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f178821b33a695dc2c63d28dc1e0",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "AUR",
+                "popularity": 1,
+                "type": "artist",
+                "uri": "spotify:artist:5tdj2iG5DX5U0DXm4mD2BS"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/5IH6FPUwQTxPSXurCrcIov"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 5622543
+                },
+                "genres": [],
+                "href": "https://api.spotify.com/v1/artists/5IH6FPUwQTxPSXurCrcIov",
+                "id": "5IH6FPUwQTxPSXurCrcIov",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5eb5af962a543938243f083cbb9",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab676161000051745af962a543938243f083cbb9",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f1785af962a543938243f083cbb9",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "Alec Benjamin",
+                "popularity": 74,
+                "type": "artist",
+                "uri": "spotify:artist:5IH6FPUwQTxPSXurCrcIov"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/1eMmoIprPDWeFdB1FxU6ZV"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 603012
+                },
+                "genres": [],
+                "href": "https://api.spotify.com/v1/artists/1eMmoIprPDWeFdB1FxU6ZV",
+                "id": "1eMmoIprPDWeFdB1FxU6ZV",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5eb5480d340c983b442c3f5fdbe",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab676161000051745480d340c983b442c3f5fdbe",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f1785480d340c983b442c3f5fdbe",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "Au/Ra",
+                "popularity": 63,
+                "type": "artist",
+                "uri": "spotify:artist:1eMmoIprPDWeFdB1FxU6ZV"
+            },
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/07QEuhtrNmmZ0zEcqE9SF6"
+                },
+                "followers": {
+                    "href": null,
+                    "total": 2519344
+                },
+                "genres": [],
+                "href": "https://api.spotify.com/v1/artists/07QEuhtrNmmZ0zEcqE9SF6",
+                "id": "07QEuhtrNmmZ0zEcqE9SF6",
+                "images": [
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000e5ebce3fbd73ae4f8b3ff54a0a5c",
+                        "height": 640,
+                        "width": 640
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab67616100005174ce3fbd73ae4f8b3ff54a0a5c",
+                        "height": 320,
+                        "width": 320
+                    },
+                    {
+                        "url": "https://i.scdn.co/image/ab6761610000f178ce3fbd73ae4f8b3ff54a0a5c",
+                        "height": 160,
+                        "width": 160
+                    }
+                ],
+                "name": "Owl City",
+                "popularity": 69,
+                "type": "artist",
+                "uri": "spotify:artist:07QEuhtrNmmZ0zEcqE9SF6"
+            }
+        ]
+    },
+    "playlists": {
+        "href": "https://api.spotify.com/v1/search?offset=0&limit=10&query=AUR&type=playlist&market=NP",
+        "limit": 10,
+        "next": "https://api.spotify.com/v1/search?offset=10&limit=10&query=AUR&type=playlist&market=NP",
+        "offset": 0,
+        "previous": null,
+        "total": 17,
+        "items": [
+            {
+                "collaborative": false,
+                "description": "",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/1rRC867J8Aovyda63C1Htt"
+                },
+                "href": "https://api.spotify.com/v1/playlists/1rRC867J8Aovyda63C1Htt",
+                "id": "1rRC867J8Aovyda63C1Htt",
+                "images": [
+                    {
+                        "height": 640,
+                        "url": "https://mosaic.scdn.co/640/ab67616d00001e020217dbd38af8e9a677ee0599ab67616d00001e020d3449f333a83a25feb423f8ab67616d00001e023829f3d2e72a904be8561cbbab67616d00001e0246a52e7dca06358111b81460",
+                        "width": 640
+                    },
+                    {
+                        "height": 300,
+                        "url": "https://mosaic.scdn.co/300/ab67616d00001e020217dbd38af8e9a677ee0599ab67616d00001e020d3449f333a83a25feb423f8ab67616d00001e023829f3d2e72a904be8561cbbab67616d00001e0246a52e7dca06358111b81460",
+                        "width": 300
+                    },
+                    {
+                        "height": 60,
+                        "url": "https://mosaic.scdn.co/60/ab67616d00001e020217dbd38af8e9a677ee0599ab67616d00001e020d3449f333a83a25feb423f8ab67616d00001e023829f3d2e72a904be8561cbbab67616d00001e0246a52e7dca06358111b81460",
+                        "width": 60
+                    }
+                ],
+                "name": "AUR",
+                "owner": {
+                    "display_name": "sunny karotiya",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/314el4uk7drt3ancrlfcqczhyixi"
+                    },
+                    "href": "https://api.spotify.com/v1/users/314el4uk7drt3ancrlfcqczhyixi",
+                    "id": "314el4uk7drt3ancrlfcqczhyixi",
+                    "type": "user",
+                    "uri": "spotify:user:314el4uk7drt3ancrlfcqczhyixi"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAAAf9UWWRUMWOKFuXiG0IPJI4bTiWH3",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/1rRC867J8Aovyda63C1Htt/tracks",
+                    "total": 114
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:1rRC867J8Aovyda63C1Htt"
+            },
+            {
+                "collaborative": false,
+                "description": "Tu Hai Kahaan - AUR",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/0uyEPnKfRwO6cbCJkWtfFb"
+                },
+                "href": "https://api.spotify.com/v1/playlists/0uyEPnKfRwO6cbCJkWtfFb",
+                "id": "0uyEPnKfRwO6cbCJkWtfFb",
+                "images": [
+                    {
+                        "height": null,
+                        "url": "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000d72c23d80cca7285b6cbfa0d0fcc",
+                        "width": null
+                    }
+                ],
+                "name": "Tu Hai Kahan - Full Version (orignal)",
+                "owner": {
+                    "display_name": "StereoAux",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/31h2heqkhbdprnmmgswxfs3d6gym"
+                    },
+                    "href": "https://api.spotify.com/v1/users/31h2heqkhbdprnmmgswxfs3d6gym",
+                    "id": "31h2heqkhbdprnmmgswxfs3d6gym",
+                    "type": "user",
+                    "uri": "spotify:user:31h2heqkhbdprnmmgswxfs3d6gym"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAABimDbx+OgdjyRKfO1zige3gOEus86",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/0uyEPnKfRwO6cbCJkWtfFb/tracks",
+                    "total": 36
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:0uyEPnKfRwO6cbCJkWtfFb"
+            },
+            {
+                "collaborative": false,
+                "description": "Shikayat - Aur",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/3A6mD9jmpmlNqtok8f6aDB"
+                },
+                "href": "https://api.spotify.com/v1/playlists/3A6mD9jmpmlNqtok8f6aDB",
+                "id": "3A6mD9jmpmlNqtok8f6aDB",
+                "images": [
+                    {
+                        "height": null,
+                        "url": "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da84dbd09fa4e47f776379ed9c23",
+                        "width": null
+                    }
+                ],
+                "name": "Shikayat ",
+                "owner": {
+                    "display_name": "StereoAux",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/31h2heqkhbdprnmmgswxfs3d6gym"
+                    },
+                    "href": "https://api.spotify.com/v1/users/31h2heqkhbdprnmmgswxfs3d6gym",
+                    "id": "31h2heqkhbdprnmmgswxfs3d6gym",
+                    "type": "user",
+                    "uri": "spotify:user:31h2heqkhbdprnmmgswxfs3d6gym"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAACDWeX7+gBCqd20vX7F4JgL4TxPP4/",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/3A6mD9jmpmlNqtok8f6aDB/tracks",
+                    "total": 31
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:3A6mD9jmpmlNqtok8f6aDB"
+            },
+            {
+                "collaborative": false,
+                "description": " ✨Viral Instagram Songs, Trending songs, Instagram trending music, Tu Hai Kahan, Paro, Jhol, Sahiba ",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/70NgUPgXzSG5PdGjnvFsQv"
+                },
+                "href": "https://api.spotify.com/v1/playlists/70NgUPgXzSG5PdGjnvFsQv",
+                "id": "70NgUPgXzSG5PdGjnvFsQv",
+                "images": [
+                    {
+                        "height": null,
+                        "url": "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da847377f3ce4a836a0fe0673dd8",
+                        "width": null
+                    }
+                ],
+                "name": "Tu hai kahan",
+                "owner": {
+                    "display_name": "I❤️🇮🇳 PLAYLISTS",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/1cdt99eg26b68tk4btjkkkaps"
+                    },
+                    "href": "https://api.spotify.com/v1/users/1cdt99eg26b68tk4btjkkkaps",
+                    "id": "1cdt99eg26b68tk4btjkkkaps",
+                    "type": "user",
+                    "uri": "spotify:user:1cdt99eg26b68tk4btjkkkaps"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAAD85IqkzO8QgVkjQES4Zv9+H5rg+ML",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/70NgUPgXzSG5PdGjnvFsQv/tracks",
+                    "total": 61
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:70NgUPgXzSG5PdGjnvFsQv"
+            },
+            {
+                "collaborative": false,
+                "description": "Enjoy Soulful tracks like Tu Hai Kahan, Jhol, Kahani Suno 2.0 and many more. Coke Studio Viral Songs. Trending in Instagram. Viral Youtube songs of Coke studio. Desi Indie Unplugged and acoustic songs. Arijit Singh, Anuv Jain Peaceful songs. New Trending songs from Instagram. You will love the Vibe",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/2OTm0VE371dxu9Amxzb1h0"
+                },
+                "href": "https://api.spotify.com/v1/playlists/2OTm0VE371dxu9Amxzb1h0",
+                "id": "2OTm0VE371dxu9Amxzb1h0",
+                "images": [
+                    {
+                        "height": null,
+                        "url": "https://image-cdn-fa.spotifycdn.com/image/ab67706c0000d72c8c86b586c21e9bf3cc2e7886",
+                        "width": null
+                    }
+                ],
+                "name": "Tu Hai Kahan - AUR | Chaal Chal Tu Apni Main Tujhe Pehchan Lunga ❤️‍🩹",
+                "owner": {
+                    "display_name": "THE PLAYLIST HUB",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/31au2xrmqhcpvrpb7awm2yhosk3i"
+                    },
+                    "href": "https://api.spotify.com/v1/users/31au2xrmqhcpvrpb7awm2yhosk3i",
+                    "id": "31au2xrmqhcpvrpb7awm2yhosk3i",
+                    "type": "user",
+                    "uri": "spotify:user:31au2xrmqhcpvrpb7awm2yhosk3i"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAAAeyJqs0ASEqAKTQkf9wCBPh9XLtsE",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/2OTm0VE371dxu9Amxzb1h0/tracks",
+                    "total": 29
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:2OTm0VE371dxu9Amxzb1h0"
+            },
+            {
+                "collaborative": false,
+                "description": "",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/7tEYSbKakFMf8cxMjYVjkr"
+                },
+                "href": "https://api.spotify.com/v1/playlists/7tEYSbKakFMf8cxMjYVjkr",
+                "id": "7tEYSbKakFMf8cxMjYVjkr",
+                "images": [
+                    {
+                        "height": null,
+                        "url": "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da84586bad93d49a76815082123e",
+                        "width": null
+                    }
+                ],
+                "name": "∞ Aura Farming [PERFECT]",
+                "owner": {
+                    "display_name": "xMÂDMÂXx",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/31r4g342y3zelzfkpfpgvjpaxmdq"
+                    },
+                    "href": "https://api.spotify.com/v1/users/31r4g342y3zelzfkpfpgvjpaxmdq",
+                    "id": "31r4g342y3zelzfkpfpgvjpaxmdq",
+                    "type": "user",
+                    "uri": "spotify:user:31r4g342y3zelzfkpfpgvjpaxmdq"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAAA0bNG4ttcXmSRY4TshM9PcRGEISZ/",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/7tEYSbKakFMf8cxMjYVjkr/tracks",
+                    "total": 99
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:7tEYSbKakFMf8cxMjYVjkr"
+            },
+            {
+                "collaborative": false,
+                "description": "",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/2lSszFTCRqUPgHFihTVNGw"
+                },
+                "href": "https://api.spotify.com/v1/playlists/2lSszFTCRqUPgHFihTVNGw",
+                "id": "2lSszFTCRqUPgHFihTVNGw",
+                "images": [
+                    {
+                        "height": 640,
+                        "url": "https://mosaic.scdn.co/640/ab67616d00001e0244aa56e23e3a89802e6c6347ab67616d00001e025f3ede47954a93aa03efe5f9ab67616d00001e02aad3f4b601ae8763b3fc4e88ab67616d00001e02d8bd1822c8f3b580b9200568",
+                        "width": 640
+                    },
+                    {
+                        "height": 300,
+                        "url": "https://mosaic.scdn.co/300/ab67616d00001e0244aa56e23e3a89802e6c6347ab67616d00001e025f3ede47954a93aa03efe5f9ab67616d00001e02aad3f4b601ae8763b3fc4e88ab67616d00001e02d8bd1822c8f3b580b9200568",
+                        "width": 300
+                    },
+                    {
+                        "height": 60,
+                        "url": "https://mosaic.scdn.co/60/ab67616d00001e0244aa56e23e3a89802e6c6347ab67616d00001e025f3ede47954a93aa03efe5f9ab67616d00001e02aad3f4b601ae8763b3fc4e88ab67616d00001e02d8bd1822c8f3b580b9200568",
+                        "width": 60
+                    }
+                ],
+                "name": "Bollywood - Aura🗿🕺",
+                "owner": {
+                    "display_name": "im_khalidh",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/6jdbint7zskrwlsnxhf085ei3"
+                    },
+                    "href": "https://api.spotify.com/v1/users/6jdbint7zskrwlsnxhf085ei3",
+                    "id": "6jdbint7zskrwlsnxhf085ei3",
+                    "type": "user",
+                    "uri": "spotify:user:6jdbint7zskrwlsnxhf085ei3"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAAAG6/AtdhWas/79fIGRBJOfMOu8oj+",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/2lSszFTCRqUPgHFihTVNGw/tracks",
+                    "total": 26
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:2lSszFTCRqUPgHFihTVNGw"
+            },
+            {
+                "collaborative": false,
+                "description": "11,521,313 • 2025 • 6:04 • Khuda Aur Mohabbat Song - Rahat Fateh Ali Khan",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/3W9rvAGLhc5iFxEhsMT9UT"
+                },
+                "href": "https://api.spotify.com/v1/playlists/3W9rvAGLhc5iFxEhsMT9UT",
+                "id": "3W9rvAGLhc5iFxEhsMT9UT",
+                "images": [
+                    {
+                        "height": null,
+                        "url": "https://image-cdn-fa.spotifycdn.com/image/ab67706c0000d72c3b559ed2afe29f0a0d91d0da",
+                        "width": null
+                    }
+                ],
+                "name": "Khuda Aur Mohabbat",
+                "owner": {
+                    "display_name": "Creation Music",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/31eqcg2z6irdmbwdxvjtpl5efuue"
+                    },
+                    "href": "https://api.spotify.com/v1/users/31eqcg2z6irdmbwdxvjtpl5efuue",
+                    "id": "31eqcg2z6irdmbwdxvjtpl5efuue",
+                    "type": "user",
+                    "uri": "spotify:user:31eqcg2z6irdmbwdxvjtpl5efuue"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAAAdtDpBpg6Yf+rZT3nw00tzqvmyEZP",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/3W9rvAGLhc5iFxEhsMT9UT/tracks",
+                    "total": 52
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:3W9rvAGLhc5iFxEhsMT9UT"
+            },
+            {
+                "collaborative": false,
+                "description": "Teri Kaynat Mere Khali Hath Aur Tar Tar Sapne, Teri Qaynat Meri Khali Hath Mere Taar Taar Sapne, Awara Angara, Aawara Angara, Aawaara Angaara, Awara Awara, Tere Ishk Mein, Tere Ishq Mein, Tere Ishq Me, Tere Ishk Me, Teri Kayanat Mere Khali Hath, Teri Qayanat Mere Khali Hath ",
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/playlist/28gejclWrznoYrpvDfr5Uf"
+                },
+                "href": "https://api.spotify.com/v1/playlists/28gejclWrznoYrpvDfr5Uf",
+                "id": "28gejclWrznoYrpvDfr5Uf",
+                "images": [
+                    {
+                        "height": null,
+                        "url": "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da8467dd97247d507c40dce5252d",
+                        "width": null
+                    }
+                ],
+                "name": "Teri Kaynat Mere Khali Hath Aur Tar Tar Sapne ❤️‍🔥(Aawaara Angaara) - Tere Ishk Mein ",
+                "owner": {
+                    "display_name": "#Trends",
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/user/31hfsnm3546dyvcst5pz66eqslcu"
+                    },
+                    "href": "https://api.spotify.com/v1/users/31hfsnm3546dyvcst5pz66eqslcu",
+                    "id": "31hfsnm3546dyvcst5pz66eqslcu",
+                    "type": "user",
+                    "uri": "spotify:user:31hfsnm3546dyvcst5pz66eqslcu"
+                },
+                "primary_color": null,
+                "public": true,
+                "snapshot_id": "AAAAf3Unhwjbv7C0FctuPivAQ28NrUwG",
+                "tracks": {
+                    "href": "https://api.spotify.com/v1/playlists/28gejclWrznoYrpvDfr5Uf/tracks",
+                    "total": 23
+                },
+                "type": "playlist",
+                "uri": "spotify:playlist:28gejclWrznoYrpvDfr5Uf"
+            },
+            null
+        ]
+    }
+}

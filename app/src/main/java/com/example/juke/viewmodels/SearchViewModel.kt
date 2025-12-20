@@ -37,9 +37,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.value = _uiState.value.copy(isSearching = true, error = null)
             
             try {
-                val response = SpotifyApi.searchSongs(query)
+                val tracks = SpotifyApi.searchSongs(query)
+                
+                // Convert Spotify tracks to SpotdownSong format
+                val songs = tracks.map { track ->
+                    SpotifyApi.spotifyTrackToSong(track)
+                }
+                
                 _uiState.value = _uiState.value.copy(
-                    results = response.songs,
+                    results = songs,
                     isSearching = false
                 )
             } catch (e: Exception) {

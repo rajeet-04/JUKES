@@ -1,0 +1,247 @@
+https://api.spotify.com/v1/albums/0KUWZOvXO6Uvsih3zDpwYa?market=NP  GET
+
+
+{
+    "album_type": "single",
+    "total_tracks": 6,
+    "is_playable": true,
+    "external_urls": {
+        "spotify": "https://open.spotify.com/album/0KUWZOvXO6Uvsih3zDpwYa"
+    },
+    "href": "https://api.spotify.com/v1/albums/0KUWZOvXO6Uvsih3zDpwYa?market=NP",
+    "id": "0KUWZOvXO6Uvsih3zDpwYa",
+    "images": [
+        {
+            "url": "https://i.scdn.co/image/ab67616d0000b273ee52334af4d8fc5d1c16cad5",
+            "height": 640,
+            "width": 640
+        },
+        {
+            "url": "https://i.scdn.co/image/ab67616d00001e02ee52334af4d8fc5d1c16cad5",
+            "height": 300,
+            "width": 300
+        },
+        {
+            "url": "https://i.scdn.co/image/ab67616d00004851ee52334af4d8fc5d1c16cad5",
+            "height": 64,
+            "width": 64
+        }
+    ],
+    "name": "You paint me again “PURPLE”",
+    "release_date": "2025-12-12",
+    "release_date_precision": "day",
+    "type": "album",
+    "uri": "spotify:album:0KUWZOvXO6Uvsih3zDpwYa",
+    "artists": [
+        {
+            "external_urls": {
+                "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+            },
+            "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+            "id": "2cjQTf2J5yCaNY8qHpW855",
+            "name": "AUR",
+            "type": "artist",
+            "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+        }
+    ],
+    "tracks": {
+        "href": "https://api.spotify.com/v1/albums/0KUWZOvXO6Uvsih3zDpwYa/tracks?offset=0&limit=50&market=NP",
+        "limit": 50,
+        "next": null,
+        "offset": 0,
+        "previous": null,
+        "total": 6,
+        "items": [
+            {
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 72000,
+                "explicit": false,
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/57F8v6SV3CVca5Otqe0k3O"
+                },
+                "href": "https://api.spotify.com/v1/tracks/57F8v6SV3CVca5Otqe0k3O",
+                "id": "57F8v6SV3CVca5Otqe0k3O",
+                "is_playable": true,
+                "name": "Intro",
+                "preview_url": null,
+                "track_number": 1,
+                "type": "track",
+                "uri": "spotify:track:57F8v6SV3CVca5Otqe0k3O",
+                "is_local": false
+            },
+            {
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 242203,
+                "explicit": false,
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/46kEe1OzYWAzQowuQBoYo5"
+                },
+                "href": "https://api.spotify.com/v1/tracks/46kEe1OzYWAzQowuQBoYo5",
+                "id": "46kEe1OzYWAzQowuQBoYo5",
+                "is_playable": true,
+                "name": "You",
+                "preview_url": null,
+                "track_number": 2,
+                "type": "track",
+                "uri": "spotify:track:46kEe1OzYWAzQowuQBoYo5",
+                "is_local": false
+            },
+            {
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 170000,
+                "explicit": false,
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/6iDZIZAMcX47BtsPXTW6d4"
+                },
+                "href": "https://api.spotify.com/v1/tracks/6iDZIZAMcX47BtsPXTW6d4",
+                "id": "6iDZIZAMcX47BtsPXTW6d4",
+                "is_playable": true,
+                "name": "Paint",
+                "preview_url": null,
+                "track_number": 3,
+                "type": "track",
+                "uri": "spotify:track:6iDZIZAMcX47BtsPXTW6d4",
+                "is_local": false
+            },
+            {
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 182400,
+                "explicit": false,
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/1yUMGy65cMEzF6yYc696ds"
+                },
+                "href": "https://api.spotify.com/v1/tracks/1yUMGy65cMEzF6yYc696ds",
+                "id": "1yUMGy65cMEzF6yYc696ds",
+                "is_playable": true,
+                "name": "Me",
+                "preview_url": null,
+                "track_number": 4,
+                "type": "track",
+                "uri": "spotify:track:1yUMGy65cMEzF6yYc696ds",
+                "is_local": false
+            },
+            {
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 202625,
+                "explicit": false,
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/1TNh7O995cDSEEfEsJDo8q"
+                },
+                "href": "https://api.spotify.com/v1/tracks/1TNh7O995cDSEEfEsJDo8q",
+                "id": "1TNh7O995cDSEEfEsJDo8q",
+                "is_playable": true,
+                "name": "Again",
+                "preview_url": null,
+                "track_number": 5,
+                "type": "track",
+                "uri": "spotify:track:1TNh7O995cDSEEfEsJDo8q",
+                "is_local": false
+            },
+            {
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/2cjQTf2J5yCaNY8qHpW855"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/2cjQTf2J5yCaNY8qHpW855",
+                        "id": "2cjQTf2J5yCaNY8qHpW855",
+                        "name": "AUR",
+                        "type": "artist",
+                        "uri": "spotify:artist:2cjQTf2J5yCaNY8qHpW855"
+                    }
+                ],
+                "disc_number": 1,
+                "duration_ms": 281105,
+                "explicit": false,
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/6TGtbANyhTG2lXozqcFnYZ"
+                },
+                "href": "https://api.spotify.com/v1/tracks/6TGtbANyhTG2lXozqcFnYZ",
+                "id": "6TGtbANyhTG2lXozqcFnYZ",
+                "is_playable": true,
+                "name": "Purple",
+                "preview_url": null,
+                "track_number": 6,
+                "type": "track",
+                "uri": "spotify:track:6TGtbANyhTG2lXozqcFnYZ",
+                "is_local": false
+            }
+        ]
+    },
+    "copyrights": [
+        {
+            "text": "2025 AUR Music",
+            "type": "C"
+        },
+        {
+            "text": "2025 AUR Music",
+            "type": "P"
+        }
+    ],
+    "external_ids": {
+        "upc": "5026854287348"
+    },
+    "genres": [],
+    "label": "AUR Music",
+    "popularity": 50
+}

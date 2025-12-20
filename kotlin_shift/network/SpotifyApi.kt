@@ -1,76 +1,127 @@
-package com.juke.network
+package com.example.juke.network
 
+import android.util.Base64
 import android.util.Log
-import com.juke.models.LRCLibResult
-import com.juke.models.SpotdownSearchResponse
-import com.juke.models.SpotdownSong
+import com.example.juke.BuildConfig
+import com.example.juke.models.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.utils.io.*
 import kotlinx.coroutines.delay
-import kotlin.math.min
-import kotlin.math.pow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
 
 /**
- * Spotify/Spotdown API Service for song search and download.
+ * Official Spotify Web API Service.
  * 
  * This service handles:
- * 1. Searching for songs on Spotify
- * 2. Checking if songs are cached for faster download
- * 3. Downloading MP3 files from Spotify
+ * 1. OAuth authentication with Client Credentials flow
+ * 2. Searching for songs on Spotify (US market)
+ * 3. Downloading MP3 files from Spotdown (fallback)
  * 4. Fetching lyrics from LRCLib
  */
 object SpotifyApi {
     
     private const val TAG = "SpotifyApi"
+    private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
+    private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
     private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
     private const val LRCLIB_BASE_URL = "https://lrclib.net/api"
     
+    private var accessToken: String? = null
+    private var tokenExpiryTime: Long = 0
+    private val tokenMutex = Mutex()
+    
     /**
-     * Search for songs on Spotify.
+     * Get a valid OAuth access token.
+     * Uses Client Credentials flow with automatic refresh.
+     */
+    private suspend fun getAccessToken(): String {
+        tokenMutex.withLock {
+            // Check if current token is still valid (with 5 minute buffer)
+            if (accessToken != null && System.currentTimeMillis() < tokenExpiryTime - 300000) {
+                return accessToken!!
+            }
+            
+            Log.d(TAG, "Requesting new Spotify OAuth token")
+            
+            val clientId = BuildConfig.SPOTIFY_CLIENT_ID
+            val clientSecret = BuildConfig.SPOTIFY_CLIENT_SECRET
+            
+            if (clientId.isEmpty() || clientSecret.isEmpty()) {
+                throw Exception("Spotify credentials not configured. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to local.properties")
+            }
+            
+            // Encode credentials in Base64
+            val credentials = "$clientId:$clientSecret"
+            val encodedCredentials = Base64.encodeToString(
+                credentials.toByteArray(),
+                Base64.NO_WRAP
+            )
+            
+            try {
+                val response: HttpResponse = ApiClient.httpClient.post(SPOTIFY_ACCOUNTS_URL) {
+                    header("Authorization", "Basic $encodedCredentials")
+                    header("Content-Type", "application/x-www-form-urlencoded")
+                    setBody("grant_type=client_credentials")
+                }
+                
+                val tokenResponse: SpotifyTokenResponse = response.body()
+                
+                accessToken = tokenResponse.accessToken
+                tokenExpiryTime = System.currentTimeMillis() + (tokenResponse.expiresIn * 1000L)
+                
+                Log.d(TAG, "Successfully obtained access token (expires in ${tokenResponse.expiresIn}s)")
+                
+                return accessToken!!
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error obtaining OAuth token: ${e.message}", e)
+                throw Exception("Failed to authenticate with Spotify: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * Search for songs on Spotify using official Web API.
      * 
      * @param query Search query (song name, artist, or both)
-     * @return Search response with list of matching songs
-     * @throws Exception if search fails or returns invalid data
+     * @return List of Spotify tracks with metadata
+     * @throws Exception if search fails
      */
-    suspend fun searchSongs(query: String): SpotdownSearchResponse {
-        Log.d(TAG, "Searching for songs with query: $query")
+    suspend fun searchSongs(query: String): List<SpotifyTrack> {
+        Log.d(TAG, "Searching Spotify for: $query")
         
-        return try {
-            val response = ApiClient.httpClient.get("$SPOTDOWN_BASE_URL/song-details") {
-                parameter("url", query)
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get("$SPOTIFY_API_BASE_URL/search") {
+                header("Authorization", "Bearer $token")
+                parameter("q", query)
+                parameter("type", "track")
+                parameter("market", "NP")
+                parameter("limit", 10)
             }
             
-            val searchResponse: SpotdownSearchResponse = response.body()
-            Log.d(TAG, "Search response received with ${searchResponse.songs.size} songs")
+            val searchResponse: SpotifySearchResponse = response.body()
+            val tracks = searchResponse.tracks.items
             
-            // Validate songs have required fields
-            val validSongs = searchResponse.songs.filter { song ->
-                song.title.isNotEmpty() &&
-                song.artist.isNotEmpty() &&
-                song.url.isNotEmpty() &&
-                song.thumbnail.isNotEmpty() &&
-                song.duration.isNotEmpty() &&
-                song.url.startsWith("https://open.spotify.com/track/")
-            }
+            Log.d(TAG, "Found ${tracks.size} tracks")
             
-            Log.d(TAG, "Valid songs after filtering: ${validSongs.size}")
-            
-            searchResponse.copy(songs = validSongs)
+            return tracks
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error searching songs: ${e.message}", e)
+            Log.e(TAG, "Error searching Spotify: ${e.message}", e)
             throw e
         }
     }
     
     /**
-     * Check if a Spotify song is cached for faster download.
+     * Check if a Spotify song is cached on Spotdown for faster download.
      * 
-     * Cached songs download immediately, uncached take 30-50 seconds.
-     * 
-     * @param spotifyUrl Spotify track URL
+     * @param spotifyUrl Spotify track URL (e.g., https://open.spotify.com/track/...)
      * @return Map with "cached" boolean key
      */
     suspend fun checkDirectDownload(spotifyUrl: String): Map<String, Boolean> {
@@ -86,14 +137,14 @@ object SpotifyApi {
     }
     
     /**
-     * Download an MP3 file from Spotify.
+     * Download an MP3 file from Spotdown using Spotify URL.
      * 
      * This method includes:
      * - Retry logic with exponential backoff (up to 3 retries)
      * - MP3 file validation (checks for ID3 tags or MP3 frame sync)
      * - 2-minute timeout
      * 
-     * @param spotifyUrl Spotify track URL
+     * @param spotifyUrl Spotify track URL (e.g., https://open.spotify.com/track/...)
      * @param retryAttempt Current retry attempt (internal use)
      * @return ByteArray of MP3 file data
      * @throws Exception if download fails after all retries
@@ -192,8 +243,8 @@ object SpotifyApi {
                 }
             }
             
-            // Otherwise return first result
-            results.firstOrNull()
+            // Otherwise return first result, preferring synced lyrics
+            results.sortedByDescending { it.syncedLyrics != null }.firstOrNull()
             
         } catch (e: Exception) {
             Log.e(TAG, "Error searching lyrics: ${e.message}", e)
@@ -202,18 +253,41 @@ object SpotifyApi {
     }
     
     /**
-     * Parse duration string from "MM:SS" format to seconds.
+     * Parse duration from milliseconds to seconds.
      * 
-     * @param durationStr Duration string (e.g., "3:45")
+     * @param durationMs Duration in milliseconds
      * @return Duration in seconds
      */
-    fun parseDuration(durationStr: String): Int {
-        val parts = durationStr.split(":")
-        if (parts.size == 2) {
-            val minutes = parts[0].toIntOrNull() ?: 0
-            val seconds = parts[1].toIntOrNull() ?: 0
-            return minutes * 60 + seconds
-        }
-        return 0
+    fun parseDurationMs(durationMs: Int): Int {
+        return durationMs / 1000
+    }
+    
+    /**
+     * Convert SpotifyTrack to SpotdownSong for compatibility.
+     * 
+     * @param track Spotify track from official API
+     * @return SpotdownSong format
+     */
+    fun spotifyTrackToSong(track: SpotifyTrack): SpotdownSong {
+        val durationMs = track.durationMs
+        val durationSec = durationMs / 1000
+        val minutes = durationSec / 60
+        val seconds = durationSec % 60
+        val durationStr = "%d:%02d".format(minutes, seconds)
+        
+        // Get highest quality thumbnail (first image is 640x640)
+        val thumbnail = track.album.images.firstOrNull()?.url ?: ""
+        
+        // Get artist names
+        val artistNames = track.artists.joinToString(", ") { it.name }
+        
+        return SpotdownSong(
+            title = track.name,
+            artist = artistNames,
+            url = track.externalUrls.spotify,
+            thumbnail = thumbnail,
+            duration = durationStr,
+            cached = false // Will check separately if needed
+        )
     }
 }

@@ -2,6 +2,7 @@ package com.example.juke.ui.screens
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -70,6 +72,7 @@ fun PlayerScreen(
     val uiState by musicViewModel.uiState.collectAsState()
     val currentTrack = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableStateOf(0L) }
     
     // Update position more frequently for synced lyrics (every 100ms)
@@ -196,14 +199,16 @@ fun PlayerScreen(
                         .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Album artwork
+                    // Album artwork with overlay lyrics
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(16.dp)),
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { showLyrics = !showLyrics },
                         contentAlignment = Alignment.Center
                     ) {
+                        // Background image
                         if (currentTrack.thumbnailUri != null) {
                             AsyncImage(
                                 model = currentTrack.thumbnailUri,
@@ -218,6 +223,76 @@ fun PlayerScreen(
                                 modifier = Modifier.size(120.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        
+                        // Lyrics overlay
+                        if (showLyrics && (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null)) {
+                            val syncedLyrics = currentTrack.syncedLyrics
+                            
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.75f))
+                            ) {
+                                if (syncedLyrics != null) {
+                                    // Synced lyrics with auto-scroll
+                                    val lyricLines = remember(syncedLyrics) { parseSyncedLyrics(syncedLyrics) }
+                                    val listState = rememberLazyListState()
+                                    var currentLineIndex by remember { mutableStateOf(0) }
+                                    
+                                    // Update current line based on position and auto-scroll
+                                    LaunchedEffect(currentPosition) {
+                                        val newIndex = lyricLines.indexOfLast { it.timeMs <= currentPosition }
+                                        if (newIndex >= 0 && newIndex != currentLineIndex) {
+                                            currentLineIndex = newIndex
+                                            listState.animateScrollToItem(index = newIndex)
+                                        }
+                                    }
+                                    
+                                    LazyColumn(
+                                        state = listState,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(16.dp),
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        items(lyricLines.size) { index ->
+                                            val line = lyricLines[index]
+                                            val isCurrentLine = index == currentLineIndex
+                                            
+                                            Text(
+                                                text = line.text,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = if (isCurrentLine) Color.White else Color.White.copy(alpha = 0.6f),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 6.dp),
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = if (isCurrentLine)
+                                                    androidx.compose.ui.text.font.FontWeight.Bold
+                                                else
+                                                    androidx.compose.ui.text.font.FontWeight.Normal
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    // Plain lyrics
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(16.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            currentTrack.plainLyrics ?: "",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color.White,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     
@@ -319,104 +394,6 @@ fun PlayerScreen(
                     }
                     
                     Spacer(modifier = Modifier.height(24.dp))
-                    
-                    // Lyrics section with auto-scroll for synced lyrics
-                    if (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null) {
-                        val syncedLyrics = currentTrack.syncedLyrics
-                        
-                        if (syncedLyrics != null) {
-                            // Synced lyrics with auto-scroll
-                            val lyricLines = remember(syncedLyrics) { parseSyncedLyrics(syncedLyrics) }
-                            val listState = rememberLazyListState()
-                            var currentLineIndex by remember { mutableStateOf(0) }
-                            
-                            // Update current line based on position and auto-scroll (align current line to top)
-                            LaunchedEffect(currentPosition) {
-                                val newIndex = lyricLines.indexOfLast { it.timeMs <= currentPosition }
-                                if (newIndex >= 0 && newIndex != currentLineIndex) {
-                                    currentLineIndex = newIndex
-                                    // Auto-scroll to place the current line at the top of the list
-                                    listState.animateScrollToItem(
-                                        index = newIndex
-                                    )
-                                }
-                            }
-                            
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(300.dp)
-                                    .padding(bottom = 16.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        "Lyrics",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.padding(bottom = 8.dp)
-                                    )
-                                    
-                                    LazyColumn(
-                                        state = listState,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        items(lyricLines.size) { index ->
-                                            val line = lyricLines[index]
-                                            val isCurrentLine = index == currentLineIndex
-                                            
-                                            Text(
-                                                text = line.text,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = if (isCurrentLine)
-                                                    MaterialTheme.colorScheme.primary
-                                                else
-                                                    MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 6.dp),
-                                                textAlign = TextAlign.Center,
-                                                fontWeight = if (isCurrentLine)
-                                                    androidx.compose.ui.text.font.FontWeight.Bold
-                                                else
-                                                    androidx.compose.ui.text.font.FontWeight.Normal
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            // Plain lyrics (non-synced)
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp)
-                                ) {
-                                    Text(
-                                        "Lyrics",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.padding(bottom = 8.dp)
-                                    )
-                                    
-                                    Text(
-                                        currentTrack.plainLyrics ?: "",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            "No lyrics available",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 16.dp)
-                        )
-                    }
                 }
             }
         }
