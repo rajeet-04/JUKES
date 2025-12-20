@@ -2,6 +2,7 @@ package com.example.juke.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -11,20 +12,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.juke.ui.components.SearchResultItem
+import com.example.juke.models.SpotifyArtist
+import com.example.juke.models.SpotifyPlaylist
+import com.example.juke.ui.components.ArtistCard
+import com.example.juke.ui.components.PlaylistCard
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
+import com.example.juke.network.SpotifyApi
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     musicViewModel: MusicViewModel,
-    searchViewModel: SearchViewModel = viewModel()
+    searchViewModel: SearchViewModel = viewModel(),
+    onNavigateToArtist: (SpotifyArtist) -> Unit = {},
+    onNavigateToPlaylist: (SpotifyPlaylist) -> Unit = {}
 ) {
     val uiState by searchViewModel.uiState.collectAsState()
-    val scope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     
     Scaffold(
         topBar = {
@@ -43,7 +50,7 @@ fun SearchScreen(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search for songs...") },
+                placeholder = { Text("Search for songs, artists, playlists...") },
                 leadingIcon = { Icon(Icons.Default.Search, "Search") },
                 singleLine = true,
                 trailingIcon = {
@@ -58,7 +65,7 @@ fun SearchScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Button(
-                onClick = { searchViewModel.searchSongs(searchQuery) },
+                onClick = { searchViewModel.search(searchQuery) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !uiState.isSearching && searchQuery.isNotBlank()
             ) {
@@ -76,35 +83,173 @@ fun SearchScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
             
-            if (uiState.results.isEmpty() && !uiState.isSearching && searchQuery.isNotBlank()) {
+            val hasResults = uiState.tracks.isNotEmpty() || 
+                           uiState.artists.isNotEmpty() || 
+                           uiState.playlists.isNotEmpty()
+            
+            if (!hasResults && !uiState.isSearching && searchQuery.isNotBlank()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("No results found")
                 }
-            } else {
+            } else if (hasResults) {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(uiState.results) { song ->
-                        SearchResultItem(
-                            song = song,
-                            isDownloading = uiState.downloadingId == song.url,
-                            onDownload = {
-                                scope.launch {
-                                    searchViewModel.setDownloading(song.url)
-                                    try {
-                                        musicViewModel.downloadAndPlay(song)
-                                    } finally {
+                    // Artists Section
+                    if (uiState.artists.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Artists",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                        }
+                        
+                        item {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(uiState.artists) { artist ->
+                                    ArtistCard(
+                                        artist = artist,
+                                        onClick = { onNavigateToArtist(artist) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Playlists Section
+                    if (uiState.playlists.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Playlists",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                        }
+                        
+                        item {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(uiState.playlists) { playlist ->
+                                    PlaylistCard(
+                                        playlist = playlist,
+                                        onClick = {
+                                            onNavigateToPlaylist(playlist)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Tracks Section
+                    if (uiState.tracks.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Tracks",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                        }
+                        
+                        items(uiState.tracks) { track ->
+                            TrackItem(
+                                track = track,
+                                isDownloading = uiState.downloadingId == track.id,
+                                onClick = {
+                                    scope.launch {
+                                        searchViewModel.setDownloading(track.id)
+                                        musicViewModel.downloadAndPlay(
+                                            SpotifyApi.spotifyTrackToSong(track)
+                                        )
                                         searchViewModel.setDownloading(null)
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun TrackItem(
+    track: com.example.juke.models.SpotifyTrack,
+    isDownloading: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.foundation.layout.Box {
+                coil.compose.AsyncImage(
+                    model = track.album.images.lastOrNull()?.url ?: "",
+                    contentDescription = track.name,
+                    modifier = Modifier.size(60.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+                
+                if (isDownloading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .align(Alignment.Center)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                
+                Text(
+                    text = track.artists.joinToString(", ") { it.name },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                
+                Text(
+                    text = track.album.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+            
+            Text(
+                text = formatDuration(track.durationMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun formatDuration(durationMs: Int): String {
+    val totalSeconds = durationMs / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}
+

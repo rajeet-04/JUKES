@@ -19,12 +19,18 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.juke.ui.components.MiniPlayer
+import com.example.juke.ui.screens.AlbumDetailScreen
+import com.example.juke.ui.screens.ArtistDetailScreen
 import com.example.juke.ui.screens.HomeScreen
 import com.example.juke.ui.screens.LibraryScreen
 import com.example.juke.ui.screens.PlayerScreen
+import com.example.juke.ui.screens.PlaylistDetailScreen
 import com.example.juke.ui.screens.SearchScreen
 import com.example.juke.ui.theme.JUKETheme
+import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
+import com.example.juke.viewmodels.PlaylistDetailViewModel
+import com.example.juke.viewmodels.SearchViewModel
 
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Home : Screen("home", "Home", Icons.Default.Home)
@@ -40,6 +46,9 @@ class MainActivity : ComponentActivity() {
             JUKETheme {
                 val navController = rememberNavController()
                 val musicViewModel: MusicViewModel = viewModel()
+                val searchViewModel: SearchViewModel = viewModel()
+                val playlistDetailViewModel: PlaylistDetailViewModel = viewModel()
+                val albumDetailViewModel: AlbumDetailViewModel = viewModel()
                 var showPlayerModal by remember { mutableStateOf(false) }
                 
                 val items = listOf(
@@ -89,10 +98,54 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(musicViewModel = musicViewModel)
                         }
                         composable(Screen.Search.route) {
-                            SearchScreen(musicViewModel = musicViewModel)
+                            SearchScreen(
+                                musicViewModel = musicViewModel,
+                                onNavigateToArtist = { artist ->
+                                    searchViewModel.loadArtistDetails(artist)
+                                    navController.navigate("artist/${artist.id}")
+                                },
+                                onNavigateToPlaylist = { playlist ->
+                                    playlistDetailViewModel.loadPlaylistDetails(playlist)
+                                    navController.navigate("playlist/${playlist.id}")
+                                }
+                            )
                         }
                         composable(Screen.Library.route) {
                             LibraryScreen(musicViewModel = musicViewModel)
+                        }
+                        composable("artist/{artistId}") {
+                            ArtistDetailScreen(
+                                searchViewModel = searchViewModel,
+                                musicViewModel = musicViewModel,
+                                onNavigateBack = {
+                                    searchViewModel.clearArtistDetail()
+                                    navController.popBackStack()
+                                },
+                                onNavigateToAlbum = { album ->
+                                    albumDetailViewModel.loadAlbumDetails(album)
+                                    navController.navigate("album/${album.id}")
+                                }
+                            )
+                        }
+                        composable("playlist/{playlistId}") {
+                            PlaylistDetailScreen(
+                                playlistDetailViewModel = playlistDetailViewModel,
+                                musicViewModel = musicViewModel,
+                                onNavigateBack = {
+                                    playlistDetailViewModel.clearPlaylistDetail()
+                                    navController.popBackStack()
+                                }
+                            )
+                        }
+                        composable("album/{albumId}") {
+                            AlbumDetailScreen(
+                                albumDetailViewModel = albumDetailViewModel,
+                                musicViewModel = musicViewModel,
+                                onNavigateBack = {
+                                    albumDetailViewModel.clearAlbumDetail()
+                                    navController.popBackStack()
+                                }
+                            )
                         }
                     }
                 }

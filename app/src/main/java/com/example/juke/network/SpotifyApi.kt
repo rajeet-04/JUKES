@@ -109,13 +109,221 @@ object SpotifyApi {
     }
     
     /**
+     * Search Spotify for tracks, artists, and playlists.
+     * 
+     * @param query Search query
+     * @param types Types to search (track, artist, playlist)
+     * @param market Market code (default NP for Nepal)
+     * @return SpotifySearchResponse with all requested types
+     */
+    suspend fun search(
+        query: String,
+        types: List<String> = listOf("track", "artist", "playlist"),
+        market: String = "NP"
+    ): SpotifySearchResponse {
+        Log.d(TAG, "Searching Spotify for: $query (types: ${types.joinToString(",")})")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get("$SPOTIFY_API_BASE_URL/search") {
+                header("Authorization", "Bearer $token")
+                parameter("q", query)
+                parameter("type", types.joinToString(","))
+                parameter("market", market)
+                parameter("limit", 10)
+            }
+            
+            val searchResponse: SpotifySearchResponse = response.body()
+            
+            Log.d(TAG, "Found ${searchResponse.tracks?.items?.size ?: 0} tracks, " +
+                      "${searchResponse.artists?.items?.size ?: 0} artists, " +
+                      "${searchResponse.playlists?.items?.filterNotNull()?.size ?: 0} playlists")
+            
+            return searchResponse
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error searching Spotify: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Search for songs only (legacy method for backward compatibility).
+     */
+    suspend fun searchSongs(query: String): List<SpotifyTrack> {
+        val response = search(query, listOf("track"))
+        return response.tracks?.items ?: emptyList()
+    }
+    
+    /**
+     * Get artist's albums.
+     * 
+     * @param artistId Spotify artist ID
+     * @param market Market code
+     * @param limit Number of albums to fetch
+     */
+    suspend fun getArtistAlbums(
+        artistId: String,
+        market: String = "NP",
+        limit: Int = 50
+    ): SpotifyAlbumsResponse {
+        Log.d(TAG, "Fetching albums for artist: $artistId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/artists/$artistId/albums"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+                parameter("limit", limit)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching artist albums: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Get artist's top tracks.
+     * 
+     * @param artistId Spotify artist ID
+     * @param market Market code
+     */
+    suspend fun getArtistTopTracks(
+        artistId: String,
+        market: String = "NP"
+    ): SpotifyTopTracksResponse {
+        Log.d(TAG, "Fetching top tracks for artist: $artistId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/artists/$artistId/top-tracks"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching artist top tracks: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Get album details.
+     * 
+     * @param albumId Spotify album ID
+     * @param market Market code
+     */
+    suspend fun getAlbum(
+        albumId: String,
+        market: String = "NP"
+    ): SpotifyAlbum {
+        Log.d(TAG, "Fetching album: $albumId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/albums/$albumId"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching album: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Get album tracks.
+     * 
+     * @param albumId Spotify album ID
+     * @param market Market code
+     * @param limit Number of tracks to fetch
+     */
+    suspend fun getAlbumTracks(
+        albumId: String,
+        market: String = "NP",
+        limit: Int = 50
+    ): SpotifyAlbumTracksResponse {
+        Log.d(TAG, "Fetching album tracks: $albumId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/albums/$albumId/tracks"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+                parameter("limit", limit)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching album tracks: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Get playlist tracks.
+     * 
+     * @param playlistId Spotify playlist ID
+     * @param market Market code
+     * @param limit Number of tracks to fetch
+     */
+    suspend fun getPlaylistTracks(
+        playlistId: String,
+        market: String = "NP",
+        limit: Int = 50
+    ): SpotifyPlaylistTracksResponse {
+        Log.d(TAG, "Fetching playlist tracks: $playlistId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/playlists/$playlistId/tracks"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+                parameter("limit", limit)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching playlist tracks: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
      * Search for songs on Spotify using official Web API.
      * 
      * @param query Search query (song name, artist, or both)
      * @return List of Spotify tracks with metadata
      * @throws Exception if search fails
      */
-    suspend fun searchSongs(query: String): List<SpotifyTrack> {
+    @Deprecated("Use search() instead", ReplaceWith("search(query, listOf(\"track\")).tracks?.items ?: emptyList()"))
+    suspend fun searchSongsOld(query: String): List<SpotifyTrack> {
         Log.d(TAG, "Searching Spotify for: $query")
         
         try {
@@ -125,13 +333,12 @@ object SpotifyApi {
                 header("Authorization", "Bearer $token")
                 parameter("q", query)
                 parameter("type", "track")
-                parameter("market", "US")
+                parameter("market", "NP")
                 parameter("limit", 20)
-                parameter("include_external", "audio")
             }
             
             val searchResponse: SpotifySearchResponse = response.body()
-            val tracks = searchResponse.tracks.items
+            val tracks = searchResponse.tracks?.items ?: emptyList()
             
             Log.d(TAG, "Found ${tracks.size} tracks")
             
@@ -329,6 +536,36 @@ object SpotifyApi {
             thumbnail = thumbnail,
             duration = durationStr,
             cached = false // Will check separately if needed
+        )
+    }
+    
+    /**
+     * Convert SpotifySimplifiedTrack to SpotdownSong for album tracks.
+     * 
+     * @param track Simplified Spotify track from album/playlist endpoints
+     * @param album Album information for thumbnail and URL context
+     * @return SpotdownSong format
+     */
+    fun simplifiedTrackToSong(track: com.example.juke.models.SpotifySimplifiedTrack, album: com.example.juke.models.SpotifyAlbum): SpotdownSong {
+        val durationMs = track.durationMs
+        val durationSec = durationMs / 1000
+        val minutes = durationSec / 60
+        val seconds = durationSec % 60
+        val durationStr = "%d:%02d".format(minutes, seconds)
+        
+        // Use album thumbnail
+        val thumbnail = album.images.firstOrNull()?.url ?: ""
+        
+        // Get artist names
+        val artistNames = track.artists.joinToString(", ") { it.name }
+        
+        return SpotdownSong(
+            title = track.name,
+            artist = artistNames,
+            url = track.externalUrls.spotify,
+            thumbnail = thumbnail,
+            duration = durationStr,
+            cached = false
         )
     }
 }
