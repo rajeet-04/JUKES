@@ -135,7 +135,7 @@ fun ArtistDetailScreen(
                     }
                 }
                 
-                // Albums Section
+                // Albums Section (2x2 grid)
                 if (uiState.albums.isNotEmpty()) {
                     item {
                         Text(
@@ -143,14 +143,28 @@ fun ArtistDetailScreen(
                             style = MaterialTheme.typography.titleLarge
                         )
                     }
-                    
-                    items(uiState.albums) { album ->
-                        AlbumItem(
-                            album = album,
-                            onClick = {
-                                onNavigateToAlbum(album)
+
+                    val albumRows = uiState.albums.chunked(2)
+                    items(albumRows) { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            for (album in row) {
+                                Box(modifier = Modifier
+                                    .weight(1f)
+                                ) {
+                                    AlbumItem(
+                                        album = album,
+                                        onClick = { onNavigateToAlbum(album) }
+                                    )
+                                }
                             }
-                        )
+
+                            if (row.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
             }
@@ -221,39 +235,40 @@ private fun AlbumItem(
             .padding(vertical = 4.dp),
         onClick = onClick
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
                 model = album.images.lastOrNull()?.url ?: "",
                 contentDescription = album.name,
-                modifier = Modifier.size(60.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(3f / 4f),
                 contentScale = ContentScale.Crop
             )
-            
-            Spacer(modifier = Modifier.width(12.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
                 Text(
                     text = album.name,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Text(
-                    text = "${album.albumType.replaceFirstChar { it.uppercase() }} • ${album.releaseDate.take(4)}",
+                    text = "${album.albumType.replaceFirstChar { it.uppercase() }} • ${album.releaseDate.take(4)} • ${album.totalTracks} tracks",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Text(
-                    text = "${album.totalTracks} tracks",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

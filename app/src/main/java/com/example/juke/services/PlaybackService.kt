@@ -133,6 +133,8 @@ class PlaybackManager(private val context: Context) {
     
     private val TAG = "PlaybackManager"
     private var player: ExoPlayer? = null
+    private val database: com.example.juke.database.MusicDatabase = com.example.juke.database.MusicDatabase.getDatabase(context)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     fun initialize() {
         if (player == null) {
@@ -178,6 +180,20 @@ class PlaybackManager(private val context: Context) {
         }
         
         Log.d(TAG, "Playing track: ${track.title}")
+        // Update play count in DB (ensure there's a record first)
+        scope.launch {
+            try {
+                val now = SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                    Locale.US
+                ).format(Date())
+
+                // Attempt to increment play count for this track uuid
+                database.trackDao().incrementPlayCount(track.uuid, now)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error incrementing play count: ${e.message}", e)
+            }
+        }
     }
     
     fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
@@ -206,6 +222,20 @@ class PlaybackManager(private val context: Context) {
         }
         
         Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex")
+        // Increment play count for the starting track
+        tracks.getOrNull(startIndex)?.let { startTrack ->
+            scope.launch {
+                try {
+                    val now = SimpleDateFormat(
+                        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                        Locale.US
+                    ).format(Date())
+                    database.trackDao().incrementPlayCount(startTrack.uuid, now)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error incrementing play count for queue start: ${e.message}", e)
+                }
+            }
+        }
     }
     
     fun addToQueue(track: Track) {
