@@ -1,6 +1,7 @@
 package com.example.juke.services
 
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -10,13 +11,20 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionToken
 import com.example.juke.database.MusicDatabase
 import com.example.juke.models.Track
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -128,28 +136,50 @@ class PlaybackService : MediaSessionService() {
 
 /**
  * Playback Manager for controlling media playback.
+ * This connects to PlaybackService via MediaController to enable notification controls.
  */
 class PlaybackManager(private val context: Context) {
     
     private val TAG = "PlaybackManager"
-    private var player: ExoPlayer? = null
-    private val database: com.example.juke.database.MusicDatabase = com.example.juke.database.MusicDatabase.getDatabase(context)
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var controller: MediaController? = null
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
+    private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     fun initialize() {
-        if (player == null) {
-            player = ExoPlayer.Builder(context)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .setUsage(C.USAGE_MEDIA)
-                        .build(),
-                    true
-                )
-                .setHandleAudioBecomingNoisy(true)
-                .build()
+        if (controllerFuture == null) {
+            val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+            controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+            controllerFuture?.addListener(
+                {
+                            controller = controllerFuture?.get()
+                            Log.d(TAG, "MediaController connected to PlaybackService")
+                            // Start a small polling loop to observe controller.isPlaying and update the flow.
+                            // This ensures external changes (notification, connected devices) are reflected in UI.
+                            scope.launch {
+                                var last = false
+                                while (controller != null) {
+                                    try {
+                                        val playing = controller?.isPlaying == true
+                                        if (playing != last) {
+                                            _isPlaying.value = playing
+                                            Log.d(TAG, "Polled controller isPlaying: $playing")
+                                            last = playing
+                                        }
+                                        kotlinx.coroutines.delay(300)
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Polling loop error: ${e.message}")
+                                        break
+                                    }
+                                }
+                            }
+                },
+                MoreExecutors.directExecutor()
+            )
             
-            Log.d(TAG, "Player initialized")
+            Log.d(TAG, "PlaybackManager initialized")
         }
     }
     
@@ -173,22 +203,20 @@ class PlaybackManager(private val context: Context) {
             )
             .build()
         
-        player?.apply {
+        controller?.apply {
             setMediaItem(mediaItem)
             prepare()
             play()
         }
         
         Log.d(TAG, "Playing track: ${track.title}")
-        // Update play count in DB (ensure there's a record first)
+        // Update play count in DB
         scope.launch {
             try {
                 val now = SimpleDateFormat(
                     "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
                     Locale.US
                 ).format(Date())
-
-                // Attempt to increment play count for this track uuid
                 database.trackDao().incrementPlayCount(track.uuid, now)
             } catch (e: Exception) {
                 Log.e(TAG, "Error incrementing play count: ${e.message}", e)
@@ -215,7 +243,7 @@ class PlaybackManager(private val context: Context) {
             }
         }
         
-        player?.apply {
+        controller?.apply {
             setMediaItems(mediaItems, startIndex, 0)
             prepare()
             play()
@@ -255,13 +283,13 @@ class PlaybackManager(private val context: Context) {
             )
             .build()
         
-        player?.addMediaItem(mediaItem)
+        controller?.addMediaItem(mediaItem)
         
         Log.d(TAG, "Added to queue: ${track.title}")
     }
     
     fun togglePlayPause() {
-        player?.let {
+        controller?.let {
             if (it.isPlaying) {
                 it.pause()
                 Log.d(TAG, "Paused")
@@ -273,17 +301,17 @@ class PlaybackManager(private val context: Context) {
     }
     
     fun pause() {
-        player?.pause()
+        controller?.pause()
         Log.d(TAG, "Paused")
     }
     
     fun play() {
-        player?.play()
+        controller?.play()
         Log.d(TAG, "Playing")
     }
     
     fun stop() {
-        player?.apply {
+        controller?.apply {
             stop()
             clearMediaItems()
         }
@@ -291,12 +319,12 @@ class PlaybackManager(private val context: Context) {
     }
     
     fun skipToNext() {
-        player?.seekToNext()
+        controller?.seekToNext()
         Log.d(TAG, "Skip to next")
     }
     
     fun skipToPrevious() {
-        player?.let {
+        controller?.let {
             if (it.currentPosition > 3000) {
                 it.seekTo(0)
             } else {
@@ -307,25 +335,26 @@ class PlaybackManager(private val context: Context) {
     }
     
     fun seekTo(positionMs: Long) {
-        player?.seekTo(positionMs)
+        controller?.seekTo(positionMs)
         Log.d(TAG, "Seeked to $positionMs ms")
     }
     
     fun getCurrentPosition(): Long {
-        return player?.currentPosition ?: 0L
+        return controller?.currentPosition ?: 0L
     }
     
     fun getDuration(): Long {
-        return player?.duration ?: 0L
+        return controller?.duration ?: 0L
     }
     
     fun isPlaying(): Boolean {
-        return player?.isPlaying ?: false
+        return controller?.isPlaying ?: false
     }
     
     fun release() {
-        player?.release()
-        player = null
-        Log.d(TAG, "Player released")
+        MediaController.releaseFuture(controllerFuture ?: return)
+        controller = null
+        controllerFuture = null
+        Log.d(TAG, "PlaybackManager released")
     }
 }

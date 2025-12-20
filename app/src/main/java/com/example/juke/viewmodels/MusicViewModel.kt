@@ -60,6 +60,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     init {
         playbackManager.initialize()
+        // Observe playback state changes coming from the MediaController (notifications/external)
+        viewModelScope.launch {
+            playbackManager.isPlayingFlow.collect { playing ->
+                _uiState.update { it.copy(isPlaying = playing) }
+            }
+        }
     }
     
     fun playTrack(track: Track) {
