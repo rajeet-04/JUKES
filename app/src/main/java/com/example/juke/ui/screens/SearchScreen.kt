@@ -98,79 +98,79 @@ fun SearchScreen(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Artists Section
-                    if (uiState.artists.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "Artists",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                        }
-                        
-                        item {
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.artists) { artist ->
-                                    ArtistCard(
-                                        artist = artist,
-                                        onClick = { onNavigateToArtist(artist) }
-                                    )
-                                }
+                        // Tracks Section
+                        if (uiState.tracks.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Tracks",
+                                    style = MaterialTheme.typography.titleLarge
+                                )
                             }
-                        }
-                    }
-                    
-                    // Playlists Section
-                    if (uiState.playlists.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "Playlists",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                        }
-                        
-                        item {
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.playlists) { playlist ->
-                                    PlaylistCard(
-                                        playlist = playlist,
-                                        onClick = {
-                                            onNavigateToPlaylist(playlist)
+
+                            items(uiState.tracks) { track ->
+                                TrackItem(
+                                    track = track,
+                                    isDownloading = uiState.downloadingId == track.id,
+                                    onClick = {
+                                        scope.launch {
+                                            searchViewModel.setDownloading(track.id)
+                                            musicViewModel.downloadAndPlay(
+                                                SpotifyApi.spotifyTrackToSong(track)
+                                            )
+                                            searchViewModel.setDownloading(null)
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             }
                         }
-                    }
-                    
-                    // Tracks Section
-                    if (uiState.tracks.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "Tracks",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                        }
-                        
-                        items(uiState.tracks) { track ->
-                            TrackItem(
-                                track = track,
-                                isDownloading = uiState.downloadingId == track.id,
-                                onClick = {
-                                    scope.launch {
-                                        searchViewModel.setDownloading(track.id)
-                                        musicViewModel.downloadAndPlay(
-                                            SpotifyApi.spotifyTrackToSong(track)
+
+                        // Artists Section
+                        if (uiState.artists.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Artists",
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                            }
+
+                            item {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(uiState.artists) { artist ->
+                                        ArtistCard(
+                                            artist = artist,
+                                            onClick = { onNavigateToArtist(artist) }
                                         )
-                                        searchViewModel.setDownloading(null)
                                     }
                                 }
-                            )
+                            }
                         }
-                    }
+
+                        // Playlists Section
+                        if (uiState.playlists.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Playlists",
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                            }
+
+                            item {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(uiState.playlists) { playlist ->
+                                        PlaylistCard(
+                                            playlist = playlist,
+                                            onClick = {
+                                                onNavigateToPlaylist(playlist)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                 }
             }
         }

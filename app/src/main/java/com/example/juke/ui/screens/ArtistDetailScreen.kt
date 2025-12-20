@@ -19,6 +19,7 @@ import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyTrack
+import com.example.juke.models.SpotifyImage
 import com.example.juke.viewmodels.SearchViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.launch
@@ -42,6 +43,7 @@ fun ArtistDetailScreen(
     }
     
     val artist = uiState.artist!!
+
     
     Scaffold(
         topBar = {
@@ -79,7 +81,7 @@ fun ArtistDetailScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         AsyncImage(
-                            model = artist.images.firstOrNull()?.url ?: "",
+                            model = bestImageUrl(artist.images) ?: artist.images.firstOrNull()?.url ?: "",
                             contentDescription = artist.name,
                             modifier = Modifier
                                 .size(200.dp)
@@ -190,7 +192,7 @@ private fun TrackItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
-                model = track.album.images.lastOrNull()?.url ?: "",
+                model = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url ?: "",
                 contentDescription = track.name,
                 modifier = Modifier.size(50.dp),
                 contentScale = ContentScale.Crop
@@ -240,11 +242,11 @@ private fun AlbumItem(
                 .fillMaxWidth()
         ) {
             AsyncImage(
-                model = album.images.lastOrNull()?.url ?: "",
+                model = bestImageUrl(album.images) ?: album.images.lastOrNull()?.url ?: "",
                 contentDescription = album.name,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(3f / 4f),
+                    .aspectRatio(1f),
                 contentScale = ContentScale.Crop
             )
 
@@ -288,4 +290,11 @@ private fun formatDuration(durationMs: Int): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+// Helper to pick best available image (prefer 640x640)
+private fun bestImageUrl(images: List<SpotifyImage>?): String? {
+    if (images.isNullOrEmpty()) return null
+    images.find { (it.height == 640 || it.width == 640) }?.let { return it.url }
+    return images.maxByOrNull { (it.height ?: 0) * (it.width ?: 0) }?.url
 }
