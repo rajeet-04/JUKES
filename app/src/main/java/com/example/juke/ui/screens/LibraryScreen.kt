@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.juke.ui.components.DownloadingTrackItem
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
@@ -24,6 +25,7 @@ fun LibraryScreen(
     libraryViewModel: LibraryViewModel = viewModel()
 ) {
     val uiState by libraryViewModel.uiState.collectAsState()
+    val musicUiState by musicViewModel.uiState.collectAsState()
     
     LaunchedEffect(Unit) {
         libraryViewModel.loadTracks()
@@ -103,6 +105,35 @@ fun LibraryScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Show current download
+                    musicUiState.currentDownload?.let { download ->
+                        item(key = "current_${download.id}") {
+                            DownloadingTrackItem(
+                                downloadItem = download,
+                                onRetry = {
+                                    musicViewModel.retryFailedDownload(download)
+                                }
+                            )
+                        }
+                    }
+                    
+                    // Show download queue
+                    items(
+                        items = musicUiState.downloadQueue,
+                        key = { it.id }
+                    ) { download ->
+                        DownloadingTrackItem(
+                            downloadItem = download,
+                            onCancel = {
+                                musicViewModel.cancelDownload(download.id)
+                            },
+                            onRetry = {
+                                musicViewModel.retryFailedDownload(download)
+                            }
+                        )
+                    }
+                    
+                    // Show downloaded tracks
                     items(uiState.tracks) { track ->
                         LibraryTrackItem(
                             track = track,

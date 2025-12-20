@@ -1,6 +1,7 @@
 package com.example.juke.viewmodels
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.database.MusicDatabase
@@ -15,6 +16,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
+
+enum class DownloadStatus {
+    QUEUED,
+    DOWNLOADING,
+    COMPLETED,
+    FAILED
+}
+
+data class DownloadItem(
+    val id: String = UUID.randomUUID().toString(),
+    val song: SpotdownSong,
+    val status: DownloadStatus = DownloadStatus.QUEUED,
+    val error: String? = null,
+    val shouldPlayAfterDownload: Boolean = false
+)
 
 data class MusicUiState(
     val currentTrack: Track? = null,
@@ -24,7 +41,9 @@ data class MusicUiState(
     val position: Long = 0,
     val duration: Long = 0,
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val downloadQueue: List<DownloadItem> = emptyList(),
+    val currentDownload: DownloadItem? = null
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -36,6 +55,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
+    
+    private var isProcessingQueue = false
     
     init {
         playbackManager.initialize()
@@ -112,26 +133,143 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     suspend fun downloadAndPlay(song: SpotdownSong) {
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        try {
-            val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+        // Check if already exists
+        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+        
+        if (existingTrack != null && existingTrack.localUri != null) {
+            // Already downloaded, play immediately
+            playTrack(existingTrack.toTrack())
+        } else {
+            // Add to queue with play flag
+            addToDownloadQueue(song, shouldPlayAfterDownload = true)
+        }
+    }
+    
+    fun addToDownloadQueue(song: SpotdownSong, shouldPlayAfterDownload: Boolean = false) {
+        viewModelScope.launch {
+            // Check if already in queue or downloading
+            val currentState = _uiState.value
+            val alreadyQueued = currentState.downloadQueue.any { 
+                it.song.title == song.title && it.song.artist == song.artist 
+            }
+            val currentlyDownloading = currentState.currentDownload?.let {
+                it.song.title == song.title && it.song.artist == song.artist
+            } ?: false
             
-            val track = if (existingTrack != null && existingTrack.localUri != null) {
-                existingTrack.toTrack()
-            } else {
-                musicService.smartDownloadAndIndex(song)
+            if (alreadyQueued || currentlyDownloading) {
+                Log.d("MusicViewModel", "Song already in queue or downloading: ${song.title}")
+                return@launch
             }
             
-            playTrack(track)
-            _uiState.update { it.copy(isLoading = false) }
-        } catch (e: Exception) {
-            _uiState.update { 
-                it.copy(
-                    isLoading = false,
-                    error = e.message ?: "Download failed"
+            // Check if already exists in database
+            val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+            if (existingTrack != null && existingTrack.localUri != null) {
+                Log.d("MusicViewModel", "Song already downloaded: ${song.title}")
+                if (shouldPlayAfterDownload) {
+                    playTrack(existingTrack.toTrack())
+                }
+                return@launch
+            }
+            
+            val downloadItem = DownloadItem(
+                song = song,
+                status = DownloadStatus.QUEUED,
+                shouldPlayAfterDownload = shouldPlayAfterDownload
+            )
+            
+            _uiState.update { state ->
+                state.copy(
+                    downloadQueue = state.downloadQueue + downloadItem
                 )
             }
+            
+            Log.d("MusicViewModel", "Added to queue: ${song.title} (Queue size: ${_uiState.value.downloadQueue.size})")
+            
+            processDownloadQueue()
         }
+    }
+    
+    private fun processDownloadQueue() {
+        if (isProcessingQueue) {
+            Log.d("MusicViewModel", "Already processing queue")
+            return
+        }
+        
+        viewModelScope.launch {
+            isProcessingQueue = true
+            
+            while (_uiState.value.downloadQueue.isNotEmpty()) {
+                val nextItem = _uiState.value.downloadQueue.first()
+                
+                // Move from queue to current download
+                _uiState.update { state ->
+                    state.copy(
+                        downloadQueue = state.downloadQueue.drop(1),
+                        currentDownload = nextItem.copy(status = DownloadStatus.DOWNLOADING)
+                    )
+                }
+                
+                Log.d("MusicViewModel", "Starting download: ${nextItem.song.title}")
+                
+                try {
+                    val track = musicService.smartDownloadAndIndex(nextItem.song)
+                    
+                    // Download successful
+                    _uiState.update { state ->
+                        state.copy(
+                            currentDownload = nextItem.copy(status = DownloadStatus.COMPLETED)
+                        )
+                    }
+                    
+                    Log.d("MusicViewModel", "Download completed: ${nextItem.song.title}")
+                    
+                    // Play if requested
+                    if (nextItem.shouldPlayAfterDownload) {
+                        playTrack(track)
+                    }
+                    
+                    // Clear current download after a brief delay
+                    kotlinx.coroutines.delay(1000)
+                    _uiState.update { state ->
+                        state.copy(currentDownload = null)
+                    }
+                    
+                } catch (e: Exception) {
+                    Log.e("MusicViewModel", "Download failed: ${nextItem.song.title} - ${e.message}")
+                    
+                    // Mark as failed
+                    _uiState.update { state ->
+                        state.copy(
+                            currentDownload = nextItem.copy(
+                                status = DownloadStatus.FAILED,
+                                error = e.message
+                            )
+                        )
+                    }
+                    
+                    // Clear failed download after delay
+                    kotlinx.coroutines.delay(3000)
+                    _uiState.update { state ->
+                        state.copy(currentDownload = null)
+                    }
+                }
+            }
+            
+            isProcessingQueue = false
+            Log.d("MusicViewModel", "Queue processing completed")
+        }
+    }
+    
+    fun cancelDownload(downloadId: String) {
+        _uiState.update { state ->
+            state.copy(
+                downloadQueue = state.downloadQueue.filter { it.id != downloadId }
+            )
+        }
+    }
+    
+    fun retryFailedDownload(downloadItem: DownloadItem) {
+        addToDownloadQueue(downloadItem.song, downloadItem.shouldPlayAfterDownload)
     }
     
     override fun onCleared() {
