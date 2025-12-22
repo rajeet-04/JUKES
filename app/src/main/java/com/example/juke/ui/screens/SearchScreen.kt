@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.juke.models.SpotifyArtist
@@ -53,6 +54,16 @@ fun SearchScreen(
                 placeholder = { Text("Search for songs, artists, playlists...") },
                 leadingIcon = { Icon(Icons.Default.Search, "Search") },
                 singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = ImeAction.Search
+                ),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onSearch = {
+                        if (searchQuery.isNotBlank() && !uiState.isSearching) {
+                            searchViewModel.search(searchQuery)
+                        }
+                    }
+                ),
                 trailingIcon = {
                     if (uiState.isSearching) {
                         CircularProgressIndicator(

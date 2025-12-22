@@ -121,42 +121,74 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            if (showQueue) {
-            QueueView(
+            if (isTablet && isLandscape) {
+                TabletLandscapePlayer(
+                    currentTrack = currentTrack,
+                    uiState = uiState,
+                    currentPosition = uiState.position,
+                    showLyrics = showLyrics,
+                    onToggleLyrics = { showLyrics = !showLyrics },
+                    onDismiss = onDismiss,
+                    onShowQueue = { showQueue = true },
+                    musicViewModel = musicViewModel
+                )
+            } else {
+                PortraitPlayer(
+                    currentTrack = currentTrack,
+                    uiState = uiState,
+                    currentPosition = uiState.position,
+                    showLyrics = showLyrics,
+                    onToggleLyrics = { showLyrics = !showLyrics },
+                    onDismiss = onDismiss,
+                    onShowQueue = { showQueue = true },
+                    musicViewModel = musicViewModel,
+                    isTablet = isTablet
+                )
+            }
+        }
+    }
+    
+    // Queue Bottom Sheet - 70% height overlay
+    if (showQueue) {
+        ModalBottomSheet(
+            onDismissRequest = { showQueue = false },
+            sheetState = rememberModalBottomSheetState(
+                skipPartiallyExpanded = false
+            ),
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxHeight(0.7f), // 70% of screen height
+            dragHandle = {
+                // Custom drag handle
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(32.dp)
+                            .height(4.dp)
+                            .background(
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                RoundedCornerShape(2.dp)
+                            )
+                    )
+                }
+            }
+        ) {
+            QueueBottomSheetContent(
                 currentTrack = currentTrack,
                 queue = uiState.queue,
                 onClose = { showQueue = false }
             )
-        } else if (isTablet && isLandscape) {
-            TabletLandscapePlayer(
-                currentTrack = currentTrack,
-                uiState = uiState,
-                currentPosition = uiState.position,
-                showLyrics = showLyrics,
-                onToggleLyrics = { showLyrics = !showLyrics },
-                onDismiss = onDismiss,
-                onShowQueue = { showQueue = true },
-                musicViewModel = musicViewModel
-            )
-        } else {
-            PortraitPlayer(
-                currentTrack = currentTrack,
-                uiState = uiState,
-                currentPosition = uiState.position,
-                showLyrics = showLyrics,
-                onToggleLyrics = { showLyrics = !showLyrics },
-                onDismiss = onDismiss,
-                onShowQueue = { showQueue = true },
-                musicViewModel = musicViewModel,
-                isTablet = isTablet
-            )
-        }
         }
     }
 }
 
 @Composable
-private fun QueueView(
+private fun QueueBottomSheetContent(
     currentTrack: com.example.juke.models.Track,
     queue: List<com.example.juke.models.Track>,
     onClose: () -> Unit
@@ -164,36 +196,37 @@ private fun QueueView(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp)
     ) {
+        // Header with close button and title
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-            }
             Text(
-                "Queue",
-                style = MaterialTheme.typography.headlineSmall
+                "Up Next",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.width(48.dp))
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Queue list
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize()
         ) {
-            items(queue) { track ->
+            // Current track indicator
+            item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (track.uuid == currentTrack.uuid) 
-                            MaterialTheme.colorScheme.primaryContainer 
-                        else 
-                            MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
                 ) {
                     Row(
@@ -202,15 +235,35 @@ private fun QueueView(
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Playing indicator
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.primary,
+                                    RoundedCornerShape(12.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
+                                contentDescription = "Now Playing",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(RoundedCornerShape(4.dp)),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (track.thumbnailUri != null) {
+                            if (currentTrack.thumbnailUri != null) {
                                 AsyncImage(
-                                    model = track.thumbnailUri,
+                                    model = currentTrack.thumbnailUri,
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -218,28 +271,116 @@ private fun QueueView(
                             } else {
                                 Icon(
                                     imageVector = Icons.Filled.PlayArrow,
-                                    contentDescription = null
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        
+
                         Spacer(modifier = Modifier.width(12.dp))
-                        
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                track.title,
+                                "Now Playing",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                currentTrack.title,
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                track.artist,
+                                currentTrack.artist,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                }
+            }
+
+            // Upcoming tracks
+            if (queue.isNotEmpty()) {
+                item {
+                    Text(
+                        "Up Next",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+
+                items(queue) { track ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (track.thumbnailUri != null) {
+                                    AsyncImage(
+                                        model = track.thumbnailUri,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    track.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    track.artist,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "No tracks in queue",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

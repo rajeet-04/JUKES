@@ -150,19 +150,27 @@ object RecommenderApi {
     
     /**
      * Calculate duration similarity (returns 1.0 for exact match, 0.0 for large difference).
+     * More strict than before to ensure high confidence in duration matching.
      */
     private fun durationSimilarity(youtubeDuration: Int?, spotifyDuration: Int?): Double {
-        if (youtubeDuration == null || spotifyDuration == null) return 0.5 // Neutral if missing
+        if (youtubeDuration == null || spotifyDuration == null) return 0.3 // Lower neutral score
         
         val diff = abs(youtubeDuration - spotifyDuration)
+        val maxDuration = maxOf(youtubeDuration, spotifyDuration)
         
-        // Allow up to 30 seconds difference for perfect match
+        // Calculate similarity as percentage difference
+        val similarity = 1.0 - (diff.toDouble() / maxDuration.toDouble())
+        
+        // Apply stricter thresholds
         return when {
-            diff <= 30 -> 1.0
-            diff <= 60 -> 0.8
-            diff <= 120 -> 0.6
-            diff <= 300 -> 0.3
-            else -> 0.0
+            diff <= 15 -> 1.0    // Within 15 seconds = perfect match
+            diff <= 30 -> 0.9    // Within 30 seconds = excellent match
+            diff <= 45 -> 0.8    // Within 45 seconds = very good match
+            diff <= 60 -> 0.7    // Within 1 minute = good match
+            diff <= 90 -> 0.6    // Within 1.5 minutes = reasonable match
+            diff <= 120 -> 0.4   // Within 2 minutes = marginal match
+            diff <= 180 -> 0.2   // Within 3 minutes = poor match
+            else -> 0.0          // Too different
         }
     }
     
@@ -481,8 +489,10 @@ object RecommenderApi {
                 // Try multiple Spotify results for better matching
                 var bestMatch: SpotifyTrack? = null
                 var bestConfidence = 0.0
+                var bestTitleSimilarity = 0.0
+                var bestDurationSimilarity = 0.0
                 
-                for (spotifyTrack in spotifyResults.take(3)) { // Check top 3 results
+                for (spotifyTrack in spotifyResults.take(5)) { // Check top 5 results for better matching
                     // Calculate match confidence with multiple factors
                     val titleSimilarity = similarity(rec.title, spotifyTrack.name)
                     val artistSimilarity = similarity(rec.artist, spotifyTrack.artists.joinToString(", ") { it.name })
@@ -492,20 +502,43 @@ object RecommenderApi {
                     val spotifyDurationSec = spotifyTrack.durationMs / 1000
                     val durationSimilarity = durationSimilarity(youtubeDurationSec, spotifyDurationSec)
                     
-                    // Weighted confidence calculation
+                    // Calculate text confidence (title + artist)
                     val textConfidence = (titleSimilarity + artistSimilarity) / 2.0
-                    val overallConfidence = (textConfidence * 0.7) + (durationSimilarity * 0.3)
                     
-                    Log.d(TAG, "Comparing '${rec.title}' (${rec.duration}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs/1000}s)")
-                    Log.d(TAG, "  Text similarity: ${(textConfidence * 100).toInt()}%, Duration similarity: ${(durationSimilarity * 100).toInt()}%, Overall: ${(overallConfidence * 100).toInt()}%")
+                    // Special logic: if both title and duration match well, boost confidence significantly
+                    var overallConfidence = (textConfidence * 0.6) + (durationSimilarity * 0.4)
+                    
+                    // Bonus for excellent matches (both title and duration are very close)
+                    if (titleSimilarity >= 0.8 && durationSimilarity >= 0.8) {
+                        overallConfidence += 0.2 // Significant boost for excellent matches
+                        Log.d(TAG, "🎯 Excellent match found! Title: ${(titleSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%")
+                    } else if (titleSimilarity >= 0.7 && durationSimilarity >= 0.6) {
+                        overallConfidence += 0.1 // Moderate boost for good matches
+                    }
+                    
+                    Log.d(TAG, "Comparing '${rec.title}' (${rec.duration ?: "unknown"}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs/1000}s)")
+                    Log.d(TAG, "  Title: ${(titleSimilarity * 100).toInt()}%, Artist: ${(artistSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%, Overall: ${(overallConfidence * 100).toInt()}%")
                     
                     if (overallConfidence > bestConfidence) {
                         bestConfidence = overallConfidence
                         bestMatch = spotifyTrack
+                        bestTitleSimilarity = titleSimilarity
+                        bestDurationSimilarity = durationSimilarity
                     }
                 }
                 
-                if (bestMatch != null && bestConfidence > 0.65) { // Lower threshold with duration factor
+                // Stricter acceptance criteria based on match quality
+                val shouldAccept = when {
+                    // Excellent match: high confidence in both title and duration
+                    bestTitleSimilarity >= 0.8 && bestDurationSimilarity >= 0.8 && bestConfidence >= 0.75 -> true
+                    // Good match: reasonable confidence in both
+                    bestTitleSimilarity >= 0.7 && bestDurationSimilarity >= 0.6 && bestConfidence >= 0.65 -> true
+                    // Fallback: overall confidence is high enough
+                    bestConfidence >= 0.7 -> true
+                    else -> false
+                }
+                
+                if (bestMatch != null && shouldAccept) {
                     val officialScore = getOfficialScore(rec.title)
                     
                     validated.add(
@@ -519,9 +552,9 @@ object RecommenderApi {
                         )
                     )
                     
-                    Log.d(TAG, "✓ Validated: ${bestMatch.name} by ${bestMatch.artists.first().name} (${(bestConfidence * 100).toInt()}%)")
+                    Log.d(TAG, "✓ Validated: ${bestMatch.name} by ${bestMatch.artists.first().name} (Title: ${(bestTitleSimilarity * 100).toInt()}%, Duration: ${(bestDurationSimilarity * 100).toInt()}%, Overall: ${(bestConfidence * 100).toInt()}%)")
                 } else {
-                    Log.d(TAG, "✗ Low confidence: ${rec.title} (${(bestConfidence * 100).toInt()}%)")
+                    Log.d(TAG, "✗ Rejected: ${rec.title} (Best: Title ${(bestTitleSimilarity * 100).toInt()}%, Duration ${(bestDurationSimilarity * 100).toInt()}%, Overall ${(bestConfidence * 100).toInt()}%)")
                 }
                 
             } catch (e: Exception) {
