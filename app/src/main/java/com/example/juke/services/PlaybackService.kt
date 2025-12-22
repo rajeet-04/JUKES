@@ -387,6 +387,48 @@ class PlaybackManager(private val context: Context) {
         return controller?.duration ?: 0L
     }
 
+    /**
+     * Remove a track from the queue by its media ID.
+     * 
+     * @param mediaId The media ID of the track to remove
+     * @return true if the track was removed, false otherwise
+     */
+    fun removeFromQueue(mediaId: String): Boolean {
+        controller?.let { ctrl ->
+            val index = (0 until ctrl.mediaItemCount).firstOrNull { i ->
+                ctrl.getMediaItemAt(i).mediaId == mediaId
+            } ?: return false
+
+            // Use playlist API to avoid full re-prepare and reduce playback hiccup
+            ctrl.removeMediaItem(index)
+            Log.d(TAG, "Removed track $mediaId from queue at index $index")
+            return true
+        }
+        return false
+    }
+    
+    /**
+     * Move a track to a new position in the queue.
+     * 
+     * @param fromIndex Current index of the track
+     * @param toIndex New index for the track
+     * @return true if the move was successful, false otherwise
+     */
+    fun moveInQueue(fromIndex: Int, toIndex: Int): Boolean {
+        controller?.let { ctrl ->
+            if (fromIndex < 0 || fromIndex >= ctrl.mediaItemCount ||
+                toIndex < 0 || toIndex >= ctrl.mediaItemCount) {
+                return false
+            }
+
+            // Use playlist move to minimize playback interruption
+            ctrl.moveMediaItem(fromIndex, toIndex)
+            Log.d(TAG, "Moved track from index $fromIndex to $toIndex via playlist API")
+            return true
+        }
+        return false
+    }
+    
     fun release() {
         MediaController.releaseFuture(controllerFuture ?: return)
         // remove player listener if attached

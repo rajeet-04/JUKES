@@ -2,19 +2,22 @@ package com.example.juke.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -32,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
@@ -70,7 +75,7 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
     return lines.sortedBy { it.timeMs }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PlayerScreen(
     musicViewModel: MusicViewModel,
@@ -164,18 +169,27 @@ fun PlayerScreen(
                 currentTrack = currentTrack,
                 queue = uiState.queue,
                 queueIndex = uiState.queueIndex,
-                onClose = { showQueue = false }
+                uiState = uiState,
+                onClose = { showQueue = false },
+                onMoveTrack = { fromIndex, toIndex -> musicViewModel.moveInQueue(fromIndex, toIndex) },
+                onRemoveTrack = { trackId -> musicViewModel.removeFromQueue(trackId) },
+                onPlayTrack = { track -> musicViewModel.playTrack(track) }
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun QueueBottomSheetContent(
     currentTrack: com.example.juke.models.Track,
     queue: List<com.example.juke.models.Track>,
     queueIndex: Int,
-    onClose: () -> Unit
+    uiState: com.example.juke.viewmodels.MusicUiState,
+    onClose: () -> Unit,
+    onMoveTrack: (fromIndex: Int, toIndex: Int) -> Unit,
+    onRemoveTrack: (trackId: String) -> Unit,
+    onPlayTrack: (track: com.example.juke.models.Track) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -205,7 +219,7 @@ private fun QueueBottomSheetContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Queue list
+        // Queue list with swipe-to-remove
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize()
@@ -303,56 +317,150 @@ private fun QueueBottomSheetContent(
                     )
                 }
 
-                items(upcomingTracks) { track ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (track.thumbnailUri != null) {
-                                    AsyncImage(
-                                        model = track.thumbnailUri,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
+                itemsIndexed(
+                    items = upcomingTracks,
+                    key = { _, track -> track.uuid }
+                ) { index, track ->
+                    val actualQueueIndex = queueIndex + 1 + index
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { dismissValue ->
+                            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
+                                onRemoveTrack(track.uuid)
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    )
+                    
+                    // Drag state for visual feedback
+                    var dragOffset by remember { mutableFloatStateOf(0f) }
+                    
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            backgroundContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.Red.copy(alpha = 0.8f)),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
                                     Icon(
-                                        imageVector = Icons.Filled.PlayArrow,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = "Remove",
+                                        tint = Color.White,
+                                        modifier = Modifier.padding(end = 16.dp)
                                     )
                                 }
-                            }
+                            },
+                            modifier = Modifier
+                                .padding(vertical = 4.dp)
+                                .zIndex(if (dragOffset != 0f) 100f else 0f)
+                        ) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    translationY = dragOffset
+                                    shadowElevation = if (dragOffset != 0f) 12f else 0f
+                                }
+                                .animateItem()
+                                .zIndex(if (dragOffset != 0f) 100f else 0f),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            elevation = CardDefaults.cardElevation(
+                                defaultElevation = if (dragOffset != 0f) 8.dp else 0.dp
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
+                                    .animateItem()
+                                    .clickable { onPlayTrack(track) },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (track.thumbnailUri != null) {
+                                        AsyncImage(
+                                            model = track.thumbnailUri,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Filled.PlayArrow,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
 
-                            Spacer(modifier = Modifier.width(12.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
 
-                            Column(modifier = Modifier.weight(1f)) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        track.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        track.artist,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                
+                                // Position indicator
                                 Text(
-                                    track.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    track.artist,
+                                    "${index + 1}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                )
+                                
+                                // Drag handle with gesture detection (moved to right side)
+                                Icon(
+                                    imageVector = Icons.Filled.Menu,
+                                    contentDescription = "Drag to reorder",
+                                    tint = if (dragOffset != 0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .pointerInput(Unit) {
+                                            if (!uiState.isQueueOperationInProgress) {
+                                                detectDragGestures(
+                                                    onDragStart = {
+                                                        dragOffset = 0f
+                                                    },
+                                                    onDragEnd = {
+                                                        val dragThreshold = 48f
+                                                        if (dragOffset > dragThreshold && actualQueueIndex < queue.size - 1) {
+                                                            onMoveTrack(actualQueueIndex, actualQueueIndex + 1)
+                                                        } else if (dragOffset < -dragThreshold && actualQueueIndex > queueIndex + 1) {
+                                                            onMoveTrack(actualQueueIndex, actualQueueIndex - 1)
+                                                        }
+                                                        dragOffset = 0f
+                                                    },
+                                                    onDragCancel = { dragOffset = 0f },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        dragOffset += dragAmount.y
+                                                    }
+                                                )
+                                            }
+                                        }
                                 )
                             }
                         }
@@ -687,9 +795,9 @@ private fun CustomSeekBar(
             .height(48.dp)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
-                    onDragStart = { isDragging = true },
+                    onDragStart = { _: Offset -> isDragging = true },
                     onDragEnd = { isDragging = false },
-                    onHorizontalDrag = { change, _ ->
+                    onHorizontalDrag = { change: androidx.compose.ui.input.pointer.PointerInputChange, _: Float ->
                         val newProgress = (change.position.x / size.width).coerceIn(0f, 1f)
                         onProgressChange(newProgress)
                     }

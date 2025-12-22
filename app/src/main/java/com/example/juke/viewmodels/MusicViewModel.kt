@@ -43,7 +43,8 @@ data class MusicUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val downloadQueue: List<DownloadItem> = emptyList(),
-    val currentDownload: DownloadItem? = null
+    val currentDownload: DownloadItem? = null,
+    val isQueueOperationInProgress: Boolean = false
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -338,7 +339,128 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun retryFailedDownload(downloadItem: DownloadItem) {
-        addToDownloadQueue(downloadItem.song, downloadItem.shouldPlayAfterDownload)
+        viewModelScope.launch {
+            // Reset the download item status and add back to queue
+            val resetItem = downloadItem.copy(
+                status = DownloadStatus.QUEUED,
+                error = null
+            )
+            
+            _uiState.update { state ->
+                state.copy(
+                    downloadQueue = listOf(resetItem) + state.downloadQueue
+                )
+            }
+            
+            Log.d("MusicViewModel", "Retrying failed download: ${downloadItem.song.title}")
+            
+            // Process the queue to start the retry
+            processDownloadQueue()
+        }
+    }
+    
+    fun removeFromQueue(trackId: String) {
+        viewModelScope.launch {
+            // Set loading state
+            _uiState.update { it.copy(isQueueOperationInProgress = true) }
+            
+            val currentState = _uiState.value
+            val currentQueue = currentState.queue
+            val currentIndex = currentState.queueIndex
+            
+            // Find the track to remove
+            val trackIndex = currentQueue.indexOfFirst { it.uuid == trackId }
+            if (trackIndex == -1) {
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+                return@launch
+            }
+            
+            // Remove from playback queue first
+            val playbackResult = playbackManager.removeFromQueue(trackId)
+            
+            if (playbackResult) {
+                // Keep recommendation queue in sync so deleted tracks don't reappear
+                queueManager.removeFromQueue(trackId)
+
+                // Remove from UI queue
+                val newQueue = currentQueue.toMutableList().apply { removeAt(trackIndex) }
+                
+                // Calculate new queue index
+                val newQueueIndex = when {
+                    trackIndex < currentIndex -> currentIndex - 1 // Track before current, shift index down
+                    trackIndex == currentIndex -> currentIndex // Removing current track, keep same index (will be next track)
+                    else -> currentIndex // Track after current, index unchanged
+                }.coerceIn(0, newQueue.size - 1)
+                
+                // Update UI state
+                _uiState.update { 
+                    it.copy(
+                        queue = newQueue,
+                        queueIndex = newQueueIndex,
+                        currentTrack = newQueue.getOrNull(newQueueIndex),
+                        isQueueOperationInProgress = false
+                    )
+                }
+                
+                Log.d("MusicViewModel", "Removed track $trackId from queue")
+            } else {
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+                Log.w("MusicViewModel", "Failed to remove track $trackId from playback queue")
+            }
+        }
+    }
+    
+    fun moveInQueue(fromIndex: Int, toIndex: Int) {
+        viewModelScope.launch {
+            // Set loading state
+            _uiState.update { it.copy(isQueueOperationInProgress = true) }
+            
+            val currentState = _uiState.value
+            val currentQueue = currentState.queue
+            val currentQueueIndex = currentState.queueIndex
+            
+            if (fromIndex < 0 || fromIndex >= currentQueue.size || 
+                toIndex < 0 || toIndex >= currentQueue.size) {
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+                return@launch
+            }
+            
+            // Move in playback queue first
+            val playbackResult = playbackManager.moveInQueue(fromIndex, toIndex)
+            
+            if (playbackResult) {
+                // Create new queue with item moved
+                val newQueue = currentQueue.toMutableList().apply {
+                    val item = removeAt(fromIndex)
+                    add(toIndex, item)
+                }
+                
+                // Calculate new queue index
+                var newQueueIndex = currentQueueIndex
+                if (fromIndex == currentQueueIndex) {
+                    newQueueIndex = toIndex
+                } else if (fromIndex < currentQueueIndex && toIndex >= currentQueueIndex) {
+                    newQueueIndex = currentQueueIndex - 1
+                } else if (fromIndex > currentQueueIndex && toIndex <= currentQueueIndex) {
+                    newQueueIndex = currentQueueIndex + 1
+                }
+                
+                // Update UI state
+                _uiState.update { 
+                    it.copy(
+                        queue = newQueue,
+                        queueIndex = newQueueIndex,
+                        currentTrack = newQueue.getOrNull(newQueueIndex),
+                        isQueueOperationInProgress = false
+                    )
+                }
+                
+                Log.d("MusicViewModel", "Moved track from index $fromIndex to $toIndex")
+            } else {
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+                Log.w("MusicViewModel", "Failed to move track in playback queue")
+            }
+        }
     }
     
     override fun onCleared() {
