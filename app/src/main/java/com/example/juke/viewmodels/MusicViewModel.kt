@@ -68,6 +68,39 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
+        // Observe current track changes from PlaybackManager
+        viewModelScope.launch {
+            playbackManager.currentTrackIdFlow.collect { trackId ->
+                trackId?.let { id ->
+                    Log.d("MusicViewModel", "Current track changed to: $id")
+                    
+                    // Find the track in the current queue
+                    val currentQueue = _uiState.value.queue
+                    val trackIndex = currentQueue.indexOfFirst { it.uuid == id }
+                    
+                    if (trackIndex >= 0) {
+                        val track = currentQueue[trackIndex]
+                        _uiState.update { 
+                            it.copy(
+                                currentTrack = track,
+                                queueIndex = trackIndex
+                            )
+                        }
+                        Log.d("MusicViewModel", "Updated UI state - Current track: ${track.title}, Index: $trackIndex")
+                        
+                        // Check if we need more recommendations (queue getting low)
+                        val remainingTracks = currentQueue.size - trackIndex - 1
+                        if (remainingTracks <= 2) {
+                            Log.d("MusicViewModel", "Queue low, fetching recommendations for: ${track.title}")
+                            queueManager.fetchAndQueueRecommendations(track)
+                        }
+                    } else {
+                        Log.w("MusicViewModel", "Track with ID $id not found in current queue")
+                    }
+                }
+            }
+        }
+        
         // Observe recommendation queue changes
         viewModelScope.launch {
             queueManager.currentQueue.collect { recommendedTracks ->
@@ -144,35 +177,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     fun skipToNext() {
         playbackManager.skipToNext()
-        val newIndex = (_uiState.value.queueIndex + 1).coerceIn(0, _uiState.value.queue.size - 1)
-        _uiState.update { 
-            it.copy(
-                queueIndex = newIndex,
-                currentTrack = _uiState.value.queue.getOrNull(newIndex)
-            )
-        }
-        
-        // Check if we need more recommendations (queue getting low)
-        val remainingTracks = _uiState.value.queue.size - newIndex - 1
-        Log.d("MusicViewModel", "Skipped to next. Queue size: ${_uiState.value.queue.size}, Index: $newIndex, Remaining: $remainingTracks")
-        
-        if (remainingTracks <= 2) {
-            _uiState.value.currentTrack?.let { currentTrack ->
-                Log.d("MusicViewModel", "Queue low, fetching recommendations for: ${currentTrack.title}")
-                queueManager.fetchAndQueueRecommendations(currentTrack)
-            }
-        }
+        // UI state will be updated automatically via currentTrackIdFlow
     }
     
     fun skipToPrevious() {
         playbackManager.skipToPrevious()
-        val newIndex = (_uiState.value.queueIndex - 1).coerceAtLeast(0)
-        _uiState.update { 
-            it.copy(
-                queueIndex = newIndex,
-                currentTrack = _uiState.value.queue.getOrNull(newIndex)
-            )
-        }
+        // UI state will be updated automatically via currentTrackIdFlow
     }
     
     fun seekTo(positionMs: Long) {

@@ -148,39 +148,22 @@ fun PlayerScreen(
         }
     }
     
-    // Queue Bottom Sheet - 70% height overlay
+    // Queue Bottom Sheet - Full screen height
     if (showQueue) {
         ModalBottomSheet(
             onDismissRequest = { showQueue = false },
             sheetState = rememberModalBottomSheetState(
-                skipPartiallyExpanded = false
+                skipPartiallyExpanded = true // Disable drag-to-dismiss
             ),
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.fillMaxHeight(0.7f), // 70% of screen height
-            dragHandle = {
-                // Custom drag handle
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(32.dp)
-                            .height(4.dp)
-                            .background(
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                RoundedCornerShape(2.dp)
-                            )
-                    )
-                }
-            }
+            modifier = Modifier.fillMaxSize(), // Use full screen height
+            dragHandle = null // Remove drag handle since we disabled dragging
         ) {
             QueueBottomSheetContent(
                 currentTrack = currentTrack,
                 queue = uiState.queue,
+                queueIndex = uiState.queueIndex,
                 onClose = { showQueue = false }
             )
         }
@@ -191,6 +174,7 @@ fun PlayerScreen(
 private fun QueueBottomSheetContent(
     currentTrack: com.example.juke.models.Track,
     queue: List<com.example.juke.models.Track>,
+    queueIndex: Int,
     onClose: () -> Unit
 ) {
     Column(
@@ -206,12 +190,17 @@ private fun QueueBottomSheetContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close")
+            }
             Text(
                 "Up Next",
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center
             )
+            // Spacer to balance the layout
+            Spacer(modifier = Modifier.width(48.dp))
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -303,8 +292,9 @@ private fun QueueBottomSheetContent(
                 }
             }
 
-            // Upcoming tracks
-            if (queue.isNotEmpty()) {
+            // Upcoming tracks - only show tracks after current index
+            val upcomingTracks = queue.drop(queueIndex + 1)
+            if (upcomingTracks.isNotEmpty()) {
                 item {
                     Text(
                         "Up Next",
@@ -313,7 +303,7 @@ private fun QueueBottomSheetContent(
                     )
                 }
 
-                items(queue) { track ->
+                items(upcomingTracks) { track ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
@@ -377,7 +367,7 @@ private fun QueueBottomSheetContent(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "No tracks in queue",
+                            "No upcoming tracks",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -478,9 +468,6 @@ private fun TabletLandscapePlayer(
                     "Now Playing",
                     style = MaterialTheme.typography.titleLarge
                 )
-                IconButton(onClick = onShowQueue) {
-                    Icon(Icons.AutoMirrored.Filled.List, "Queue")
-                }
             }
             
             // Track info and controls
@@ -523,6 +510,16 @@ private fun TabletLandscapePlayer(
                     musicViewModel = musicViewModel,
                     isLarge = true
                 )
+                
+                // Queue button at bottom
+                IconButton(
+                    onClick = onShowQueue,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 16.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.List, "Queue")
+                }
             }
         }
     }
@@ -562,9 +559,6 @@ private fun PortraitPlayer(
                 "Now Playing",
                 style = MaterialTheme.typography.titleMedium
             )
-            IconButton(onClick = onShowQueue) {
-                Icon(Icons.AutoMirrored.Filled.List, "Queue")
-            }
         }
         
         Spacer(modifier = Modifier.height(if (isTablet) 24.dp else 16.dp))
@@ -662,6 +656,16 @@ private fun PortraitPlayer(
             musicViewModel = musicViewModel,
             isLarge = isTablet
         )
+        
+        // Queue button at bottom
+        IconButton(
+            onClick = onShowQueue,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 16.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.List, "Queue")
+        }
         
         if (!isTablet) {
             Spacer(modifier = Modifier.height(24.dp))

@@ -162,6 +162,10 @@ class PlaybackManager(private val context: Context) {
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
+    // Flow to emit current track UUID changes
+    private val _currentTrackId = MutableStateFlow<String?>(null)
+    val currentTrackIdFlow: StateFlow<String?> = _currentTrackId.asStateFlow()
+    
     fun initialize() {
         if (controllerFuture == null) {
             val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -179,6 +183,14 @@ class PlaybackManager(private val context: Context) {
 
                                 override fun onPlaybackStateChanged(playbackState: Int) {
                                     Log.d(TAG, "PlayerListener playbackStateChanged: $playbackState")
+                                }
+
+                                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                                    mediaItem?.let { item ->
+                                        val trackId = item.mediaId
+                                        _currentTrackId.value = trackId
+                                        Log.d(TAG, "Media item transition: $trackId")
+                                    }
                                 }
                             }
                             try {
@@ -239,6 +251,9 @@ class PlaybackManager(private val context: Context) {
             play()
         }
         
+        // Emit the current track ID
+        _currentTrackId.value = track.uuid
+        
         Log.d(TAG, "Playing track: ${track.title}")
         // Update play count in DB
         scope.launch {
@@ -277,6 +292,11 @@ class PlaybackManager(private val context: Context) {
             setMediaItems(mediaItems, startIndex, 0)
             prepare()
             play()
+        }
+        
+        // Emit the initial track ID
+        tracks.getOrNull(startIndex)?.let { startTrack ->
+            _currentTrackId.value = startTrack.uuid
         }
         
         Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex")
