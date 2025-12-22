@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,7 +14,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
@@ -45,7 +44,7 @@ fun AlbumDetailScreen(
                 title = { Text(album.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 }
             )
@@ -143,7 +142,6 @@ fun AlbumDetailScreen(
                     items(uiState.tracks) { track ->
                         SimplifiedTrackItem(
                             track = track,
-                            album = album,
                             onClick = {
                                 scope.launch {
                                     musicViewModel.downloadAndPlay(
@@ -162,7 +160,6 @@ fun AlbumDetailScreen(
 @Composable
 private fun SimplifiedTrackItem(
     track: SpotifySimplifiedTrack,
-    album: SpotifyAlbum,
     onClick: () -> Unit
 ) {
     Card(

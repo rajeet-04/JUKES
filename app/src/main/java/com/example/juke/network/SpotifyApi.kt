@@ -10,10 +10,10 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.abs
 
 /**
  * Official Spotify Web API Service.
@@ -35,7 +35,13 @@ object SpotifyApi {
     private var accessToken: String? = null
     private var tokenExpiryTime: Long = 0
     private val tokenMutex = Mutex()
-    
+
+    private var json: Json
+        get() = Json { ignoreUnknownKeys = true }
+        set(value) {
+            TODO()
+        }
+
     /**
      * Get a valid OAuth access token.
      * Uses Client Credentials flow with automatic refresh.
@@ -87,7 +93,7 @@ object SpotifyApi {
                 }
 
                 val tokenResponse: SpotifyTokenResponse = try {
-                    Json { ignoreUnknownKeys = true }.decodeFromString(raw)
+                    json.decodeFromString(raw)
                 } catch (serEx: Exception) {
                     Log.e(TAG, "Failed to parse token response: ${serEx.message}")
                     Log.e(TAG, "Full response body: $raw")
@@ -147,15 +153,7 @@ object SpotifyApi {
             throw e
         }
     }
-    
-    /**
-     * Search for songs only (legacy method for backward compatibility).
-     */
-    suspend fun searchSongs(query: String): List<SpotifyTrack> {
-        val response = search(query, listOf("track"))
-        return response.tracks?.items ?: emptyList()
-    }
-    
+
     /**
      * Get artist's albums.
      * 
@@ -218,37 +216,7 @@ object SpotifyApi {
             throw e
         }
     }
-    
-    /**
-     * Get album details.
-     * 
-     * @param albumId Spotify album ID
-     * @param market Market code
-     */
-    suspend fun getAlbum(
-        albumId: String,
-        market: String = "NP"
-    ): SpotifyAlbum {
-        Log.d(TAG, "Fetching album: $albumId")
-        
-        try {
-            val token = getAccessToken()
-            
-            val response: HttpResponse = ApiClient.httpClient.get(
-                "$SPOTIFY_API_BASE_URL/albums/$albumId"
-            ) {
-                header("Authorization", "Bearer $token")
-                parameter("market", market)
-            }
-            
-            return response.body()
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching album: ${e.message}", e)
-            throw e
-        }
-    }
-    
+
     /**
      * Get album tracks.
      * 
@@ -439,24 +407,31 @@ object SpotifyApi {
     }
     
     /**
-     * Search for lyrics on LRCLib.
+     * Search for lyrics on LRCLib using specific query parameters.
      * 
      * LRCLib provides both plain text and synced (LRC format) lyrics.
+     * Uses track_name, artist_name, and album_name parameters for exact matching.
+     * Validates lyrics match against provided track details.
      * 
      * @param title Song title
      * @param artist Artist name
+     * @param album Album name (optional)
      * @param duration Optional duration in seconds for better matching
-     * @return LRCLibResult or null if not found
+     * @return LRCLibResult or null if not found or doesn't match
      */
     suspend fun searchLyrics(
         title: String,
         artist: String,
+        album: String = "",
         duration: Int? = null
     ): LRCLibResult? {
         return try {
-            val query = "$title $artist"
             val response = ApiClient.httpClient.get("$LRCLIB_BASE_URL/search") {
-                parameter("q", query)
+                parameter("track_name", title)
+                parameter("artist_name", artist)
+                if (album.isNotBlank()) {
+                    parameter("album_name", album)
+                }
             }
             
             val results: List<LRCLibResult> = response.body()
@@ -465,35 +440,73 @@ object SpotifyApi {
                 return null
             }
             
-            // If duration provided, find best match within ±5 seconds
-            if (duration != null) {
-                val bestMatch = results.find { result ->
-                    kotlin.math.abs(result.duration - duration) < 5
-                }
-                if (bestMatch != null) {
-                    return bestMatch
-                }
-            }
+            // Find the best matching result based on validation score
+            val bestMatch = results
+                .map { result -> result to validateLyricsMatch(result, title, artist, duration) }
+                .filter { it.second > 0 } // Only consider results with some match
+                .maxByOrNull { it.second }
+                ?.first
             
-            // Otherwise return first result, preferring synced lyrics
-            results.sortedByDescending { it.syncedLyrics != null }.firstOrNull()
+            bestMatch
             
         } catch (e: Exception) {
             Log.e(TAG, "Error searching lyrics: ${e.message}", e)
             null
         }
     }
-    
+
     /**
-     * Parse duration from milliseconds to seconds.
+     * Validate if lyrics result matches the track details.
+     * Returns a score from 0-3 based on artist, title, and duration match.
      * 
-     * @param durationMs Duration in milliseconds
-     * @return Duration in seconds
+     * @param result LRCLib result to validate
+     * @param expectedTitle Expected track title
+     * @param expectedArtist Expected artist name
+     * @param expectedDuration Expected duration in seconds (optional)
+     * @return Match score (0-3)
      */
-    fun parseDurationMs(durationMs: Int): Int {
-        return durationMs / 1000
+    private fun validateLyricsMatch(
+        result: LRCLibResult,
+        expectedTitle: String,
+        expectedArtist: String,
+        expectedDuration: Int?
+    ): Int {
+        var score = 0
+        
+        // Normalize strings for comparison (lowercase, trim)
+        val normalizedTitle = expectedTitle.lowercase().trim()
+        val normalizedArtist = expectedArtist.lowercase().trim()
+        val resultTitle = result.trackName.lowercase().trim()
+        val resultArtist = result.artistName.lowercase().trim()
+        
+        // Artist match (1 point)
+        if (resultArtist.contains(normalizedArtist) || normalizedArtist.contains(resultArtist)) {
+            score += 1
+        }
+        
+        // Title match (1 point)
+        if (resultTitle.contains(normalizedTitle) || normalizedTitle.contains(resultTitle)) {
+            score += 1
+        }
+        
+        // Duration match (1 point) - within 15 seconds tolerance
+        if (expectedDuration != null) {
+            val durationDiff = abs(result.duration - expectedDuration)
+            if (durationDiff < 15) {
+                score += 1
+            }
+        } else {
+            // If no duration provided, give partial credit
+            score += 1
+        }
+        
+        Log.d(TAG, "Lyrics validation - Title: '$normalizedTitle' vs '$resultTitle', " +
+                   "Artist: '$normalizedArtist' vs '$resultArtist', " +
+                   "Duration: $expectedDuration vs ${result.duration}, Score: $score")
+        
+        return score
     }
-    
+
     /**
      * Parse duration string from "MM:SS" format to seconds.
      * 
@@ -532,6 +545,7 @@ object SpotifyApi {
         return SpotdownSong(
             title = track.name,
             artist = artistNames,
+            album = track.album.name,
             url = track.externalUrls.spotify,
             thumbnail = thumbnail,
             duration = durationStr,
@@ -546,7 +560,7 @@ object SpotifyApi {
      * @param album Album information for thumbnail and URL context
      * @return SpotdownSong format
      */
-    fun simplifiedTrackToSong(track: com.example.juke.models.SpotifySimplifiedTrack, album: com.example.juke.models.SpotifyAlbum): SpotdownSong {
+    fun simplifiedTrackToSong(track: SpotifySimplifiedTrack, album: SpotifyAlbum): SpotdownSong {
         val durationMs = track.durationMs
         val durationSec = durationMs / 1000
         val minutes = durationSec / 60
@@ -562,6 +576,7 @@ object SpotifyApi {
         return SpotdownSong(
             title = track.name,
             artist = artistNames,
+            album = album.name,
             url = track.externalUrls.spotify,
             thumbnail = thumbnail,
             duration = durationStr,

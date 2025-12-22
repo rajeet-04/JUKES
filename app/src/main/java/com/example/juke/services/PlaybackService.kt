@@ -3,13 +3,15 @@ package com.example.juke.services
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.util.Log
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.MediaSession
@@ -27,7 +29,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
+import androidx.core.net.toUri
 
 /**
  * Media Playback Service using Media3 (ExoPlayer).
@@ -41,13 +45,18 @@ class PlaybackService : MediaSessionService() {
     private lateinit var database: MusicDatabase
     
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    
+
+    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         
         database = MusicDatabase.getDatabase(applicationContext)
         
-        player = ExoPlayer.Builder(this)
+        val renderersFactory = DefaultRenderersFactory(this)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+            .setEnableDecoderFallback(true)
+
+        player = ExoPlayer.Builder(this, renderersFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -74,6 +83,10 @@ class PlaybackService : MediaSessionService() {
                         Log.d(TAG, "Player idle")
                     }
                 }
+            }
+            
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Log.e(TAG, "Player error: ${error.message}", error)
             }
             
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -143,6 +156,7 @@ class PlaybackManager(private val context: Context) {
     private val TAG = "PlaybackManager"
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
+    private var playerListener: Player.Listener? = null
     private val _isPlaying = MutableStateFlow(false)
     val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
@@ -156,10 +170,26 @@ class PlaybackManager(private val context: Context) {
                 {
                             controller = controllerFuture?.get()
                             Log.d(TAG, "MediaController connected to PlaybackService")
-                            // Start a small polling loop to observe controller.isPlaying and update the flow.
-                            // This ensures external changes (notification, connected devices) are reflected in UI.
+                            // Add a Player.Listener on the controller's underlying player
+                            playerListener = object : Player.Listener {
+                                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                                    _isPlaying.value = isPlaying
+                                    Log.d(TAG, "PlayerListener onIsPlayingChanged: $isPlaying")
+                                }
+
+                                override fun onPlaybackStateChanged(playbackState: Int) {
+                                    Log.d(TAG, "PlayerListener playbackStateChanged: $playbackState")
+                                }
+                            }
+                            try {
+                                controller?.addListener(playerListener!!)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to add player listener: ${e.message}")
+                            }
+
+                            // Start a small polling loop as a fallback to ensure external changes
                             scope.launch {
-                                var last = false
+                                var last = _isPlaying.value
                                 while (controller != null) {
                                     try {
                                         val playing = controller?.isPlaying == true
@@ -198,7 +228,7 @@ class PlaybackManager(private val context: Context) {
                 MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
-                    .setArtworkUri(track.thumbnailUri?.let { android.net.Uri.parse(it) })
+                    .setArtworkUri(track.thumbnailUri?.toUri())
                     .build()
             )
             .build()
@@ -236,7 +266,7 @@ class PlaybackManager(private val context: Context) {
                         MediaMetadata.Builder()
                             .setTitle(track.title)
                             .setArtist(track.artist)
-                            .setArtworkUri(track.thumbnailUri?.let { android.net.Uri.parse(it) })
+                            .setArtworkUri(track.thumbnailUri?.toUri())
                             .build()
                     )
                     .build()
@@ -266,28 +296,36 @@ class PlaybackManager(private val context: Context) {
         }
     }
     
-    fun addToQueue(track: Track) {
-        if (track.localUri == null) return
-        
+    /**
+     * Add tracks to the end of the current queue without interrupting playback.
+     * 
+     * @param tracks Tracks to add
+     */
+    fun addToQueue(tracks: List<Track>) {
         initialize()
         
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(track.uuid)
-            .setUri(track.localUri)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artist)
-                    .setArtworkUri(track.thumbnailUri?.let { android.net.Uri.parse(it) })
+        val mediaItems = tracks.mapNotNull { track ->
+            track.localUri?.let { uri ->
+                MediaItem.Builder()
+                    .setMediaId(track.uuid)
+                    .setUri(uri)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(track.title)
+                            .setArtist(track.artist)
+                            .setArtworkUri(track.thumbnailUri?.toUri())
+                            .build()
+                    )
                     .build()
-            )
-            .build()
+            }
+        }
         
-        controller?.addMediaItem(mediaItem)
-        
-        Log.d(TAG, "Added to queue: ${track.title}")
+        if (mediaItems.isNotEmpty()) {
+            controller?.addMediaItems(mediaItems)
+            Log.d(TAG, "Added ${mediaItems.size} tracks to queue")
+        }
     }
-    
+
     fun togglePlayPause() {
         controller?.let {
             if (it.isPlaying) {
@@ -299,25 +337,7 @@ class PlaybackManager(private val context: Context) {
             }
         }
     }
-    
-    fun pause() {
-        controller?.pause()
-        Log.d(TAG, "Paused")
-    }
-    
-    fun play() {
-        controller?.play()
-        Log.d(TAG, "Playing")
-    }
-    
-    fun stop() {
-        controller?.apply {
-            stop()
-            clearMediaItems()
-        }
-        Log.d(TAG, "Stopped")
-    }
-    
+
     fun skipToNext() {
         controller?.seekToNext()
         Log.d(TAG, "Skip to next")
@@ -346,13 +366,14 @@ class PlaybackManager(private val context: Context) {
     fun getDuration(): Long {
         return controller?.duration ?: 0L
     }
-    
-    fun isPlaying(): Boolean {
-        return controller?.isPlaying ?: false
-    }
-    
+
     fun release() {
         MediaController.releaseFuture(controllerFuture ?: return)
+        // remove player listener if attached
+        try {
+            playerListener?.let { controller?.removeListener(it) }
+        } catch (_: Exception) {}
+        playerListener = null
         controller = null
         controllerFuture = null
         Log.d(TAG, "PlaybackManager released")

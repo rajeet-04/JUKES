@@ -4,8 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toEntity
-import com.example.juke.database.toTrack
-import com.example.juke.models.DownloadProgress
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.Track
 import com.example.juke.network.RecommenderApi
@@ -64,8 +62,7 @@ class MusicService(private val context: Context) {
     }
     
     suspend fun smartDownloadAndIndex(
-        song: SpotdownSong,
-        onProgress: ((DownloadProgress) -> Unit)? = null
+        song: SpotdownSong
     ): Track {
         val uuid = generateUUID()
         val durationSec = SpotifyApi.parseDuration(song.duration)
@@ -110,11 +107,11 @@ class MusicService(private val context: Context) {
                 throw Exception("Failed to write audio file")
             }
             
-            val lyricsResult = SpotifyApi.searchLyrics(song.title, song.artist, durationSec)
+            val lyricsResult = SpotifyApi.searchLyrics(song.title, song.artist, song.album, durationSec)
             val ytVideoId = RecommenderApi.getBestVideoMatch("${song.title} ${song.artist}")
             
             var thumbnailUri: String? = null
-            if (!song.thumbnail.isNullOrBlank()) {
+            if (song.thumbnail.isNotBlank()) {
                 try {
                     val thumbnailFile = File(musicDir, "${uuid}_thumb.jpg")
                     // Download thumbnail bytes with retry
@@ -167,55 +164,7 @@ class MusicService(private val context: Context) {
             throw e
         }
     }
-    
-    suspend fun downloadRecommendedTrack(
-        title: String,
-        artist: String
-    ): Track? {
-        return try {
-            Log.d(TAG, "[downloadRecommendedTrack] Processing: $title by $artist")
-            
-            val existingTrack = trackDao.findTrackByTitleArtist(title, artist)
-            if (existingTrack != null && existingTrack.localUri != null) {
-                Log.d(TAG, "[downloadRecommendedTrack] Track already exists in DB: ${existingTrack.title}")
-                return existingTrack.toTrack()
-            }
-            
-            val searchQuery = "$title $artist"
-            Log.d(TAG, "[downloadRecommendedTrack] Searching Spotify for: $searchQuery")
-            
-            val tracks = retryWithBackoff(
-                maxRetries = 5,
-                operationName = "Spotify search for \"$searchQuery\""
-            ) {
-                SpotifyApi.searchSongs(searchQuery)
-            }
-            
-            if (tracks.isEmpty()) {
-                Log.d(TAG, "[downloadRecommendedTrack] No Spotify results for: $searchQuery")
-                return null
-            }
-            
-            val topTrack = tracks.first()
-            val topSong = SpotifyApi.spotifyTrackToSong(topTrack)
-            Log.d(TAG, "[downloadRecommendedTrack] Found Spotify track: ${topSong.title} by ${topSong.artist}")
-            
-            val track = retryWithBackoff(
-                maxRetries = 5,
-                operationName = "Download for \"${topSong.title}\""
-            ) {
-                smartDownloadAndIndex(topSong)
-            }
-            
-            Log.d(TAG, "[downloadRecommendedTrack] Successfully downloaded: ${track.title}")
-            track
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "[downloadRecommendedTrack] Error downloading $title by $artist: ${e.message}", e)
-            null
-        }
-    }
-    
+
     suspend fun deleteTrackAndFiles(track: Track) {
         try {
             track.localUri?.let { uri ->
@@ -233,13 +182,5 @@ class MusicService(private val context: Context) {
             Log.e(TAG, "Error deleting track: ${e.message}", e)
         }
     }
-    
-    fun checkFileExists(filePath: String): Boolean {
-        return File(filePath).exists()
-    }
-    
-    fun getFileSize(filePath: String): Long {
-        val file = File(filePath)
-        return if (file.exists()) file.length() else 0L
-    }
+
 }

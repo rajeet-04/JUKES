@@ -193,7 +193,7 @@ private fun TrackItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            androidx.compose.foundation.layout.Box {
+            Box {
                 coil.compose.AsyncImage(
                     model = track.album.images.lastOrNull()?.url ?: "",
                     contentDescription = track.name,

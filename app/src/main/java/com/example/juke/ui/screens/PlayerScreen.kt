@@ -1,8 +1,11 @@
 package com.example.juke.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,19 +14,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
@@ -35,7 +43,7 @@ data class LyricLine(
 
 fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
     val lines = mutableListOf<LyricLine>()
-    val regex = """\[(\d{2}):(\d{2})\.(\d{1,3})\]\s*(.*)""".toRegex()
+    val regex = """\[(\d{2}):(\d{2})\.(\d{1,3})]\s*(.*)""".toRegex()
 
     syncedLyrics.lines().forEach { line ->
         regex.find(line)?.let { match ->
@@ -75,7 +83,6 @@ fun PlayerScreen(
     val currentTrack = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var currentPosition by remember { mutableStateOf(0L) }
     
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -83,11 +90,11 @@ fun PlayerScreen(
     val isTablet = screenWidth >= 600.dp
     val isLandscape = screenWidth > screenHeight
     
-    // Update position more frequently for synced lyrics (every 100ms)
-    LaunchedEffect(uiState.isPlaying) {
-        while (uiState.isPlaying) {
-            delay(100)
-            currentPosition = musicViewModel.playbackManager.getCurrentPosition()
+    // Poll playback progress continuously (updates uiState.position via ViewModel)
+    LaunchedEffect(Unit) {
+        while (true) {
+            musicViewModel.updateProgress()
+            delay(300)
         }
     }
     
@@ -114,18 +121,17 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-        if (showQueue) {
+            if (showQueue) {
             QueueView(
                 currentTrack = currentTrack,
                 queue = uiState.queue,
-                onClose = { showQueue = false },
-                isTablet = isTablet
+                onClose = { showQueue = false }
             )
         } else if (isTablet && isLandscape) {
             TabletLandscapePlayer(
                 currentTrack = currentTrack,
                 uiState = uiState,
-                currentPosition = currentPosition,
+                currentPosition = uiState.position,
                 showLyrics = showLyrics,
                 onToggleLyrics = { showLyrics = !showLyrics },
                 onDismiss = onDismiss,
@@ -136,7 +142,7 @@ fun PlayerScreen(
             PortraitPlayer(
                 currentTrack = currentTrack,
                 uiState = uiState,
-                currentPosition = currentPosition,
+                currentPosition = uiState.position,
                 showLyrics = showLyrics,
                 onToggleLyrics = { showLyrics = !showLyrics },
                 onDismiss = onDismiss,
@@ -153,8 +159,7 @@ fun PlayerScreen(
 private fun QueueView(
     currentTrack: com.example.juke.models.Track,
     queue: List<com.example.juke.models.Track>,
-    onClose: () -> Unit,
-    isTablet: Boolean
+    onClose: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -167,7 +172,7 @@ private fun QueueView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.ArrowBack, "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
             }
             Text(
                 "Queue",
@@ -212,7 +217,7 @@ private fun QueueView(
                                 )
                             } else {
                                 Icon(
-                                    painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
+                                    imageVector = Icons.Filled.PlayArrow,
                                     contentDescription = null
                                 )
                             }
@@ -253,6 +258,9 @@ private fun TabletLandscapePlayer(
     onShowQueue: () -> Unit,
     musicViewModel: MusicViewModel
 ) {
+    val configuration = LocalConfiguration.current
+    val screenWidth = configuration.screenWidthDp.dp
+    val isTablet = screenWidth >= 600.dp
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -281,15 +289,30 @@ private fun TabletLandscapePlayer(
                     )
                 } else {
                     Icon(
-                        painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
+                        imageVector = Icons.Filled.PlayArrow,
                         contentDescription = null,
                         modifier = Modifier.size(120.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
-                if (showLyrics && (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null)) {
-                    LyricsOverlay(currentTrack, currentPosition)
+                if (showLyrics) {
+                    if (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null) {
+                        LyricsOverlay(currentTrack, currentPosition, musicViewModel, isTablet, true)
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.75f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "No lyrics available",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -308,14 +331,14 @@ private fun TabletLandscapePlayer(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.ArrowBack, "Close")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close")
                 }
                 Text(
                     "Now Playing",
                     style = MaterialTheme.typography.titleLarge
                 )
                 IconButton(onClick = onShowQueue) {
-                    Icon(Icons.Default.List, "Queue")
+                    Icon(Icons.AutoMirrored.Filled.List, "Queue")
                 }
             }
             
@@ -392,14 +415,14 @@ private fun PortraitPlayer(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.ArrowBack, "Close")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close")
             }
             Text(
                 "Now Playing",
                 style = MaterialTheme.typography.titleMedium
             )
             IconButton(onClick = onShowQueue) {
-                Icon(Icons.Default.List, "Queue")
+                Icon(Icons.AutoMirrored.Filled.List, "Queue")
             }
         }
         
@@ -432,15 +455,30 @@ private fun PortraitPlayer(
                 )
             } else {
                 Icon(
-                    painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
+                    imageVector = Icons.Filled.PlayArrow,
                     contentDescription = null,
                     modifier = Modifier.size(120.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             
-            if (showLyrics && (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null)) {
-                LyricsOverlay(currentTrack, currentPosition)
+            if (showLyrics) {
+                if (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null) {
+                    LyricsOverlay(currentTrack, currentPosition, musicViewModel, isTablet, false)
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.75f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "No lyrics available",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
             }
         }
         
@@ -491,6 +529,58 @@ private fun PortraitPlayer(
 }
 
 @Composable
+private fun CustomSeekBar(
+    progress: Float,
+    onProgressChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isDragging by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { isDragging = true },
+                    onDragEnd = { isDragging = false },
+                    onHorizontalDrag = { change, _ ->
+                        val newProgress = (change.position.x / size.width).coerceIn(0f, 1f)
+                        onProgressChange(newProgress)
+                    }
+                )
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val centerY = size.height / 2
+            // Inactive track
+            drawLine(
+                color = Color.Gray.copy(alpha = 0.5f),
+                start = Offset(0f, centerY),
+                end = Offset(size.width, centerY),
+                strokeWidth = 4f,
+                cap = StrokeCap.Round
+            )
+            // Active track
+            drawLine(
+                color = Color.White,
+                start = Offset(0f, centerY),
+                end = Offset(size.width * progress, centerY),
+                strokeWidth = 4f,
+                cap = StrokeCap.Round
+            )
+            // Thumb
+            val thumbX = size.width * progress
+            drawCircle(
+                color = Color.White,
+                radius = if (isDragging) 20f else 15f,
+                center = Offset(thumbX, centerY)
+            )
+        }
+    }
+}
+
+@Composable
 private fun PlayerProgress(
     currentPosition: Long,
     uiState: com.example.juke.viewmodels.MusicUiState,
@@ -500,9 +590,9 @@ private fun PlayerProgress(
     val progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f
     
     Column(modifier = Modifier.fillMaxWidth()) {
-        Slider(
-            value = progress,
-            onValueChange = { newProgress ->
+        CustomSeekBar(
+            progress = progress,
+            onProgressChange = { newProgress ->
                 val newPosition = (newProgress * duration).toLong()
                 musicViewModel.seekTo(newPosition)
             },
@@ -581,9 +671,22 @@ private fun PlaybackControls(
 @Composable
 private fun LyricsOverlay(
     currentTrack: com.example.juke.models.Track,
-    currentPosition: Long
+    currentPosition: Long,
+    musicViewModel: MusicViewModel,
+    isTablet: Boolean,
+    isLandscape: Boolean
 ) {
+    val configuration = LocalConfiguration.current
     val syncedLyrics = currentTrack.syncedLyrics
+    
+    // Calculate padding to center active line in the image
+    val verticalPadding = if (isTablet && isLandscape) {
+        // Tablet landscape: image height = screenHeight - 48.dp (24.dp top/bottom padding)
+        (configuration.screenHeightDp.toFloat() / 2).dp
+    } else {
+        // Portrait/tablet portrait: image height = screenWidth - 32.dp (16.dp left/right padding)
+        (configuration.screenWidthDp.toFloat() / 2).dp
+    }
     
     Box(
         modifier = Modifier
@@ -593,13 +696,20 @@ private fun LyricsOverlay(
         if (syncedLyrics != null) {
             val lyricLines = remember(syncedLyrics) { parseSyncedLyrics(syncedLyrics) }
             val listState = rememberLazyListState()
-            var currentLineIndex by remember { mutableStateOf(0) }
+            var currentLineIndex by remember { mutableIntStateOf(0) }
             
-            LaunchedEffect(currentPosition) {
+            // Calculate the center offset to position active line in the middle
+            LaunchedEffect(currentPosition, lyricLines) {
                 val newIndex = lyricLines.indexOfLast { it.timeMs <= currentPosition }
-                if (newIndex >= 0 && newIndex != currentLineIndex) {
+                if (newIndex >= 0) {
                     currentLineIndex = newIndex
-                    listState.animateScrollToItem(index = newIndex)
+                    // Scroll with center offset so active line is in the middle
+                    if (lyricLines.isNotEmpty()) {
+                        listState.animateScrollToItem(
+                            index = newIndex,
+                            scrollOffset = 0
+                        )
+                    }
                 }
             }
             
@@ -607,8 +717,9 @@ private fun LyricsOverlay(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.Center
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(vertical = verticalPadding),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
             ) {
                 items(lyricLines.size) { index ->
                     val line = lyricLines[index]
@@ -617,11 +728,14 @@ private fun LyricsOverlay(
                     Text(
                         text = line.text,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = if (isCurrentLine) Color.White else Color.White.copy(alpha = 0.6f),
+                        color = if (isCurrentLine) Color.White else Color.White.copy(alpha = 0.5f),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 6.dp),
+                            .clickable(onClick = {
+                                musicViewModel.seekTo(line.timeMs)
+                            }),
                         textAlign = TextAlign.Center,
+                        fontSize = if (isCurrentLine) 18.sp else 16.sp,
                         fontWeight = if (isCurrentLine)
                             androidx.compose.ui.text.font.FontWeight.Bold
                         else

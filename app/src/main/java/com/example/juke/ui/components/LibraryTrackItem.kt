@@ -30,14 +30,14 @@ fun LibraryTrackItem(
     
     if (showDeleteDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
+            onDismissRequest = { },
             title = { Text("Delete Track") },
             text = { Text("Are you sure you want to delete \"${track.title}\"?") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onDelete()
                         showDeleteDialog = false
+                        onDelete()
                     }
                 ) {
                     Text("Delete")

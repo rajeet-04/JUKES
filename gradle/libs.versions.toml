@@ -8,13 +8,14 @@ espressoCore = "3.5.1"
 lifecycleRuntimeKtx = "2.8.7"
 activityCompose = "1.9.3"
 composeBom = "2024.12.01"
-coroutines = "1.7.3"
+coroutines = "1.8.1"
 serialization = "1.6.3"
-ktor = "2.3.12"
+ktor = "3.0.0"
 room = "2.6.1"
 media3 = "1.5.0"
 coil = "2.7.0"
 navigation = "2.8.5"
+gson = "2.10.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -58,6 +59,9 @@ androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.re
 
 # Coil
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# Gson
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -8,9 +8,9 @@ import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.Track
-import com.example.juke.network.SpotifyApi
 import com.example.juke.services.MusicService
 import com.example.juke.services.PlaybackManager
+import com.example.juke.services.QueueManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +52,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val trackDao = database.trackDao()
     private val musicService = MusicService(application)
     val playbackManager = PlaybackManager(application)
+    private val queueManager = QueueManager(application)
     
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
@@ -66,18 +67,59 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(isPlaying = playing) }
             }
         }
+        
+        // Observe recommendation queue changes
+        viewModelScope.launch {
+            queueManager.currentQueue.collect { recommendedTracks ->
+                Log.d("MusicViewModel", "QueueManager queue updated: ${recommendedTracks.size} tracks")
+                
+                // Add recommended tracks to the main queue if they're not already there
+                val currentQueue = _uiState.value.queue
+                val newTracks = recommendedTracks.filter { recommended ->
+                    !currentQueue.any { existing -> existing.uuid == recommended.uuid }
+                }
+                
+                if (newTracks.isNotEmpty()) {
+                    val updatedQueue = currentQueue + newTracks
+                    _uiState.update { it.copy(queue = updatedQueue) }
+                    
+                    // Add new tracks to the playback queue without interrupting current playback
+                    playbackManager.addToQueue(newTracks)
+                    
+                    Log.d("MusicViewModel", "Added ${newTracks.size} recommended tracks to main queue. Total queue size: ${updatedQueue.size}")
+                } else {
+                    Log.d("MusicViewModel", "No new tracks to add from recommendations")
+                }
+            }
+        }
+        
+        // Observe downloading tracks from recommendations
+        viewModelScope.launch {
+            queueManager.downloadingTracks.collect { downloading ->
+                Log.d("MusicViewModel", "Recommendation downloads in progress: ${downloading.size} tracks")
+            }
+        }
     }
     
     fun playTrack(track: Track) {
         viewModelScope.launch {
-            playbackManager.playTrack(track)
+            // Set up the queue with the current track
             _uiState.update { 
                 it.copy(
                     currentTrack = track,
+                    queue = listOf(track), // Initialize queue with current track
+                    queueIndex = 0, // Current track is at index 0
                     isPlaying = true,
                     duration = track.durationSec.toLong() * 1000
                 )
             }
+            
+            // Set the queue in the playback manager (starts playing automatically)
+            playbackManager.setQueue(listOf(track), 0)
+            
+            // Initialize recommendation queue for this track
+            Log.d("MusicViewModel", "Playing track: ${track.title}, initializing recommendations")
+            queueManager.initializeQueue(listOf(track))
         }
     }
     
@@ -97,7 +139,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     fun togglePlayPause() {
         playbackManager.togglePlayPause()
-        _uiState.update { it.copy(isPlaying = playbackManager.isPlaying()) }
+        // rely on playbackManager.isPlayingFlow to update UI via collector
     }
     
     fun skipToNext() {
@@ -108,6 +150,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 queueIndex = newIndex,
                 currentTrack = _uiState.value.queue.getOrNull(newIndex)
             )
+        }
+        
+        // Check if we need more recommendations (queue getting low)
+        val remainingTracks = _uiState.value.queue.size - newIndex - 1
+        Log.d("MusicViewModel", "Skipped to next. Queue size: ${_uiState.value.queue.size}, Index: $newIndex, Remaining: $remainingTracks")
+        
+        if (remainingTracks <= 2) {
+            _uiState.value.currentTrack?.let { currentTrack ->
+                Log.d("MusicViewModel", "Queue low, fetching recommendations for: ${currentTrack.title}")
+                queueManager.fetchAndQueueRecommendations(currentTrack)
+            }
         }
     }
     
@@ -281,5 +334,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         playbackManager.release()
+        queueManager.cleanup()
     }
 }

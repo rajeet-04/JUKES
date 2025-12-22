@@ -1,5 +1,6 @@
 package com.example.juke.ui.components
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,7 +23,7 @@ fun DownloadingTrackItem(
     downloadItem: DownloadItem,
     onCancel: () -> Unit = {},
     onRetry: () -> Unit = {},
-    modifier: Modifier = Modifier
+    @SuppressLint("ModifierParameter") modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),

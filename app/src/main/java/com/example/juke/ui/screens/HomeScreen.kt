@@ -10,7 +10,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.juke.models.Track
 import com.example.juke.ui.components.TrackCard
 import com.example.juke.viewmodels.HomeViewModel
 import com.example.juke.viewmodels.MusicViewModel

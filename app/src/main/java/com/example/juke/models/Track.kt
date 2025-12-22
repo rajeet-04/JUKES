@@ -28,19 +28,11 @@ data class Track(
 data class SpotdownSong(
     val title: String,
     val artist: String,
+    val album: String = "",
     val thumbnail: String,
     val url: String,
     val duration: String,
     val cached: Boolean = false
-)
-
-/**
- * Response from Spotdown search API.
- */
-@Serializable
-data class SpotdownSearchResponse(
-    val songs: List<SpotdownSong>,
-    val contentType: String
 )
 
 /**
@@ -59,21 +51,3 @@ data class LRCLibResult(
     val syncedLyrics: String?
 )
 
-/**
- * YouTube music recommendation from YouTube Music API.
- */
-@Serializable
-data class YouTubeRecommendation(
-    val id: String,
-    val title: String,
-    val artist: String
-)
-
-/**
- * Download progress callback data.
- */
-data class DownloadProgress(
-    val totalBytes: Long,
-    val downloadedBytes: Long,
-    val progress: Double
-)

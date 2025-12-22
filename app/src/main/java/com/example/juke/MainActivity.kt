@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,10 +36,10 @@ import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
 
-sealed class Screen(val route: String, val title: String, val icon: @Composable () -> Unit) {
-    object Home : Screen("home", "Home", { Icon(Icons.Default.Home, contentDescription = "Home") })
-    object Search : Screen("search", "Search", { Icon(Icons.Default.Search, contentDescription = "Search") })
-    object Library : Screen("library", "Library", { Icon(painter = painterResource(R.drawable.library_svgrepo_com), contentDescription = "Library") })
+sealed class Screen(val route: String, val title: String, val filledIcon: @Composable () -> Unit, val outlinedIcon: @Composable () -> Unit) {
+    object Home : Screen("home", "Home", { Icon(Icons.Filled.Home, contentDescription = "Home") }, { Icon(Icons.Outlined.Home, contentDescription = "Home") })
+    object Search : Screen("search", "Search", { Icon(Icons.Filled.Search, contentDescription = "Search") }, { Icon(Icons.Outlined.Search, contentDescription = "Search") })
+    object Library : Screen("library", "Library", { Icon(painter = painterResource(R.drawable.library_outlined), contentDescription = "Library") }, { Icon(painter = painterResource(R.drawable.library), contentDescription = "Library") })
 }
 
 class MainActivity : ComponentActivity() {
@@ -74,7 +76,13 @@ class MainActivity : ComponentActivity() {
                                 
                                 items.forEach { screen ->
                                     NavigationBarItem(
-                                        icon = { screen.icon() },
+                                        icon = {
+                                            if (currentDestination?.hierarchy?.any { it.route == screen.route } == true) {
+                                                screen.filledIcon()
+                                            } else {
+                                                screen.outlinedIcon()
+                                            }
+                                        },
                                         label = { Text(screen.title) },
                                         selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                                         onClick = {
