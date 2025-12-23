@@ -90,8 +90,10 @@ class MainActivity : ComponentActivity() {
                                                 popUpTo(navController.graph.findStartDestination().id) {
                                                     saveState = true
                                                 }
-                                                launchSingleTop = true
-                                                restoreState = true
+                                                if (screen != Screen.Search) {
+                                                    launchSingleTop = true
+                                                    restoreState = true
+                                                }
                                             }
                                         }
                                     )

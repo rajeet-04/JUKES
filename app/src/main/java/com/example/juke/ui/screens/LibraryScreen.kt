@@ -28,7 +28,7 @@ fun LibraryScreen(
     val musicUiState by musicViewModel.uiState.collectAsState()
     
     LaunchedEffect(Unit) {
-        libraryViewModel.loadTracks()
+        // Initial load is handled by the flow in ViewModel
     }
     
     Scaffold(
@@ -44,57 +44,41 @@ fun LibraryScreen(
                 .padding(paddingValues)
         ) {
             // Filter chips
-            Row(
+            // Filter chips and playlist selectors
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FilterChip(
-                    selected = !uiState.showFavoritesOnly,
-                    onClick = { 
-                        if (uiState.showFavoritesOnly) {
-                            libraryViewModel.toggleFavoritesFilter()
-                        }
-                    },
-                    label = { Text("All Tracks") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChip(
-                    selected = uiState.showFavoritesOnly,
-                    onClick = { 
-                        if (!uiState.showFavoritesOnly) {
-                            libraryViewModel.toggleFavoritesFilter()
-                        }
-                    },
-                    label = { Text("Favourites") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            
-            // Playlists section
-            if (uiState.playlists.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = uiState.selectedPlaylist == null && !uiState.showFavoritesOnly,
+                        onClick = { libraryViewModel.loadAllTracks() },
+                        label = { Text("All Tracks") }
+                    )
+                    FilterChip(
+                        selected = uiState.showFavoritesOnly,
+                        onClick = { libraryViewModel.toggleFavoritesFilter() },
+                        label = { Text("Favourites") }
+                    )
+                }
+
+                if (uiState.playlists.isNotEmpty()) {
                     Text(
                         "Playlists",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                     LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(uiState.playlists) { playlist ->
-                            ImportedPlaylistCard(
-                                playlist = playlist,
-                                onClick = {
-                                    libraryViewModel.loadPlaylistTracks(playlist.id)
-                                }
+                        items(uiState.playlists, key = { it.id }) { playlist ->
+                            FilterChip(
+                                selected = uiState.selectedPlaylist?.id == playlist.id,
+                                onClick = { libraryViewModel.loadPlaylistTracks(playlist.id) },
+                                label = { Text(playlist.name) }
                             )
                         }
                     }
@@ -135,6 +119,13 @@ fun LibraryScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Playlist hero if one is selected
+                    uiState.selectedPlaylist?.let { playlist ->
+                        item(key = "playlist_header_${playlist.id}") {
+                            PlaylistHeader(playlist)
+                        }
+                    }
+
                     // Show current download
                     musicUiState.currentDownload?.let { download ->
                         item(key = "current_${download.id}") {
@@ -190,43 +181,34 @@ fun LibraryScreen(
         }
     }
 }
+
 @Composable
-private fun ImportedPlaylistCard(
-    playlist: com.example.juke.database.PlaylistEntity,
-    onClick: () -> Unit
-) {
+private fun PlaylistHeader(playlist: com.example.juke.database.PlaylistEntity) {
     Card(
-        onClick = onClick,
-        modifier = Modifier.width(150.dp)
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AsyncImage(
                 model = playlist.thumbnailUri,
                 contentDescription = playlist.name,
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .size(72.dp)
                     .aspectRatio(1f),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = playlist.name,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
                 Text(
                     text = "${playlist.trackCount} tracks",
                     style = MaterialTheme.typography.bodySmall,

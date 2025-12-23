@@ -303,6 +303,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
+    suspend fun downloadSong(song: SpotdownSong): Track {
+        // Check if already exists
+        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+        
+        if (existingTrack != null && existingTrack.localUri != null) {
+            // Already downloaded
+            return existingTrack.toTrack()
+        } else {
+            // Download directly
+            return musicService.smartDownloadAndIndex(song)
+        }
+    }
+    
     fun addToDownloadQueue(song: SpotdownSong, shouldPlayAfterDownload: Boolean = false) {
         viewModelScope.launch {
             // Check if already in queue or downloading

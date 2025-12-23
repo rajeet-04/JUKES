@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.juke.ui.components.TrackCard
@@ -61,6 +62,12 @@ fun HomeScreen(
                     Text(
                         "Start by searching and downloading your favorite music",
                         style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Text(
+                        "Made with ❤️ by RASH",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -123,6 +130,23 @@ fun HomeScreen(
                                 )
                             }
                         }
+                    }
+                }
+                
+                // Footer with credits
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Made with ❤️ by RASH",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }

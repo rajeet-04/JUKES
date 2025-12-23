@@ -6,6 +6,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.models.*
 import com.example.juke.network.SpotifyApi
+import com.example.juke.database.MusicDatabase
+import com.example.juke.database.PlaylistDao
+import com.example.juke.database.PlaylistEntity
+import com.example.juke.database.PlaylistTrackEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +39,10 @@ data class ArtistDetailUiState(
 )
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
+    
+    private val database = MusicDatabase.getDatabase(application)
+    private val trackDao = database.trackDao()
+    private val playlistDao = database.playlistDao()
     
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -188,7 +196,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         _artistDetailState.value = ArtistDetailUiState()
     }
     
-    fun importPlaylist(playlistId: String, onTrackDownloaded: suspend (SpotifyTrack) -> Unit) {
+    fun importPlaylist(playlistId: String, onTrackDownloaded: suspend (SpotifyTrack) -> Track) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isImportingPlaylist = true,
@@ -198,21 +206,47 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             )
             
             try {
+                // Fetch playlist info
+                val playlist = SpotifyApi.getPlaylist(playlistId)
+                
+                // Save playlist to database
+                val playlistEntity = PlaylistEntity(
+                    id = playlist.id,
+                    name = playlist.name,
+                    description = playlist.description,
+                    thumbnailUri = playlist.images.firstOrNull()?.url,
+                    spotifyId = playlist.id,
+                    trackCount = playlist.tracks.total
+                )
+                playlistDao.insertPlaylist(playlistEntity)
+                
                 // Fetch all playlist tracks
                 val response = SpotifyApi.getPlaylistTracks(playlistId, limit = 50)
                 val tracks = response.items.mapNotNull { it.track }
                 
                 _uiState.value = _uiState.value.copy(importTotal = tracks.size)
                 
-                // Download each track
+                // Download each track and add to playlist
+                val playlistTracks = mutableListOf<PlaylistTrackEntity>()
                 tracks.forEachIndexed { index, track ->
                     try {
-                        onTrackDownloaded(track)
+                        val downloadedTrack = onTrackDownloaded(track)
+                        // Add to playlist tracks
+                        val playlistTrack = PlaylistTrackEntity(
+                            playlistId = playlist.id,
+                            trackUuid = downloadedTrack.uuid,
+                            position = index
+                        )
+                        playlistDao.insertPlaylistTrack(playlistTrack)
+                        playlistTracks.add(playlistTrack)
                         _uiState.value = _uiState.value.copy(importProgress = index + 1)
                     } catch (e: Exception) {
                         Log.e("SearchViewModel", "Failed to download track: ${track.name}", e)
                     }
                 }
+                
+                // Update playlist track count
+                playlistDao.updatePlaylistTrackCount(playlist.id, playlistTracks.size)
                 
                 _uiState.value = _uiState.value.copy(
                     isImportingPlaylist = false,

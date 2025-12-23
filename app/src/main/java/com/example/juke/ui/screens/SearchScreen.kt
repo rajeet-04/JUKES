@@ -32,9 +32,12 @@ fun SearchScreen(
     onNavigateToPlaylist: (SpotifyPlaylist) -> Unit = {}
 ) {
     val uiState by searchViewModel.uiState.collectAsState()
-    var searchQuery by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
+    
+    LaunchedEffect(Unit) {
+        searchViewModel.updateQuery("")
+    }
     
     Scaffold(
         topBar = {
@@ -50,8 +53,8 @@ fun SearchScreen(
                 .padding(16.dp)
         ) {
             OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
+                value = uiState.query,
+                onValueChange = { searchViewModel.updateQuery(it) },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Search for songs, artists, playlists...") },
                 singleLine = true,
@@ -60,9 +63,9 @@ fun SearchScreen(
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                     onSearch = {
-                        if (searchQuery.isNotBlank() && !uiState.isSearching) {
+                        if (uiState.query.isNotBlank() && !uiState.isSearching) {
                             keyboardController?.hide()
-                            searchViewModel.search(searchQuery)
+                            searchViewModel.search(uiState.query)
                         }
                     }
                 ),
@@ -80,10 +83,10 @@ fun SearchScreen(
             Button(
                 onClick = {
                     keyboardController?.hide()
-                    searchViewModel.search(searchQuery)
+                    searchViewModel.search(uiState.query)
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isSearching && searchQuery.isNotBlank()
+                enabled = !uiState.isSearching && uiState.query.isNotBlank()
             ) {
                 Text("Search")
             }
@@ -97,7 +100,7 @@ fun SearchScreen(
                     onClick = {
                         scope.launch {
                             searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
-                                musicViewModel.downloadAndPlay(SpotifyApi.spotifyTrackToSong(track))
+                                musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
                             }
                         }
                     },
@@ -159,7 +162,7 @@ fun SearchScreen(
                            uiState.artists.isNotEmpty() || 
                            uiState.playlists.isNotEmpty()
             
-            if (!hasResults && !uiState.isSearching && searchQuery.isNotBlank()) {
+            if (!hasResults && !uiState.isSearching && uiState.query.isNotBlank()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center

@@ -64,7 +64,7 @@ fun SwipeToAddNextContainer(
                         tint = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Text(
-                        text = "Add to play next",
+                        text = "Add to queue next",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )

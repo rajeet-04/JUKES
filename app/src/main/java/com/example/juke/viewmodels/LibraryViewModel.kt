@@ -18,7 +18,8 @@ data class LibraryUiState(
     val tracks: List<Track> = emptyList(),
     val playlists: List<PlaylistEntity> = emptyList(),
     val showFavoritesOnly: Boolean = false,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val selectedPlaylist: PlaylistEntity? = null
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -33,6 +34,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     
     init {
         loadPlaylists()
+        loadAllTracks()
+        
+        // Observe downloaded tracks for real-time updates when in all tracks mode
+        viewModelScope.launch {
+            trackDao.getDownloadedTracksFlow().collect { trackEntities ->
+                val currentState = _uiState.value
+                if (!currentState.showFavoritesOnly && currentState.selectedPlaylist == null) {
+                    _uiState.value = currentState.copy(
+                        tracks = trackEntities.map { it.toTrack() },
+                        isLoading = false
+                    )
+                }
+            }
+        }
+    }
+    
+    fun loadAllTracks() {
+        _uiState.value = _uiState.value.copy(showFavoritesOnly = false)
+        loadTracks()
     }
     
     fun loadTracks() {
@@ -47,7 +67,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             
             _uiState.value = _uiState.value.copy(
                 tracks = tracks,
-                isLoading = false
+                isLoading = false,
+                selectedPlaylist = null
             )
         }
     }
@@ -62,10 +83,15 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     
     fun loadPlaylistTracks(playlistId: String) {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            val playlist = playlistDao.getPlaylist(playlistId)
             val tracks = playlistDao.getPlaylistTracks(playlistId).map { it.toTrack() }
             _uiState.value = _uiState.value.copy(
                 tracks = tracks,
-                showFavoritesOnly = false
+                showFavoritesOnly = false,
+                selectedPlaylist = playlist,
+                isLoading = false
             )
         }
     }
