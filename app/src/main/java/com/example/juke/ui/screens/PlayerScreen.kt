@@ -19,6 +19,8 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -619,15 +621,25 @@ private fun TabletLandscapePlayer(
                     isLarge = true
                 )
                 
-                // Queue button at bottom
-                IconButton(
-                    onClick = onShowQueue,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 16.dp)
+                // Bottom buttons row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.List, "Queue")
+                    IconButton(onClick = { musicViewModel.toggleFavorite(currentTrack) }) {
+                        Icon(
+                            if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = if (currentTrack.isFavourite) "Remove from favorites" else "Add to favorites",
+                            tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    IconButton(onClick = onShowQueue) {
+                        Icon(Icons.AutoMirrored.Filled.List, "Queue")
+                    }
                 }
+                
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -765,14 +777,22 @@ private fun PortraitPlayer(
             isLarge = isTablet
         )
         
-        // Queue button at bottom
-        IconButton(
-            onClick = onShowQueue,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(top = 16.dp)
+        // Bottom buttons row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.AutoMirrored.Filled.List, "Queue")
+            IconButton(onClick = { musicViewModel.toggleFavorite(currentTrack) }) {
+                Icon(
+                    if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = if (currentTrack.isFavourite) "Remove from favorites" else "Add to favorites",
+                    tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+            }
+            IconButton(onClick = onShowQueue) {
+                Icon(Icons.AutoMirrored.Filled.List, "Queue")
+            }
         }
         
         if (!isTablet) {

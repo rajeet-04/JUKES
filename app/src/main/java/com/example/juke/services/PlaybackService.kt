@@ -346,6 +346,39 @@ class PlaybackManager(private val context: Context) {
         }
     }
 
+    /**
+     * Insert a track at a specific position in the current queue without interrupting playback.
+     */
+    fun addToQueueAt(track: Track, index: Int): Boolean {
+        if (track.localUri == null) {
+            Log.w(TAG, "Cannot enqueue track without local URI: ${track.title}")
+            return false
+        }
+
+        initialize()
+
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(track.uuid)
+            .setUri(track.localUri)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setArtworkUri(track.thumbnailUri?.toUri())
+                    .build()
+            )
+            .build()
+
+        controller?.let { ctrl ->
+            val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
+            ctrl.addMediaItem(targetIndex, mediaItem)
+            Log.d(TAG, "Inserted track ${track.title} at index $targetIndex")
+            return true
+        }
+
+        return false
+    }
+
     fun togglePlayPause() {
         controller?.let {
             if (it.isPlaying) {

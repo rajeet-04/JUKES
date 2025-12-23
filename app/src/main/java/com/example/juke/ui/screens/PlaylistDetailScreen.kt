@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyTrack
+import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import kotlinx.coroutines.launch
@@ -146,16 +147,24 @@ fun PlaylistDetailScreen(
                     }
                     
                     items(uiState.tracks) { track ->
-                        TrackItem(
-                            track = track,
-                            onClick = {
+                        SwipeToAddNextContainer(
+                            onAddNext = {
                                 scope.launch {
-                                    musicViewModel.downloadAndPlay(
-                                        com.example.juke.network.SpotifyApi.spotifyTrackToSong(track)
-                                    )
+                                    musicViewModel.queueSpotifyTrackNext(track)
                                 }
                             }
-                        )
+                        ) {
+                            TrackItem(
+                                track = track,
+                                onClick = {
+                                    scope.launch {
+                                        musicViewModel.downloadAndPlay(
+                                            com.example.juke.network.SpotifyApi.spotifyTrackToSong(track)
+                                        )
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }

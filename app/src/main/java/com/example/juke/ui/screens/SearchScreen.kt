@@ -17,6 +17,7 @@ import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.ui.components.ArtistCard
 import com.example.juke.ui.components.PlaylistCard
+import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import com.example.juke.network.SpotifyApi
@@ -119,19 +120,33 @@ fun SearchScreen(
                             }
 
                             items(uiState.tracks) { track ->
-                                TrackItem(
-                                    track = track,
-                                    isDownloading = uiState.downloadingId == track.id,
-                                    onClick = {
+                                SwipeToAddNextContainer(
+                                    onAddNext = {
                                         scope.launch {
                                             searchViewModel.setDownloading(track.id)
-                                            musicViewModel.downloadAndPlay(
-                                                SpotifyApi.spotifyTrackToSong(track)
-                                            )
-                                            searchViewModel.setDownloading(null)
+                                            try {
+                                                musicViewModel.queueSpotifyTrackNext(track)
+                                            } finally {
+                                                searchViewModel.setDownloading(null)
+                                            }
                                         }
                                     }
-                                )
+                                ) {
+                                    TrackItem(
+                                        track = track,
+                                        isDownloading = uiState.downloadingId == track.id,
+                                        onClick = {
+                                            scope.launch {
+                                                searchViewModel.setDownloading(track.id)
+                                                musicViewModel.downloadAndPlay(
+                                                    SpotifyApi.spotifyTrackToSong(track)
+                                                )
+                                                searchViewModel.setDownloading(null)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             }
                         }
 
@@ -192,10 +207,11 @@ fun SearchScreen(
 private fun TrackItem(
     track: com.example.juke.models.SpotifyTrack,
     isDownloading: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         onClick = onClick
     ) {
         Row(

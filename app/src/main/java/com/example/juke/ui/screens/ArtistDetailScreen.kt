@@ -21,6 +21,7 @@ import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.SpotifyImage
+import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.SearchViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.launch
@@ -125,16 +126,24 @@ fun ArtistDetailScreen(
                     }
                     
                     items(uiState.topTracks.take(10)) { track ->
-                        TrackItem(
-                            track = track,
-                            onClick = {
+                        SwipeToAddNextContainer(
+                            onAddNext = {
                                 scope.launch {
-                                    musicViewModel.downloadAndPlay(
-                                        com.example.juke.network.SpotifyApi.spotifyTrackToSong(track)
-                                    )
+                                    musicViewModel.queueSpotifyTrackNext(track)
                                 }
                             }
-                        )
+                        ) {
+                            TrackItem(
+                                track = track,
+                                onClick = {
+                                    scope.launch {
+                                        musicViewModel.downloadAndPlay(
+                                            com.example.juke.network.SpotifyApi.spotifyTrackToSong(track)
+                                        )
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
                 

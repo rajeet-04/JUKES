@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.juke.ui.components.DownloadingTrackItem
 import com.example.juke.ui.components.LibraryTrackItem
+import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 
@@ -131,21 +132,25 @@ fun LibraryScreen(
                     
                     // Show downloaded tracks
                     items(uiState.tracks) { track ->
-                        LibraryTrackItem(
-                            track = track,
-                            onPlay = {
-                                musicViewModel.setQueue(
-                                    uiState.tracks,
-                                    uiState.tracks.indexOf(track)
-                                )
-                            },
-                            onToggleFavorite = {
-                                libraryViewModel.toggleFavorite(track)
-                            },
-                            onDelete = {
-                                libraryViewModel.deleteTrack(track)
-                            }
-                        )
+                        SwipeToAddNextContainer(
+                            onAddNext = { musicViewModel.addNext(track) }
+                        ) {
+                            LibraryTrackItem(
+                                track = track,
+                                onPlay = {
+                                    musicViewModel.setQueue(
+                                        uiState.tracks,
+                                        uiState.tracks.indexOf(track)
+                                    )
+                                },
+                                onToggleFavorite = {
+                                    libraryViewModel.toggleFavorite(track)
+                                },
+                                onDelete = {
+                                    libraryViewModel.deleteTrack(track)
+                                }
+                            )
+                        }
                     }
                 }
             }

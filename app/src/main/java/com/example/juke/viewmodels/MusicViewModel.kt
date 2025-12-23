@@ -7,15 +7,21 @@ import androidx.lifecycle.viewModelScope
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
+import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.models.SpotifyAlbum
+import com.example.juke.models.SpotifySimplifiedTrack
+import com.example.juke.network.SpotifyApi
 import com.example.juke.services.MusicService
 import com.example.juke.services.PlaybackManager
 import com.example.juke.services.QueueManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 enum class DownloadStatus {
@@ -174,6 +180,88 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePlayPause() {
         playbackManager.togglePlayPause()
         // rely on playbackManager.isPlayingFlow to update UI via collector
+    }
+
+    /**
+     * Insert a track so it plays immediately after the current track.
+     */
+    fun addNext(track: Track) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isQueueOperationInProgress = true) }
+
+            try {
+                val currentState = _uiState.value
+                val currentQueue = currentState.queue.toMutableList()
+
+                if (currentQueue.isEmpty() || currentState.queueIndex < 0) {
+                    // Nothing playing yet; start a queue with this track
+                    setQueue(listOf(track), 0)
+                } else {
+                    val insertIndex = (currentState.queueIndex + 1)
+                        .coerceAtMost(currentQueue.size)
+                    currentQueue.add(insertIndex, track)
+
+                    val inserted = playbackManager.addToQueueAt(track, insertIndex)
+                    if (!inserted) {
+                        // Fallback: reset full queue to keep UI and player in sync
+                        playbackManager.setQueue(currentQueue, currentState.queueIndex)
+                    }
+
+                    _uiState.update {
+                        it.copy(
+                            queue = currentQueue
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to add next: ${e.message}", e)
+            } finally {
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+            }
+        }
+    }
+
+    /**
+     * Download a Spotify track (if needed) and queue it to play next.
+     */
+    fun queueSpotifyTrackNext(spotifyTrack: SpotifyTrack) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isQueueOperationInProgress = true) }
+
+            try {
+                val spotdownSong = SpotifyApi.spotifyTrackToSong(spotifyTrack)
+                val track = withContext(Dispatchers.IO) {
+                    musicService.smartDownloadAndIndex(spotdownSong)
+                }
+                addNext(track)
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to queue Spotify track next: ${e.message}", e)
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+            } finally {
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+            }
+        }
+    }
+
+    /**
+     * Download a simplified Spotify track (album context) and queue it to play next.
+     */
+    fun queueSimplifiedTrackNext(track: SpotifySimplifiedTrack, album: SpotifyAlbum) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isQueueOperationInProgress = true) }
+
+            try {
+                val spotdownSong = SpotifyApi.simplifiedTrackToSong(track, album)
+                val downloaded = withContext(Dispatchers.IO) {
+                    musicService.smartDownloadAndIndex(spotdownSong)
+                }
+                addNext(downloaded)
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to queue simplified track next: ${e.message}", e)
+            } finally {
+                _uiState.update { it.copy(isQueueOperationInProgress = false) }
+            }
+        }
     }
     
     fun skipToNext() {
@@ -467,5 +555,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         playbackManager.release()
         queueManager.cleanup()
+    }
+    
+    fun toggleFavorite(track: Track) {
+        viewModelScope.launch {
+            trackDao.updateTrackFavourite(track.uuid, !track.isFavourite)
+            
+            // Update UI state if it's the current track
+            _uiState.update { state ->
+                if (state.currentTrack?.uuid == track.uuid) {
+                    state.copy(currentTrack = track.copy(isFavourite = !track.isFavourite))
+                } else {
+                    state
+                }
+            }
+        }
     }
 }
