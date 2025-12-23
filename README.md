@@ -6,6 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
+[![Version](https://img.shields.io/badge/Version-1.0.0-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -19,6 +20,22 @@
 ## 📱 Overview
 
 JUKE is a feature-rich Android music player that combines the power of Spotify's search API with YouTube Music's recommendation engine to deliver an exceptional music streaming experience. Download your favorite tracks, import entire playlists, and enjoy seamless playback with automatically generated queues.
+
+## 📦 Latest Release
+
+**JUKE v1.0.0** is now available! 🎉
+
+### What's New in v1.0.0
+- ✅ Complete Spotify integration with search and metadata
+- ✅ Smart recommendation system using YouTube Music
+- ✅ Playlist import with real-time progress tracking
+- ✅ Offline playback with local storage
+- ✅ Material Design 3 UI with modern interface
+- ✅ Synced lyrics support
+- ✅ Queue management with swipe gestures
+- ✅ Background playback and notification controls
+
+[📥 Download v1.0.0](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0) | [📋 Release Notes](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)
 
 ## ✨ Features
 
@@ -96,11 +113,19 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/JUKES.git
+   git clone https://github.com/rajeet-04/JUKES.git
    cd JUKES
    ```
 
-2. **Configure Spotify API**
+2. **Download from Releases** (Recommended for end users)
+   
+   **Latest Release: [v1.0.0](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)**
+   
+   - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
+   - Install the APK on your Android device
+   - Grant necessary permissions when prompted
+
+3. **Configure Spotify API**
    - Visit [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
    - Create a new app
    - Copy your Client ID and Client Secret
@@ -383,7 +408,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-For issues, questions, or feature requests, please [open an issue](https://github.com/yourusername/JUKES/issues).
+For issues, questions, or feature requests, please [open an issue](https://github.com/rajeet-04/JUKES/issues).
 
 ## 🗺️ Roadmap
 
@@ -411,4 +436,8 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 [⬆ Back to Top](#juke-music-player)
 
 **MADE WITH ❤️ BY RASH**
+
+[![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)
+
 </div>
