@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifySimplifiedTrack
+import com.example.juke.models.SpotifyAlbum
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
@@ -148,8 +149,9 @@ fun AlbumDetailScreen(
                                 }
                             }
                         ) {
-                            SimplifiedTrackItem(
+                            TrackItem(
                                 track = track,
+                                album = album,
                                 onClick = {
                                     scope.launch {
                                         musicViewModel.downloadAndPlay(
@@ -167,14 +169,13 @@ fun AlbumDetailScreen(
 }
 
 @Composable
-private fun SimplifiedTrackItem(
+private fun TrackItem(
     track: SpotifySimplifiedTrack,
+    album: SpotifyAlbum,
     onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth(),
         onClick = onClick
     ) {
         Row(
@@ -183,6 +184,17 @@ private fun SimplifiedTrackItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box {
+                AsyncImage(
+                    model = album.images.lastOrNull()?.url ?: "",
+                    contentDescription = track.name,
+                    modifier = Modifier.size(60.dp),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.name,
@@ -190,7 +202,7 @@ private fun SimplifiedTrackItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 Text(
                     text = track.artists.joinToString(", ") { it.name },
                     style = MaterialTheme.typography.bodyMedium,
@@ -198,8 +210,16 @@ private fun SimplifiedTrackItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                Text(
+                    text = album.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            
+
             Text(
                 text = formatDuration(track.durationMs),
                 style = MaterialTheme.typography.bodySmall,

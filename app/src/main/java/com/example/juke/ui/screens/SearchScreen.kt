@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -34,6 +35,7 @@ fun SearchScreen(
     val uiState by searchViewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
     
     Scaffold(
         topBar = {
@@ -61,6 +63,7 @@ fun SearchScreen(
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                     onSearch = {
                         if (searchQuery.isNotBlank() && !uiState.isSearching) {
+                            keyboardController?.hide()
                             searchViewModel.search(searchQuery)
                         }
                     }
@@ -77,7 +80,10 @@ fun SearchScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Button(
-                onClick = { searchViewModel.search(searchQuery) },
+                onClick = {
+                    keyboardController?.hide()
+                    searchViewModel.search(searchQuery)
+                },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !uiState.isSearching && searchQuery.isNotBlank()
             ) {

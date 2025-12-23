@@ -190,9 +190,7 @@ private fun TrackItem(
     onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth(),
         onClick = onClick
     ) {
         Row(
@@ -204,7 +202,7 @@ private fun TrackItem(
             AsyncImage(
                 model = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url ?: "",
                 contentDescription = track.name,
-                modifier = Modifier.size(50.dp),
+                modifier = Modifier.size(60.dp),
                 contentScale = ContentScale.Crop
             )
             
@@ -214,6 +212,14 @@ private fun TrackItem(
                 Text(
                     text = track.name,
                     style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                Text(
+                    text = track.artists.joinToString(", ") { it.name },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

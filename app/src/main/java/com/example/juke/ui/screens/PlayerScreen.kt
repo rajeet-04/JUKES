@@ -196,6 +196,7 @@ private fun QueueBottomSheetContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(horizontal = 16.dp)
     ) {
         // Header with close button and title
