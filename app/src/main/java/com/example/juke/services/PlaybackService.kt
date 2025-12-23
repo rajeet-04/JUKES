@@ -416,6 +416,11 @@ class PlaybackManager(private val context: Context) {
         Log.d(TAG, "Seeked to $positionMs ms")
     }
     
+    fun seekToIndex(index: Int) {
+        controller?.seekTo(index, 0L)
+        Log.d(TAG, "Seeked to index $index")
+    }
+    
     fun getCurrentPosition(): Long {
         return controller?.currentPosition ?: 0L
     }

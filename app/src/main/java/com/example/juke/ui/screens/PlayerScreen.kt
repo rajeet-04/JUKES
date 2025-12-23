@@ -175,7 +175,7 @@ fun PlayerScreen(
                 onClose = { showQueue = false },
                 onMoveTrack = { fromIndex, toIndex -> musicViewModel.moveInQueue(fromIndex, toIndex) },
                 onRemoveTrack = { trackId -> musicViewModel.removeFromQueue(trackId) },
-                onPlayTrack = { track -> musicViewModel.playTrack(track) }
+                onPlayTrack = { track -> musicViewModel.playTrackFromQueue(track) }
             )
         }
     }

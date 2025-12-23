@@ -163,6 +163,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
+    fun playTrackFromQueue(track: Track) {
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            val queue = currentState.queue
+            
+            // Find the track index in the current queue
+            val trackIndex = queue.indexOfFirst { it.uuid == track.uuid }
+            if (trackIndex == -1) {
+                Log.w("MusicViewModel", "Track ${track.title} not found in current queue")
+                return@launch
+            }
+            
+            // Seek to the track in the playback manager
+            playbackManager.seekToIndex(trackIndex)
+            
+            // Update UI state to reflect the new current track
+            _uiState.update { 
+                it.copy(
+                    currentTrack = track,
+                    queueIndex = trackIndex,
+                    isPlaying = true,
+                    duration = track.durationSec.toLong() * 1000
+                )
+            }
+            
+            Log.d("MusicViewModel", "Playing track from queue: ${track.title} at index $trackIndex")
+        }
+    }
+    
     fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
         viewModelScope.launch {
             playbackManager.setQueue(tracks, startIndex)
