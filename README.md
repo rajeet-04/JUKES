@@ -35,7 +35,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - ✅ Queue management with swipe gestures
 - ✅ Background playback and notification controls
 
-[📥 Download v1.0.0](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0) | [📋 Release Notes](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)
+[📥 Download v1.0.0](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0) | [📋 Release Notes](RELEASE_NOTES.md)
 
 ## ✨ Features
 
