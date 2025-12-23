@@ -251,6 +251,123 @@ object SpotifyApi {
     }
     
     /**
+     * Get a single track by ID.
+     * 
+     * @param trackId Spotify track ID
+     * @param market Market code
+     */
+    suspend fun getTrack(
+        trackId: String,
+        market: String = "NP"
+    ): SpotifyTrack {
+        Log.d(TAG, "Fetching track: $trackId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/tracks/$trackId"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching track: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Get a single artist by ID.
+     * 
+     * @param artistId Spotify artist ID
+     */
+    suspend fun getArtist(
+        artistId: String
+    ): SpotifyArtist {
+        Log.d(TAG, "Fetching artist: $artistId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/artists/$artistId"
+            ) {
+                header("Authorization", "Bearer $token")
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching artist: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Get a single playlist by ID.
+     * 
+     * @param playlistId Spotify playlist ID
+     * @param market Market code
+     */
+    suspend fun getPlaylist(
+        playlistId: String,
+        market: String = "NP"
+    ): SpotifyPlaylist {
+        Log.d(TAG, "Fetching playlist: $playlistId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/playlists/$playlistId"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching playlist: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
+     * Get a single album by ID.
+     * 
+     * @param albumId Spotify album ID
+     * @param market Market code
+     */
+    suspend fun getAlbum(
+        albumId: String,
+        market: String = "NP"
+    ): SpotifyAlbum {
+        Log.d(TAG, "Fetching album: $albumId")
+        
+        try {
+            val token = getAccessToken()
+            
+            val response: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTIFY_API_BASE_URL/albums/$albumId"
+            ) {
+                header("Authorization", "Bearer $token")
+                parameter("market", market)
+            }
+            
+            return response.body()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching album: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
      * Get playlist tracks.
      * 
      * @param playlistId Spotify playlist ID

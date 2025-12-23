@@ -9,12 +9,13 @@ import kotlinx.coroutines.flow.Flow
  * Room Database for JUKE music player.
  */
 @Database(
-    entities = [TrackEntity::class],
-    version = 1,
+    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
+    abstract fun playlistDao(): PlaylistDao
     
     companion object {
         @Volatile
@@ -26,7 +27,9 @@ abstract class MusicDatabase : RoomDatabase() {
                     context.applicationContext,
                     MusicDatabase::class.java,
                     "music_database"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

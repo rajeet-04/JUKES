@@ -4,9 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,7 +54,6 @@ fun SearchScreen(
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Search for songs, artists, playlists...") },
-                leadingIcon = { Icon(Icons.Default.Search, "Search") },
                 singleLine = true,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     imeAction = ImeAction.Search
@@ -91,6 +89,62 @@ fun SearchScreen(
             }
             
             Spacer(modifier = Modifier.height(16.dp))
+            
+            // Show import playlist button if playlist URL detected
+            if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
+                val playlist = uiState.playlists.first()
+                Button(
+                    onClick = {
+                        scope.launch {
+                            searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
+                                musicViewModel.downloadAndPlay(SpotifyApi.spotifyTrackToSong(track))
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                ) {
+                    Text("Import Playlist (${playlist.tracks.total} tracks)")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // Show import progress
+            if (uiState.isImportingPlaylist) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            "Importing Playlist...",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = {
+                                if (uiState.importTotal > 0) {
+                                    uiState.importProgress.toFloat() / uiState.importTotal.toFloat()
+                                } else 0f
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "${uiState.importProgress} / ${uiState.importTotal} tracks",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
             
             if (uiState.error != null) {
                 Text(
