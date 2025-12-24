@@ -5,6 +5,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +45,28 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Search field
+            OutlinedTextField(
+                value = uiState.searchQuery,
+                onValueChange = { libraryViewModel.updateSearchQuery(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp),
+                placeholder = { Text("Search tracks, artists, lyrics...") },
+                singleLine = true,
+                trailingIcon = {
+                    if (uiState.searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { libraryViewModel.clearSearch() }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear search"
+                            )
+                        }
+                    }
+                }
+            )
+            
             // Filter chips
             // Filter chips and playlist selectors
             Column(
@@ -102,13 +126,15 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            if (uiState.showFavoritesOnly) "No favourite tracks yet" 
+                            if (uiState.searchQuery.isNotEmpty()) "No tracks found for your search"
+                            else if (uiState.showFavoritesOnly) "No favourite tracks yet" 
                             else "No downloaded tracks yet",
                             style = MaterialTheme.typography.headlineSmall
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            if (uiState.showFavoritesOnly) "Mark tracks as favourites to see them here"
+                            if (uiState.searchQuery.isNotEmpty()) "Try a different search term"
+                            else if (uiState.showFavoritesOnly) "Mark tracks as favourites to see them here"
                             else "Search and download tracks to build your library",
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -155,9 +181,13 @@ fun LibraryScreen(
                     }
                     
                     // Show downloaded tracks
-                    items(uiState.tracks) { track ->
+                    items(
+                        items = uiState.tracks,
+                        key = { track -> track.uuid }
+                    ) { track ->
                         SwipeToAddNextContainer(
-                            onAddNext = { musicViewModel.addNext(track) }
+                            onAddNext = { musicViewModel.addNext(track) },
+                            onDelete = { libraryViewModel.deleteTrack(track.uuid) }
                         ) {
                             LibraryTrackItem(
                                 track = track,
@@ -168,10 +198,7 @@ fun LibraryScreen(
                                     )
                                 },
                                 onToggleFavorite = {
-                                    libraryViewModel.toggleFavorite(track)
-                                },
-                                onDelete = {
-                                    libraryViewModel.deleteTrack(track)
+                                    libraryViewModel.toggleFavorite(track.uuid)
                                 }
                             )
                         }

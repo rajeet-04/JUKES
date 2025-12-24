@@ -12,6 +12,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
@@ -36,6 +37,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.core.net.toUri
+import android.app.NotificationManager
+import androidx.core.content.getSystemService
 
 /**
  * Media Playback Service using Media3 (ExoPlayer).
@@ -96,7 +99,52 @@ class PlaybackService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 mediaItem?.let {
                     val trackId = it.mediaId
-                    Log.d(TAG, "Media item transition: $trackId")
+                    Log.d(TAG, "Media item transition: $trackId, reason: $reason")
+                    
+                    // Force notification metadata update by rebuilding metadata
+                    try {
+                        mediaSession?.let { session ->
+                            val currentItem = player.currentMediaItem
+                            currentItem?.let { item ->
+                                // Rebuild metadata to force notification refresh
+                                val refreshedMetadata = MediaMetadata.Builder()
+                                    .setTitle(item.mediaMetadata.title)
+                                    .setArtist(item.mediaMetadata.artist)
+                                    .setArtworkUri(item.mediaMetadata.artworkUri)
+                                    .setArtworkData(item.mediaMetadata.artworkData, item.mediaMetadata.artworkDataType)
+                                    .build()
+                                
+                                // Force notification update by replacing the current media item with updated metadata
+                                val currentIndex = player.currentMediaItemIndex
+                                val currentItem = player.getMediaItemAt(currentIndex)
+                                val updatedItem = currentItem.buildUpon()
+                                    .setMediaMetadata(refreshedMetadata)
+                                    .build()
+                                player.replaceMediaItem(currentIndex, updatedItem)
+                                Log.d(TAG, "Replaced media item with updated metadata for notification refresh: ${refreshedMetadata.title}")
+                                
+                                // Additional fallback for Android 16/IQOO Origin OS
+                                serviceScope.launch {
+                                    kotlinx.coroutines.delay(100)
+                                    // Try to force notification refresh by briefly setting empty metadata
+                                    val emptyMetadata = MediaMetadata.Builder()
+                                        .setTitle("")
+                                        .setArtist("")
+                                        .build()
+                                    val emptyItem = currentItem.buildUpon()
+                                        .setMediaMetadata(emptyMetadata)
+                                        .build()
+                                    player.replaceMediaItem(currentIndex, emptyItem)
+                                    
+                                    kotlinx.coroutines.delay(10)
+                                    player.replaceMediaItem(currentIndex, updatedItem)
+                                    Log.d(TAG, "Used empty metadata refresh for Android 16 compatibility")
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to refresh player metadata: ${e.message}")
+                    }
                     
                     serviceScope.launch {
                         try {
@@ -129,8 +177,11 @@ class PlaybackService : MediaSessionService() {
                 )
             }
         
+        val bitmapLoader = DataSourceBitmapLoader(this)
+        
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityPendingIntent!!)
+            .setBitmapLoader(bitmapLoader)
             .build()
         
         Log.d(TAG, "PlaybackService created")

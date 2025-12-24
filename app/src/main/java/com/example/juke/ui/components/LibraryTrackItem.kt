@@ -4,7 +4,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -23,33 +22,8 @@ fun LibraryTrackItem(
     track: Track,
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Delete Track") },
-            text = { Text("Are you sure you want to delete \"${track.title}\"?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteDialog = false
-                        onDelete()
-                    }
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
     
     Card(
         modifier = modifier.fillMaxWidth()
@@ -111,13 +85,6 @@ fun LibraryTrackItem(
                     if (track.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                     contentDescription = if (track.isFavourite) "Remove from favorites" else "Add to favorites",
                     tint = if (track.isFavourite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                )
-            }
-            
-            IconButton(onClick = { showDeleteDialog = true }) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete"
                 )
             }
         }

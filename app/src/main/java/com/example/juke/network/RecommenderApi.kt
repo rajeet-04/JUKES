@@ -29,20 +29,35 @@ object RecommenderApi {
     private val gson = Gson()
 
     private val OFFICIAL_KEYWORDS = listOf(
-        "official", "music video", "official video", "official music video",
-        "lyric video", "official lyric video", "vevo", "official audio",
-        "from the album", "single", "ep", "lp", "remastered",
-        "anniversary edition", "deluxe edition", "prod by", "produced by",
-        "ft.", "feat.", "featuring"
-    )
+    "official", "official video", "official music video", "official lyric video",
+    "music video", "vevo", "official audio", "audio", "visualizer", "official visualizer",
+    "from the album", "album version", "single", "ep", "lp",
+    "remastered", "anniversary edition", "deluxe edition",
+    "radio edit", "clean", "explicit",
+    "prod by", "produced by", "ft.", "feat.", "featuring",
+    "original", "original song", "original soundtrack", "ost", "soundtrack",
+    "theme", "title track", "lead single", "debut single",
+    "official performance", "official live video", "session", "studio version"
+)
+
     
     private val SPAM_KEYWORDS = listOf(
-        "remix", "cover", "karaoke", "instrumental", "8d audio", "8d", "slowed",
-        "reverb", "nightcore", "bass boosted", "live", "acoustic", 
-        "tutorial", "how to", "reaction", "review", "mashup", "mix",
-        "lyrics", "lyric video", "vocals only", "english translation",
-        "reaction video", "reactionplus", "mashup reaction"
-    )
+    "remix", "cover", "fan made", "fanmade", "ai cover", "ai version", "voice model",
+    "karaoke", "instrumental", "no vocals", "vocals removed",
+    "8d", "8d audio", "slowed", "reverb", "nightcore", "bass boosted",
+    "sped up", "speed up", "pitch shifted", "chipmunk",
+    "live", "acoustic", "tutorial", "how to", "reaction", "review",
+    "mashup", "mix", "lyrics", "lyric video", "english translation",
+    "reaction video", "reactionplus", "mashup reaction",
+    "tiktok", "shorts", "edit", "edit audio", "overlay", "transition",
+    "loop", "extended", "hour version", "1 hour", "10 hour", "24/7",
+    "background music", "study", "sleep", "relaxing", "meditation", "ambience", "ambient",
+    "stem", "stems", "multitrack", "isolation",
+    "behind the scenes", "bts", "making of", "explained", "breakdown",
+    "teaser", "trailer", "preview", "snippet",
+    "leak", "leaked", "unreleased", "demo", "rough mix", "work in progress", "wip"
+)
+
     
     @Serializable
     private data class SearchRequest(val query: String)

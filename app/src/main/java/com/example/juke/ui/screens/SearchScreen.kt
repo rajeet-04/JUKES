@@ -13,8 +13,10 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
+import com.example.juke.ui.components.AlbumCard
 import com.example.juke.ui.components.ArtistCard
 import com.example.juke.ui.components.PlaylistCard
 import com.example.juke.ui.components.SwipeToAddNextContainer
@@ -29,7 +31,8 @@ fun SearchScreen(
     musicViewModel: MusicViewModel,
     searchViewModel: SearchViewModel = viewModel(),
     onNavigateToArtist: (SpotifyArtist) -> Unit = {},
-    onNavigateToPlaylist: (SpotifyPlaylist) -> Unit = {}
+    onNavigateToPlaylist: (SpotifyPlaylist) -> Unit = {},
+    onNavigateToAlbum: (SpotifyAlbum) -> Unit = {}
 ) {
     val uiState by searchViewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
@@ -160,7 +163,8 @@ fun SearchScreen(
             
             val hasResults = uiState.tracks.isNotEmpty() || 
                            uiState.artists.isNotEmpty() || 
-                           uiState.playlists.isNotEmpty()
+                           uiState.playlists.isNotEmpty() ||
+                           uiState.albums.isNotEmpty()
             
             if (!hasResults && !uiState.isSearching && uiState.query.isNotBlank()) {
                 Box(
@@ -254,6 +258,31 @@ fun SearchScreen(
                                             playlist = playlist,
                                             onClick = {
                                                 onNavigateToPlaylist(playlist)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Albums Section
+                        if (uiState.albums.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Albums",
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                            }
+
+                            item {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(uiState.albums) { album ->
+                                        AlbumCard(
+                                            album = album,
+                                            onClick = {
+                                                onNavigateToAlbum(album)
                                             }
                                         )
                                     }

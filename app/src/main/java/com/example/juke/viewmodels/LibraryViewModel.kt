@@ -19,7 +19,8 @@ data class LibraryUiState(
     val playlists: List<PlaylistEntity> = emptyList(),
     val showFavoritesOnly: Boolean = false,
     val isLoading: Boolean = false,
-    val selectedPlaylist: PlaylistEntity? = null
+    val selectedPlaylist: PlaylistEntity? = null,
+    val searchQuery: String = ""
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -65,8 +66,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 trackDao.getDownloadedTracks().map { it.toTrack() }
             }
             
+            val filteredTracks = filterTracksBySearch(tracks)
+            
             _uiState.value = _uiState.value.copy(
-                tracks = tracks,
+                tracks = filteredTracks,
                 isLoading = false,
                 selectedPlaylist = null
             )
@@ -87,8 +90,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
             val playlist = playlistDao.getPlaylist(playlistId)
             val tracks = playlistDao.getPlaylistTracks(playlistId).map { it.toTrack() }
+            val filteredTracks = filterTracksBySearch(tracks)
+            
             _uiState.value = _uiState.value.copy(
-                tracks = tracks,
+                tracks = filteredTracks,
                 showFavoritesOnly = false,
                 selectedPlaylist = playlist,
                 isLoading = false
@@ -103,17 +108,58 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         loadTracks()
     }
     
-    fun toggleFavorite(track: Track) {
+    fun toggleFavorite(trackUuid: String) {
         viewModelScope.launch {
-            trackDao.updateTrackFavourite(track.uuid, !track.isFavourite)
-            loadTracks()
+            // Get the track from current state to ensure we have the latest data
+            val track = _uiState.value.tracks.find { it.uuid == trackUuid }
+            if (track != null) {
+                trackDao.updateTrackFavourite(track.uuid, !track.isFavourite)
+                loadTracks()
+            }
         }
     }
     
-    fun deleteTrack(track: Track) {
+    fun deleteTrack(trackUuid: String) {
         viewModelScope.launch {
-            musicService.deleteTrackAndFiles(track)
-            loadTracks()
+            // Get the track from current state to ensure we have the latest data
+            val track = _uiState.value.tracks.find { it.uuid == trackUuid }
+            if (track != null) {
+                musicService.deleteTrackAndFiles(track)
+                loadTracks()
+            }
+        }
+    }
+    
+    fun updateSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(searchQuery = query)
+        loadTracks()
+    }
+    
+    fun clearSearch() {
+        _uiState.value = _uiState.value.copy(searchQuery = "")
+        loadTracks()
+    }
+    
+    private fun filterTracksBySearch(tracks: List<Track>): List<Track> {
+        val query = _uiState.value.searchQuery.trim()
+        if (query.isEmpty()) return tracks
+        
+        val lowerQuery = query.lowercase()
+        return tracks.filter { track ->
+            // Search in title
+            track.title.lowercase().contains(lowerQuery) ||
+            // Search in artist
+            track.artist.lowercase().contains(lowerQuery) ||
+            // Search in plain lyrics
+            (track.plainLyrics?.lowercase()?.contains(lowerQuery) == true) ||
+            // Search in synced lyrics (remove timestamps for search)
+            (track.syncedLyrics?.lowercase()?.let { lyrics ->
+                // Remove timestamp patterns like [00:00.00] or [0:0.0]
+                lyrics.replace(Regex("\\[\\d+:\\d+\\.\\d+\\]"), "")
+                    .replace(Regex("\\[\\d+:\\d+\\]"), "")
+                    .trim()
+                    .contains(lowerQuery)
+            } == true)
         }
     }
 }

@@ -127,7 +127,7 @@ class QueueManager(private val context: Context) {
      * 1. Gets YouTube video ID for current song
      * 2. Fetches full radio queue from YouTube Music
      * 3. Validates recommendations with Spotify
-     * 4. Adds top 10 validated tracks to download queue
+     * 4. Adds top 5 validated tracks to download queue
      * 
      * @param currentTrack Track to base recommendations on
      */
@@ -159,10 +159,10 @@ class QueueManager(private val context: Context) {
                 
                 Log.d(TAG, "Got ${recommendations.size} raw recommendations")
                 
-                // Validate with Spotify and get top 10
+                // Validate with Spotify and get top 5
                 val validatedRecs = RecommenderApi.validateAndFilterWithSpotify(
                     recommendations,
-                    maxResults = 10
+                    maxResults = 5
                 )
                 
                 if (validatedRecs.isEmpty()) {

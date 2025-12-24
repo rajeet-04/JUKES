@@ -20,6 +20,7 @@ data class SearchUiState(
     val tracks: List<SpotifyTrack> = emptyList(),
     val artists: List<SpotifyArtist> = emptyList(),
     val playlists: List<SpotifyPlaylist> = emptyList(),
+    val albums: List<SpotifyAlbum> = emptyList(),
     val isSearching: Boolean = false,
     val downloadingId: String? = null,
     val error: String? = null,
@@ -59,7 +60,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.value = _uiState.value.copy(
                 tracks = emptyList(),
                 artists = emptyList(),
-                playlists = emptyList()
+                playlists = emptyList(),
+                albums = emptyList()
             )
             return
         }
@@ -80,6 +82,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 tracks = listOf(track),
                                 artists = emptyList(),
                                 playlists = emptyList(),
+                                albums = emptyList(),
                                 isSearching = false
                             )
                         }
@@ -89,6 +92,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 tracks = emptyList(),
                                 artists = listOf(artist),
                                 playlists = emptyList(),
+                                albums = emptyList(),
                                 isSearching = false
                             )
                         }
@@ -98,6 +102,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 tracks = emptyList(),
                                 artists = emptyList(),
                                 playlists = listOf(playlist),
+                                albums = emptyList(),
                                 isSearching = false,
                                 isPlaylistUrl = true,
                                 playlistId = urlInfo.id
@@ -105,12 +110,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         "album" -> {
                             val album = SpotifyApi.getAlbum(urlInfo.id)
-                            // Convert album to artist for display purposes
-                            val artist = album.artists.firstOrNull()
                             _uiState.value = _uiState.value.copy(
                                 tracks = emptyList(),
-                                artists = if (artist != null) listOf(artist) else emptyList(),
+                                artists = emptyList(),
                                 playlists = emptyList(),
+                                albums = listOf(album),
                                 isSearching = false
                             )
                         }
@@ -123,6 +127,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         tracks = response.tracks?.items ?: emptyList(),
                         artists = response.artists?.items ?: emptyList(),
                         playlists = response.playlists?.items?.filterNotNull() ?: emptyList(),
+                        albums = emptyList(),
                         isSearching = false
                     )
                 }

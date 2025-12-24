@@ -122,6 +122,10 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToPlaylist = { playlist ->
                                     playlistDetailViewModel.loadPlaylistDetails(playlist)
                                     navController.navigate("playlist/${playlist.id}")
+                                },
+                                onNavigateToAlbum = { album ->
+                                    albumDetailViewModel.loadAlbumDetails(album)
+                                    navController.navigate("album/${album.id}")
                                 }
                             )
                         }
