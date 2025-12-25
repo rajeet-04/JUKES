@@ -31,14 +31,21 @@ class AlbumDetailViewModel : ViewModel() {
             )
             
             try {
-                val tracksResponse = SpotifyApi.getAlbumTracks(album.id)
-                
-                _uiState.value = _uiState.value.copy(
-                    tracks = tracksResponse.items,
-                    isLoading = false
-                )
-                
-                Log.d("AlbumDetailViewModel", "Loaded ${tracksResponse.items.size} tracks for album ${album.name}")
+                if (album.id != null) {
+                    val tracksResponse = SpotifyApi.getAlbumTracks(album.id)
+                    
+                    _uiState.value = _uiState.value.copy(
+                        tracks = tracksResponse.items,
+                        isLoading = false
+                    )
+                    
+                    Log.d("AlbumDetailViewModel", "Loaded ${tracksResponse.items.size} tracks for album ${album.name}")
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Invalid album ID"
+                    )
+                }
             } catch (e: Exception) {
                 Log.e("AlbumDetailViewModel", "Error loading album details: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(

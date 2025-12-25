@@ -1,19 +1,42 @@
 package com.example.juke
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.ui.res.painterResource
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -25,6 +48,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.juke.ui.components.MiniPlayer
 import com.example.juke.ui.screens.AlbumDetailScreen
 import com.example.juke.ui.screens.ArtistDetailScreen
+import com.example.juke.ui.screens.AudioSettingsScreen
 import com.example.juke.ui.screens.HomeScreen
 import com.example.juke.ui.screens.LibraryScreen
 import com.example.juke.ui.screens.PlayerScreen
@@ -42,10 +66,19 @@ sealed class Screen(val route: String, val title: String, val filledIcon: @Compo
     object Library : Screen("library", "Library", { Icon(painter = painterResource(R.drawable.library_outlined), contentDescription = "Library") }, { Icon(painter = painterResource(R.drawable.library), contentDescription = "Library") })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
+    
+    private val showPlayerOnLaunch = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        if (intent.getBooleanExtra("open_player", false)) {
+            showPlayerOnLaunch.value = true
+        }
+
         setContent {
             JUKETheme {
                 val navController = rememberNavController()
@@ -54,6 +87,13 @@ class MainActivity : ComponentActivity() {
                 val playlistDetailViewModel: PlaylistDetailViewModel = viewModel()
                 val albumDetailViewModel: AlbumDetailViewModel = viewModel()
                 var showPlayerModal by remember { mutableStateOf(false) }
+                
+                LaunchedEffect(showPlayerOnLaunch.value) {
+                    if (showPlayerOnLaunch.value) {
+                        showPlayerModal = true
+                        showPlayerOnLaunch.value = false
+                    }
+                }
                 
                 val items = listOf(
                     Screen.Home,
@@ -64,17 +104,37 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     bottomBar = {
-                        Column {
-                            MiniPlayer(
-                                musicViewModel = musicViewModel,
-                                onExpand = { showPlayerModal = true }
-                            )
-                            
-                            NavigationBar {
-                                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                                val currentDestination = navBackStackEntry?.destination
+                        val navBackStackEntry by navController.currentBackStackEntryAsState()
+                        val currentRoute = navBackStackEntry?.destination?.route
+                        
+                        if (currentRoute != "settings") {
+                            Column {
+                                MiniPlayer(
+                                    musicViewModel = musicViewModel,
+                                    onExpand = { showPlayerModal = true }
+                                )
                                 
-                                items.forEach { screen ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            brush = Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    MaterialTheme.colorScheme.surface
+                                                ),
+                                                startY = 0f,
+                                                endY = 100f
+                                            )
+                                        )
+                                ) {
+                                    NavigationBar(
+                                        containerColor = Color.Transparent
+                                    ) {
+                                        val navBackStackEntry by navController.currentBackStackEntryAsState()
+                                        val currentDestination = navBackStackEntry?.destination
+                                        
+                                        items.forEach { screen ->
                                     NavigationBarItem(
                                         icon = {
                                             if (currentDestination?.hierarchy?.any { it.route == screen.route } == true) {
@@ -97,20 +157,31 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     )
-                                }
-                            }
+                                }                                }                            }
+                        }
                         }
                     }
                 ) { innerPadding ->
+                    val layoutDirection = LocalLayoutDirection.current
+                    val bottomPadding = innerPadding.calculateBottomPadding()
+                    val contentPadding = PaddingValues(
+                        start = innerPadding.calculateStartPadding(layoutDirection),
+                        top = 0.dp,
+                        end = innerPadding.calculateEndPadding(layoutDirection),
+                        bottom = 0.dp
+                    )
+
                     NavHost(
                         navController = navController,
                         startDestination = Screen.Home.route,
-                        modifier = Modifier
-                            .padding(innerPadding)
-                            .statusBarsPadding()
+                        modifier = Modifier.padding(contentPadding)
                     ) {
                         composable(Screen.Home.route) {
-                            HomeScreen(musicViewModel = musicViewModel)
+                            HomeScreen(
+                                musicViewModel = musicViewModel,
+                                onSettingsClick = { navController.navigate("settings") },
+                                bottomPadding = bottomPadding
+                            )
                         }
                         composable(Screen.Search.route) {
                             SearchScreen(
@@ -126,11 +197,23 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToAlbum = { album ->
                                     albumDetailViewModel.loadAlbumDetails(album)
                                     navController.navigate("album/${album.id}")
-                                }
+                                },
+                                bottomPadding = bottomPadding
                             )
                         }
                         composable(Screen.Library.route) {
-                            LibraryScreen(musicViewModel = musicViewModel)
+                            LibraryScreen(
+                                musicViewModel = musicViewModel,
+                                bottomPadding = bottomPadding
+                            )
+                        }
+                        composable("settings") {
+                            AudioSettingsScreen(
+                                musicViewModel = musicViewModel,
+                                onNavigateBack = {
+                                    navController.popBackStack()
+                                }
+                            )
                         }
                         composable("artist/{artistId}") {
                             ArtistDetailScreen(
@@ -143,7 +226,8 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToAlbum = { album ->
                                     albumDetailViewModel.loadAlbumDetails(album)
                                     navController.navigate("album/${album.id}")
-                                }
+                                },
+                                bottomPadding = bottomPadding
                             )
                         }
                         composable("playlist/{playlistId}") {
@@ -153,7 +237,8 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = {
                                     playlistDetailViewModel.clearPlaylistDetail()
                                     navController.popBackStack()
-                                }
+                                },
+                                bottomPadding = bottomPadding
                             )
                         }
                         composable("album/{albumId}") {
@@ -163,7 +248,8 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = {
                                     albumDetailViewModel.clearAlbumDetail()
                                     navController.popBackStack()
-                                }
+                                },
+                                bottomPadding = bottomPadding
                             )
                         }
                     }
@@ -177,6 +263,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("open_player", false)) {
+            showPlayerOnLaunch.value = true
         }
     }
 }

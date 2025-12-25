@@ -20,15 +20,22 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.SessionToken
-import com.example.juke.database.MusicDatabase
-import com.example.juke.models.Track
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService.LibraryParams
 import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.example.juke.database.MusicDatabase
+import com.example.juke.database.toTrack
+import com.example.juke.models.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,17 +46,20 @@ import java.util.Locale
 import androidx.core.net.toUri
 import android.app.NotificationManager
 import androidx.core.content.getSystemService
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 /**
- * Media Playback Service using Media3 (ExoPlayer).
+ * Media Playback Service using Media3 (ExoPlayer) with Android Auto support.
  */
-class PlaybackService : MediaSessionService() {
+class PlaybackService : MediaLibraryService() {
     
     private val TAG = "PlaybackService"
     
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
     private lateinit var database: MusicDatabase
+    val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
     
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -73,6 +83,17 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+        
+        // Listen for audio session ID changes to attach audio effects
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioSessionIdChanged(
+                eventTime: AnalyticsListener.EventTime,
+                audioSessionId: Int
+            ) {
+                Log.d(TAG, "Audio session ID changed: $audioSessionId")
+                audioEffectController.attachToAudioSession(audioSessionId)
+            }
+        })
         
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -169,6 +190,7 @@ class PlaybackService : MediaSessionService() {
         val sessionActivityPendingIntent = packageManager
             ?.getLaunchIntentForPackage(packageName)
             ?.let { sessionIntent ->
+                sessionIntent.putExtra("open_player", true)
                 PendingIntent.getActivity(
                     this,
                     0,
@@ -179,7 +201,7 @@ class PlaybackService : MediaSessionService() {
         
         val bitmapLoader = DataSourceBitmapLoader(this)
         
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaLibrarySession.Builder(this, player, MediaLibrarySessionCallback())
             .setSessionActivity(sessionActivityPendingIntent!!)
             .setBitmapLoader(bitmapLoader)
             .build()
@@ -187,7 +209,7 @@ class PlaybackService : MediaSessionService() {
         Log.d(TAG, "PlaybackService created")
     }
     
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         return mediaSession
     }
     
@@ -197,8 +219,164 @@ class PlaybackService : MediaSessionService() {
             release()
             mediaSession = null
         }
+        audioEffectController.release()
         super.onDestroy()
         Log.d(TAG, "PlaybackService destroyed")
+    }
+    
+    /**
+     * MediaLibrarySession callback for Android Auto browsing support
+     */
+    private inner class MediaLibrarySessionCallback : MediaLibrarySession.Callback {
+        
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(
+                    MediaItem.Builder()
+                        .setMediaId("root")
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setIsBrowsable(true)
+                                .setIsPlayable(false)
+                                .setTitle("JUKE")
+                                .build()
+                        )
+                        .build(),
+                    params
+                )
+            )
+        }
+        
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            return when (parentId) {
+                "root" -> {
+                    // Root menu categories
+                    val items = ImmutableList.of(
+                        buildBrowsableItem("recent", "Recently Played"),
+                        buildBrowsableItem("favorites", "Favorites"),
+                        buildBrowsableItem("all_tracks", "All Tracks")
+                    )
+                    Futures.immediateFuture(LibraryResult.ofItemList(items, params))
+                }
+                "recent" -> loadRecentTracks(params)
+                "favorites" -> loadFavorites(params)
+                "all_tracks" -> loadAllTracks(params)
+                else -> Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+            }
+        }
+        
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            return serviceScope.async {
+                try {
+                    val track = database.trackDao().getTrackByUuid(mediaId)?.toTrack()
+                    if (track != null) {
+                        LibraryResult.ofItem(buildPlayableMediaItem(track), null)
+                    } else {
+                        LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error getting item: ${e.message}")
+                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                }
+            }.asListenableFuture()
+        }
+        
+        private fun buildBrowsableItem(mediaId: String, title: String): MediaItem {
+            return MediaItem.Builder()
+                .setMediaId(mediaId)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setIsBrowsable(true)
+                        .setIsPlayable(false)
+                        .setTitle(title)
+                        .build()
+                )
+                .build()
+        }
+        
+        private fun buildPlayableMediaItem(track: Track): MediaItem {
+            return MediaItem.Builder()
+                .setMediaId(track.uuid)
+                .setUri(track.localUri)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(track.title)
+                        .setArtist(track.artist)
+                        .setArtworkUri(track.thumbnailUri?.toUri())
+                        .setIsBrowsable(false)
+                        .setIsPlayable(true)
+                        .build()
+                )
+                .build()
+        }
+        
+        private fun loadRecentTracks(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            return serviceScope.async {
+                try {
+                    val tracks = database.trackDao().getRecentlyPlayed(20)
+                    val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
+                    LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading recent tracks: ${e.message}")
+                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                }
+            }.asListenableFuture()
+        }
+        
+        private fun loadFavorites(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            return serviceScope.async {
+                try {
+                    val tracks = database.trackDao().getFavourites()
+                    val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
+                    LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading favorites: ${e.message}")
+                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                }
+            }.asListenableFuture()
+        }
+        
+        private fun loadAllTracks(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            return serviceScope.async {
+                try {
+                    val tracks = database.trackDao().getDownloadedTracks()
+                    val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
+                    LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading all tracks: ${e.message}")
+                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                }
+            }.asListenableFuture()
+        }
+        
+        @kotlin.OptIn(ExperimentalCoroutinesApi::class)
+        private fun <T> kotlinx.coroutines.Deferred<T>.asListenableFuture(): ListenableFuture<T> {
+            val deferred = this
+            return com.google.common.util.concurrent.SettableFuture.create<T>().apply {
+                deferred.invokeOnCompletion { exception ->
+                    if (exception != null) {
+                        setException(exception)
+                    } else {
+                        set(deferred.getCompleted())
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -209,6 +387,7 @@ class PlaybackService : MediaSessionService() {
 class PlaybackManager(private val context: Context) {
     
     private val TAG = "PlaybackManager"
+    private val prefs = context.getSharedPreferences("playback_state_prefs", Context.MODE_PRIVATE)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private var playerListener: Player.Listener? = null
@@ -220,6 +399,21 @@ class PlaybackManager(private val context: Context) {
     // Flow to emit current track UUID changes
     private val _currentTrackId = MutableStateFlow<String?>(null)
     val currentTrackIdFlow: StateFlow<String?> = _currentTrackId.asStateFlow()
+    
+    // Flow to indicate if restored state is available
+    private val _hasRestoredState = MutableStateFlow(false)
+    val hasRestoredState: StateFlow<Boolean> = _hasRestoredState.asStateFlow()
+    
+    // Sleep timer state
+    private var sleepTimerJob: kotlinx.coroutines.Job? = null
+    private val _sleepTimerRemaining = MutableStateFlow<Long?>(null)
+    val sleepTimerRemaining: StateFlow<Long?> = _sleepTimerRemaining.asStateFlow()
+    
+    // Audio effect controller
+    val audioEffectController: AudioEffectController by lazy { AudioEffectController(context) }
+    
+    // Queue manager for recommendations
+    private val queueManager: QueueManager by lazy { QueueManager.getInstance(context) }
     
     fun initialize() {
         if (controllerFuture == null) {
@@ -238,6 +432,9 @@ class PlaybackManager(private val context: Context) {
 
                                 override fun onPlaybackStateChanged(playbackState: Int) {
                                     Log.d(TAG, "PlayerListener playbackStateChanged: $playbackState")
+                                    if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
+                                        savePlaybackState()
+                                    }
                                 }
 
                                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -245,6 +442,7 @@ class PlaybackManager(private val context: Context) {
                                         val trackId = item.mediaId
                                         _currentTrackId.value = trackId
                                         Log.d(TAG, "Media item transition: $trackId")
+                                        savePlaybackState()
                                     }
                                 }
                             }
@@ -265,12 +463,21 @@ class PlaybackManager(private val context: Context) {
                                             Log.d(TAG, "Polled controller isPlaying: $playing")
                                             last = playing
                                         }
-                                        kotlinx.coroutines.delay(300)
+                                        // Save position every 5 seconds when playing
+                                        if (playing) {
+                                            savePlaybackState()
+                                        }
+                                        kotlinx.coroutines.delay(5000)
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Polling loop error: ${e.message}")
                                         break
                                     }
                                 }
+                            }
+                            
+                            // Restore saved playback state if exists
+                            scope.launch {
+                                restorePlaybackState()
                             }
                 },
                 MoreExecutors.directExecutor()
@@ -310,18 +517,6 @@ class PlaybackManager(private val context: Context) {
         _currentTrackId.value = track.uuid
         
         Log.d(TAG, "Playing track: ${track.title}")
-        // Update play count in DB
-        scope.launch {
-            try {
-                val now = SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                    Locale.US
-                ).format(Date())
-                database.trackDao().incrementPlayCount(track.uuid, now)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error incrementing play count: ${e.message}", e)
-            }
-        }
     }
     
     fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
@@ -355,19 +550,10 @@ class PlaybackManager(private val context: Context) {
         }
         
         Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex")
-        // Increment play count for the starting track
-        tracks.getOrNull(startIndex)?.let { startTrack ->
-            scope.launch {
-                try {
-                    val now = SimpleDateFormat(
-                        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                        Locale.US
-                    ).format(Date())
-                    database.trackDao().incrementPlayCount(startTrack.uuid, now)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error incrementing play count for queue start: ${e.message}", e)
-                }
-            }
+        
+        // Save queue to preferences
+        scope.launch {
+            saveQueueState(tracks, startIndex)
         }
     }
     
@@ -522,7 +708,45 @@ class PlaybackManager(private val context: Context) {
         return false
     }
     
+    /**
+     * Start sleep timer that will pause playback after specified minutes.
+     * @param minutes Duration in minutes
+     */
+    fun startSleepTimer(minutes: Int) {
+        cancelSleepTimer()
+        
+        val durationMs = minutes * 60 * 1000L
+        sleepTimerJob = scope.launch {
+            var remaining = durationMs
+            while (remaining > 0) {
+                _sleepTimerRemaining.value = remaining
+                kotlinx.coroutines.delay(1000)
+                remaining -= 1000
+            }
+            
+            // Timer finished - pause playback
+            _sleepTimerRemaining.value = null
+            controller?.pause()
+            Log.d(TAG, "Sleep timer finished - paused playback")
+        }
+        
+        Log.d(TAG, "Sleep timer started for $minutes minutes")
+    }
+    
+    /**
+     * Cancel active sleep timer.
+     */
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerRemaining.value = null
+        Log.d(TAG, "Sleep timer cancelled")
+    }
+    
     fun release() {
+        cancelSleepTimer()
+        savePlaybackState() // Save state before releasing
+        audioEffectController.release()
         MediaController.releaseFuture(controllerFuture ?: return)
         // remove player listener if attached
         try {
@@ -532,5 +756,113 @@ class PlaybackManager(private val context: Context) {
         controller = null
         controllerFuture = null
         Log.d(TAG, "PlaybackManager released")
+    }
+    
+    private fun savePlaybackState() {
+        try {
+            val position = controller?.currentPosition ?: 0L
+            val currentIndex = controller?.currentMediaItemIndex ?: -1
+            
+            prefs.edit().apply {
+                putLong("playback_position", position)
+                putInt("queue_start_index", currentIndex)
+                apply()
+            }
+            Log.d(TAG, "Saved playback state: position=$position, index=$currentIndex")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save playback state: ${e.message}")
+        }
+    }
+    
+    private suspend fun saveQueueState(tracks: List<Track>, startIndex: Int) {
+        try {
+            val trackIds = tracks.map { it.uuid }.joinToString(",")
+            prefs.edit().apply {
+                putString("queue_track_ids", trackIds)
+                putInt("queue_start_index", startIndex)
+                putBoolean("has_saved_state", true)
+                apply()
+            }
+            Log.d(TAG, "Saved queue state: ${tracks.size} tracks")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save queue state: ${e.message}")
+        }
+    }
+    
+    private suspend fun restorePlaybackState() {
+        try {
+            if (!prefs.getBoolean("has_saved_state", false)) {
+                Log.d(TAG, "No saved playback state found")
+                return
+            }
+            
+            val trackIds = prefs.getString("queue_track_ids", "") ?: ""
+            if (trackIds.isEmpty()) {
+                Log.d(TAG, "No saved queue found")
+                return
+            }
+            
+            val ids = trackIds.split(",")
+            val savedIndex = prefs.getInt("queue_start_index", 0)
+            val savedPosition = prefs.getLong("playback_position", 0L)
+            
+            // Load tracks from database
+            val tracks = withContext(Dispatchers.IO) {
+                ids.mapNotNull { id ->
+                    try {
+                        database.trackDao().getTrackByUuid(id)?.toTrack()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to load track $id: ${e.message}")
+                        null
+                    }
+                }
+            }
+            
+            if (tracks.isEmpty()) {
+                Log.d(TAG, "No tracks found in database for saved queue")
+                return
+            }
+            
+            Log.d(TAG, "Restoring playback state: ${tracks.size} tracks, index=$savedIndex, position=$savedPosition")
+            
+            // Restore queue
+            val mediaItems = tracks.mapNotNull { track ->
+                track.localUri?.let { uri ->
+                    MediaItem.Builder()
+                        .setMediaId(track.uuid)
+                        .setUri(uri)
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(track.title)
+                                .setArtist(track.artist)
+                                .setArtworkUri(track.thumbnailUri?.toUri())
+                                .build()
+                        )
+                        .build()
+                }
+            }
+            
+            // MediaController methods must be called on main thread
+            withContext(Dispatchers.Main) {
+                controller?.apply {
+                    setMediaItems(mediaItems, savedIndex.coerceIn(0, mediaItems.size - 1), savedPosition)
+                    prepare()
+                    // Don't auto-play, just prepare to paused state
+                }
+                
+                tracks.getOrNull(savedIndex)?.let { track ->
+                    _currentTrackId.value = track.uuid
+                }
+                
+                // Update QueueManager with restored queue
+                queueManager.initializeQueue(tracks)
+                
+                _hasRestoredState.value = true
+                Log.d(TAG, "Playback state restored successfully")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to restore playback state: ${e.message}", e)
+        }
     }
 }

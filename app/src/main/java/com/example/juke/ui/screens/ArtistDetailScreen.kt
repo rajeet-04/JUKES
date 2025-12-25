@@ -1,29 +1,51 @@
 package com.example.juke.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
-import com.example.juke.models.SpotifyArtist
-import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.SpotifyImage
+import com.example.juke.models.SpotifyTrack
 import com.example.juke.ui.components.SwipeToAddNextContainer
-import com.example.juke.viewmodels.SearchViewModel
 import com.example.juke.viewmodels.MusicViewModel
+import com.example.juke.viewmodels.SearchViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,7 +54,8 @@ fun ArtistDetailScreen(
     searchViewModel: SearchViewModel = viewModel(),
     musicViewModel: MusicViewModel = viewModel(),
     onNavigateBack: () -> Unit,
-    onNavigateToAlbum: (SpotifyAlbum) -> Unit = {}
+    onNavigateToAlbum: (SpotifyAlbum) -> Unit = {},
+    bottomPadding: Dp = 0.dp
 ) {
     val uiState by searchViewModel.artistDetailState.collectAsState()
     val scope = rememberCoroutineScope()
@@ -73,7 +96,12 @@ fun ArtistDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + bottomPadding
+                ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Artist Header
@@ -282,7 +310,7 @@ private fun AlbumItem(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "${album.albumType.replaceFirstChar { it.uppercase() }} • ${album.releaseDate.take(4)} • ${album.totalTracks} tracks",
+                    text = "${album.albumType?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() } ?: "Album"} • ${album.releaseDate?.take(4) ?: ""} • ${album.totalTracks ?: 0} tracks",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

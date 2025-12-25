@@ -7,7 +7,9 @@ import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.Track
+import com.example.juke.services.DownloadInfo
 import com.example.juke.services.MusicService
+import com.example.juke.services.QueueManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +22,9 @@ data class LibraryUiState(
     val showFavoritesOnly: Boolean = false,
     val isLoading: Boolean = false,
     val selectedPlaylist: PlaylistEntity? = null,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val downloadingTracks: Set<String> = emptySet(),
+    val recommendationDownloads: List<DownloadInfo> = emptyList()
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -29,6 +33,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val trackDao = database.trackDao()
     private val playlistDao = database.playlistDao()
     private val musicService = MusicService(application)
+    private val queueManager = QueueManager.getInstance(application)
     
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
@@ -47,6 +52,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                         isLoading = false
                     )
                 }
+            }
+        }
+        
+        // Observe QueueManager downloads for recommendations
+        viewModelScope.launch {
+            queueManager.downloadingTracks.collect { downloadInfoList ->
+                _uiState.value = _uiState.value.copy(recommendationDownloads = downloadInfoList)
             }
         }
     }

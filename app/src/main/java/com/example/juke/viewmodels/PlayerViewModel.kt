@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.database.MusicDatabase
 import com.example.juke.models.Track
+import com.example.juke.services.DownloadInfo
 import com.example.juke.services.QueueManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     
     private val TAG = "PlayerViewModel"
     private val database = MusicDatabase.getDatabase(application)
-    private val queueManager = QueueManager(application)
+    private val queueManager = QueueManager.getInstance(application)
     
     // UI State
     private val _currentTrack = MutableStateFlow<Track?>(null)
@@ -37,8 +38,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
     
-    private val _downloadingTracks = MutableStateFlow<Set<String>>(emptySet())
-    val downloadingTracks: StateFlow<Set<String>> = _downloadingTracks.asStateFlow()
+    private val _downloadingTracks = MutableStateFlow<List<DownloadInfo>>(emptyList())
+    val downloadingTracks: StateFlow<List<DownloadInfo>> = _downloadingTracks.asStateFlow()
     
     init {
         // Observe queue changes
@@ -194,7 +195,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      * @return True if downloading
      */
     fun isTrackDownloading(title: String): Boolean {
-        return _downloadingTracks.value.contains(title)
+        return _downloadingTracks.value.any { it.title == title }
     }
     
     override fun onCleared() {

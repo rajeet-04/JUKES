@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.juke.models.SpotifyAlbum
@@ -32,7 +33,8 @@ fun SearchScreen(
     searchViewModel: SearchViewModel = viewModel(),
     onNavigateToArtist: (SpotifyArtist) -> Unit = {},
     onNavigateToPlaylist: (SpotifyPlaylist) -> Unit = {},
-    onNavigateToAlbum: (SpotifyAlbum) -> Unit = {}
+    onNavigateToAlbum: (SpotifyAlbum) -> Unit = {},
+    bottomPadding: Dp = 0.dp
 ) {
     val uiState by searchViewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
@@ -175,7 +177,8 @@ fun SearchScreen(
                 }
             } else if (hasResults) {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = bottomPadding)
                 ) {
                         // Tracks Section
                         if (uiState.tracks.isNotEmpty()) {

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -24,7 +25,8 @@ import com.example.juke.viewmodels.MusicViewModel
 @Composable
 fun LibraryScreen(
     musicViewModel: MusicViewModel,
-    libraryViewModel: LibraryViewModel = viewModel()
+    libraryViewModel: LibraryViewModel = viewModel(),
+    bottomPadding: Dp = 0.dp
 ) {
     val uiState by libraryViewModel.uiState.collectAsState()
     val musicUiState by musicViewModel.uiState.collectAsState()
@@ -142,7 +144,12 @@ fun LibraryScreen(
                 }
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + bottomPadding
+                    ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Playlist hero if one is selected
@@ -178,6 +185,49 @@ fun LibraryScreen(
                                 musicViewModel.retryFailedDownload(download)
                             }
                         )
+                    }
+                    
+                    // Show QueueManager recommendation downloads
+                    items(
+                        items = uiState.recommendationDownloads,
+                        key = { "${it.title}_${it.artist}_${it.source}" }
+                    ) { downloadInfo ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(40.dp),
+                                    strokeWidth = 3.dp
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = downloadInfo.title,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = downloadInfo.artist,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = when (downloadInfo.source) {
+                                            "recommendation" -> "Downloading recommendation..."
+                                            "playlist" -> "Importing from playlist..."
+                                            else -> "Downloading..."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
                     }
                     
                     // Show downloaded tracks

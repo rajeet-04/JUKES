@@ -1,0 +1,253 @@
+package com.example.juke.services
+
+import android.content.Context
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
+import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * Controls audio effects (Equalizer and Volume Booster) for media playback.
+ * Attaches to ExoPlayer via audio session ID.
+ */
+class AudioEffectController(private val context: Context) {
+    
+    private val TAG = "AudioEffectController"
+    private val prefs = context.getSharedPreferences("audio_effects_prefs", Context.MODE_PRIVATE)
+    
+    private var equalizer: Equalizer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var automaticGainControl: AutomaticGainControl? = null
+    private var currentAudioSessionId: Int = 0
+    
+    // Equalizer state (5 bands)
+    private val _equalizerBands = MutableStateFlow(loadEqualizerBands())
+    val equalizerBands: StateFlow<List<Int>> = _equalizerBands.asStateFlow()
+    
+    private val _isEqualizerEnabled = MutableStateFlow(prefs.getBoolean("equalizer_enabled", false))
+    val isEqualizerEnabled: StateFlow<Boolean> = _isEqualizerEnabled.asStateFlow()
+    
+    // Volume booster state (0-100%)
+    private val _boosterLevel = MutableStateFlow(prefs.getInt("booster_level", 0))
+    val boosterLevel: StateFlow<Int> = _boosterLevel.asStateFlow()
+    
+    private val _isBoosterEnabled = MutableStateFlow(prefs.getBoolean("booster_enabled", false))
+    val isBoosterEnabled: StateFlow<Boolean> = _isBoosterEnabled.asStateFlow()
+
+    private val _isNormalizationEnabled = MutableStateFlow(prefs.getBoolean("normalization_enabled", false))
+    val isNormalizationEnabled: StateFlow<Boolean> = _isNormalizationEnabled.asStateFlow()
+    
+    private fun loadEqualizerBands(): List<Int> {
+        return (0 until 5).map { index ->
+            prefs.getInt("eq_band_$index", 0)
+        }
+    }
+    
+    /**
+     * Attach audio effects to the given audio session ID.
+     * Should be called when ExoPlayer's audio session ID changes.
+     */
+    fun attachToAudioSession(audioSessionId: Int) {
+        if (audioSessionId == currentAudioSessionId && equalizer != null) {
+            return
+        }
+        
+        release()
+        currentAudioSessionId = audioSessionId
+        
+        try {
+            // Initialize Equalizer
+            equalizer = Equalizer(0, audioSessionId).apply {
+                enabled = _isEqualizerEnabled.value
+                
+                // Verify we have 5 bands
+                val numBands = numberOfBands.toInt()
+                Log.d(TAG, "Equalizer has $numBands bands")
+                
+                // Apply saved band levels
+                _equalizerBands.value.forEachIndexed { index, level ->
+                    if (index < numBands) {
+                        setBandLevel(index.toShort(), level.toShort())
+                    }
+                }
+            }
+            
+            // Initialize Loudness Enhancer
+            loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                enabled = _isBoosterEnabled.value
+                setTargetGain(_boosterLevel.value * 800) // 0-100% maps to 0-80000mB
+            }
+
+            // Initialize Automatic Gain Control for simple normalization
+            if (AutomaticGainControl.isAvailable()) {
+                // AGC helps even out loud and quiet tracks without changing player volume
+                automaticGainControl = AutomaticGainControl.create(audioSessionId)?.apply {
+                    enabled = _isNormalizationEnabled.value
+                }
+            } else {
+                Log.w(TAG, "AutomaticGainControl not available on this device")
+            }
+            
+            Log.d(TAG, "Audio effects attached to session $audioSessionId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize audio effects: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Set equalizer band level.
+     * @param bandIndex Band index (0-4)
+     * @param level Level in millibels (-1500 to 1500 typically)
+     */
+    fun setEqualizerBandLevel(bandIndex: Int, level: Int) {
+        if (bandIndex < 0 || bandIndex >= 5) return
+        
+        val currentBands = _equalizerBands.value.toMutableList()
+        currentBands[bandIndex] = level
+        _equalizerBands.value = currentBands
+        
+        // Save to preferences
+        prefs.edit().putInt("eq_band_$bandIndex", level).apply()
+        
+        try {
+            equalizer?.setBandLevel(bandIndex.toShort(), level.toShort())
+            Log.d(TAG, "Set equalizer band $bandIndex to $level")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set equalizer band: ${e.message}")
+        }
+    }
+    
+    /**
+     * Toggle equalizer on/off.
+     */
+    fun setEqualizerEnabled(enabled: Boolean) {
+        _isEqualizerEnabled.value = enabled
+        prefs.edit().putBoolean("equalizer_enabled", enabled).apply()
+        try {
+            equalizer?.enabled = enabled
+            Log.d(TAG, "Equalizer enabled: $enabled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle equalizer: ${e.message}")
+        }
+    }
+    
+    /**
+     * Set volume booster level.
+     * @param percentage 0-100%
+     */
+    fun setBoosterLevel(percentage: Int) {
+        val clampedLevel = percentage.coerceIn(0, 100)
+        _boosterLevel.value = clampedLevel
+        prefs.edit().putInt("booster_level", clampedLevel).apply()
+        
+        try {
+            // Map 0-100% to 0-80000mB (0-800%)
+            val targetGain = clampedLevel * 800
+            loudnessEnhancer?.setTargetGain(targetGain)
+            Log.d(TAG, "Volume booster set to $clampedLevel% (${targetGain}mB)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set booster level: ${e.message}")
+        }
+    }
+    
+    /**
+     * Toggle volume booster on/off.
+     */
+    fun setBoosterEnabled(enabled: Boolean) {
+        _isBoosterEnabled.value = enabled
+        prefs.edit().putBoolean("booster_enabled", enabled).apply()
+        try {
+            loudnessEnhancer?.enabled = enabled
+            Log.d(TAG, "Volume booster enabled: $enabled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle booster: ${e.message}")
+        }
+    }
+
+    /**
+     * Toggle simple loudness normalization using Automatic Gain Control (if available).
+     */
+    fun setNormalizationEnabled(enabled: Boolean) {
+        _isNormalizationEnabled.value = enabled
+        prefs.edit().putBoolean("normalization_enabled", enabled).apply()
+        try {
+            if (automaticGainControl == null && currentAudioSessionId != 0 && AutomaticGainControl.isAvailable()) {
+                automaticGainControl = AutomaticGainControl.create(currentAudioSessionId)
+            }
+            automaticGainControl?.enabled = enabled
+            Log.d(TAG, "Volume normalization enabled: $enabled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle normalization: ${e.message}")
+        }
+    }
+    
+    /**
+     * Get equalizer band frequency range.
+     */
+    fun getEqualizerBandFrequencyRange(bandIndex: Int): Int {
+        return try {
+            equalizer?.getCenterFreq(bandIndex.toShort())?.div(1000) ?: 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get band frequency: ${e.message}")
+            0
+        }
+    }
+    
+    /**
+     * Get equalizer band level range.
+     */
+    fun getEqualizerBandLevelRange(): Pair<Int, Int> {
+        return try {
+            val range = equalizer?.bandLevelRange
+            (range?.get(0)?.toInt() ?: -1500) to (range?.get(1)?.toInt() ?: 1500)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get level range: ${e.message}")
+            -1500 to 1500
+        }
+    }
+    
+    /**
+     * Reset all equalizer bands to 0.
+     */
+    fun resetEqualizer() {
+        _equalizerBands.value = List(5) { 0 }
+        
+        // Save to preferences
+        prefs.edit().apply {
+            for (i in 0 until 5) {
+                putInt("eq_band_$i", 0)
+            }
+            apply()
+        }
+        
+        try {
+            for (i in 0 until 5) {
+                equalizer?.setBandLevel(i.toShort(), 0)
+            }
+            Log.d(TAG, "Equalizer reset to flat")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to reset equalizer: ${e.message}")
+        }
+    }
+    
+    /**
+     * Release audio effects resources.
+     */
+    fun release() {
+        try {
+            equalizer?.release()
+            loudnessEnhancer?.release()
+            automaticGainControl?.release()
+            equalizer = null
+            loudnessEnhancer = null
+            automaticGainControl = null
+            currentAudioSessionId = 0
+            Log.d(TAG, "Audio effects released")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to release audio effects: ${e.message}")
+        }
+    }
+}

@@ -170,13 +170,21 @@ object SpotifyApi {
         
         try {
             val token = getAccessToken()
+            val actualLimit = limit.coerceIn(1, 50)
             
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/artists/$artistId/albums"
             ) {
                 header("Authorization", "Bearer $token")
                 parameter("market", market)
-                parameter("limit", limit)
+                parameter("limit", actualLimit)
+            }
+            
+            val statusCode = response.status.value
+            if (statusCode != 200) {
+                val raw = response.bodyAsText()
+                Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
+                throw Exception("Spotify returned status $statusCode: ${raw.take(200)}")
             }
             
             return response.body()
@@ -233,13 +241,21 @@ object SpotifyApi {
         
         try {
             val token = getAccessToken()
+            val actualLimit = limit.coerceIn(1, 50)
             
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/albums/$albumId/tracks"
             ) {
                 header("Authorization", "Bearer $token")
                 parameter("market", market)
-                parameter("limit", limit)
+                parameter("limit", actualLimit)
+            }
+            
+            val statusCode = response.status.value
+            if (statusCode != 200) {
+                val raw = response.bodyAsText()
+                Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
+                throw Exception("Spotify returned status $statusCode: ${raw.take(200)}")
             }
             
             return response.body()
@@ -329,6 +345,13 @@ object SpotifyApi {
                 parameter("market", market)
             }
             
+            val statusCode = response.status.value
+            if (statusCode != 200) {
+                val raw = response.bodyAsText()
+                Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
+                throw Exception("The playlist is either private or does not exist.")
+            }
+            
             return response.body()
             
         } catch (e: Exception) {
@@ -368,32 +391,70 @@ object SpotifyApi {
     }
     
     /**
-     * Get playlist tracks.
-     * 
+     * Get playlist tracks with pagination support.
+     * Fetches all tracks from the playlist by handling pagination automatically.
+     *
      * @param playlistId Spotify playlist ID
      * @param market Market code
-     * @param limit Number of tracks to fetch
+     * @return SpotifyPlaylistTracksResponse with all tracks (items will contain all tracks)
      */
     suspend fun getPlaylistTracks(
         playlistId: String,
-        market: String = "NP",
-        limit: Int = 50
+        market: String = "NP"
     ): SpotifyPlaylistTracksResponse {
-        Log.d(TAG, "Fetching playlist tracks: $playlistId")
-        
+        Log.d(TAG, "Fetching all playlist tracks: $playlistId")
+
         try {
             val token = getAccessToken()
-            
-            val response: HttpResponse = ApiClient.httpClient.get(
-                "$SPOTIFY_API_BASE_URL/playlists/$playlistId/tracks"
-            ) {
-                header("Authorization", "Bearer $token")
-                parameter("market", market)
-                parameter("limit", limit)
+            val allItems = mutableListOf<SpotifyPlaylistItem>()
+            var offset = 0
+            val limit = 100 // Maximum allowed by Spotify API
+
+            while (true) {
+                val response: HttpResponse = ApiClient.httpClient.get(
+                    "$SPOTIFY_API_BASE_URL/playlists/$playlistId/tracks"
+                ) {
+                    header("Authorization", "Bearer $token")
+                    parameter("market", market)
+                    parameter("limit", limit)
+                    parameter("offset", offset)
+                }
+
+                val statusCode = response.status.value
+                if (statusCode != 200) {
+                    val raw = response.bodyAsText()
+                    Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
+                    throw Exception("The playlist is either private or does not exist.")
+                }
+
+                val pageResponse: SpotifyPlaylistTracksResponse = response.body()
+                
+                // Filter out local tracks and tracks with missing data
+                val validItems = pageResponse.items.filter { item ->
+                    val track = item.track
+                    track != null && !track.isLocal && track.id != null && track.externalUrls.spotify != null
+                }
+                
+                allItems.addAll(validItems)
+
+                // Check if there are more pages
+                if (pageResponse.next == null) {
+                    // No more pages, return combined response
+                    return SpotifyPlaylistTracksResponse(
+                        href = pageResponse.href,
+                        limit = pageResponse.limit,
+                        next = null,
+                        offset = 0,
+                        previous = null,
+                        total = pageResponse.total,
+                        items = allItems
+                    )
+                }
+
+                offset += limit
+                Log.d(TAG, "Fetched ${allItems.size}/${pageResponse.total} tracks for playlist $playlistId")
             }
-            
-            return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching playlist tracks: ${e.message}", e)
             throw e
@@ -663,7 +724,7 @@ object SpotifyApi {
             title = track.name,
             artist = artistNames,
             album = track.album.name,
-            url = track.externalUrls.spotify,
+            url = track.externalUrls.spotify ?: "",
             thumbnail = thumbnail,
             duration = durationStr,
             cached = false // Will check separately if needed
@@ -694,7 +755,7 @@ object SpotifyApi {
             title = track.name,
             artist = artistNames,
             album = album.name,
-            url = track.externalUrls.spotify,
+            url = track.externalUrls.spotify ?: "",
             thumbnail = thumbnail,
             duration = durationStr,
             cached = false

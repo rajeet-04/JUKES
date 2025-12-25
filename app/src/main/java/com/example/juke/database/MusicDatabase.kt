@@ -2,8 +2,20 @@ package com.example.juke.database
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.juke.models.Track
 import kotlinx.coroutines.flow.Flow
+
+/**
+ * Migration from version 1 to 2
+ */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // Add any schema changes from version 1 to 2 here
+        // Example: database.execSQL("ALTER TABLE tracks ADD COLUMN new_column TEXT")
+    }
+}
 
 /**
  * Room Database for JUKE music player.
@@ -28,6 +40,7 @@ abstract class MusicDatabase : RoomDatabase() {
                     MusicDatabase::class.java,
                     "music_database"
                 )
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

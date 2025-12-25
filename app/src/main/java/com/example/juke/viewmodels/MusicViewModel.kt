@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
+import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
@@ -59,7 +60,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val trackDao = database.trackDao()
     private val musicService = MusicService(application)
     val playbackManager = PlaybackManager(application)
-    private val queueManager = QueueManager(application)
+    private val queueManager = QueueManager.getInstance(application)
     
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
@@ -68,6 +69,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     init {
         playbackManager.initialize()
+        
+        // Observe restored state and update UI with saved queue
+        viewModelScope.launch {
+            playbackManager.hasRestoredState.collect { hasState ->
+                if (hasState) {
+                    Log.d("MusicViewModel", "Playback state restored, updating UI")
+                    // Load the restored queue from PlaybackManager
+                    loadRestoredQueue()
+                    
+                    // Check if we need recommendations for the restored queue
+                    queueManager.checkAndFetchRecommendations()
+                }
+            }
+        }
+        
         // Observe playback state changes coming from the MediaController (notifications/external)
         viewModelScope.launch {
             playbackManager.isPlayingFlow.collect { playing ->
@@ -202,6 +218,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     currentTrack = tracks.getOrNull(startIndex),
                     isPlaying = true
                 )
+            }
+            
+            // Initialize recommendation queue - check if we need more tracks
+            if (tracks.size <= 2) {
+                val currentTrack = tracks.getOrNull(startIndex)
+                currentTrack?.let {
+                    Log.d("MusicViewModel", "Queue size ${tracks.size}, initializing recommendations for: ${it.title}")
+                    queueManager.initializeQueue(tracks)
+                }
             }
         }
     }
@@ -409,10 +434,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 
+                // Add to QueueManager tracking
+                queueManager.addDownloadTracking(
+                    nextItem.song.title,
+                    nextItem.song.artist,
+                    "manual"
+                )
+                
                 Log.d("MusicViewModel", "Starting download: ${nextItem.song.title}")
                 
                 try {
                     val track = musicService.smartDownloadAndIndex(nextItem.song)
+                    
+                    // Remove from QueueManager tracking
+                    queueManager.removeDownloadTracking(
+                        nextItem.song.title,
+                        nextItem.song.artist
+                    )
                     
                     // Download successful
                     _uiState.update { state ->
@@ -436,6 +474,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     
                 } catch (e: Exception) {
                     Log.e("MusicViewModel", "Download failed: ${nextItem.song.title} - ${e.message}")
+                    
+                    // Remove from QueueManager tracking on error
+                    queueManager.removeDownloadTracking(
+                        nextItem.song.title,
+                        nextItem.song.artist
+                    )
                     
                     // Mark as failed
                     _uiState.update { state ->
@@ -585,6 +629,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 
+                // Sync with QueueManager
+                queueManager.initializeQueue(newQueue)
+                
                 Log.d("MusicViewModel", "Moved track from index $fromIndex to $toIndex")
             } else {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
@@ -611,6 +658,97 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     state
                 }
             }
+        }
+    }
+    
+    // Sleep Timer
+    val sleepTimerRemaining = playbackManager.sleepTimerRemaining
+    
+    fun startSleepTimer(minutes: Int) {
+        playbackManager.startSleepTimer(minutes)
+    }
+    
+    fun cancelSleepTimer() {
+        playbackManager.cancelSleepTimer()
+    }
+    
+    // Equalizer
+    val equalizerBands = playbackManager.audioEffectController.equalizerBands
+    val isEqualizerEnabled = playbackManager.audioEffectController.isEqualizerEnabled
+    
+    fun toggleEqualizer(enabled: Boolean) {
+        playbackManager.audioEffectController.setEqualizerEnabled(enabled)
+    }
+    
+    fun setEqualizerBand(bandIndex: Int, level: Int) {
+        playbackManager.audioEffectController.setEqualizerBandLevel(bandIndex, level)
+    }
+    
+    fun resetEqualizer() {
+        playbackManager.audioEffectController.resetEqualizer()
+    }
+    
+    fun getEqualizerLevelRange(): Pair<Int, Int> {
+        return playbackManager.audioEffectController.getEqualizerBandLevelRange()
+    }
+    
+    // Volume Booster
+    val boosterLevel = playbackManager.audioEffectController.boosterLevel
+    val isBoosterEnabled = playbackManager.audioEffectController.isBoosterEnabled
+    
+    fun toggleVolumeBooster(enabled: Boolean) {
+        playbackManager.audioEffectController.setBoosterEnabled(enabled)
+    }
+    
+    fun setVolumeBoosterLevel(level: Int) {
+        playbackManager.audioEffectController.setBoosterLevel(level)
+    }
+
+    // Volume Normalization
+    val isNormalizationEnabled = playbackManager.audioEffectController.isNormalizationEnabled
+
+    fun toggleVolumeNormalization(enabled: Boolean) {
+        playbackManager.audioEffectController.setNormalizationEnabled(enabled)
+    }
+    
+    private suspend fun loadRestoredQueue() {
+        try {
+            // Get track IDs from SharedPreferences
+            val prefs = getApplication<Application>().getSharedPreferences("playback_state_prefs", android.content.Context.MODE_PRIVATE)
+            val trackIds = prefs.getString("queue_track_ids", "") ?: ""
+            val savedIndex = prefs.getInt("queue_start_index", 0)
+            
+            if (trackIds.isEmpty()) return
+            
+            val ids = trackIds.split(",")
+            val tracks = withContext(Dispatchers.IO) {
+                ids.mapNotNull { id ->
+                    try {
+                        trackDao.getTrackByUuid(id)?.toTrack()
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }
+            
+            if (tracks.isNotEmpty()) {
+                val currentTrack = tracks.getOrNull(savedIndex)
+                _uiState.update { 
+                    it.copy(
+                        queue = tracks,
+                        queueIndex = savedIndex,
+                        currentTrack = currentTrack,
+                        duration = currentTrack?.durationSec?.toLong()?.times(1000) ?: 0L
+                    )
+                }
+                
+                // Ensure QueueManager has the restored queue
+                queueManager.initializeQueue(tracks)
+                
+                Log.d("MusicViewModel", "Restored queue with ${tracks.size} tracks, current index: $savedIndex")
+            }
+        } catch (e: Exception) {
+            Log.e("MusicViewModel", "Failed to load restored queue: ${e.message}", e)
         }
     }
 }

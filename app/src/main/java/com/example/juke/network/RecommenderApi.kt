@@ -517,18 +517,21 @@ object RecommenderApi {
                     val spotifyDurationSec = spotifyTrack.durationMs / 1000
                     val durationSimilarity = durationSimilarity(youtubeDurationSec, spotifyDurationSec)
                     
-                    // Calculate text confidence (title + artist)
-                    val textConfidence = (titleSimilarity + artistSimilarity) / 2.0
+                    // Calculate text confidence with higher weight on artist matches
+                    // Artist similarity gets 70% weight, title gets 30% weight
+                    val textConfidence = (titleSimilarity * 0.3) + (artistSimilarity * 0.7)
                     
                     // Special logic: if both title and duration match well, boost confidence significantly
                     var overallConfidence = (textConfidence * 0.6) + (durationSimilarity * 0.4)
                     
-                    // Bonus for excellent matches (both title and duration are very close)
-                    if (titleSimilarity >= 0.8 && durationSimilarity >= 0.8) {
-                        overallConfidence += 0.2 // Significant boost for excellent matches
-                        Log.d(TAG, "🎯 Excellent match found! Title: ${(titleSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%")
-                    } else if (titleSimilarity >= 0.7 && durationSimilarity >= 0.6) {
-                        overallConfidence += 0.1 // Moderate boost for good matches
+                    // Additional boost for excellent artist matches (prioritize artist over title)
+                    if (artistSimilarity >= 0.9) {
+                        overallConfidence += 0.15 // Significant boost for near-perfect artist match
+                        Log.d(TAG, "🎯 Excellent artist match! Artist similarity: ${(artistSimilarity * 100).toInt()}%")
+                    } else if (artistSimilarity >= 0.8) {
+                        overallConfidence += 0.1 // Good boost for strong artist match
+                    } else if (artistSimilarity >= 0.7) {
+                        overallConfidence += 0.05 // Moderate boost for decent artist match
                     }
                     
                     Log.d(TAG, "Comparing '${rec.title}' (${rec.duration ?: "unknown"}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs/1000}s)")
@@ -553,7 +556,7 @@ object RecommenderApi {
                     else -> false
                 }
                 
-                if (bestMatch != null && shouldAccept) {
+                if (bestMatch != null && shouldAccept && bestMatch.externalUrls.spotify != null) {
                     val officialScore = getOfficialScore(rec.title)
                     
                     validated.add(
@@ -561,7 +564,7 @@ object RecommenderApi {
                             youtubeVideoId = rec.id,
                             title = bestMatch.name,
                             artist = bestMatch.artists.joinToString(", ") { it.name },
-                            spotifyUrl = bestMatch.externalUrls.spotify,
+                            spotifyUrl = bestMatch.externalUrls.spotify!!,
                             confidence = bestConfidence,
                             isOfficial = officialScore > 0.0
                         )

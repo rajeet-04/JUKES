@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +44,7 @@ import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 data class LyricLine(
     val timeMs: Long,
@@ -90,6 +93,8 @@ fun PlayerScreen(
     val currentTrack = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
     
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -137,6 +142,7 @@ fun PlayerScreen(
                     onToggleLyrics = { showLyrics = !showLyrics },
                     onDismiss = onDismiss,
                     onShowQueue = { showQueue = true },
+                    onShowSleepTimer = { showSleepTimerDialog = true },
                     musicViewModel = musicViewModel
                 )
             } else {
@@ -148,6 +154,7 @@ fun PlayerScreen(
                     onToggleLyrics = { showLyrics = !showLyrics },
                     onDismiss = onDismiss,
                     onShowQueue = { showQueue = true },
+                    onShowSleepTimer = { showSleepTimerDialog = true },
                     musicViewModel = musicViewModel,
                     isTablet = isTablet
                 )
@@ -178,6 +185,26 @@ fun PlayerScreen(
                 onPlayTrack = { track -> musicViewModel.playTrackFromQueue(track) }
             )
         }
+    }
+    
+    // Sleep Timer Dialog
+    if (showSleepTimerDialog) {
+        SleepTimerDialog(
+            currentTimerRemaining = sleepTimerRemaining,
+            onDismiss = { showSleepTimerDialog = false },
+            onSetTimer = { minutes ->
+                if (minutes > 0) {
+                    musicViewModel.startSleepTimer(minutes)
+                } else {
+                    musicViewModel.cancelSleepTimer()
+                }
+                showSleepTimerDialog = false
+            },
+            onCancelTimer = {
+                musicViewModel.cancelSleepTimer()
+                showSleepTimerDialog = false
+            }
+        )
     }
 }
 
@@ -325,9 +352,16 @@ private fun QueueBottomSheetContent(
                     key = { _, track -> track.uuid }
                 ) { index, track ->
                     val actualQueueIndex = queueIndex + 1 + index
+                    val density = LocalDensity.current
+                    
+                    // Drag state for visual feedback
+                    var dragOffset by remember { mutableFloatStateOf(0f) }
+                    var isDragging by remember { mutableStateOf(false) }
+                    
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { dismissValue ->
-                            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
+                            // Only allow dismiss when not dragging
+                            if (!isDragging && dismissValue == SwipeToDismissBoxValue.EndToStart) {
                                 onRemoveTrack(track.uuid)
                                 true
                             } else {
@@ -335,27 +369,35 @@ private fun QueueBottomSheetContent(
                             }
                         }
                     )
-                    
-                    // Drag state for visual feedback
-                    var dragOffset by remember { mutableFloatStateOf(0f) }
+
+                    // Reset dismiss state when dragging starts to prevent stuck red background
+                    LaunchedEffect(isDragging) {
+                        if (isDragging) {
+                            dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                        }
+                    }
                     
                         SwipeToDismissBox(
                             state = dismissState,
+                            enableDismissFromStartToEnd = false,
+                            enableDismissFromEndToStart = !isDragging,
                             backgroundContent = {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(Color.Red.copy(alpha = 0.8f)),
-                                    contentAlignment = Alignment.CenterEnd
-                                ) {
-                                    Icon(
-                                    
-                                        imageVector = Icons.Filled.Delete,
-                                        contentDescription = "Remove",
-                                        tint = Color.White,
-                                        modifier = Modifier.padding(end = 16.dp)
-                                    )
+                                // Only show delete background when actually swiping (not dragging)
+                                if (!isDragging && dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color.Red.copy(alpha = 0.8f)),
+                                        contentAlignment = Alignment.CenterEnd
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Delete,
+                                            contentDescription = "Remove",
+                                            tint = Color.White,
+                                            modifier = Modifier.padding(end = 16.dp)
+                                        )
+                                    }
                                 }
                             },
                             modifier = Modifier
@@ -438,7 +480,7 @@ private fun QueueBottomSheetContent(
                                 Icon(
                                     imageVector = Icons.Filled.Menu,
                                     contentDescription = "Drag to reorder",
-                                    tint = if (dragOffset != 0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier
                                         .size(20.dp)
                                         .pointerInput(Unit) {
@@ -446,17 +488,32 @@ private fun QueueBottomSheetContent(
                                                 detectDragGestures(
                                                     onDragStart = {
                                                         dragOffset = 0f
+                                                        isDragging = true
                                                     },
                                                     onDragEnd = {
-                                                        val dragThreshold = 48f
-                                                        if (dragOffset > dragThreshold && actualQueueIndex < queue.size - 1) {
-                                                            onMoveTrack(actualQueueIndex, actualQueueIndex + 1)
-                                                        } else if (dragOffset < -dragThreshold && actualQueueIndex > queueIndex + 1) {
-                                                            onMoveTrack(actualQueueIndex, actualQueueIndex - 1)
+                                                        // Calculate how many positions to move based on drag distance
+                                                        // Each item is approximately 88dp (72dp card + 8dp spacing + 8dp padding)
+                                                        val itemHeightPx = with(density) { 88.dp.toPx() }
+                                                        val positionsToMove = (dragOffset / itemHeightPx).toInt()
+                                                        
+                                                        if (positionsToMove != 0) {
+                                                            val targetIndex = (actualQueueIndex + positionsToMove).coerceIn(
+                                                                queueIndex + 1,  // Can't move before current track
+                                                                queue.size - 1    // Can't move past end
+                                                            )
+                                                            
+                                                            if (targetIndex != actualQueueIndex) {
+                                                                onMoveTrack(actualQueueIndex, targetIndex)
+                                                            }
                                                         }
+                                                        
                                                         dragOffset = 0f
+                                                        isDragging = false
                                                     },
-                                                    onDragCancel = { dragOffset = 0f },
+                                                    onDragCancel = { 
+                                                        dragOffset = 0f
+                                                        isDragging = false
+                                                    },
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
                                                         dragOffset += dragAmount.y
@@ -498,6 +555,7 @@ private fun TabletLandscapePlayer(
     onToggleLyrics: () -> Unit,
     onDismiss: () -> Unit,
     onShowQueue: () -> Unit,
+    onShowSleepTimer: () -> Unit,
     musicViewModel: MusicViewModel
 ) {
     val configuration = LocalConfiguration.current
@@ -579,6 +637,24 @@ private fun TabletLandscapePlayer(
                     "Now Playing",
                     style = MaterialTheme.typography.titleLarge
                 )
+                var showMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, "Menu")
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Sleep Timer") },
+                            onClick = {
+                                showMenu = false
+                                onShowSleepTimer()
+                            }
+                        )
+                    }
+                }
             }
             
             // Track info and controls
@@ -655,6 +731,7 @@ private fun PortraitPlayer(
     onToggleLyrics: () -> Unit,
     onDismiss: () -> Unit,
     onShowQueue: () -> Unit,
+    onShowSleepTimer: () -> Unit,
     musicViewModel: MusicViewModel,
     isTablet: Boolean
 ) {
@@ -680,6 +757,24 @@ private fun PortraitPlayer(
                 "Now Playing",
                 style = MaterialTheme.typography.titleMedium
             )
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(Icons.Default.MoreVert, "Menu")
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Sleep Timer") },
+                        onClick = {
+                            showMenu = false
+                            onShowSleepTimer()
+                        }
+                    )
+                }
+            }
         }
         
         Spacer(modifier = Modifier.height(if (isTablet) 24.dp else 16.dp))
@@ -1041,4 +1136,119 @@ private fun formatTime(milliseconds: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+@Composable
+private fun SleepTimerDialog(
+    currentTimerRemaining: Long?,
+    onDismiss: () -> Unit,
+    onSetTimer: (Int) -> Unit,
+    onCancelTimer: () -> Unit
+) {
+    var sliderValue by remember { mutableFloatStateOf(currentTimerRemaining?.let { it / 60000f } ?: 0f) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sleep Timer") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (currentTimerRemaining != null) {
+                    val minutes = (currentTimerRemaining / 1000 / 60).toInt()
+                    val seconds = ((currentTimerRemaining / 1000) % 60).toInt()
+                    
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Playback will pause in:",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds),
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                } else {
+                    Text(
+                        "Set timer duration:",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        if (sliderValue > 0) {
+                            "${sliderValue.toInt()} minutes"
+                        } else {
+                            "Timer off"
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Slider(
+                        value = sliderValue,
+                        onValueChange = { sliderValue = it },
+                        valueRange = 0f..180f,
+                        steps = 179,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "0 min",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "3 hours",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (currentTimerRemaining != null) {
+                TextButton(onClick = onCancelTimer) {
+                    Text("Cancel Timer")
+                }
+            } else {
+                TextButton(
+                    onClick = { onSetTimer(sliderValue.toInt()) },
+                    enabled = sliderValue > 0
+                ) {
+                    Text("Set Timer")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(if (currentTimerRemaining != null) "Close" else "Cancel")
+            }
+        }
+    )
 }

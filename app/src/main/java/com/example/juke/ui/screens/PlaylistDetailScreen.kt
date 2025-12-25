@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -48,7 +48,8 @@ import kotlinx.coroutines.launch
 fun PlaylistDetailScreen(
     playlistDetailViewModel: PlaylistDetailViewModel = viewModel(),
     musicViewModel: MusicViewModel = viewModel(),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    bottomPadding: Dp = 0.dp
 ) {
     val uiState by playlistDetailViewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
@@ -88,7 +89,12 @@ fun PlaylistDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + bottomPadding
+                ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Playlist Header

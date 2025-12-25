@@ -15,6 +15,15 @@ import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
+ * Download information for UI display
+ */
+data class DownloadInfo(
+    val title: String,
+    val artist: String,
+    val source: String = "recommendation" // or "manual", "playlist"
+)
+
+/**
  * Queue Manager for smart music recommendations and downloads.
  * 
  * This service handles:
@@ -24,7 +33,18 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * 4. Automatic downloads when queue is low (<=2 songs)
  * 5. Background processing and caching
  */
-class QueueManager(private val context: Context) {
+class QueueManager private constructor(private val context: Context) {
+    
+    companion object {
+        @Volatile
+        private var instance: QueueManager? = null
+        
+        fun getInstance(context: Context): QueueManager {
+            return instance ?: synchronized(this) {
+                instance ?: QueueManager(context.applicationContext).also { instance = it }
+            }
+        }
+    }
     
     private val TAG = "QueueManager"
     private val database = MusicDatabase.getDatabase(context)
@@ -38,14 +58,34 @@ class QueueManager(private val context: Context) {
     private val _currentQueue = MutableStateFlow<List<Track>>(emptyList())
     val currentQueue: StateFlow<List<Track>> = _currentQueue.asStateFlow()
     
-    private val _downloadingTracks = MutableStateFlow<Set<String>>(emptySet())
-    val downloadingTracks: StateFlow<Set<String>> = _downloadingTracks.asStateFlow()
+    private val _downloadingTracks = MutableStateFlow<List<DownloadInfo>>(emptyList())
+    val downloadingTracks: StateFlow<List<DownloadInfo>> = _downloadingTracks.asStateFlow()
+    
+    // Expose pending recommendations count for UI
+    fun getPendingDownloadsCount(): Int = pendingRecommendations.size + downloadJobs.size
     
     // Pending recommendations to download
     private val pendingRecommendations = ConcurrentLinkedQueue<RecommenderApi.ValidatedRecommendation>()
     
     // Currently downloading jobs
     private val downloadJobs = mutableMapOf<String, Job>()
+    
+    /**
+     * Check if we need to fetch recommendations and start downloading if queue is low.
+     * This should be called whenever playback starts or resumes.
+     */
+    fun checkAndFetchRecommendations() {
+        val currentQueueSize = _currentQueue.value.size
+        Log.d(TAG, "Checking recommendations: queue size = $currentQueueSize")
+        
+        if (currentQueueSize <= 2) {
+            val currentTrack = _currentQueue.value.firstOrNull()
+            currentTrack?.let { 
+                Log.d(TAG, "Queue size <= 2, fetching recommendations for: ${it.title}")
+                fetchAndQueueRecommendations(it) 
+            }
+        }
+    }
     
     /**
      * Initialize the queue with a list of tracks.
@@ -216,7 +256,7 @@ class QueueManager(private val context: Context) {
                 return@launch
             }
             
-            if (_downloadingTracks.value.contains(rec.title)) {
+            if (_downloadingTracks.value.any { it.title == rec.title && it.artist == rec.artist }) {
                 Log.d(TAG, "Track already downloading: ${rec.title}")
                 processNextDownload()
                 return@launch
@@ -228,7 +268,8 @@ class QueueManager(private val context: Context) {
                     Log.d(TAG, "Starting download: ${rec.title} by ${rec.artist}")
                     
                     // Mark as downloading
-                    _downloadingTracks.value = _downloadingTracks.value + rec.title
+                    val downloadInfo = DownloadInfo(rec.title, rec.artist, "recommendation")
+                    _downloadingTracks.value = _downloadingTracks.value + downloadInfo
                     
                     // Search Spotify again to get full track details
                     val searchResponse = SpotifyApi.search("${rec.title} ${rec.artist}", listOf("track"))
@@ -253,7 +294,9 @@ class QueueManager(private val context: Context) {
                     Log.e(TAG, "Error downloading ${rec.title}: ${e.message}", e)
                 } finally {
                     // Remove from downloading
-                    _downloadingTracks.value = _downloadingTracks.value - rec.title
+                    _downloadingTracks.value = _downloadingTracks.value.filterNot { 
+                        it.title == rec.title && it.artist == rec.artist 
+                    }
                     downloadJobs.remove(rec.title)
                     
                     // Process next download
@@ -338,8 +381,25 @@ class QueueManager(private val context: Context) {
         pendingRecommendations.clear()
         downloadJobs.values.forEach { it.cancel() }
         downloadJobs.clear()
-        _downloadingTracks.value = emptySet()
+        _downloadingTracks.value = emptyList()
         Log.d(TAG, "Queue cleared")
+    }
+    
+    /**
+     * Add download info for external tracking (e.g., playlist imports)
+     */
+    fun addDownloadTracking(title: String, artist: String, source: String = "manual") {
+        val downloadInfo = DownloadInfo(title, artist, source)
+        _downloadingTracks.value = _downloadingTracks.value + downloadInfo
+    }
+    
+    /**
+     * Remove download tracking
+     */
+    fun removeDownloadTracking(title: String, artist: String) {
+        _downloadingTracks.value = _downloadingTracks.value.filterNot { 
+            it.title == title && it.artist == artist 
+        }
     }
     
     /**

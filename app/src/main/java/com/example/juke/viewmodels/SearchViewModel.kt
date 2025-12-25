@@ -10,6 +10,7 @@ import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistDao
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.database.PlaylistTrackEntity
+import com.example.juke.services.QueueManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +45,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val database = MusicDatabase.getDatabase(application)
     private val trackDao = database.trackDao()
     private val playlistDao = database.playlistDao()
+    private val queueManager = QueueManager.getInstance(application)
     
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -172,14 +174,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             )
             
             try {
-                val albums = SpotifyApi.getArtistAlbums(artist.id)
-                val topTracks = SpotifyApi.getArtistTopTracks(artist.id)
-                
-                _artistDetailState.value = _artistDetailState.value.copy(
-                    albums = albums.items,
-                    topTracks = topTracks.tracks,
-                    isLoading = false
-                )
+                if (artist.id != null) {
+                    val albums = SpotifyApi.getArtistAlbums(artist.id)
+                    val topTracks = SpotifyApi.getArtistTopTracks(artist.id)
+                    
+                    _artistDetailState.value = _artistDetailState.value.copy(
+                        albums = albums.items,
+                        topTracks = topTracks.tracks,
+                        isLoading = false
+                    )
+                } else {
+                    _artistDetailState.value = _artistDetailState.value.copy(
+                        isLoading = false,
+                        error = "Invalid artist ID"
+                    )
+                }
             } catch (e: Exception) {
                 _artistDetailState.value = _artistDetailState.value.copy(
                     isLoading = false,
@@ -226,7 +235,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 playlistDao.insertPlaylist(playlistEntity)
                 
                 // Fetch all playlist tracks
-                val response = SpotifyApi.getPlaylistTracks(playlistId, limit = 50)
+                val response = SpotifyApi.getPlaylistTracks(playlistId)
                 val tracks = response.items.mapNotNull { it.track }
                 
                 _uiState.value = _uiState.value.copy(importTotal = tracks.size)
@@ -235,7 +244,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 val playlistTracks = mutableListOf<PlaylistTrackEntity>()
                 tracks.forEachIndexed { index, track ->
                     try {
+                        // Add to download tracking
+                        queueManager.addDownloadTracking(
+                            track.name,
+                            track.artists.joinToString(", ") { it.name },
+                            "playlist"
+                        )
+                        
                         val downloadedTrack = onTrackDownloaded(track)
+                        
+                        // Remove from download tracking
+                        queueManager.removeDownloadTracking(
+                            track.name,
+                            track.artists.joinToString(", ") { it.name }
+                        )
+                        
                         // Add to playlist tracks
                         val playlistTrack = PlaylistTrackEntity(
                             playlistId = playlist.id,
@@ -246,6 +269,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         playlistTracks.add(playlistTrack)
                         _uiState.value = _uiState.value.copy(importProgress = index + 1)
                     } catch (e: Exception) {
+                        // Remove from download tracking on error
+                        queueManager.removeDownloadTracking(
+                            track.name,
+                            track.artists.joinToString(", ") { it.name }
+                        )
                         Log.e("SearchViewModel", "Failed to download track: ${track.name}", e)
                     }
                 }

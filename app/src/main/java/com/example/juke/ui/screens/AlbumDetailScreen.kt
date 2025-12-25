@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -26,7 +27,8 @@ import kotlinx.coroutines.launch
 fun AlbumDetailScreen(
     albumDetailViewModel: AlbumDetailViewModel = viewModel(),
     musicViewModel: MusicViewModel = viewModel(),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    bottomPadding: Dp = 0.dp
 ) {
     val uiState by albumDetailViewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
@@ -66,7 +68,12 @@ fun AlbumDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + bottomPadding
+                ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Album Header
@@ -100,7 +107,7 @@ fun AlbumDetailScreen(
                             modifier = Modifier.padding(top = 8.dp)
                         ) {
                             Text(
-                                text = album.albumType.replaceFirstChar { it.uppercase() },
+                                text = album.albumType?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() } ?: "Album",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -112,7 +119,7 @@ fun AlbumDetailScreen(
                             )
                             
                             Text(
-                                text = album.releaseDate.take(4),
+                                text = album.releaseDate?.take(4) ?: "",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -124,7 +131,7 @@ fun AlbumDetailScreen(
                             )
                             
                             Text(
-                                text = "${album.totalTracks} tracks",
+                                text = "${album.totalTracks ?: 0} tracks",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
