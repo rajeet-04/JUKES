@@ -3,9 +3,9 @@ package com.example.juke.services
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
-import android.os.Bundle
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -15,39 +15,34 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.CommandButton
-import androidx.media3.session.MediaController
-import androidx.media3.session.MediaNotification
-import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
-import androidx.media3.session.MediaLibraryService
-import androidx.media3.session.SessionToken
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.session.LibraryResult
-import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaController
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionToken
+import com.example.juke.database.MusicDatabase
+import com.example.juke.database.toTrack
+import com.example.juke.models.Track
+import com.example.juke.analytics.AnalyticsManager
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
-import com.example.juke.database.MusicDatabase
-import com.example.juke.database.toTrack
-import com.example.juke.models.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.core.net.toUri
-import android.app.NotificationManager
-import androidx.core.content.getSystemService
-import androidx.media3.exoplayer.analytics.AnalyticsListener
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 /**
  * Media Playback Service using Media3 (ExoPlayer) with Android Auto support.
@@ -62,6 +57,36 @@ class PlaybackService : MediaLibraryService() {
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
     
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /**
+     * Helper function to create validated MediaItem with artwork checking
+     */
+    private fun createValidatedMediaItem(track: Track): MediaItem? {
+        if (track.localUri == null) return null
+
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+
+        // Validate artwork URI
+        track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
+            try {
+                val uri = uriString.toUri()
+                val file = java.io.File(uri.path ?: "")
+                if (file.exists() && file.canRead() && file.length() > 0) {
+                    metadataBuilder.setArtworkUri(uri)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Invalid artwork URI for ${track.title}: ${e.message}")
+            }
+        }
+
+        return MediaItem.Builder()
+            .setMediaId(track.uuid)
+            .setUri(track.localUri)
+            .setMediaMetadata(metadataBuilder.build())
+            .build()
+    }
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -121,59 +146,42 @@ class PlaybackService : MediaLibraryService() {
                 mediaItem?.let {
                     val trackId = it.mediaId
                     Log.d(TAG, "Media item transition: $trackId, reason: $reason")
-                    
-                    // Force notification metadata update by rebuilding metadata
+
+                    // Force notification metadata update for Android 16 compatibility
                     try {
                         mediaSession?.let { session ->
                             val currentItem = player.currentMediaItem
                             currentItem?.let { item ->
-                                // Rebuild metadata to force notification refresh
-                                val refreshedMetadata = MediaMetadata.Builder()
-                                    .setTitle(item.mediaMetadata.title)
-                                    .setArtist(item.mediaMetadata.artist)
-                                    .setArtworkUri(item.mediaMetadata.artworkUri)
-                                    .setArtworkData(item.mediaMetadata.artworkData, item.mediaMetadata.artworkDataType)
-                                    .build()
-                                
-                                // Force notification update by replacing the current media item with updated metadata
-                                val currentIndex = player.currentMediaItemIndex
-                                val currentItem = player.getMediaItemAt(currentIndex)
-                                val updatedItem = currentItem.buildUpon()
-                                    .setMediaMetadata(refreshedMetadata)
-                                    .build()
-                                player.replaceMediaItem(currentIndex, updatedItem)
-                                Log.d(TAG, "Replaced media item with updated metadata for notification refresh: ${refreshedMetadata.title}")
-                                
-                                // Additional fallback for Android 16/IQOO Origin OS
+                                // Create fresh metadata with validated artwork
                                 serviceScope.launch {
-                                    kotlinx.coroutines.delay(100)
-                                    // Try to force notification refresh by briefly setting empty metadata
-                                    val emptyMetadata = MediaMetadata.Builder()
-                                        .setTitle("")
-                                        .setArtist("")
-                                        .build()
-                                    val emptyItem = currentItem.buildUpon()
-                                        .setMediaMetadata(emptyMetadata)
-                                        .build()
-                                    player.replaceMediaItem(currentIndex, emptyItem)
-                                    
-                                    kotlinx.coroutines.delay(10)
-                                    player.replaceMediaItem(currentIndex, updatedItem)
-                                    Log.d(TAG, "Used empty metadata refresh for Android 16 compatibility")
+                                    try {
+                                        val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
+                                        if (track != null) {
+                                            val validatedItem = createValidatedMediaItem(track)
+                                            validatedItem?.let { newItem ->
+                                                // Replace current item with validated metadata
+                                                val currentIndex = player.currentMediaItemIndex
+                                                player.replaceMediaItem(currentIndex, newItem)
+                                                Log.d(TAG, "Updated media item with validated metadata for ${track.title}")
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Failed to update media item metadata: ${e.message}")
+                                    }
                                 }
                             }
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to refresh player metadata: ${e.message}")
                     }
-                    
+
                     serviceScope.launch {
                         try {
                             val now = SimpleDateFormat(
                                 "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
                                 Locale.US
                             ).format(Date())
-                            
+
                             database.trackDao().incrementPlayCount(trackId, now)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error updating play count: ${e.message}", e)
@@ -202,8 +210,11 @@ class PlaybackService : MediaLibraryService() {
         val bitmapLoader = DataSourceBitmapLoader(this)
         
         mediaSession = MediaLibrarySession.Builder(this, player, MediaLibrarySessionCallback())
-            .setSessionActivity(sessionActivityPendingIntent!!)
+            .apply {
+                sessionActivityPendingIntent?.let { setSessionActivity(it) }
+            }
             .setBitmapLoader(bitmapLoader)
+            .setShowPlayButtonIfPlaybackIsSuppressed(true)
             .build()
         
         Log.d(TAG, "PlaybackService created")
@@ -250,7 +261,8 @@ class PlaybackService : MediaLibraryService() {
                 )
             )
         }
-        
+
+        @OptIn(UnstableApi::class)
         override fun onGetChildren(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -272,10 +284,11 @@ class PlaybackService : MediaLibraryService() {
                 "recent" -> loadRecentTracks(params)
                 "favorites" -> loadFavorites(params)
                 "all_tracks" -> loadAllTracks(params)
-                else -> Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+                else -> Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
             }
         }
-        
+
+        @OptIn(UnstableApi::class)
         override fun onGetItem(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -287,11 +300,11 @@ class PlaybackService : MediaLibraryService() {
                     if (track != null) {
                         LibraryResult.ofItem(buildPlayableMediaItem(track), null)
                     } else {
-                        LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+                        LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error getting item: ${e.message}")
-                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
         }
@@ -310,21 +323,37 @@ class PlaybackService : MediaLibraryService() {
         }
         
         private fun buildPlayableMediaItem(track: Track): MediaItem {
+            val metadataBuilder = MediaMetadata.Builder()
+                .setTitle(track.title)
+                .setArtist(track.artist)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+
+            // Validate and set artwork URI only if file exists and is accessible
+            track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
+                try {
+                    val uri = uriString.toUri()
+                    // Check if the file actually exists
+                    val file = java.io.File(uri.path ?: "")
+                    if (file.exists() && file.canRead() && file.length() > 0) {
+                        metadataBuilder.setArtworkUri(uri)
+                        Log.d(TAG, "Set artwork URI for ${track.title}: $uriString")
+                    } else {
+                        Log.w(TAG, "Artwork file not accessible for ${track.title}: $uriString")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Invalid artwork URI for track ${track.title}: $uriString - ${e.message}")
+                }
+            }
+
             return MediaItem.Builder()
                 .setMediaId(track.uuid)
                 .setUri(track.localUri)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(track.title)
-                        .setArtist(track.artist)
-                        .setArtworkUri(track.thumbnailUri?.toUri())
-                        .setIsBrowsable(false)
-                        .setIsPlayable(true)
-                        .build()
-                )
+                .setMediaMetadata(metadataBuilder.build())
                 .build()
         }
-        
+
+        @OptIn(UnstableApi::class)
         private fun loadRecentTracks(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             return serviceScope.async {
                 try {
@@ -333,11 +362,12 @@ class PlaybackService : MediaLibraryService() {
                     LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading recent tracks: ${e.message}")
-                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
         }
-        
+
+        @OptIn(UnstableApi::class)
         private fun loadFavorites(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             return serviceScope.async {
                 try {
@@ -346,11 +376,12 @@ class PlaybackService : MediaLibraryService() {
                     LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading favorites: ${e.message}")
-                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
         }
-        
+
+        @OptIn(UnstableApi::class)
         private fun loadAllTracks(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             return serviceScope.async {
                 try {
@@ -359,7 +390,7 @@ class PlaybackService : MediaLibraryService() {
                     LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading all tracks: ${e.message}")
-                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN)
+                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
         }
@@ -414,6 +445,36 @@ class PlaybackManager(private val context: Context) {
     
     // Queue manager for recommendations
     private val queueManager: QueueManager by lazy { QueueManager.getInstance(context) }
+    
+    /**
+     * Helper function to create validated MediaItem with artwork checking
+     */
+    private fun createValidatedMediaItem(track: Track): MediaItem? {
+        if (track.localUri == null) return null
+
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+
+        // Validate artwork URI
+        track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
+            try {
+                val uri = uriString.toUri()
+                val file = java.io.File(uri.path ?: "")
+                if (file.exists() && file.canRead() && file.length() > 0) {
+                    metadataBuilder.setArtworkUri(uri)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Invalid artwork URI for ${track.title}: ${e.message}")
+            }
+        }
+
+        return MediaItem.Builder()
+            .setMediaId(track.uuid)
+            .setUri(track.localUri)
+            .setMediaMetadata(metadataBuilder.build())
+            .build()
+    }
     
     fun initialize() {
         if (controllerFuture == null) {
@@ -513,69 +574,44 @@ class PlaybackManager(private val context: Context) {
     }
     
     fun playTrack(track: Track) {
-        if (track.localUri == null) {
+        val mediaItem = createValidatedMediaItem(track)
+        if (mediaItem == null) {
             Log.e(TAG, "Cannot play track without local URI")
             return
         }
-        
+
         initialize()
-        
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(track.uuid)
-            .setUri(track.localUri)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artist)
-                    .setArtworkUri(track.thumbnailUri?.toUri())
-                    .build()
-            )
-            .build()
-        
+
         controller?.apply {
             setMediaItem(mediaItem)
             prepare()
             play()
         }
-        
+
         // Emit the current track ID
         _currentTrackId.value = track.uuid
-        
+
         Log.d(TAG, "Playing track: ${track.title}")
     }
     
     fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
         initialize()
-        
-        val mediaItems = tracks.mapNotNull { track ->
-            track.localUri?.let { uri ->
-                MediaItem.Builder()
-                    .setMediaId(track.uuid)
-                    .setUri(uri)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(track.title)
-                            .setArtist(track.artist)
-                            .setArtworkUri(track.thumbnailUri?.toUri())
-                            .build()
-                    )
-                    .build()
-            }
-        }
-        
+
+        val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
+
         controller?.apply {
             setMediaItems(mediaItems, startIndex, 0)
             prepare()
             play()
         }
-        
+
         // Emit the initial track ID
         tracks.getOrNull(startIndex)?.let { startTrack ->
             _currentTrackId.value = startTrack.uuid
         }
-        
+
         Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex")
-        
+
         // Save queue to preferences
         scope.launch {
             saveQueueState(tracks, startIndex)
@@ -589,23 +625,9 @@ class PlaybackManager(private val context: Context) {
      */
     fun addToQueue(tracks: List<Track>) {
         initialize()
-        
-        val mediaItems = tracks.mapNotNull { track ->
-            track.localUri?.let { uri ->
-                MediaItem.Builder()
-                    .setMediaId(track.uuid)
-                    .setUri(uri)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(track.title)
-                            .setArtist(track.artist)
-                            .setArtworkUri(track.thumbnailUri?.toUri())
-                            .build()
-                    )
-                    .build()
-            }
-        }
-        
+
+        val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
+
         if (mediaItems.isNotEmpty()) {
             controller?.addMediaItems(mediaItems)
             Log.d(TAG, "Added ${mediaItems.size} tracks to queue")
@@ -616,24 +638,13 @@ class PlaybackManager(private val context: Context) {
      * Insert a track at a specific position in the current queue without interrupting playback.
      */
     fun addToQueueAt(track: Track, index: Int): Boolean {
-        if (track.localUri == null) {
+        val mediaItem = createValidatedMediaItem(track)
+        if (mediaItem == null) {
             Log.w(TAG, "Cannot enqueue track without local URI: ${track.title}")
             return false
         }
 
         initialize()
-
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(track.uuid)
-            .setUri(track.localUri)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artist)
-                    .setArtworkUri(track.thumbnailUri?.toUri())
-                    .build()
-            )
-            .build()
 
         controller?.let { ctrl ->
             val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
@@ -801,7 +812,7 @@ class PlaybackManager(private val context: Context) {
     
     private suspend fun saveQueueState(tracks: List<Track>, startIndex: Int) {
         try {
-            val trackIds = tracks.map { it.uuid }.joinToString(",")
+            val trackIds = tracks.joinToString(",") { it.uuid }
             prefs.edit().apply {
                 putString("queue_track_ids", trackIds)
                 putInt("queue_start_index", startIndex)
@@ -851,21 +862,7 @@ class PlaybackManager(private val context: Context) {
             Log.d(TAG, "Restoring playback state: ${tracks.size} tracks, index=$savedIndex, position=$savedPosition")
             
             // Restore queue
-            val mediaItems = tracks.mapNotNull { track ->
-                track.localUri?.let { uri ->
-                    MediaItem.Builder()
-                        .setMediaId(track.uuid)
-                        .setUri(uri)
-                        .setMediaMetadata(
-                            MediaMetadata.Builder()
-                                .setTitle(track.title)
-                                .setArtist(track.artist)
-                                .setArtworkUri(track.thumbnailUri?.toUri())
-                                .build()
-                        )
-                        .build()
-                }
-            }
+            val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
             
             // MediaController methods must be called on main thread
             withContext(Dispatchers.Main) {
