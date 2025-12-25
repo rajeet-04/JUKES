@@ -1,3 +1,157 @@
+# JUKE v1.0.1-beta Release Notes
+
+## 🎉 Release Overview
+
+**Release Date:** December 26, 2025  
+**Version:** 1.0.1-beta  
+**Status:** Beta Release  
+
+JUKE v1.0.1-beta is a feature-packed beta update that introduces advanced audio controls, enhanced playback stability, and several critical bug fixes. This release focuses on improving the core music playback experience with professional-grade audio features while maintaining the app's lightweight footprint.
+
+## ✨ What's New in v1.0.1-beta
+
+### 🚀 Major Features
+
+#### 🎛️ Advanced Audio Controls
+- **10-Band Equalizer**: Professional-grade audio equalizer with 10 frequency bands for precise sound customization
+- **Volume Booster**: Enhanced volume control allowing up to 200% amplification for quiet tracks
+- **Stable Volume Management**: Consistent volume levels across different audio sources and playback scenarios
+
+#### ⏰ Sleep Timer
+- **Flexible Sleep Timer**: Set automatic playback stopping from 1 minute to 3 hours
+- **Intuitive Controls**: Easy-to-use timer interface directly in the player screen
+- **Smart Notifications**: Gentle fade-out and notification when timer expires
+
+#### 🔔 Enhanced Notification Experience
+- **Direct Player Access**: Clicking notification now opens the full player screen instantly
+- **Improved Controls**: More responsive media controls in the notification shade
+- **Visual Consistency**: Better alignment with system notification design
+
+#### 🔄 Playback Stability & Continuity
+- **Persistent Playback State**: App remembers exact playback position when closed and resumed approximate to 5 seconds
+- **Queue Consistency**: Reliable queue management with proper track ordering and persistence
+- **Stable Playback Engine**: Enhanced audio pipeline for uninterrupted music streaming
+
+### 🛠️ Technical Improvements
+
+#### Audio Processing
+- **Optimized Audio Pipeline**: Improved Media3 integration for better performance
+- **Memory Management**: Reduced memory usage during long playback sessions
+- **Background Processing**: More efficient background audio handling
+
+#### User Experience
+- **Screen Area Optimization**: Better utilization of screen real estate across different device sizes
+- **Gesture Improvements**: Smoother touch interactions and visual feedback
+- **Loading States**: Enhanced loading indicators for better user feedback
+
+## 🐛 Bug Fixes
+
+### Notification System
+- **Notification Player Issues**: Fixed unresponsive media controls in notification shade
+- **Click Handling**: Resolved inconsistent behavior when tapping notifications
+
+### UI/UX Improvements
+- **Screen Area Utilization**: Corrected layout issues that wasted screen space
+- **Visual Consistency**: Fixed alignment and spacing problems across screens
+
+### Queue Management
+- **Deletion Bug**: Resolved crashes and data loss when deleting items from queue
+- **Reordering Issues**: Fixed queue mismanagement when dragging to reorder tracks
+- **State Persistence**: Improved queue state preservation across app sessions
+
+### Playback Stability
+- **Audio Glitches**: Eliminated audio artifacts and playback interruptions
+- **Resume Functionality**: Fixed issues with resuming playback at correct positions
+- **Background Playback**: Enhanced reliability of playback when app is minimized
+
+## 📋 System Requirements
+
+- **Minimum Android Version**: Android 8.0 (API 26)
+- **Recommended Android Version**: Android 12.0+ (API 31+)
+- **Storage**: Minimum 100MB free space (app size increased by 14KB)
+- **Network**: Internet connection required for search and downloads
+
+## 📦 Installation
+
+### Beta Testing
+This is a beta release. Please report any issues you encounter.
+
+1. Visit the [GitHub Releases page](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.1-beta)
+2. Download the beta APK file (`JUKE-v1.0.1-beta.apk`)
+3. Install the APK on your Android device
+4. Grant necessary permissions when prompted
+
+### Feedback & Bug Reports
+- **Beta Feedback**: Use the new issue reporting feature in Settings > Home
+- **GitHub Issues**: [Report bugs](https://github.com/rajeet-04/JUKES/issues) with "beta" label
+- **Expected Rough Edges**: As a beta version, some features may have minor imperfections
+
+## 📊 Feature Comparison
+
+| Feature | JUKE v1.0.1-beta | JUKE v1.0.0 | Other Music Apps |
+|---------|------------------|-------------|------------------|
+| 10-Band Equalizer | ✅ New | ❌ | ⚠️ Basic/Varies |
+| Volume Booster (200%) | ✅ New | ❌ | ❌ Rare |
+| Sleep Timer (3hrs) | ✅ New | ❌ | ⚠️ Limited |
+| Notification Direct Access | ✅ Enhanced | ⚠️ Basic | ⚠️ Varies |
+| Playback State Persistence | ✅ Enhanced | ⚠️ Partial | ✅ Usually |
+| Queue Stability | ✅ Fixed | ⚠️ Issues | ⚠️ Varies |
+
+## 🧪 Beta Testing Notes
+
+### Known Beta Limitations
+- **Audio Processing**: Some equalizer presets may need fine-tuning
+- **Sleep Timer**: May have minor timing inaccuracies on some devices
+- **Volume Booster**: Extreme boosting may cause audio distortion on some hardware
+- **UI Polish**: Some animations and transitions may feel slightly rough
+
+### Testing Focus Areas
+- **Equalizer Performance**: Test different presets and custom settings
+- **Sleep Timer Accuracy**: Verify timer functionality across different durations
+- **Notification Integration**: Test all notification interactions
+- **Queue Management**: Stress-test reordering and deletion operations
+
+## 🔮 What's Next
+
+### Post-Beta Plans
+- **Equalizer Presets**: Pre-configured audio profiles for different genres
+- **Volume Normalization**: Automatic volume leveling across tracks
+- **Advanced Sleep Features**: Customizable fade-out and alarm integration
+- **Notification Customization**: User-configurable notification actions
+
+### v1.0.2 Roadmap (Post-Beta)
+- **User Accounts**: Cloud sync and cross-device playback
+- **Social Features**: Share playlists and collaborative queues
+- **Android Auto**: Car integration support
+- **Wear OS**: Smartwatch companion app
+
+## 📈 Release Statistics
+
+- **App Size Increase**: +14KB for new features and optimizations
+- **New Features**: 8 major enhancements
+- **Bug Fixes**: 7 critical issues resolved
+- **Code Changes**: ~2,500 lines modified/added
+- **Testing Coverage**: Additional integration tests for audio features
+
+## 📝 Changelog
+
+### v1.0.1-beta (December 26, 2025)
+- 🎛️ Added 10-band audio equalizer
+- 🔊 Implemented volume booster (up to 200%)
+- ⏰ Added sleep timer (1 min - 3 hrs)
+- 🔔 Enhanced notification direct player access
+- 🔄 Improved playback state persistence
+- 🛠️ Fixed notification player issues
+- 📱 Optimized screen area utilization
+- 🗑️ Resolved queue deletion bugs
+- 🔀 Fixed queue reordering problems
+- 🔊 Stabilized volume management
+- 🎵 Enhanced playback stability
+- 📊 Added issue reporting in settings
+- ⚡ Performance optimizations (+14KB)
+
+---
+
 # JUKE v1.0.0 Release Notes
 
 ## 🎉 Release Overview
