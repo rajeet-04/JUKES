@@ -13,7 +13,6 @@ import com.example.juke.services.QueueManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class LibraryUiState(
@@ -165,13 +164,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             // Search in plain lyrics
             (track.plainLyrics?.lowercase()?.contains(lowerQuery) == true) ||
             // Search in synced lyrics (remove timestamps for search)
-            (track.syncedLyrics?.lowercase()?.let { lyrics ->
-                // Remove timestamp patterns like [00:00.00] or [0:0.0]
-                lyrics.replace(Regex("\\[\\d+:\\d+\\.\\d+\\]"), "")
-                    .replace(Regex("\\[\\d+:\\d+\\]"), "")
-                    .trim()
-                    .contains(lowerQuery)
-            } == true)
+            (track.syncedLyrics?.lowercase()?.replace(Regex("\\[\\d+:\\d+\\.\\d+]"), "")
+                ?.replace(Regex("\\[\\d+:\\d+]"), "")?.trim()?.contains(lowerQuery) == true)
         }
     }
 }

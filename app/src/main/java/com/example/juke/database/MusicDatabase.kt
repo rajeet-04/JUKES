@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
  * Migration from version 1 to 2
  */
 val MIGRATION_1_2 = object : Migration(1, 2) {
-    override fun migrate(database: SupportSQLiteDatabase) {
+    override fun migrate(db: SupportSQLiteDatabase) {
         // Add any schema changes from version 1 to 2 here
         // Example: database.execSQL("ALTER TABLE tracks ADD COLUMN new_column TEXT")
     }

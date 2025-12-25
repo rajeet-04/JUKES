@@ -1,13 +1,15 @@
 package com.example.juke.network
 
 import android.util.Log
-import com.google.gson.Gson
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
 import com.example.juke.models.SpotifyTrack
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.http.*
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import io.ktor.client.call.body
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.max

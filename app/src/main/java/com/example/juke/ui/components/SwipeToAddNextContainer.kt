@@ -1,5 +1,6 @@
 package com.example.juke.ui.components
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +30,7 @@ import androidx.compose.ui.unit.dp
 fun SwipeToAddNextContainer(
     onAddNext: () -> Unit,
     onDelete: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
+    @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit
 ) {
     val dismissState = rememberSwipeToDismissBoxState(

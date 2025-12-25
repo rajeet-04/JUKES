@@ -1,5 +1,6 @@
 package com.example.juke.services
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import com.example.juke.database.MusicDatabase
@@ -36,6 +37,7 @@ data class DownloadInfo(
 class QueueManager private constructor(private val context: Context) {
     
     companion object {
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: QueueManager? = null
         
