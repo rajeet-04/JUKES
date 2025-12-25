@@ -16,6 +16,7 @@
         android:required="false" />
 
     <application
+        android:name=".JukeApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -25,7 +26,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.JUKE"
         android:enableOnBackInvokedCallback="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:attributionTags="juke_app|posthog|media|audio">
         
         <!-- Android Auto metadata -->
         <meta-data

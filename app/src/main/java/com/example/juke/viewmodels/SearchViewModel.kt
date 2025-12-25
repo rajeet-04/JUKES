@@ -4,17 +4,21 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.juke.models.*
-import com.example.juke.network.SpotifyApi
 import com.example.juke.database.MusicDatabase
-import com.example.juke.database.PlaylistDao
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.database.PlaylistTrackEntity
+import com.example.juke.models.SpotifyAlbum
+import com.example.juke.models.SpotifyArtist
+import com.example.juke.models.SpotifyPlaylist
+import com.example.juke.models.SpotifyTrack
+import com.example.juke.models.Track
+import com.example.juke.network.SpotifyApi
 import com.example.juke.services.QueueManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.example.juke.analytics.AnalyticsManager
 
 data class SearchUiState(
     val query: String = "",
@@ -67,6 +71,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             )
             return
         }
+        
+        // Track search query
+        AnalyticsManager.getInstance().trackSearchQuery(query)
         
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSearching = true, error = null)

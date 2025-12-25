@@ -59,6 +59,7 @@ import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
+import com.example.juke.analytics.AnalyticsManager
 
 sealed class Screen(val route: String, val title: String, val filledIcon: @Composable () -> Unit, val outlinedIcon: @Composable () -> Unit) {
     object Home : Screen("home", "Home", { Icon(Icons.Filled.Home, contentDescription = "Home") }, { Icon(Icons.Outlined.Home, contentDescription = "Home") })
@@ -74,6 +75,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Track app opened
+        AnalyticsManager.getInstance().trackAppOpened()
         
         if (intent.getBooleanExtra("open_player", false)) {
             showPlayerOnLaunch.value = true
@@ -272,5 +276,13 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra("open_player", false)) {
             showPlayerOnLaunch.value = true
         }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        // Track app closed and end session
+        val analytics = AnalyticsManager.getInstance()
+        analytics.trackAppClosed()
+        analytics.endSession()
     }
 }

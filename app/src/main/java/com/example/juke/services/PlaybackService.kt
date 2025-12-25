@@ -443,6 +443,31 @@ class PlaybackManager(private val context: Context) {
                                         _currentTrackId.value = trackId
                                         Log.d(TAG, "Media item transition: $trackId")
                                         savePlaybackState()
+                                        
+                                        // Capture position in queue on main thread before launching coroutine
+                                        val positionInQueue = controller?.currentMediaItemIndex ?: 0
+                                        
+                                        // Track song play in analytics
+                                        scope.launch {
+                                            try {
+                                                Log.d(TAG, "Analytics: Looking up track with ID: $trackId")
+                                                val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
+                                                if (track != null) {
+                                                    Log.d(TAG, "Analytics: Found track '${track.title}' by ${track.artist}, calling trackSongPlayed")
+                                                    AnalyticsManager.getInstance().trackSongPlayed(
+                                                        songId = "${track.title} - ${track.artist}",
+                                                        songTitle = track.title,
+                                                        songArtist = track.artist,
+                                                        songDuration = track.durationSec * 1000L,
+                                                        positionInQueue = positionInQueue
+                                                    )
+                                                } else {
+                                                    Log.w(TAG, "Analytics: Track not found in database for ID: $trackId")
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.e(TAG, "Error tracking song play: ${e.message}", e)
+                                            }
+                                        }
                                     }
                                 }
                             }
