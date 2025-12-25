@@ -8,6 +8,7 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.core.content.edit
 
 /**
  * Controls audio effects (Equalizer and Volume Booster) for media playback.
@@ -23,7 +24,7 @@ class AudioEffectController(private val context: Context) {
     private var automaticGainControl: AutomaticGainControl? = null
     private var currentAudioSessionId: Int = 0
     
-    // Equalizer state (5 bands)
+    // Equalizer state (10 bands)
     private val _equalizerBands = MutableStateFlow(loadEqualizerBands())
     val equalizerBands: StateFlow<List<Int>> = _equalizerBands.asStateFlow()
     
@@ -41,7 +42,7 @@ class AudioEffectController(private val context: Context) {
     val isNormalizationEnabled: StateFlow<Boolean> = _isNormalizationEnabled.asStateFlow()
     
     private fun loadEqualizerBands(): List<Int> {
-        return (0 until 5).map { index ->
+        return (0 until 10).map { index ->
             prefs.getInt("eq_band_$index", 0)
         }
     }
@@ -59,33 +60,45 @@ class AudioEffectController(private val context: Context) {
         currentAudioSessionId = audioSessionId
         
         try {
-            // Initialize Equalizer
-            equalizer = Equalizer(0, audioSessionId).apply {
-                enabled = _isEqualizerEnabled.value
-                
-                // Verify we have 5 bands
-                val numBands = numberOfBands.toInt()
-                Log.d(TAG, "Equalizer has $numBands bands")
-                
-                // Apply saved band levels
-                _equalizerBands.value.forEachIndexed { index, level ->
-                    if (index < numBands) {
-                        setBandLevel(index.toShort(), level.toShort())
+            // Initialize Equalizer (try to create and catch exceptions if not available)
+            try {
+                equalizer = Equalizer(0, audioSessionId).apply {
+                    enabled = _isEqualizerEnabled.value
+                    
+                    // Verify we have bands available
+                    val numBands = numberOfBands.toInt()
+                    Log.d(TAG, "Equalizer has $numBands bands")
+                    
+                    // Apply saved band levels (up to available bands)
+                    _equalizerBands.value.forEachIndexed { index, level ->
+                        if (index < numBands) {
+                            setBandLevel(index.toShort(), level.toShort())
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "Equalizer not available on this device: ${e.message}")
             }
             
             // Initialize Loudness Enhancer
-            loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
-                enabled = _isBoosterEnabled.value
-                setTargetGain(_boosterLevel.value * 800) // 0-100% maps to 0-80000mB
+            try {
+                loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                    enabled = _isBoosterEnabled.value
+                    setTargetGain(_boosterLevel.value * 800) // 0-100% maps to 0-80000mB
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "LoudnessEnhancer not available: ${e.message}")
             }
 
             // Initialize Automatic Gain Control for simple normalization
             if (AutomaticGainControl.isAvailable()) {
-                // AGC helps even out loud and quiet tracks without changing player volume
-                automaticGainControl = AutomaticGainControl.create(audioSessionId)?.apply {
-                    enabled = _isNormalizationEnabled.value
+                try {
+                    // AGC helps even out loud and quiet tracks without changing player volume
+                    automaticGainControl = AutomaticGainControl.create(audioSessionId)?.apply {
+                        enabled = _isNormalizationEnabled.value
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to create AutomaticGainControl: ${e.message}")
                 }
             } else {
                 Log.w(TAG, "AutomaticGainControl not available on this device")
@@ -99,18 +112,18 @@ class AudioEffectController(private val context: Context) {
     
     /**
      * Set equalizer band level.
-     * @param bandIndex Band index (0-4)
-     * @param level Level in millibels (-1500 to 1500 typically)
+     * @param bandIndex Band index (0-9)
+     * @param level Level in millibels (-5000 to 5000)
      */
     fun setEqualizerBandLevel(bandIndex: Int, level: Int) {
-        if (bandIndex < 0 || bandIndex >= 5) return
+        if (bandIndex !in 0..<10) return
         
         val currentBands = _equalizerBands.value.toMutableList()
         currentBands[bandIndex] = level
         _equalizerBands.value = currentBands
         
         // Save to preferences
-        prefs.edit().putInt("eq_band_$bandIndex", level).apply()
+        prefs.edit { putInt("eq_band_$bandIndex", level) }
         
         try {
             equalizer?.setBandLevel(bandIndex.toShort(), level.toShort())
@@ -125,7 +138,7 @@ class AudioEffectController(private val context: Context) {
      */
     fun setEqualizerEnabled(enabled: Boolean) {
         _isEqualizerEnabled.value = enabled
-        prefs.edit().putBoolean("equalizer_enabled", enabled).apply()
+        prefs.edit { putBoolean("equalizer_enabled", enabled) }
         try {
             equalizer?.enabled = enabled
             Log.d(TAG, "Equalizer enabled: $enabled")
@@ -141,7 +154,7 @@ class AudioEffectController(private val context: Context) {
     fun setBoosterLevel(percentage: Int) {
         val clampedLevel = percentage.coerceIn(0, 100)
         _boosterLevel.value = clampedLevel
-        prefs.edit().putInt("booster_level", clampedLevel).apply()
+        prefs.edit { putInt("booster_level", clampedLevel) }
         
         try {
             // Map 0-100% to 0-80000mB (0-800%)
@@ -158,7 +171,7 @@ class AudioEffectController(private val context: Context) {
      */
     fun setBoosterEnabled(enabled: Boolean) {
         _isBoosterEnabled.value = enabled
-        prefs.edit().putBoolean("booster_enabled", enabled).apply()
+        prefs.edit { putBoolean("booster_enabled", enabled) }
         try {
             loudnessEnhancer?.enabled = enabled
             Log.d(TAG, "Volume booster enabled: $enabled")
@@ -172,7 +185,7 @@ class AudioEffectController(private val context: Context) {
      */
     fun setNormalizationEnabled(enabled: Boolean) {
         _isNormalizationEnabled.value = enabled
-        prefs.edit().putBoolean("normalization_enabled", enabled).apply()
+        prefs.edit { putBoolean("normalization_enabled", enabled) }
         try {
             if (automaticGainControl == null && currentAudioSessionId != 0 && AutomaticGainControl.isAvailable()) {
                 automaticGainControl = AutomaticGainControl.create(currentAudioSessionId)
@@ -183,29 +196,17 @@ class AudioEffectController(private val context: Context) {
             Log.e(TAG, "Failed to toggle normalization: ${e.message}")
         }
     }
-    
-    /**
-     * Get equalizer band frequency range.
-     */
-    fun getEqualizerBandFrequencyRange(bandIndex: Int): Int {
-        return try {
-            equalizer?.getCenterFreq(bandIndex.toShort())?.div(1000) ?: 0
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get band frequency: ${e.message}")
-            0
-        }
-    }
-    
+
     /**
      * Get equalizer band level range.
      */
     fun getEqualizerBandLevelRange(): Pair<Int, Int> {
         return try {
             val range = equalizer?.bandLevelRange
-            (range?.get(0)?.toInt() ?: -1500) to (range?.get(1)?.toInt() ?: 1500)
+            (range?.get(0)?.toInt() ?: -5000) to (range?.get(1)?.toInt() ?: 5000)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get level range: ${e.message}")
-            -1500 to 1500
+            -5000 to 5000
         }
     }
     
@@ -213,18 +214,19 @@ class AudioEffectController(private val context: Context) {
      * Reset all equalizer bands to 0.
      */
     fun resetEqualizer() {
-        _equalizerBands.value = List(5) { 0 }
+        _equalizerBands.value = List(10) { 0 }
         
         // Save to preferences
         prefs.edit().apply {
-            for (i in 0 until 5) {
+            for (i in 0 until 10) {
                 putInt("eq_band_$i", 0)
             }
             apply()
         }
         
         try {
-            for (i in 0 until 5) {
+            val numBands = equalizer?.numberOfBands?.toInt() ?: 0
+            for (i in 0 until minOf(10, numBands)) {
                 equalizer?.setBandLevel(i.toShort(), 0)
             }
             Log.d(TAG, "Equalizer reset to flat")
