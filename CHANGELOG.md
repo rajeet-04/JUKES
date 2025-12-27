@@ -33,6 +33,12 @@ This release brings significant UI/UX improvements, enhanced queue management, a
 - **Confidence Boosts**: Contextual confidence boosts based on artist match quality (0.05 to 0.15).
 - See [ARTIST_MATCHING_ENHANCEMENT.md](ARTIST_MATCHING_ENHANCEMENT.md) for technical details and [ARTIST_MATCHING_QUICK_REFERENCE.md](ARTIST_MATCHING_QUICK_REFERENCE.md) for quick reference.
 
+### App Update Checker
+
+- **Automatic Updates**: Checks for new releases (including betas) on app launch.
+- **In-App Notification**: Alerts the user with a dialog if a newer version is available on GitHub.
+- **Direct Download**: Provides a direct link to the release page for easy downloading.
+
 ### Notification Thumbnails
 
 - **Optimized Thumbnails**: Separate 64x64 thumbnails are now stored for media notifications, reducing memory usage while maintaining 640x640 images for the player screen.

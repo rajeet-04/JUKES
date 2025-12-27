@@ -65,6 +65,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
     
     private var isProcessingQueue = false
+    private val pendingQueueOperations = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     
     init {
         playbackManager.initialize()
@@ -299,8 +300,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Download a Spotify track (if needed) and queue it to play next.
      */
+    /**
+     * Download a Spotify track (if needed) and queue it to play next.
+     */
     fun queueSpotifyTrackNext(spotifyTrack: SpotifyTrack) {
+        val key = "${spotifyTrack.name}-${spotifyTrack.artists.firstOrNull()?.name ?: ""}"
+        if (pendingQueueOperations.contains(key)) {
+            Log.d("MusicViewModel", "Ignoring duplicate queue request for: $key")
+            return
+        }
+
         viewModelScope.launch {
+            pendingQueueOperations.add(key)
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
 
             try {
@@ -313,6 +324,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("MusicViewModel", "Failed to queue Spotify track next: ${e.message}", e)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             } finally {
+                pendingQueueOperations.remove(key)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             }
         }
@@ -321,8 +333,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Download a simplified Spotify track (album context) and queue it to play next.
      */
+    /**
+     * Download a simplified Spotify track (album context) and queue it to play next.
+     */
     fun queueSimplifiedTrackNext(track: SpotifySimplifiedTrack, album: SpotifyAlbum) {
+        val key = "${track.name}-${track.artists.firstOrNull()?.name ?: ""}"
+        if (pendingQueueOperations.contains(key)) {
+            Log.d("MusicViewModel", "Ignoring duplicate queue request for: $key")
+            return
+        }
+
         viewModelScope.launch {
+            pendingQueueOperations.add(key)
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
 
             try {
@@ -334,6 +356,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to queue simplified track next: ${e.message}", e)
             } finally {
+                pendingQueueOperations.remove(key)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             }
         }

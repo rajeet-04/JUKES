@@ -26,6 +26,11 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalUriHandler
+import com.example.juke.models.GithubRelease
+import com.example.juke.services.UpdateManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,6 +96,62 @@ class MainActivity : ComponentActivity() {
                 val albumDetailViewModel: AlbumDetailViewModel = viewModel()
                 var showPlayerModal by remember { mutableStateOf(false) }
                 var searchResetTrigger by remember { mutableStateOf(0) }
+
+                // --- UPDATE CHECK LOGIC ---
+                var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
+                val uriHandler = LocalUriHandler.current
+
+                LaunchedEffect(Unit) {
+                    // Runs once on app launch
+                    updateAvailable = UpdateManager.checkForUpdates()
+                }
+
+                if (updateAvailable != null) {
+                    val release = updateAvailable!!
+                    AlertDialog(
+                        onDismissRequest = { updateAvailable = null },
+                        title = { Text(text = "Update Available") },
+                        text = { 
+                            Column {
+                                Text(
+                                    text = "A new version (${release.tagName}) is available!",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (release.isPrerelease) {
+                                    Text(
+                                        text = "This is a pre-release version.",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                if (!release.body.isNullOrBlank()) {
+                                    Text(
+                                        text = "\n${release.body}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 4,
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    uriHandler.openUri(release.htmlUrl)
+                                    updateAvailable = null
+                                }
+                            ) {
+                                Text("Download")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { updateAvailable = null }) {
+                                Text("Later")
+                            }
+                        }
+                    )
+                }
+                // --- END UPDATE CHECK LOGIC ---
 
                 // Listen for changes to showPlayerOnLaunch
                 LaunchedEffect(showPlayerOnLaunch.value) {
