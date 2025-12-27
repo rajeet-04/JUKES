@@ -252,18 +252,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     // Nothing playing yet; start a queue with this track
                     setQueue(listOf(track), 0)
                 } else {
+                    // Track current queue index - may need adjustment if we remove a track before it
+                    var currentQueueIndex = currentState.queueIndex
+                    
                     // Check if track already exists in queue and remove it first (Move operation)
                     val existingIndex = currentQueue.indexOfFirst { it.uuid == track.uuid }
                     if (existingIndex != -1) {
-                        Log.d("MusicViewModel", "Track ${track.title} already in queue, removing old instance to move it")
+                        Log.d("MusicViewModel", "Track ${track.title} already in queue at index $existingIndex, removing to move it")
                         playbackManager.removeFromQueue(track.uuid)
                         queueManager.removeFromQueue(track.uuid)
                         currentQueue.removeAt(existingIndex)
+                        
+                        // Adjust the working queue index if the removed track was before current position
+                        if (existingIndex < currentQueueIndex) {
+                            currentQueueIndex -= 1
+                            Log.d("MusicViewModel", "Adjusted queue index from ${currentState.queueIndex} to $currentQueueIndex after removing track before current position")
+                        }
                     }
                     
-                    val insertIndex = (currentState.queueIndex + 1)
+                    val insertIndex = (currentQueueIndex + 1)
                         .coerceAtMost(currentQueue.size)
                     currentQueue.add(insertIndex, track)
+                    
+                    Log.d("MusicViewModel", "Inserting track ${track.title} at index $insertIndex (currentQueueIndex=$currentQueueIndex, queue size=${currentQueue.size})")
 
                     val inserted = playbackManager.addToQueueAt(track, insertIndex)
                     if (!inserted) {
