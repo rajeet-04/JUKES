@@ -47,6 +47,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 
 /**
  * Media Playback Service using Media3 (ExoPlayer) with Android Auto support.
@@ -59,6 +61,32 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private lateinit var database: MusicDatabase
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
+    
+    // 1. Define the Receiver
+    private val callStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
+                val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
+                when (state) {
+                    android.telephony.TelephonyManager.EXTRA_STATE_RINGING -> {
+                        // Call coming in: PAUSE immediately
+                        if (player.isPlaying) {
+                            player.pause()
+                            Log.d(TAG, "Paused playback due to incoming call")
+                        }
+                    }
+                    android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                        // Call answered/active: Do NOTHING.
+                        // This allows the user to manually press 'Play' if they want.
+                    }
+                    android.telephony.TelephonyManager.EXTRA_STATE_IDLE -> {
+                        // Call ended: Optional - Auto resume? 
+                        // We do nothing here to respect the user's manual control.
+                    }
+                }
+            }
+        }
+    }
     
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -118,6 +146,78 @@ class PlaybackService : MediaLibraryService() {
             .build()
     }
 
+    private val audioAttributes = AudioAttributes.Builder()
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .setUsage(C.USAGE_MEDIA)
+        .build()
+
+    private val playerListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            when (playbackState) {
+                Player.STATE_ENDED -> Log.d(TAG, "Playback ended")
+                Player.STATE_READY -> Log.d(TAG, "Player ready")
+                Player.STATE_BUFFERING -> Log.d(TAG, "Buffering...")
+                Player.STATE_IDLE -> Log.d(TAG, "Player idle")
+            }
+        }
+        
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            Log.e(TAG, "Player error: ${error.message}", error)
+        }
+        
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            mediaItem?.let {
+                val trackId = it.mediaId
+                Log.d(TAG, "Media item transition: $trackId, reason: $reason")
+
+                // Force notification metadata update for Android 16 compatibility
+                try {
+                    mediaSession?.let { session ->
+                        val currentItem = player.currentMediaItem
+                        currentItem?.let { item ->
+                            // Create fresh metadata with validated artwork
+                            serviceScope.launch {
+                                try {
+                                    val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
+                                    if (track != null) {
+                                        val validatedItem = createValidatedMediaItem(track)
+                                        validatedItem?.let { newItem ->
+                                            // Replace current item with validated metadata
+                                            val currentIndex = player.currentMediaItemIndex
+                                            player.replaceMediaItem(currentIndex, newItem)
+                                            Log.d(TAG, "Updated media item with validated metadata for ${track.title}")
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to update media item metadata: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to refresh player metadata: ${e.message}")
+                }
+
+                serviceScope.launch {
+                    try {
+                        val now = SimpleDateFormat(
+                            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                            Locale.US
+                        ).format(Date())
+
+                        database.trackDao().incrementPlayCount(trackId, now)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating play count: ${e.message}", e)
+                    }
+                }
+            }
+        }
+        
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            Log.d(TAG, "Is playing: $isPlaying")
+        }
+    }
+
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
@@ -129,13 +229,7 @@ class PlaybackService : MediaLibraryService() {
             .setEnableDecoderFallback(true)
 
         player = ExoPlayer.Builder(this, renderersFactory)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .setUsage(C.USAGE_MEDIA)
-                    .build(),
-                true
-            )
+            .setAudioAttributes(audioAttributes, false) // Set to FALSE to allow playback during calls
             .setHandleAudioBecomingNoisy(true)
             .build()
         
@@ -150,80 +244,7 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         
-        player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                when (playbackState) {
-                    Player.STATE_ENDED -> {
-                        Log.d(TAG, "Playback ended")
-                    }
-                    Player.STATE_READY -> {
-                        Log.d(TAG, "Player ready")
-                    }
-                    Player.STATE_BUFFERING -> {
-                        Log.d(TAG, "Buffering...")
-                    }
-                    Player.STATE_IDLE -> {
-                        Log.d(TAG, "Player idle")
-                    }
-                }
-            }
-            
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                Log.e(TAG, "Player error: ${error.message}", error)
-            }
-            
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                mediaItem?.let {
-                    val trackId = it.mediaId
-                    Log.d(TAG, "Media item transition: $trackId, reason: $reason")
-
-                    // Force notification metadata update for Android 16 compatibility
-                    try {
-                        mediaSession?.let { session ->
-                            val currentItem = player.currentMediaItem
-                            currentItem?.let { item ->
-                                // Create fresh metadata with validated artwork
-                                serviceScope.launch {
-                                    try {
-                                        val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
-                                        if (track != null) {
-                                            val validatedItem = createValidatedMediaItem(track)
-                                            validatedItem?.let { newItem ->
-                                                // Replace current item with validated metadata
-                                                val currentIndex = player.currentMediaItemIndex
-                                                player.replaceMediaItem(currentIndex, newItem)
-                                                Log.d(TAG, "Updated media item with validated metadata for ${track.title}")
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.w(TAG, "Failed to update media item metadata: ${e.message}")
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to refresh player metadata: ${e.message}")
-                    }
-
-                    serviceScope.launch {
-                        try {
-                            val now = SimpleDateFormat(
-                                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                                Locale.US
-                            ).format(Date())
-
-                            database.trackDao().incrementPlayCount(trackId, now)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error updating play count: ${e.message}", e)
-                        }
-                    }
-                }
-            }
-            
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                Log.d(TAG, "Is playing: $isPlaying")
-            }
-        })
+        player.addListener(playerListener)
         
         val sessionActivityPendingIntent = packageManager
             ?.getLaunchIntentForPackage(packageName)
@@ -250,6 +271,14 @@ class PlaybackService : MediaLibraryService() {
             .build()
         
         Log.d(TAG, "PlaybackService created")
+        
+        // 2. Register the Receiver safely
+        try {
+            val filter = IntentFilter(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+            registerReceiver(callStateReceiver, filter)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register call state receiver: ${e.message}")
+        }
     }
     
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
@@ -263,6 +292,14 @@ class PlaybackService : MediaLibraryService() {
             mediaSession = null
         }
         audioEffectController.release()
+        
+        // 3. Unregister to prevent leaks
+        try {
+            unregisterReceiver(callStateReceiver)
+        } catch (e: Exception) {
+            // Ignore if not registered
+        }
+        
         super.onDestroy()
         Log.d(TAG, "PlaybackService destroyed")
     }

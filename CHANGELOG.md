@@ -39,6 +39,12 @@ This release brings significant UI/UX improvements, enhanced queue management, a
 - **In-App Notification**: Alerts the user with a dialog if a newer version is available on GitHub.
 - **Direct Download**: Provides a direct link to the release page for easy downloading.
 
+### Call Handling
+
+- **Smart Pause**: Playback automatically pauses on incoming calls (`RINGING`) via `BroadcastReceiver`.
+- **Manual Control**: Users can manually resume playback during a call (`OFFHOOK`). This is enabled by disabling ExoPlayer's automatic Audio Focus handling, preventing the system from blocking manual play requests during active calls.
+- **Runtime Permissions**: Integrated `READ_PHONE_STATE` permission request in `MainActivity` on app launch.
+
 ### Notification Thumbnails
 
 - **Optimized Thumbnails**: Separate 64x64 thumbnails are now stored for media notifications, reducing memory usage while maintaining 640x640 images for the player screen.
