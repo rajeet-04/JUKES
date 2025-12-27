@@ -11,7 +11,8 @@ import kotlinx.serialization.Serializable
 data class SpotifySearchResponse(
     val tracks: SpotifyTracksResponse? = null,
     val artists: SpotifyArtistsResponse? = null,
-    val playlists: SpotifyPlaylistsResponse? = null
+    val playlists: SpotifyPlaylistsResponse? = null,
+    val albums: SpotifyAlbumsResponse? = null
 )
 
 @Serializable

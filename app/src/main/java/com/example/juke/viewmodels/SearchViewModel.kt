@@ -14,6 +14,8 @@ import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.QueueManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,8 +59,29 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _artistDetailState = MutableStateFlow(ArtistDetailUiState())
     val artistDetailState: StateFlow<ArtistDetailUiState> = _artistDetailState.asStateFlow()
     
+    private var searchJob: Job? = null
+    
     fun updateQuery(query: String) {
         _uiState.value = _uiState.value.copy(query = query)
+        
+        // Cancel previous search job
+        searchJob?.cancel()
+        
+        // Start new search job with 1.369 second delay
+        if (query.isNotBlank()) {
+            searchJob = viewModelScope.launch {
+                delay(1369) // 1.369 second debounce
+                search(query)
+            }
+        } else {
+            // Clear results immediately when query is empty
+            _uiState.value = _uiState.value.copy(
+                tracks = emptyList(),
+                artists = emptyList(),
+                playlists = emptyList(),
+                albums = emptyList()
+            )
+        }
     }
     
     fun search(query: String) {
@@ -136,7 +159,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         tracks = response.tracks?.items ?: emptyList(),
                         artists = response.artists?.items ?: emptyList(),
                         playlists = response.playlists?.items?.filterNotNull() ?: emptyList(),
-                        albums = emptyList(),
+                        albums = response.albums?.items ?: emptyList(),
                         isSearching = false
                     )
                 }

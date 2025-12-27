@@ -235,11 +235,91 @@ class AudioEffectController(private val context: Context) {
         }
     }
     
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
+        try {
+            when {
+                key == "equalizer_enabled" -> {
+                    val enabled = sharedPreferences.getBoolean(key, false)
+                    // Only update if changed to avoid loops
+                    if (_isEqualizerEnabled.value != enabled) {
+                        _isEqualizerEnabled.value = enabled
+                    }
+                    if (equalizer?.enabled != enabled) {
+                        equalizer?.enabled = enabled
+                        Log.d(TAG, "Listener: Equalizer enabled updated to $enabled")
+                    }
+                }
+                key?.startsWith("eq_band_") == true -> {
+                    val index = key.removePrefix("eq_band_").toIntOrNull()
+                    if (index != null && index in 0..9) {
+                        val level = sharedPreferences.getInt(key, 0)
+                        
+                        // Update flow if needed
+                        val currentBands = _equalizerBands.value.toMutableList()
+                        if (currentBands[index] != level) {
+                            currentBands[index] = level
+                            _equalizerBands.value = currentBands
+                        }
+                        
+                        // Apply to hardware equalizer
+                        equalizer?.let { eq ->
+                            val shortLevel = level.toShort()
+                            if (eq.getBandLevel(index.toShort()) != shortLevel) {
+                                eq.setBandLevel(index.toShort(), shortLevel)
+                                Log.d(TAG, "Listener: Set band $index to $level")
+                            }
+                        }
+                    }
+                }
+                key == "booster_enabled" -> {
+                    val enabled = sharedPreferences.getBoolean(key, false)
+                    if (_isBoosterEnabled.value != enabled) {
+                        _isBoosterEnabled.value = enabled
+                    }
+                    if (loudnessEnhancer?.enabled != enabled) {
+                        loudnessEnhancer?.enabled = enabled
+                        Log.d(TAG, "Listener: Booster enabled updated to $enabled")
+                    }
+                }
+                key == "booster_level" -> {
+                    val level = sharedPreferences.getInt(key, 0)
+                    if (_boosterLevel.value != level) {
+                        _boosterLevel.value = level
+                    }
+                    loudnessEnhancer?.let { le ->
+                        val targetGain = level * 800
+                        if (le.targetGain.toInt() != targetGain) {
+                            le.setTargetGain(targetGain)
+                            Log.d(TAG, "Listener: Set booster gain to ${targetGain}mB")
+                        }
+                    }
+                }
+                key == "normalization_enabled" -> {
+                    val enabled = sharedPreferences.getBoolean(key, false)
+                    if (_isNormalizationEnabled.value != enabled) {
+                        _isNormalizationEnabled.value = enabled
+                    }
+                    if (automaticGainControl?.enabled != enabled) {
+                        automaticGainControl?.enabled = enabled
+                        Log.d(TAG, "Listener: Normalization enabled updated to $enabled")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in preference listener: ${e.message}")
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+    }
+
     /**
      * Release audio effects resources.
      */
     fun release() {
         try {
+            prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
             equalizer?.release()
             loudnessEnhancer?.release()
             automaticGainControl?.release()

@@ -115,16 +115,16 @@ object SpotifyApi {
     }
     
     /**
-     * Search Spotify for tracks, artists, and playlists.
+     * Search Spotify for tracks, artists, playlists, and albums.
      * 
      * @param query Search query
-     * @param types Types to search (track, artist, playlist)
+     * @param types Types to search (track, artist, playlist, album)
      * @param market Market code (default NP for Nepal)
      * @return SpotifySearchResponse with all requested types
      */
     suspend fun search(
         query: String,
-        types: List<String> = listOf("track", "artist", "playlist"),
+        types: List<String> = listOf("track", "artist", "playlist", "album"),
         market: String = "NP"
     ): SpotifySearchResponse {
         Log.d(TAG, "Searching Spotify for: $query (types: ${types.joinToString(",")})")
@@ -144,7 +144,8 @@ object SpotifyApi {
             
             Log.d(TAG, "Found ${searchResponse.tracks?.items?.size ?: 0} tracks, " +
                       "${searchResponse.artists?.items?.size ?: 0} artists, " +
-                      "${searchResponse.playlists?.items?.filterNotNull()?.size ?: 0} playlists")
+                      "${searchResponse.playlists?.items?.filterNotNull()?.size ?: 0} playlists, " +
+                      "${searchResponse.albums?.items?.size ?: 0} albums")
             
             return searchResponse
             

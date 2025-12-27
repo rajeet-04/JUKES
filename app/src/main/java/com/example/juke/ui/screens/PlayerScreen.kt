@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
@@ -255,7 +257,7 @@ private fun QueueBottomSheetContent(
             modifier = Modifier.fillMaxSize()
         ) {
             // Current track indicator
-            item {
+            item(key = "now_playing_card") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -322,14 +324,16 @@ private fun QueueBottomSheetContent(
                                 currentTrack.title,
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.basicMarquee()
                             )
                             Text(
                                 currentTrack.artist,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.basicMarquee()
                             )
                         }
                     }
@@ -339,7 +343,7 @@ private fun QueueBottomSheetContent(
             // Upcoming tracks - only show tracks after current index
             val upcomingTracks = queue.drop(queueIndex + 1)
             if (upcomingTracks.isNotEmpty()) {
-                item {
+                item(key = "queue_header_text") {
                     Text(
                         "Up Next",
                         style = MaterialTheme.typography.titleMedium,
@@ -349,7 +353,7 @@ private fun QueueBottomSheetContent(
 
                 itemsIndexed(
                     items = upcomingTracks,
-                    key = { _, track -> track.uuid }
+                    key = { index, track -> "queue_item_${track.uuid}_$index" }
                 ) { index, track ->
                     val actualQueueIndex = queueIndex + 1 + index
                     val density = LocalDensity.current
@@ -457,14 +461,16 @@ private fun QueueBottomSheetContent(
                                         track.title,
                                         style = MaterialTheme.typography.bodyMedium,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.basicMarquee()
                                     )
                                     Text(
                                         track.artist,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.basicMarquee()
                                     )
                                 }
                                 
@@ -598,7 +604,7 @@ private fun TabletLandscapePlayer(
                 
                 if (showLyrics) {
                     if (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null) {
-                        LyricsOverlay(currentTrack, currentPosition, musicViewModel, isTablet, true)
+                        LyricsOverlay(currentTrack, currentPosition, musicViewModel, isTablet, true, onToggleLyrics)
                     } else {
                         Box(
                             modifier = Modifier
@@ -667,8 +673,8 @@ private fun TabletLandscapePlayer(
                     text = currentTrack.title,
                     style = MaterialTheme.typography.headlineLarge,
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee()
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -677,7 +683,9 @@ private fun TabletLandscapePlayer(
                     text = currentTrack.artist,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee()
                 )
                 
                 Spacer(modifier = Modifier.height(48.dp))
@@ -815,7 +823,7 @@ private fun PortraitPlayer(
             
             if (showLyrics) {
                 if (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null) {
-                    LyricsOverlay(currentTrack, currentPosition, musicViewModel, isTablet, false)
+                    LyricsOverlay(currentTrack, currentPosition, musicViewModel, isTablet, false, onToggleLyrics)
                 } else {
                     Box(
                         modifier = Modifier
@@ -840,9 +848,8 @@ private fun PortraitPlayer(
             text = currentTrack.title,
             style = if (isTablet) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth()
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth().basicMarquee()
         )
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -852,7 +859,8 @@ private fun PortraitPlayer(
             style = if (isTablet) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth().basicMarquee()
         )
         
         Spacer(modifier = Modifier.height(if (isTablet) 32.dp else 24.dp))
@@ -1043,7 +1051,8 @@ private fun LyricsOverlay(
     currentPosition: Long,
     musicViewModel: MusicViewModel,
     isTablet: Boolean,
-    isLandscape: Boolean
+    isLandscape: Boolean,
+    onDismiss: () -> Unit
 ) {
     val configuration = LocalConfiguration.current
     val syncedLyrics = currentTrack.syncedLyrics
@@ -1125,6 +1134,27 @@ private fun LyricsOverlay(
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White,
                     textAlign = TextAlign.Center
+                )
+            }
+        }
+        
+        // Close button
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.TopEnd
+        ) {
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), androidx.compose.foundation.shape.CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close Lyrics",
+                    tint = Color.White
                 )
             }
         }

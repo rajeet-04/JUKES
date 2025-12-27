@@ -1,10 +1,14 @@
 package com.example.juke.services
 
+import android.app.NotificationChannel
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -22,10 +26,10 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionToken
+import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
 import com.example.juke.models.Track
-import com.example.juke.analytics.AnalyticsManager
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -57,6 +61,32 @@ class PlaybackService : MediaLibraryService() {
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
     
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        // Ensure notification channel exists for Android 8+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "media_playback",
+                "Media Playback",
+                android.app.NotificationManager.IMPORTANCE_LOW
+            )
+            getSystemService(android.app.NotificationManager::class.java).createNotificationChannel(channel)
+        }
+
+        // Create a minimal notification for foreground service
+        val notificationId = 1
+        val notification = NotificationCompat.Builder(this, "media_playback")
+            .setContentTitle("Juke")
+            .setContentText("Playing music")
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        startForeground(notificationId, notification)
+        return START_STICKY
+    }
 
     /**
      * Helper function to create validated MediaItem with artwork checking
@@ -198,6 +228,8 @@ class PlaybackService : MediaLibraryService() {
         val sessionActivityPendingIntent = packageManager
             ?.getLaunchIntentForPackage(packageName)
             ?.let { sessionIntent ->
+                // FIX: Add these flags to prevent the app from restarting
+                sessionIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 sessionIntent.putExtra("open_player", true)
                 PendingIntent.getActivity(
                     this,
@@ -505,6 +537,11 @@ class PlaybackManager(private val context: Context) {
                                         Log.d(TAG, "Media item transition: $trackId")
                                         savePlaybackState()
                                         
+                                        // Save queue structure to persist auto-added songs
+                                        scope.launch {
+                                            saveQueueStructure()
+                                        }
+                                        
                                         // Capture position in queue on main thread before launching coroutine
                                         val positionInQueue = controller?.currentMediaItemIndex ?: 0
                                         
@@ -543,15 +580,21 @@ class PlaybackManager(private val context: Context) {
                                 var last = _isPlaying.value
                                 while (controller != null) {
                                     try {
-                                        val playing = controller?.isPlaying == true
+                                        val playing = withContext(Dispatchers.Main) { 
+                                            controller?.isPlaying == true 
+                                        }
+                                        
                                         if (playing != last) {
                                             _isPlaying.value = playing
                                             Log.d(TAG, "Polled controller isPlaying: $playing")
                                             last = playing
                                         }
+                                        
                                         // Save position every 5 seconds when playing
                                         if (playing) {
-                                            savePlaybackState()
+                                            withContext(Dispatchers.Main) {
+                                                savePlaybackState()
+                                            }
                                         }
                                         kotlinx.coroutines.delay(5000)
                                     } catch (e: Exception) {
@@ -614,7 +657,7 @@ class PlaybackManager(private val context: Context) {
 
         // Save queue to preferences
         scope.launch {
-            saveQueueState(tracks, startIndex)
+            saveQueueStructure()
         }
     }
     
@@ -631,6 +674,11 @@ class PlaybackManager(private val context: Context) {
         if (mediaItems.isNotEmpty()) {
             controller?.addMediaItems(mediaItems)
             Log.d(TAG, "Added ${mediaItems.size} tracks to queue")
+            
+            // Save updated queue structure
+            scope.launch {
+                saveQueueStructure()
+            }
         }
     }
 
@@ -650,6 +698,11 @@ class PlaybackManager(private val context: Context) {
             val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
             ctrl.addMediaItem(targetIndex, mediaItem)
             Log.d(TAG, "Inserted track ${track.title} at index $targetIndex")
+            
+            // Save updated queue structure
+            scope.launch {
+                saveQueueStructure()
+            }
             return true
         }
 
@@ -717,6 +770,11 @@ class PlaybackManager(private val context: Context) {
             // Use playlist API to avoid full re-prepare and reduce playback hiccup
             ctrl.removeMediaItem(index)
             Log.d(TAG, "Removed track $mediaId from queue at index $index")
+            
+            // Save updated queue structure
+            scope.launch {
+                saveQueueStructure()
+            }
             return true
         }
         return false
@@ -739,6 +797,11 @@ class PlaybackManager(private val context: Context) {
             // Use playlist move to minimize playback interruption
             ctrl.moveMediaItem(fromIndex, toIndex)
             Log.d(TAG, "Moved track from index $fromIndex to $toIndex via playlist API")
+            
+            // Save updated queue structure
+            scope.launch {
+                saveQueueStructure()
+            }
             return true
         }
         return false
@@ -810,18 +873,32 @@ class PlaybackManager(private val context: Context) {
         }
     }
     
-    private suspend fun saveQueueState(tracks: List<Track>, startIndex: Int) {
+    private suspend fun saveQueueStructure() {
         try {
-            val trackIds = tracks.joinToString(",") { it.uuid }
+            val trackIds = withContext(Dispatchers.Main) {
+                val ctrl = controller ?: return@withContext emptyList<String>()
+                val count = ctrl.mediaItemCount
+                (0 until count).map { i ->
+                    ctrl.getMediaItemAt(i).mediaId
+                }
+            }
+            
+            if (trackIds.isEmpty()) return
+            
+            val idsString = trackIds.joinToString(",")
+            val currentIndex = withContext(Dispatchers.Main) { controller?.currentMediaItemIndex ?: 0 }
+            val currentPosition = withContext(Dispatchers.Main) { controller?.currentPosition ?: 0L }
+            
             prefs.edit().apply {
-                putString("queue_track_ids", trackIds)
-                putInt("queue_start_index", startIndex)
+                putString("queue_track_ids", idsString)
+                putInt("queue_start_index", currentIndex)
+                putLong("playback_position", currentPosition)
                 putBoolean("has_saved_state", true)
                 apply()
             }
-            Log.d(TAG, "Saved queue state: ${tracks.size} tracks")
+            Log.d(TAG, "Saved queue structure: ${trackIds.size} tracks")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save queue state: ${e.message}")
+            Log.e(TAG, "Failed to save queue structure: ${e.message}")
         }
     }
     

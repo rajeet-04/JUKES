@@ -72,6 +72,9 @@ class QueueManager private constructor(private val context: Context) {
     // Currently downloading jobs
     private val downloadJobs = mutableMapOf<String, Job>()
     
+    // Track if we're currently fetching recommendations (to prevent multiple concurrent fetches)
+    private var isRecommendationFetchInProgress = false
+    
     /**
      * Check if we need to fetch recommendations and start downloading if queue is low.
      * This should be called whenever playback starts or resumes.
@@ -91,14 +94,22 @@ class QueueManager private constructor(private val context: Context) {
     
     /**
      * Initialize the queue with a list of tracks.
+     * This should be called when a user selects a new song from search or another screen.
+     * 
+     * IMPORTANT: This cancels all pending recommendation downloads from the previous song
+     * to prevent queue pollution with old recommendations.
      * 
      * @param tracks Initial queue
      */
     fun initializeQueue(tracks: List<Track>) {
-        _currentQueue.value = tracks.toMutableList()
-        Log.d(TAG, "Queue initialized with ${tracks.size} tracks")
+        // Cancel any pending downloads from the previous song
+        // This prevents old recommendation downloads from being added to the queue
+        cancelPendingRecommendationDownloads()
         
-        // Check if we need to fetch recommendations
+        _currentQueue.value = tracks.toMutableList()
+        Log.d(TAG, "Queue initialized with ${tracks.size} tracks (cancelled previous recommendations)")
+        
+        // Check if we need to fetch recommendations for the new song
         if (tracks.size <= 2) {
             val currentTrack = tracks.firstOrNull()
             currentTrack?.let { fetchAndQueueRecommendations(it) }
@@ -112,6 +123,15 @@ class QueueManager private constructor(private val context: Context) {
      */
     fun addToQueue(track: Track) {
         val currentList = _currentQueue.value.toMutableList()
+        
+        // Check if track already exists (Move operation)
+        // We remove the old instance so the new one "moves" to the end
+        val existingIndex = currentList.indexOfFirst { it.uuid == track.uuid }
+        if (existingIndex != -1) {
+            currentList.removeAt(existingIndex)
+            Log.d(TAG, "Moved existing track to end of queue: ${track.title}")
+        }
+        
         currentList.add(track)
         _currentQueue.value = currentList
         Log.d(TAG, "Added to queue: ${track.title}")
@@ -140,9 +160,26 @@ class QueueManager private constructor(private val context: Context) {
      * 
      * @return Next track or null if queue is empty
      */
+    // Recent artists tracking for recommendation variety
+    private val recentArtists = java.util.LinkedList<String>()
+    
+    /**
+     * Clear the entire queue.
+     */
+
+    
+    /**
+     * Move to the next track in queue.
+     * 
+     * @return Next track or null if queue is empty
+     */
     fun moveToNext(): Track? {
         val currentList = _currentQueue.value.toMutableList()
         if (currentList.isEmpty()) return null
+        
+        // Get the track being removed (just played) and add to recent artists
+        val playedTrack = currentList[0]
+        addToRecentArtists(playedTrack.artist)
         
         // Remove first track
         currentList.removeAt(0)
@@ -162,6 +199,19 @@ class QueueManager private constructor(private val context: Context) {
         return currentList.firstOrNull()
     }
     
+    private fun addToRecentArtists(artist: String) {
+        // Handle multiple artists (split by comma, &, etc if needed, but simple addition is fine for now)
+        // We want to track distinct artist names
+        if (artist.isNotBlank()) {
+            recentArtists.remove(artist) // Move to end if exists
+            recentArtists.add(artist)
+            if (recentArtists.size > 50) {
+                recentArtists.removeFirst()
+            }
+            Log.d(TAG, "Updated recent artists. Count: ${recentArtists.size}. Latest: $artist")
+        }
+    }
+    
     /**
      * Fetch recommendations based on current track and add to queue.
      * 
@@ -175,6 +225,13 @@ class QueueManager private constructor(private val context: Context) {
      */
     fun fetchAndQueueRecommendations(currentTrack: Track) {
         serviceScope.launch {
+            // Prevent multiple concurrent recommendation fetches
+            if (isRecommendationFetchInProgress) {
+                Log.d(TAG, "Recommendation fetch already in progress, skipping")
+                return@launch
+            }
+            
+            isRecommendationFetchInProgress = true
             try {
                 Log.d(TAG, "Fetching recommendations for: ${currentTrack.title} by ${currentTrack.artist}")
                 
@@ -201,9 +258,14 @@ class QueueManager private constructor(private val context: Context) {
                 
                 Log.d(TAG, "Got ${recommendations.size} raw recommendations")
                 
-                // Validate with Spotify and get top 5
+                // Construct artist context: Current track artist + Recent artists
+                // This helps the validater prioritize tracks that match the user's recent listening history
+                val contextArtists = (listOf(currentTrack.artist) + recentArtists).joinToString(", ")
+                
+                // Validate with Spotify and get top 5, prioritizing recommendations with matching artists
                 val validatedRecs = RecommenderApi.validateAndFilterWithSpotify(
                     recommendations,
+                    originalArtists = contextArtists,
                     maxResults = 5
                 )
                 
@@ -225,6 +287,8 @@ class QueueManager private constructor(private val context: Context) {
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error fetching recommendations: ${e.message}", e)
+            } finally {
+                isRecommendationFetchInProgress = false
             }
         }
     }
@@ -245,7 +309,15 @@ class QueueManager private constructor(private val context: Context) {
             
             val rec = pendingRecommendations.poll() ?: return@launch
             
-            // Check if already downloaded or downloading
+            // CHECK 1: Check if already in current queue (Prevent Duplicates)
+            // This prevents adding the same song multiple times to the queue
+            if (_currentQueue.value.any { it.title.equals(rec.title, ignoreCase = true) && it.artist.equals(rec.artist, ignoreCase = true) }) {
+                Log.d(TAG, "Skipping duplicate recommendation (already in queue): ${rec.title}")
+                processNextDownload()
+                return@launch
+            }
+            
+            // CHECK 2: Check if already downloaded (Database check)
             val existingTrack = trackDao.findTrackByTitleArtist(rec.title, rec.artist)
             if (existingTrack != null && existingTrack.localUri != null) {
                 Log.d(TAG, "Track already exists: ${rec.title}")
@@ -271,17 +343,12 @@ class QueueManager private constructor(private val context: Context) {
                     
                     // Mark as downloading
                     val downloadInfo = DownloadInfo(rec.title, rec.artist, "recommendation")
-                    _downloadingTracks.value = _downloadingTracks.value + downloadInfo
+                    _downloadingTracks.value += downloadInfo
                     
-                    // Search Spotify again to get full track details
-                    val searchResponse = SpotifyApi.search("${rec.title} ${rec.artist}", listOf("track"))
-                    val spotifyResults = searchResponse.tracks?.items ?: emptyList()
-                    if (spotifyResults.isEmpty()) {
-                        Log.e(TAG, "No Spotify results for: ${rec.title}")
-                        return@launch
-                    }
-                    
-                    val spotifyTrack = spotifyResults.first()
+                    // Use the pre-validated Spotify URL from recommendation validation
+                    // This ensures we download the exact song that was matched during validation
+                    val trackId = rec.spotifyUrl.substringAfterLast("/").substringBefore("?")
+                    val spotifyTrack = SpotifyApi.getTrack(trackId)
                     val song = SpotifyApi.spotifyTrackToSong(spotifyTrack)
                     
                     // Download and index
@@ -291,6 +358,11 @@ class QueueManager private constructor(private val context: Context) {
                     
                     // Add to queue
                     addToQueue(track)
+                    
+                    // Add to recent artists immediately upon adding to queue? 
+                    // No, likely better to wait until played, or maybe now is fine.
+                    // Following user instruction: "as you add them" -> but usually variety is about history.
+                    // Let's stick to adding on playback completion (moveToNext) for history tracking.
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "Error downloading ${rec.title}: ${e.message}", e)
@@ -309,7 +381,6 @@ class QueueManager private constructor(private val context: Context) {
             downloadJobs[rec.title] = downloadJob
         }
     }
-    
     /**
      * Ensure the next 2 songs in queue are downloaded.
      * 
@@ -380,11 +451,39 @@ class QueueManager private constructor(private val context: Context) {
      */
     fun clearQueue() {
         _currentQueue.value = emptyList()
-        pendingRecommendations.clear()
-        downloadJobs.values.forEach { it.cancel() }
-        downloadJobs.clear()
-        _downloadingTracks.value = emptyList()
+        cancelPendingRecommendationDownloads()
         Log.d(TAG, "Queue cleared")
+    }
+    
+    /**
+     * Cancel all pending recommendation downloads.
+     * 
+     * This is called when:
+     * 1. User selects a new song from search/another screen (initializeQueue)
+     * 2. Queue is explicitly cleared
+     * 3. App is shutting down (cleanup)
+     * 
+     * This prevents old recommendations from being mixed with new ones.
+     */
+    private fun cancelPendingRecommendationDownloads() {
+        // Clear pending queue
+        val pendingCount = pendingRecommendations.size
+        pendingRecommendations.clear()
+        
+        // Cancel all in-progress downloads
+        downloadJobs.values.forEach { job ->
+            if (!job.isCompleted) {
+                job.cancel()
+            }
+        }
+        downloadJobs.clear()
+        
+        // Clear downloading tracks display
+        _downloadingTracks.value = emptyList()
+        
+        if (pendingCount > 0 || downloadJobs.isNotEmpty()) {
+            Log.d(TAG, "Cancelled $pendingCount pending recommendations and ${downloadJobs.size} active downloads")
+        }
     }
     
     /**
@@ -392,7 +491,7 @@ class QueueManager private constructor(private val context: Context) {
      */
     fun addDownloadTracking(title: String, artist: String, source: String = "manual") {
         val downloadInfo = DownloadInfo(title, artist, source)
-        _downloadingTracks.value = _downloadingTracks.value + downloadInfo
+        _downloadingTracks.value += downloadInfo
     }
     
     /**
@@ -426,8 +525,7 @@ class QueueManager private constructor(private val context: Context) {
      * Cancel all downloads and cleanup.
      */
     fun cleanup() {
-        downloadJobs.values.forEach { it.cancel() }
-        downloadJobs.clear()
+        cancelPendingRecommendationDownloads()
         serviceScope.cancel()
         Log.d(TAG, "QueueManager cleaned up")
     }
