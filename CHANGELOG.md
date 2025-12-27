@@ -1,0 +1,96 @@
+# JUKES - Release Notes
+
+## Version 1.0.1-beta_2 - December 2025
+
+This release brings significant UI/UX improvements, enhanced queue management, and several bug fixes for a more polished music experience.
+
+---
+
+## ✨ New Features
+
+### Playlist Management
+
+- **Create Playlists**: Create custom playlists directly from the Library screen via the "New" chip button.
+- **Add/Remove Tracks**: Easily add tracks to playlists using the **+** icon, or remove them with the **-** icon when viewing a playlist.
+- **Context-Aware Dialog**: The "Add to Playlist" dialog now shows which playlists a track is already in and allows removing from those playlists directly.
+- **Shuffle Play**: Shuffle any list of tracks (All Tracks, Favorites, or a specific Playlist) with a single tap from the Library header.
+
+### Smart Recommendation System
+
+- **Intelligent Queue Generation**: Automatic recommendations based on currently playing tracks using YouTube Music API integration.
+- **Spotify Validation**: All recommendations are validated against Spotify to ensure high-quality matches (70% minimum confidence).
+- **Background Downloads**: Concurrent download management with pre-buffering of next 2 songs for seamless playback.
+- **Infinite Queue**: Automatic queue replenishment when songs drop to ≤2 remaining.
+- **Spam Filtering**: Automatic filtering of remixes, covers, karaoke, and low-quality variants.
+- See [RECOMMENDATION_SYSTEM.md](RECOMMENDATION_SYSTEM.md) for comprehensive documentation and [QUICK_START_RECOMMENDATIONS.md](QUICK_START_RECOMMENDATIONS.md) for integration guide.
+
+### Enhanced Artist Matching
+
+- **Multi-Artist Parsing**: Intelligent parsing of artist strings to handle collaborations and featured artists.
+- **Order-Independent Matching**: Artist order no longer affects recommendation matching (e.g., "Drake, The Weeknd" matches "The Weeknd, Drake").
+- **Flexible Similarity Scoring**: Uses Levenshtein distance for name matching with >60% threshold for valid matches.
+- **Weighting System**: 70% average artist similarity + 30% matched artist ratio for balanced scoring.
+- **Confidence Boosts**: Contextual confidence boosts based on artist match quality (0.05 to 0.15).
+- See [ARTIST_MATCHING_ENHANCEMENT.md](ARTIST_MATCHING_ENHANCEMENT.md) for technical details and [ARTIST_MATCHING_QUICK_REFERENCE.md](ARTIST_MATCHING_QUICK_REFERENCE.md) for quick reference.
+
+### Notification Thumbnails
+
+- **Optimized Thumbnails**: Separate 64x64 thumbnails are now stored for media notifications, reducing memory usage while maintaining 640x640 images for the player screen.
+- **Database Migration**: Existing songs are gracefully handled; notifications fall back to the larger image if the new thumbnail is unavailable.
+
+---
+
+## 🎨 UI/UX Enhancements
+
+### Search Screen Redesign
+
+- **Modern Search Bar**: Visually refreshed search input with improved clarity and feedback.
+- **Enhanced Track Display**: Better visual indicators for download status and improved spacing/typography.
+- **Polished Empty States**: More informative and visually appealing empty and error states.
+
+### MiniPlayer Redesign
+
+- **Progress Line**: The MiniPlayer now displays a progress line indicating the current track position.
+- **Swipe Gestures**: Swipe left to skip to the next track, swipe right for the previous track.
+
+### Library Screen Redesign
+
+- **Unified Filter Row**: All filter options (All Tracks, Favorites, Playlists) are now in a single, horizontally scrollable row.
+- **Lazy Loading**: Optimized performance with "load when needed" patterns.
+- **Centered Empty States**: Improved text alignment for empty library messages.
+
+---
+
+## 🔧 Improvements & Bug Fixes
+
+### Queue Management Enhancements
+
+- **Recommendation Variety**: Recently played artists are now tracked to influence future song recommendations, preventing repetitive suggestions.
+- **Duplicate Prevention**: The system now prevents duplicate songs from being added to the queue, whether through recommendations or manual user additions.
+- **"Move" Functionality**: Adding a song already in the queue now moves it to the new position instead of creating a duplicate.
+- **Queue Hydration Safety**: Fixed queue contamination issue where selecting a new song while recommendations were downloading would pollute the new queue with old recommendations.
+- See [QUEUE_HYDRATION_FIX.md](QUEUE_HYDRATION_FIX.md) for technical details on the fix.
+
+### Track Matching Accuracy
+
+- **Exact Match Logic**: Database lookups for tracks now use exact matching for title and artist (case-insensitive) and include a duration check (±2 seconds tolerance). This prevents issues like "Jhol" incorrectly playing "Jhol - Acoustic".
+
+### Equalizer Fix
+
+- **Sound Output Debugging**: Addressed issues where adjusting the equalizer in Audio Settings did not affect sound output. Ensured equalizer settings are correctly applied to the audio player's session.
+
+### Navigation & State Fixes
+
+- **Search Tab Behavior**: Detail screens (Artist, Playlist, Album) now correctly navigate back to the main Search screen when the Search tab is clicked, and the Search tab remains highlighted on these screens.
+- **Playlist URL Flag**: Fixed a bug where the "Import Playlist" button could incorrectly appear for non-playlist URLs.
+- **Library Scroll Reset**: Prevented unwanted scroll reset in the Library when deleting tracks or toggling favorites.
+- **Lyrics Reset**: Lyrics now correctly reset to the beginning when a new track starts playing.
+
+---
+
+## 📦 Technical Notes
+
+- `PlaylistDao` updated with `getPlaylistsForTrack` for reverse lookup.
+- `LibraryViewModel` methods (`addToPlaylist`, `removeFromPlaylist`) are now `suspend` functions for better state synchronization.
+- `TrackDao.findTrackByTitleArtist` signature updated to include `durationSec` for accurate matching.
+- `ValidatedRecommendation` now includes `durationSec`.

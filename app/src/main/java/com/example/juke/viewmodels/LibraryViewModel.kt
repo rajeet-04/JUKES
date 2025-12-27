@@ -194,4 +194,65 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 ?.replace(Regex("\\[\\d+:\\d+]"), "")?.trim()?.contains(lowerQuery) == true)
         }
     }
+    fun createPlaylist(name: String) {
+        viewModelScope.launch {
+            val uuid = java.util.UUID.randomUUID().toString()
+            val newPlaylist = com.example.juke.database.PlaylistEntity(
+                id = uuid,
+                name = name,
+                trackCount = 0,
+                createdAt = System.currentTimeMillis()
+            )
+            playlistDao.insertPlaylist(newPlaylist)
+        }
+    }
+    
+    suspend fun addToPlaylist(playlist: com.example.juke.database.PlaylistEntity, track: Track) {
+        // Check if track is already in playlist
+        val existingTracks = playlistDao.getPlaylistTracks(playlist.id)
+        if (existingTracks.any { it.uuid == track.uuid }) {
+            return
+        }
+        
+        // Add to playlist_tracks
+        val position = existingTracks.size // Add to end
+        val playlistTrack = com.example.juke.database.PlaylistTrackEntity(
+            playlistId = playlist.id,
+            trackUuid = track.uuid,
+            position = position,
+            addedAt = System.currentTimeMillis()
+        )
+        playlistDao.insertPlaylistTrack(playlistTrack)
+        
+        // Update track count
+        val newCount = playlist.trackCount + 1
+        playlistDao.updatePlaylistTrackCount(playlist.id, newCount)
+        
+        // If this is the selected playlist, refresh silently
+        if (_uiState.value.selectedPlaylist?.id == playlist.id) {
+             loadPlaylistTracks(playlist.id, silent = true)
+        }
+    }
+    
+    suspend fun removeFromPlaylist(playlist: com.example.juke.database.PlaylistEntity, track: Track) {
+        playlistDao.removeTrackFromPlaylist(playlist.id, track.uuid)
+        
+        // Update track count
+        val newCount = (playlist.trackCount - 1).coerceAtLeast(0)
+        playlistDao.updatePlaylistTrackCount(playlist.id, newCount)
+        
+        // If this is the selected playlist, refresh silently
+        if (_uiState.value.selectedPlaylist?.id == playlist.id) {
+             loadPlaylistTracks(playlist.id, silent = true)
+        }
+    }
+    
+    fun shufflePlay(tracks: List<Track>, musicViewModel: MusicViewModel) {
+        val shuffled = tracks.shuffled()
+        musicViewModel.setQueue(shuffled, 0)
+    }
+    
+    suspend fun getPlaylistsForTrack(trackUuid: String): List<PlaylistEntity> {
+        return playlistDao.getPlaylistsForTrack(trackUuid)
+    }
 }

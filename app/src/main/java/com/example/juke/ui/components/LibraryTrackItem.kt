@@ -8,6 +8,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.RemoveCircle
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +29,8 @@ fun LibraryTrackItem(
     track: Track,
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onTrailingIconClick: () -> Unit = {},
+    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.MoreVert,
     modifier: Modifier = Modifier
 ) {
     var isFavoritePressed by remember { mutableStateOf(false) }
@@ -135,11 +140,19 @@ fun LibraryTrackItem(
                 )
             }
             
-            LaunchedEffect(isFavoritePressed) {
+             LaunchedEffect(isFavoritePressed) {
                 if (isFavoritePressed) {
                     kotlinx.coroutines.delay(150)
                     isFavoritePressed = false
                 }
+            }
+            
+            IconButton(onClick = onTrailingIconClick) {
+                 Icon(
+                     imageVector = trailingIcon,
+                     contentDescription = "Action",
+                     tint = MaterialTheme.colorScheme.onSurfaceVariant
+                 )
             }
         }
     }

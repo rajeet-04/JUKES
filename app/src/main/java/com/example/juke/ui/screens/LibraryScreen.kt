@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -21,7 +22,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.clickable
+import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
+import com.example.juke.models.Track
 import com.example.juke.ui.components.DownloadingTrackItem
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.ui.components.SwipeToAddNextContainer
@@ -35,8 +39,21 @@ fun LibraryScreen(
     libraryViewModel: LibraryViewModel = viewModel(),
     bottomPadding: Dp = 0.dp
 ) {
+    val coroutineScope = rememberCoroutineScope()
     val uiState by libraryViewModel.uiState.collectAsState()
     val musicUiState by musicViewModel.uiState.collectAsState()
+    
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+
+    var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
+    var trackPlaylists by remember { mutableStateOf<List<com.example.juke.database.PlaylistEntity>>(emptyList()) }
+    
+    // Fetch playlists for the selected track when dialog opens
+    LaunchedEffect(showAddToPlaylistDialog) {
+        showAddToPlaylistDialog?.let { track ->
+            trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
+        }
+    }
     
     LaunchedEffect(Unit) {
         // Initial load is handled by the flow in ViewModel
@@ -45,7 +62,12 @@ fun LibraryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Library") }
+                title = { Text("Library") },
+                actions = {
+                    IconButton(onClick = { libraryViewModel.shufflePlay(uiState.tracks, musicViewModel) }) {
+                        Icon(Icons.Default.Shuffle, contentDescription = "Shuffle Play")
+                    }
+                }
             )
         }
     ) { paddingValues ->
@@ -128,6 +150,15 @@ fun LibraryScreen(
                         leadingIcon = if (uiState.selectedPlaylist?.id == playlist.id) {
                             { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, modifier = Modifier.size(18.dp)) }
                         } else null
+                    )
+                }
+                
+                // 4. Create Playlist Button
+                item {
+                    AssistChip(
+                        onClick = { showCreatePlaylistDialog = true },
+                        label = { Text("New") },
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                 }
             }
@@ -296,6 +327,18 @@ fun LibraryScreen(
                                 },
                                 onToggleFavorite = {
                                     libraryViewModel.toggleFavorite(track.uuid)
+                                },
+                                trailingIcon = if (uiState.selectedPlaylist != null) Icons.Default.RemoveCircle else Icons.Default.AddCircle,
+                                onTrailingIconClick = {
+                                    if (uiState.selectedPlaylist != null) {
+                                        // Direct remove if in playlist view
+                                        coroutineScope.launch {
+                                            libraryViewModel.removeFromPlaylist(uiState.selectedPlaylist!!, track)
+                                        }
+                                    } else {
+                                        // Open dialog if in All Tracks / Favorites
+                                        showAddToPlaylistDialog = track
+                                    }
                                 }
                             )
                         }
@@ -303,6 +346,54 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+
+    
+    if (showCreatePlaylistDialog) {
+        CreatePlaylistDialog(
+            onDismiss = { showCreatePlaylistDialog = false },
+            onCreate = { name ->
+                libraryViewModel.createPlaylist(name)
+                showCreatePlaylistDialog = false
+            }
+        )
+    }
+    
+    showAddToPlaylistDialog?.let { track ->
+        AddToPlaylistDialog(
+            playlists = uiState.playlists,
+            track = track,
+            trackPlaylists = trackPlaylists,
+            onDismiss = { 
+                showAddToPlaylistDialog = null
+                trackPlaylists = emptyList()
+            },
+            onAddToPlaylist = { playlist ->
+                coroutineScope.launch {
+                    libraryViewModel.addToPlaylist(playlist, track)
+                    // Refresh list of playlists for this track
+                    trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
+                }
+            },
+            onRemoveFromPlaylist = { playlist ->
+                 coroutineScope.launch {
+                     libraryViewModel.removeFromPlaylist(playlist, track)
+                     // Refresh list of playlists for this track
+                     trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
+                 }
+            },
+            onRemoveFromCurrentPlaylist = if (uiState.selectedPlaylist != null) {
+                { playlist ->
+                    if (playlist.id == uiState.selectedPlaylist?.id) {
+                         coroutineScope.launch {
+                             libraryViewModel.removeFromPlaylist(playlist, track)
+                             showAddToPlaylistDialog = null
+                         }
+                    }
+                }
+            } else null,
+            currentPlaylist = uiState.selectedPlaylist
+        )
     }
 }
 
@@ -363,4 +454,107 @@ private fun PlaylistHeader(playlist: com.example.juke.database.PlaylistEntity) {
             }
         }
     }
+}
+
+
+@Composable
+fun CreatePlaylistDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Playlist") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Playlist Name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(name) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun AddToPlaylistDialog(
+    playlists: List<com.example.juke.database.PlaylistEntity>,
+    track: com.example.juke.models.Track,
+    trackPlaylists: List<com.example.juke.database.PlaylistEntity>,
+    onDismiss: () -> Unit,
+    onAddToPlaylist: (com.example.juke.database.PlaylistEntity) -> Unit,
+    onRemoveFromPlaylist: (com.example.juke.database.PlaylistEntity) -> Unit,
+    onRemoveFromCurrentPlaylist: ((com.example.juke.database.PlaylistEntity) -> Unit)? = null,
+    currentPlaylist: com.example.juke.database.PlaylistEntity? = null
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to Playlist") },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 300.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // If we are in a playlist context, we might want to show "Remove from current" prominently, 
+                // but per user request, we are handling that with the minus icon.
+                // However, if the modal IS opened (though unlikely in playlist view due to minus icon), we keep logic generic.
+                
+                items(playlists) { playlist ->
+                    val isAlreadyAdded = trackPlaylists.any { it.id == playlist.id }
+                    
+                    ListItem(
+                        headlineContent = { Text(playlist.name) },
+                        supportingContent = { 
+                            if (isAlreadyAdded) Text("Already added", color = MaterialTheme.colorScheme.primary)
+                            else Text("${playlist.trackCount} tracks") 
+                        },
+                        leadingContent = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null) },
+                        trailingContent = {
+                            if (isAlreadyAdded) {
+                                IconButton(onClick = { onRemoveFromPlaylist(playlist) }) {
+                                    Icon(Icons.Default.RemoveCircle, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                }
+                            } else {
+                                IconButton(onClick = { onAddToPlaylist(playlist) }) {
+                                    Icon(Icons.Default.AddCircle, contentDescription = "Add", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        },
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                    )
+                }
+                
+                if (playlists.isEmpty()) {
+                     item {
+                        Text(
+                            "No playlists available",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(16.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
