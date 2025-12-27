@@ -1,8 +1,6 @@
 package com.example.juke.analytics
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class AnalyticsEvent(

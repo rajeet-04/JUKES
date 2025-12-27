@@ -112,6 +112,83 @@ object RecommenderApi {
     }
     
     /**
+     * Parse artist names from a comma/and-separated string.
+     * 
+     * Examples:
+     * "Artist A, Artist B, Artist C" → ["Artist A", "Artist B", "Artist C"]
+     * "Artist A and Artist B" → ["Artist A", "Artist B"]
+     * "Artist A, Artist B and Artist C" → ["Artist A", "Artist B", "Artist C"]
+     * "Artist A feat. Artist B" → ["Artist A feat. Artist B"] (keeps feat. together)
+     */
+    private fun parseArtists(artistString: String): List<String> {
+        if (artistString.isEmpty()) return emptyList()
+        
+        // Replace " and " with a comma for uniform parsing
+        val normalized = artistString.replace(" and ", ", ")
+        
+        // Split by comma and trim whitespace
+        return normalized
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+    }
+    
+    /**
+     * Compare two lists of artists and return a weighted similarity score.
+     * 
+     * Considers:
+     * - How many artists match between the two lists
+     * - Similarity of artist names using Levenshtein distance
+     * - Gives higher weight to matching artists
+     * 
+     * @param spotifyArtists Artists from Spotify (original song)
+     * @param youtubeArtists Artists from YouTube recommendation
+     * @return Similarity score from 0.0 to 1.0
+     */
+    private fun artistListSimilarity(spotifyArtists: List<String>, youtubeArtists: List<String>): Double {
+        if (spotifyArtists.isEmpty() || youtubeArtists.isEmpty()) {
+            return 0.0
+        }
+        
+        var totalScore = 0.0
+        var matchCount = 0
+        
+        // Check each Spotify artist against YouTube artists
+        for (spotifyArtist in spotifyArtists) {
+            var bestMatch = 0.0
+            
+            for (youtubeArtist in youtubeArtists) {
+                val artistSim = similarity(spotifyArtist, youtubeArtist)
+                if (artistSim > bestMatch) {
+                    bestMatch = artistSim
+                }
+            }
+            
+            // If we found a good match (>60%), count it
+            if (bestMatch > 0.6) {
+                matchCount++
+                totalScore += bestMatch
+            }
+        }
+        
+        // Calculate final score based on:
+        // 1. How many artists matched
+        // 2. Average similarity of matched artists
+        // 3. Bonus for matching multiple artists
+        
+        if (matchCount == 0) {
+            return 0.0 // No artist matches
+        }
+        
+        val averageMatch = totalScore / spotifyArtists.size
+        val matchRatio = matchCount.toDouble() / spotifyArtists.size
+        
+        // Combine: 70% weight to average match, 30% weight to match ratio
+        // This gives preference to recommendations with multiple matching artists
+        return (averageMatch * 0.7) + (matchRatio * 0.3)
+    }
+    
+    /**
      * Calculate similarity between two strings using Levenshtein distance.
      */
     private fun similarity(a: String, b: String): Double {
@@ -135,6 +212,45 @@ object RecommenderApi {
             }
         }
         return dp[a.length][b.length]
+    }
+    
+    /**
+     * Extract all artist text from JSON runs array.
+     * 
+     * The YouTube Music API returns artist names in multiple runs separated by commas/and.
+     * This function concatenates all runs to get the complete artist string.
+     * 
+     * Example JSON structure:
+     * "shortBylineText": {
+     *   "runs": [
+     *     {"text": "Artist A"},
+     *     {"text": ", "},
+     *     {"text": "Artist B"},
+     *     {"text": " and "},
+     *     {"text": "Artist C"}
+     *   ]
+     * }
+     * 
+     * Result: "Artist A, Artist B and Artist C"
+     */
+    private fun extractArtistFromRuns(runsArray: com.google.gson.JsonArray?): String {
+        if (runsArray == null) return "Unknown"
+        
+        return try {
+            runsArray
+                .map { run ->
+                    run.asJsonObject
+                        .get("text")
+                        ?.asString
+                        ?.trim()
+                        ?: ""
+                }
+                .filter { it.isNotEmpty() }
+                .joinToString("")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract artist from runs: ${e.message}")
+            "Unknown"
+        }
     }
     
     /**
@@ -423,9 +539,12 @@ object RecommenderApi {
                         ?.getAsJsonArray("runs")?.get(0)?.asJsonObject
                         ?.get("text")?.asString ?: return@forEachIndexed
                     
-                    val artist = node.getAsJsonObject("longBylineText")
-                        ?.getAsJsonArray("runs")?.get(0)?.asJsonObject
-                        ?.get("text")?.asString ?: "Unknown"
+                    // Extract artist from shortBylineText runs (all runs combined)
+                    // Path: shortBylineText.runs[*].text → join all text
+                    val artist = extractArtistFromRuns(
+                        node.getAsJsonObject("shortBylineText")
+                            ?.getAsJsonArray("runs")
+                    )
                     
                     // Extract duration from lengthText
                     val duration = try {
@@ -465,32 +584,79 @@ object RecommenderApi {
     /**
      * Validate and filter recommendations using Spotify search.
      * 
+     * Smart artist-based prioritization:
+     * - Recommendations with matching artists are validated first
+     * - Higher priority given to recommendations featuring 1+ original artists
+     * 
      * For each YouTube recommendation:
-     * 1. Search Spotify for the song
-     * 2. Check confidence score (title + artist + duration match)
-     * 3. Filter out spam/variant versions
-     * 4. Return top matches with valid Spotify links
+     * 1. Check if it features any original track's artists (prioritized)
+     * 2. Search Spotify for the song
+     * 3. Check confidence score (title + artist + duration match)
+     * 4. Filter out spam/variant versions
+     * 5. Return top matches with valid Spotify links
      * 
      * @param recommendations List of YouTube recommendations
+     * @param originalArtists Artists from the original song (for artist-based prioritization)
      * @param maxResults Maximum number of validated results to return (default 10)
      * @return List of validated recommendations with Spotify links
      */
     suspend fun validateAndFilterWithSpotify(
         recommendations: List<YouTubeRecommendation>,
+        originalArtists: String = "",
         maxResults: Int = 10
     ): List<ValidatedRecommendation> {
         Log.d(TAG, "Validating ${recommendations.size} recommendations with Spotify")
+        Log.d(TAG, "Original track artists: $originalArtists")
         
         val validated = mutableListOf<ValidatedRecommendation>()
         
-        for (rec in recommendations) {
+        // Parse original track's artists for artist-based prioritization
+        val originalArtistsList = parseArtists(originalArtists)
+        
+        // Create a scored list with artist match count
+        data class ScoredRecommendation(
+            val rec: YouTubeRecommendation,
+            val matchingArtistCount: Int
+        )
+        
+        // Score recommendations by matching artists
+        val scoredRecs = recommendations.map { rec ->
+            val recArtists = parseArtists(rec.artist)
+            var matchCount = 0
+            
+            // Count how many original artists appear in this recommendation
+            for (originalArtist in originalArtistsList) {
+                for (recArtist in recArtists) {
+                    if (similarity(originalArtist, recArtist) > 0.75) {
+                        matchCount++
+                        break // Count each original artist only once
+                    }
+                }
+            }
+            
+            ScoredRecommendation(rec, matchCount)
+        }
+        
+        // Sort by matching artist count (descending), then by original order
+        val sortedByArtistMatch = scoredRecs.sortedByDescending { it.matchingArtistCount }
+        
+        // Validate in order of artist match priority
+        for (scored in sortedByArtistMatch) {
             if (validated.size >= maxResults) break
+            
+            val rec = scored.rec
+            val artistMatchCount = scored.matchingArtistCount
             
             try {
                 // Check for spam keywords first
                 if (isSpamOrVariant(rec.title)) {
                     Log.d(TAG, "Skipping spam/variant: ${rec.title}")
                     continue
+                }
+                
+                // Log artist matching status
+                if (artistMatchCount > 0) {
+                    Log.d(TAG, "⭐ Found $artistMatchCount matching artist(s) in: ${rec.title} by ${rec.artist}")
                 }
                 
                 // Search Spotify
@@ -512,7 +678,13 @@ object RecommenderApi {
                 for (spotifyTrack in spotifyResults.take(5)) { // Check top 5 results for better matching
                     // Calculate match confidence with multiple factors
                     val titleSimilarity = similarity(rec.title, spotifyTrack.name)
-                    val artistSimilarity = similarity(rec.artist, spotifyTrack.artists.joinToString(", ") { it.name })
+                    
+                    // Parse artists individually for better matching
+                    val spotifyArtists = parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
+                    val youtubeArtists = parseArtists(rec.artist)
+                    
+                    // Compare artists intelligently with multi-artist support
+                    val artistSimilarity = artistListSimilarity(spotifyArtists, youtubeArtists)
                     
                     // Parse durations
                     val youtubeDurationSec = parseDurationToSeconds(rec.duration)
@@ -529,14 +701,17 @@ object RecommenderApi {
                     // Additional boost for excellent artist matches (prioritize artist over title)
                     if (artistSimilarity >= 0.9) {
                         overallConfidence += 0.15 // Significant boost for near-perfect artist match
-                        Log.d(TAG, "🎯 Excellent artist match! Artist similarity: ${(artistSimilarity * 100).toInt()}%")
-                    } else if (artistSimilarity >= 0.8) {
-                        overallConfidence += 0.1 // Good boost for strong artist match
+                        Log.d(TAG, "🎯 Excellent artist match! Artists: Spotify${spotifyArtists.size} vs YouTube${youtubeArtists.size}, similarity: ${(artistSimilarity * 100).toInt()}%")
                     } else if (artistSimilarity >= 0.7) {
+                        overallConfidence += 0.1 // Good boost for strong artist match
+                        Log.d(TAG, "✓ Good artist match! Artists matched, similarity: ${(artistSimilarity * 100).toInt()}%")
+                    } else if (artistSimilarity >= 0.5) {
                         overallConfidence += 0.05 // Moderate boost for decent artist match
                     }
                     
                     Log.d(TAG, "Comparing '${rec.title}' (${rec.duration ?: "unknown"}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs/1000}s)")
+                    Log.d(TAG, "  Spotify Artists: $spotifyArtists")
+                    Log.d(TAG, "  YouTube Artists: $youtubeArtists")
                     Log.d(TAG, "  Title: ${(titleSimilarity * 100).toInt()}%, Artist: ${(artistSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%, Overall: ${(overallConfidence * 100).toInt()}%")
                     
                     if (overallConfidence > bestConfidence) {
@@ -553,6 +728,8 @@ object RecommenderApi {
                     bestTitleSimilarity >= 0.8 && bestDurationSimilarity >= 0.8 && bestConfidence >= 0.75 -> true
                     // Good match: reasonable confidence in both
                     bestTitleSimilarity >= 0.7 && bestDurationSimilarity >= 0.6 && bestConfidence >= 0.65 -> true
+                    // Strong duration match: if duration is perfect, accept with lower overall threshold (handles cases where YouTube title has extra metadata)
+                    bestDurationSimilarity >= 0.95 && bestConfidence >= 0.5 && bestTitleSimilarity >= 0.05 -> true
                     // Fallback: overall confidence is high enough
                     bestConfidence >= 0.7 -> true
                     else -> false

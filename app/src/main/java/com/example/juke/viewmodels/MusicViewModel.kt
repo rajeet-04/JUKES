@@ -6,12 +6,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
-import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
-import com.example.juke.models.SpotifyTrack
-import com.example.juke.models.Track
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifySimplifiedTrack
+import com.example.juke.models.SpotifyTrack
+import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.MusicService
 import com.example.juke.services.PlaybackManager
@@ -174,6 +173,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             playbackManager.setQueue(listOf(track), 0)
             
             // Initialize recommendation queue for this track
+            // This automatically cancels any pending recommendations from the previous song
+            // and starts fetching fresh recommendations for the new track
             Log.d("MusicViewModel", "Playing track: ${track.title}, initializing recommendations")
             queueManager.initializeQueue(listOf(track))
         }
@@ -251,6 +252,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     // Nothing playing yet; start a queue with this track
                     setQueue(listOf(track), 0)
                 } else {
+                    // Check if track already exists in queue and remove it first (Move operation)
+                    val existingIndex = currentQueue.indexOfFirst { it.uuid == track.uuid }
+                    if (existingIndex != -1) {
+                        Log.d("MusicViewModel", "Track ${track.title} already in queue, removing old instance to move it")
+                        playbackManager.removeFromQueue(track.uuid)
+                        queueManager.removeFromQueue(track.uuid)
+                        currentQueue.removeAt(existingIndex)
+                    }
+                    
                     val insertIndex = (currentState.queueIndex + 1)
                         .coerceAtMost(currentQueue.size)
                     currentQueue.add(insertIndex, track)
@@ -360,13 +370,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun downloadSong(song: SpotdownSong): Track {
         // Check if already exists
         val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
-        
-        if (existingTrack != null && existingTrack.localUri != null) {
+
+        return if (existingTrack != null && existingTrack.localUri != null) {
             // Already downloaded
-            return existingTrack.toTrack()
+            existingTrack.toTrack()
         } else {
             // Download directly
-            return musicService.smartDownloadAndIndex(song)
+            musicService.smartDownloadAndIndex(song)
         }
     }
     
@@ -613,9 +623,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 var newQueueIndex = currentQueueIndex
                 if (fromIndex == currentQueueIndex) {
                     newQueueIndex = toIndex
-                } else if (fromIndex < currentQueueIndex && toIndex >= currentQueueIndex) {
+                } else if (currentQueueIndex in (fromIndex + 1)..toIndex) {
                     newQueueIndex = currentQueueIndex - 1
-                } else if (fromIndex > currentQueueIndex && toIndex <= currentQueueIndex) {
+                } else if (currentQueueIndex in toIndex..<fromIndex) {
                     newQueueIndex = currentQueueIndex + 1
                 }
                 
@@ -749,6 +759,90 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         } catch (e: Exception) {
             Log.e("MusicViewModel", "Failed to load restored queue: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Set queue from Spotify tracks (for Artist, Playlist screens)
+     * Downloads the first track and queues the remaining tracks sequentially
+     */
+    fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0) {
+        viewModelScope.launch {
+            try {
+                if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return@launch
+                
+                // Download and play the first track
+                downloadAndPlay(
+                    SpotifyApi.spotifyTrackToSong(spotifyTracks[startIndex])
+                )
+                
+                // Wait for the first track to start playing before queuing others
+                // This ensures proper queue order and avoids parallel download crashes
+                kotlinx.coroutines.delay(800)
+                
+                // Queue the remaining tracks sequentially - one at a time with proper delays
+                // This prevents download parallelization and maintains queue order
+                for (i in (startIndex + 1) until spotifyTracks.size) {
+                    // Add delay to prevent overwhelming the download system
+                    kotlinx.coroutines.delay(200)
+                    
+                    // Queue each track individually to the QueueManager's normal flow
+                    // The queueSpotifyTrackNext will add them to queue one by one
+                    queueSpotifyTrackNext(spotifyTracks[i])
+                    
+                    // Wait for the queue operation to complete before adding next
+                    // The isQueueOperationInProgress flag ensures sequential queueing
+                    while (_uiState.value.isQueueOperationInProgress) {
+                        kotlinx.coroutines.delay(50)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Error setting queue from Spotify tracks: ${e.message}", e)
+            }
+        }
+    }
+    
+    /**
+     * Set queue from Simplified tracks (for Album screen)
+     * Downloads the first track and queues the remaining tracks sequentially
+     */
+    fun setQueueFromSimplifiedTracks(
+        simplifiedTracks: List<SpotifySimplifiedTrack>,
+        album: SpotifyAlbum,
+        startIndex: Int = 0
+    ) {
+        viewModelScope.launch {
+            try {
+                if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return@launch
+                
+                // Download and play the first track
+                downloadAndPlay(
+                    SpotifyApi.simplifiedTrackToSong(simplifiedTracks[startIndex], album)
+                )
+                
+                // Wait for the first track to start playing before queuing others
+                // This ensures proper queue order and avoids parallel download crashes
+                kotlinx.coroutines.delay(800)
+                
+                // Queue the remaining tracks sequentially - one at a time with proper delays
+                // This prevents download parallelization and maintains queue order
+                for (i in (startIndex + 1) until simplifiedTracks.size) {
+                    // Add delay to prevent overwhelming the download system
+                    kotlinx.coroutines.delay(200)
+                    
+                    // Queue each track individually to the QueueManager's normal flow
+                    // The queueSimplifiedTrackNext will add them to queue one by one
+                    queueSimplifiedTrackNext(simplifiedTracks[i], album)
+                    
+                    // Wait for the queue operation to complete before adding next
+                    // The isQueueOperationInProgress flag ensures sequential queueing
+                    while (_uiState.value.isQueueOperationInProgress) {
+                        kotlinx.coroutines.delay(50)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Error setting queue from simplified tracks: ${e.message}", e)
+            }
         }
     }
 }

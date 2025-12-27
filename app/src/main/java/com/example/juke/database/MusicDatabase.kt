@@ -18,11 +18,81 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 }
 
 /**
+ * Migration from version 2 to 3
+ * Adds notification_thumbnail_uri column for storing 64x64 thumbnails used in notifications
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN notification_thumbnail_uri TEXT")
+    }
+}
+
+/**
+ * Migration from version 3 to 4
+ * Removes notification_thumbnail_uri column as we no longer store 64x64 thumbnails
+ * Also ensures playlists table exists for users who may have skipped migrations
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // SQLite doesn't support DROP COLUMN directly, so we need to recreate the table
+        db.execSQL("""
+            CREATE TABLE tracks_new (
+                uuid TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                thumbnail_uri TEXT,
+                duration_sec INTEGER NOT NULL,
+                local_uri TEXT,
+                yt_video_id TEXT,
+                synced_lyrics TEXT,
+                plain_lyrics TEXT,
+                is_favourite INTEGER NOT NULL DEFAULT 0,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                last_played_at TEXT
+            )
+        """)
+        db.execSQL("INSERT INTO tracks_new SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, synced_lyrics, plain_lyrics, is_favourite, play_count, last_played_at FROM tracks")
+        db.execSQL("DROP TABLE tracks")
+        db.execSQL("ALTER TABLE tracks_new RENAME TO tracks")
+        
+        // Ensure playlists table exists (create if missing)
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS playlists (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                thumbnail_uri TEXT,
+                spotify_id TEXT,
+                created_at INTEGER NOT NULL,
+                track_count INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        
+        // Ensure playlist_tracks table exists (create if missing)
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS playlist_tracks (
+                playlist_id TEXT NOT NULL,
+                track_uuid TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                added_at INTEGER NOT NULL,
+                PRIMARY KEY(playlist_id, track_uuid, position),
+                FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+                FOREIGN KEY(track_uuid) REFERENCES tracks(uuid) ON DELETE CASCADE
+            )
+        """)
+        
+        // Create indices for playlist_tracks
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_playlist_tracks_playlist_id ON playlist_tracks(playlist_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_playlist_tracks_track_uuid ON playlist_tracks(track_uuid)")
+    }
+}
+
+/**
  * Room Database for JUKE music player.
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {
@@ -40,7 +110,7 @@ abstract class MusicDatabase : RoomDatabase() {
                     MusicDatabase::class.java,
                     "music_database"
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

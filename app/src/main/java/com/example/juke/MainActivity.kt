@@ -69,19 +69,18 @@ sealed class Screen(val route: String, val title: String, val filledIcon: @Compo
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
-    
+
     private val showPlayerOnLaunch = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         // Track app opened
         AnalyticsManager.getInstance().trackAppOpened()
-        
-        if (intent.getBooleanExtra("open_player", false)) {
-            showPlayerOnLaunch.value = true
-        }
+
+        // Check intent immediately
+        handlePlayerIntent(intent)
 
         setContent {
             JUKETheme {
@@ -91,33 +90,35 @@ class MainActivity : ComponentActivity() {
                 val playlistDetailViewModel: PlaylistDetailViewModel = viewModel()
                 val albumDetailViewModel: AlbumDetailViewModel = viewModel()
                 var showPlayerModal by remember { mutableStateOf(false) }
-                
+                var searchResetTrigger by remember { mutableStateOf(0) }
+
+                // Listen for changes to showPlayerOnLaunch
                 LaunchedEffect(showPlayerOnLaunch.value) {
                     if (showPlayerOnLaunch.value) {
                         showPlayerModal = true
                         showPlayerOnLaunch.value = false
                     }
                 }
-                
+
                 val items = listOf(
                     Screen.Home,
                     Screen.Search,
                     Screen.Library
                 )
-                
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     bottomBar = {
                         val navBackStackEntry by navController.currentBackStackEntryAsState()
                         val currentRoute = navBackStackEntry?.destination?.route
-                        
+
                         if (currentRoute != "settings") {
                             Column {
                                 MiniPlayer(
                                     musicViewModel = musicViewModel,
                                     onExpand = { showPlayerModal = true }
                                 )
-                                
+
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -137,32 +138,40 @@ class MainActivity : ComponentActivity() {
                                     ) {
                                         val navBackStackEntry by navController.currentBackStackEntryAsState()
                                         val currentDestination = navBackStackEntry?.destination
-                                        
+
                                         items.forEach { screen ->
-                                    NavigationBarItem(
-                                        icon = {
-                                            if (currentDestination?.hierarchy?.any { it.route == screen.route } == true) {
-                                                screen.filledIcon()
-                                            } else {
-                                                screen.outlinedIcon()
-                                            }
-                                        },
-                                        label = { Text(screen.title) },
-                                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                                        onClick = {
-                                            navController.navigate(screen.route) {
-                                                popUpTo(navController.graph.findStartDestination().id) {
-                                                    saveState = true
+                                            NavigationBarItem(
+                                                icon = {
+                                                    if (currentDestination?.hierarchy?.any { it.route == screen.route } == true) {
+                                                        screen.filledIcon()
+                                                    } else {
+                                                        screen.outlinedIcon()
+                                                    }
+                                                },
+                                                label = { Text(screen.title) },
+                                                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                                                onClick = {
+                                                    // Check if already on Search screen
+                                                    val isOnSearch = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                                                    
+                                                    if (isOnSearch && screen == Screen.Search) {
+                                                        // Trigger search reset by incrementing counter
+                                                        searchResetTrigger++
+                                                    } else {
+                                                        navController.navigate(screen.route) {
+                                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                                saveState = true
+                                                            }
+                                                            launchSingleTop = true
+                                                            restoreState = true
+                                                        }
+                                                    }
                                                 }
-                                                if (screen != Screen.Search) {
-                                                    launchSingleTop = true
-                                                    restoreState = true
-                                                }
-                                            }
+                                            )
                                         }
-                                    )
-                                }                                }                            }
-                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 ) { innerPadding ->
@@ -184,12 +193,23 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 musicViewModel = musicViewModel,
                                 onSettingsClick = { navController.navigate("settings") },
+                                onSeeAllClick = { 
+                                    navController.navigate(Screen.Library.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
                                 bottomPadding = bottomPadding
                             )
                         }
                         composable(Screen.Search.route) {
                             SearchScreen(
                                 musicViewModel = musicViewModel,
+                                searchViewModel = searchViewModel,
+                                searchResetTrigger = searchResetTrigger,
                                 onNavigateToArtist = { artist ->
                                     searchViewModel.loadArtistDetails(artist)
                                     navController.navigate("artist/${artist.id}")
@@ -258,7 +278,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                
+
                 // Player Modal
                 if (showPlayerModal) {
                     PlayerScreen(
@@ -273,11 +293,15 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra("open_player", false)) {
+        handlePlayerIntent(intent)
+    }
+
+    private fun handlePlayerIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra("open_player", false) == true) {
             showPlayerOnLaunch.value = true
         }
     }
-    
+
     override fun onDestroy() {
         super.onDestroy()
         // Track app closed and end session

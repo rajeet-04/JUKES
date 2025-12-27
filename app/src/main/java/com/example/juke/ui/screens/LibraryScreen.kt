@@ -4,12 +4,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -47,16 +53,21 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Search field
-            OutlinedTextField(
+            // Enhanced Search Field
+            TextField(
                 value = uiState.searchQuery,
                 onValueChange = { libraryViewModel.updateSearchQuery(it) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 20.dp)
                     .padding(top = 16.dp),
                 placeholder = { Text("Search tracks, artists, lyrics...") },
-                singleLine = true,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search"
+                    )
+                },
                 trailingIcon = {
                     if (uiState.searchQuery.isNotEmpty()) {
                         IconButton(onClick = { libraryViewModel.clearSearch() }) {
@@ -66,48 +77,57 @@ fun LibraryScreen(
                             )
                         }
                     }
-                }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                )
             )
             
-            // Filter chips
-            // Filter chips and playlist selectors
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            // Enhanced Filter Row
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 1. All Tracks
+                item {
                     FilterChip(
                         selected = uiState.selectedPlaylist == null && !uiState.showFavoritesOnly,
                         onClick = { libraryViewModel.loadAllTracks() },
-                        label = { Text("All Tracks") }
+                        label = { Text("All Tracks") },
+                        leadingIcon = if (uiState.selectedPlaylist == null && !uiState.showFavoritesOnly) {
+                            { Icon(Icons.Default.LibraryMusic, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        } else null
                     )
+                }
+                
+                // 2. Favourites
+                item {
                     FilterChip(
                         selected = uiState.showFavoritesOnly,
                         onClick = { libraryViewModel.toggleFavoritesFilter() },
-                        label = { Text("Favourites") }
+                        label = { Text("Favourites") },
+                        leadingIcon = if (uiState.showFavoritesOnly) {
+                            { Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        } else {
+                            { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        }
                     )
                 }
-
-                if (uiState.playlists.isNotEmpty()) {
-                    Text(
-                        "Playlists",
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(top = 4.dp)
+                
+                // 3. Playlists (Dynamic)
+                items(uiState.playlists, key = { it.id }) { playlist ->
+                    FilterChip(
+                        selected = uiState.selectedPlaylist?.id == playlist.id,
+                        onClick = { libraryViewModel.loadPlaylistTracks(playlist.id) },
+                        label = { Text(playlist.name) },
+                        leadingIcon = if (uiState.selectedPlaylist?.id == playlist.id) {
+                            { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        } else null
                     )
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(uiState.playlists, key = { it.id }) { playlist ->
-                            FilterChip(
-                                selected = uiState.selectedPlaylist?.id == playlist.id,
-                                onClick = { libraryViewModel.loadPlaylistTracks(playlist.id) },
-                                label = { Text(playlist.name) }
-                            )
-                        }
-                    }
                 }
             }
             
@@ -120,37 +140,59 @@ fun LibraryScreen(
                 }
             } else if (uiState.tracks.isEmpty()) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        )
                     ) {
-                        Text(
-                            if (uiState.searchQuery.isNotEmpty()) "No tracks found for your search"
-                            else if (uiState.showFavoritesOnly) "No favourite tracks yet" 
-                            else "No downloaded tracks yet",
-                            style = MaterialTheme.typography.headlineSmall
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            if (uiState.searchQuery.isNotEmpty()) "Try a different search term"
-                            else if (uiState.showFavoritesOnly) "Mark tracks as favourites to see them here"
-                            else "Search and download tracks to build your library",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (uiState.searchQuery.isNotEmpty()) Icons.Outlined.SearchOff
+                                    else if (uiState.showFavoritesOnly) Icons.Outlined.FavoriteBorder
+                                    else Icons.Outlined.LibraryMusic,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = if (uiState.searchQuery.isNotEmpty()) "No tracks found"
+                                    else if (uiState.showFavoritesOnly) "No favourite tracks yet" 
+                                    else "No downloaded tracks yet",
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (uiState.searchQuery.isNotEmpty()) "Try a different search term"
+                                    else if (uiState.showFavoritesOnly) "Mark tracks as favourites to see them here"
+                                    else "Search and download tracks to build your library",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = 16.dp,
-                        end = 16.dp,
+                        start = 20.dp,
+                        top = 8.dp,
+                        end = 20.dp,
                         bottom = 16.dp + bottomPadding
                     ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // Playlist hero if one is selected
                     uiState.selectedPlaylist?.let { playlist ->
@@ -188,10 +230,10 @@ fun LibraryScreen(
                     }
                     
                     // Show QueueManager recommendation downloads
-                    items(
+                    itemsIndexed(
                         items = uiState.recommendationDownloads,
-                        key = { "${it.title}_${it.artist}_${it.source}" }
-                    ) { downloadInfo ->
+                        key = { index, downloadInfo -> "rec_${index}_${downloadInfo.title}_${downloadInfo.artist}_${downloadInfo.source}" }
+                    ) { index, downloadInfo ->
                         Card(
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -262,35 +304,57 @@ fun LibraryScreen(
 @Composable
 private fun PlaylistHeader(playlist: com.example.juke.database.PlaylistEntity) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            AsyncImage(
-                model = playlist.thumbnailUri,
-                contentDescription = playlist.name,
-                modifier = Modifier
-                    .size(72.dp)
-                    .aspectRatio(1f),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-            )
-            Column(modifier = Modifier.weight(1f)) {
+            Card(
+                modifier = Modifier.size(96.dp),
+                shape = RoundedCornerShape(12.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                AsyncImage(
+                    model = playlist.thumbnailUri,
+                    contentDescription = playlist.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     text = playlist.name,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "${playlist.trackCount} tracks",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${playlist.trackCount} tracks",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

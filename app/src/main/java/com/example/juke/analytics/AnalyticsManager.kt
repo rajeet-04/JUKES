@@ -1,5 +1,6 @@
 package com.example.juke.analytics
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
@@ -20,6 +21,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.TimeZone
 import java.util.UUID
+import androidx.core.content.edit
 
 class AnalyticsManager private constructor(private val context: Context) {
 
@@ -34,6 +36,7 @@ class AnalyticsManager private constructor(private val context: Context) {
         private const val KEY_IS_NEW_USER = "is_new_user"
         private const val KEY_FIRST_INSTALL_TIME = "first_install_time"
 
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: AnalyticsManager? = null
 
@@ -92,11 +95,11 @@ class AnalyticsManager private constructor(private val context: Context) {
     private fun generateAndStoreUserId(): String {
         val newUserId = UUID.randomUUID().toString()
         val firstInstallTime = System.currentTimeMillis()
-        prefs.edit()
-            .putString(KEY_USER_ID, newUserId)
-            .putBoolean(KEY_IS_NEW_USER, true)
-            .putLong(KEY_FIRST_INSTALL_TIME, firstInstallTime)
-            .apply()
+        prefs.edit {
+            putString(KEY_USER_ID, newUserId)
+                .putBoolean(KEY_IS_NEW_USER, true)
+                .putLong(KEY_FIRST_INSTALL_TIME, firstInstallTime)
+        }
         Log.d(TAG, "Generated new user ID: $newUserId (new installation)")
         return newUserId
     }
@@ -146,7 +149,7 @@ class AnalyticsManager private constructor(private val context: Context) {
             mutex.withLock {
                 try {
                     val eventsJson = json.encodeToString(eventQueue)
-                    prefs.edit().putString(KEY_PENDING_EVENTS, eventsJson).apply()
+                    prefs.edit { putString(KEY_PENDING_EVENTS, eventsJson) }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error saving pending events", e)
                 }
@@ -187,7 +190,7 @@ class AnalyticsManager private constructor(private val context: Context) {
 
     private fun startSession() {
         sessionStartTime = System.currentTimeMillis()
-        prefs.edit().putLong(KEY_SESSION_START, sessionStartTime).apply()
+        prefs.edit { putLong(KEY_SESSION_START, sessionStartTime) }
         
         val networkInfo = getNetworkInfo()
         val properties = mutableMapOf<String, Any>(
@@ -212,7 +215,7 @@ class AnalyticsManager private constructor(private val context: Context) {
         
         // Mark as not new user after first session
         if (isNewUser) {
-            prefs.edit().putBoolean(KEY_IS_NEW_USER, false).apply()
+            prefs.edit { putBoolean(KEY_IS_NEW_USER, false) }
         }
         
         // Next session will be from background
@@ -264,7 +267,7 @@ class AnalyticsManager private constructor(private val context: Context) {
 
         // Update total songs played
         val totalSongs = prefs.getInt(KEY_TOTAL_SONGS_PLAYED, 0) + 1
-        prefs.edit().putInt(KEY_TOTAL_SONGS_PLAYED, totalSongs).apply()
+        prefs.edit { putInt(KEY_TOTAL_SONGS_PLAYED, totalSongs) }
         Log.d(TAG, "📊 Total songs played: $totalSongs")
     }
 
@@ -294,7 +297,7 @@ class AnalyticsManager private constructor(private val context: Context) {
 
         // Update total listening time
         val totalListeningTime = prefs.getLong(KEY_TOTAL_LISTENING_TIME, 0) + playDuration
-        prefs.edit().putLong(KEY_TOTAL_LISTENING_TIME, totalListeningTime).apply()
+        prefs.edit { putLong(KEY_TOTAL_LISTENING_TIME, totalListeningTime) }
         Log.d(TAG, "⏱ Total listening time: ${totalListeningTime/1000/60} minutes")
     }
 
@@ -404,7 +407,7 @@ class AnalyticsManager private constructor(private val context: Context) {
 
                     // Clear synced events to free up storage space
                     eventQueue.clear()
-                    prefs.edit().remove(KEY_PENDING_EVENTS).apply()
+                    prefs.edit { remove(KEY_PENDING_EVENTS) }
                     
                     Log.d(TAG, "Sync complete - Success: $successCount, Failed: $failCount")
                     Log.d(TAG, "Cleared ${eventsToSync.size} sent events from storage")
