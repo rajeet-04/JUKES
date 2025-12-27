@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -169,6 +170,8 @@ fun LibraryScreen(
                                 text = if (uiState.searchQuery.isNotEmpty()) "No tracks found"
                                     else if (uiState.showFavoritesOnly) "No favourite tracks yet" 
                                     else "No downloaded tracks yet",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
                                 style = MaterialTheme.typography.headlineSmall.copy(
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -178,6 +181,8 @@ fun LibraryScreen(
                                 text = if (uiState.searchQuery.isNotEmpty()) "Try a different search term"
                                     else if (uiState.showFavoritesOnly) "Mark tracks as favourites to see them here"
                                     else "Search and download tracks to build your library",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

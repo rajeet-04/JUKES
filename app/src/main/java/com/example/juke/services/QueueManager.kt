@@ -318,7 +318,7 @@ class QueueManager private constructor(private val context: Context) {
             }
             
             // CHECK 2: Check if already downloaded (Database check)
-            val existingTrack = trackDao.findTrackByTitleArtist(rec.title, rec.artist)
+            val existingTrack = trackDao.findTrackByTitleArtist(rec.title, rec.artist, rec.durationSec)
             if (existingTrack != null && existingTrack.localUri != null) {
                 Log.d(TAG, "Track already exists: ${rec.title}")
                 

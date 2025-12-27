@@ -1072,53 +1072,61 @@ private fun LyricsOverlay(
             .background(Color.Black.copy(alpha = 0.75f))
     ) {
         if (syncedLyrics != null) {
-            val lyricLines = remember(syncedLyrics) { parseSyncedLyrics(syncedLyrics) }
-            val listState = rememberLazyListState()
-            var currentLineIndex by remember { mutableIntStateOf(0) }
-            
-            // Calculate the center offset to position active line in the middle
-            LaunchedEffect(currentPosition, lyricLines) {
-                val newIndex = lyricLines.indexOfLast { it.timeMs <= currentPosition }
-                if (newIndex >= 0) {
-                    currentLineIndex = newIndex
-                    // Scroll with center offset so active line is in the middle
-                    if (lyricLines.isNotEmpty()) {
-                        listState.animateScrollToItem(
-                            index = newIndex,
-                            scrollOffset = 0
-                        )
+            key(currentTrack.uuid) {
+                val lyricLines = remember(syncedLyrics) { parseSyncedLyrics(syncedLyrics) }
+                val listState = rememberLazyListState()
+                var currentLineIndex by remember { mutableIntStateOf(0) }
+                
+                // Calculate the center offset to position active line in the middle
+                LaunchedEffect(currentPosition, lyricLines) {
+                    val newIndex = lyricLines.indexOfLast { it.timeMs <= currentPosition }
+                    if (newIndex >= 0) {
+                        currentLineIndex = newIndex
+                        // Scroll with center offset so active line is in the middle
+                        if (lyricLines.isNotEmpty()) {
+                            listState.animateScrollToItem(
+                                index = newIndex,
+                                scrollOffset = 0
+                            )
+                        }
+                    } else {
+                        // Reset to top if no position matched (next song starting point)
+                        currentLineIndex = 0
+                        if (lyricLines.isNotEmpty()) {
+                            listState.scrollToItem(0)
+                        }
                     }
                 }
-            }
-            
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = verticalPadding),
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
-            ) {
-                items(lyricLines.size) { index ->
-                    val line = lyricLines[index]
-                    val isCurrentLine = index == currentLineIndex
-                    
-                    Text(
-                        text = line.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (isCurrentLine) Color.White else Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = {
-                                musicViewModel.seekTo(line.timeMs)
-                            }),
-                        textAlign = TextAlign.Center,
-                        fontSize = if (isCurrentLine) 18.sp else 16.sp,
-                        fontWeight = if (isCurrentLine)
-                            androidx.compose.ui.text.font.FontWeight.Bold
-                        else
-                            androidx.compose.ui.text.font.FontWeight.Normal
-                    )
+                
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(vertical = verticalPadding),
+                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+                ) {
+                    items(lyricLines.size) { index ->
+                        val line = lyricLines[index]
+                        val isCurrentLine = index == currentLineIndex
+                        
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (isCurrentLine) Color.White else Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = {
+                                    musicViewModel.seekTo(line.timeMs)
+                                }),
+                            textAlign = TextAlign.Center,
+                            fontSize = if (isCurrentLine) 18.sp else 16.sp,
+                            fontWeight = if (isCurrentLine)
+                                androidx.compose.ui.text.font.FontWeight.Bold
+                            else
+                                androidx.compose.ui.text.font.FontWeight.Normal
+                        )
+                    }
                 }
             }
         } else {

@@ -745,7 +745,8 @@ object RecommenderApi {
                             artist = bestMatch.artists.joinToString(", ") { it.name },
                             spotifyUrl = bestMatch.externalUrls.spotify!!,
                             confidence = bestConfidence,
-                            isOfficial = officialScore > 0.0
+                            isOfficial = officialScore > 0.0,
+                            durationSec = (bestMatch.durationMs / 1000).toInt()
                         )
                     )
                     
@@ -855,7 +856,8 @@ object RecommenderApi {
         val artist: String,
         val spotifyUrl: String,
         val confidence: Double,
-        val isOfficial: Boolean
+        val isOfficial: Boolean,
+        val durationSec: Int
     )
 
 }

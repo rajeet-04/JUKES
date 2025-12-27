@@ -67,9 +67,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         loadTracks()
     }
     
-    fun loadTracks() {
+    fun loadTracks(silent: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            if (!silent) {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+            }
             
             val tracks = if (_uiState.value.showFavoritesOnly) {
                 trackDao.getFavourites().map { it.toTrack() }
@@ -95,9 +97,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     
-    fun loadPlaylistTracks(playlistId: String) {
+    fun loadPlaylistTracks(playlistId: String, silent: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            if (!silent) {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+            }
 
             val playlist = playlistDao.getPlaylist(playlistId)
             val tracks = playlistDao.getPlaylistTracks(playlistId).map { it.toTrack() }
@@ -124,8 +128,20 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             // Get the track from current state to ensure we have the latest data
             val track = _uiState.value.tracks.find { it.uuid == trackUuid }
             if (track != null) {
+                // Optimistic update
+                val updatedTracks = _uiState.value.tracks.map {
+                    if (it.uuid == trackUuid) it.copy(isFavourite = !it.isFavourite) else it
+                }
+                _uiState.value = _uiState.value.copy(tracks = updatedTracks)
+                
                 trackDao.updateTrackFavourite(track.uuid, !track.isFavourite)
-                loadTracks()
+                
+                // Refresh silently to sync with database
+                if (_uiState.value.selectedPlaylist != null) {
+                    loadPlaylistTracks(_uiState.value.selectedPlaylist!!.id, silent = true)
+                } else {
+                    loadTracks(silent = true)
+                }
             }
         }
     }
@@ -135,8 +151,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             // Get the track from current state to ensure we have the latest data
             val track = _uiState.value.tracks.find { it.uuid == trackUuid }
             if (track != null) {
+                // Optimistic update
+                val updatedTracks = _uiState.value.tracks.filter { it.uuid != trackUuid }
+                _uiState.value = _uiState.value.copy(tracks = updatedTracks)
+                
                 musicService.deleteTrackAndFiles(track)
-                loadTracks()
+                
+                // Refresh silently to sync with database
+                if (_uiState.value.selectedPlaylist != null) {
+                    loadPlaylistTracks(_uiState.value.selectedPlaylist!!.id, silent = true)
+                } else {
+                    loadTracks(silent = true)
+                }
             }
         }
     }

@@ -367,7 +367,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     suspend fun downloadAndPlay(song: SpotdownSong) {
         // Check if already exists
-        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+        val durationSec = SpotifyApi.parseDuration(song.duration)
+        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
         
         if (existingTrack != null && existingTrack.localUri != null) {
             // Already downloaded, play immediately
@@ -380,7 +381,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     suspend fun downloadSong(song: SpotdownSong): Track {
         // Check if already exists
-        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+        val durationSec = SpotifyApi.parseDuration(song.duration)
+        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
 
         return if (existingTrack != null && existingTrack.localUri != null) {
             // Already downloaded
@@ -408,7 +410,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             // Check if already exists in database
-            val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+            val durationSec = SpotifyApi.parseDuration(song.duration)
+            val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
             if (existingTrack != null && existingTrack.localUri != null) {
                 Log.d("MusicViewModel", "Song already downloaded: ${song.title}")
                 if (shouldPlayAfterDownload) {

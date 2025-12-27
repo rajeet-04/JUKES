@@ -79,7 +79,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 tracks = emptyList(),
                 artists = emptyList(),
                 playlists = emptyList(),
-                albums = emptyList()
+                albums = emptyList(),
+                isPlaylistUrl = false,
+                playlistId = null
             )
         }
     }
@@ -115,7 +117,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 artists = emptyList(),
                                 playlists = emptyList(),
                                 albums = emptyList(),
-                                isSearching = false
+                                isSearching = false,
+                                isPlaylistUrl = false,
+                                playlistId = null
                             )
                         }
                         "artist" -> {
@@ -125,7 +129,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 artists = listOf(artist),
                                 playlists = emptyList(),
                                 albums = emptyList(),
-                                isSearching = false
+                                isSearching = false,
+                                isPlaylistUrl = false,
+                                playlistId = null
                             )
                         }
                         "playlist" -> {
@@ -147,7 +153,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 artists = emptyList(),
                                 playlists = emptyList(),
                                 albums = listOf(album),
-                                isSearching = false
+                                isSearching = false,
+                                isPlaylistUrl = false,
+                                playlistId = null
                             )
                         }
                     }
@@ -160,7 +168,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         artists = response.artists?.items ?: emptyList(),
                         playlists = response.playlists?.items?.filterNotNull() ?: emptyList(),
                         albums = response.albums?.items ?: emptyList(),
-                        isSearching = false
+                        isSearching = false,
+                        isPlaylistUrl = false,
+                        playlistId = null
                     )
                 }
             } catch (e: Exception) {

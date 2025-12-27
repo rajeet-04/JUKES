@@ -64,8 +64,10 @@ class MusicService(private val context: Context) {
     suspend fun smartDownloadAndIndex(
         song: SpotdownSong
     ): Track {
+        val durationSec = SpotifyApi.parseDuration(song.duration)
+        
         // Check if track already exists in database
-        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist)
+        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
         if (existingTrack != null && existingTrack.localUri != null) {
             Log.d(TAG, "Track already exists in database: ${song.title} by ${song.artist}")
             return Track(
@@ -85,7 +87,6 @@ class MusicService(private val context: Context) {
         }
         
         val uuid = generateUUID()
-        val durationSec = SpotifyApi.parseDuration(song.duration)
         val musicDir = File(context.filesDir, "music")
         if (!musicDir.exists()) musicDir.mkdirs()
         

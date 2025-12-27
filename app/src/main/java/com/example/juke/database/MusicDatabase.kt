@@ -253,8 +253,8 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT :limit")
     suspend fun getMostPlayed(limit: Int = 10): List<TrackEntity>
     
-    @Query("SELECT * FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:title) || '%' AND LOWER(artist) LIKE '%' || LOWER(:artist) || '%' LIMIT 1")
-    suspend fun findTrackByTitleArtist(title: String, artist: String): TrackEntity?
+    @Query("SELECT * FROM tracks WHERE LOWER(TRIM(title)) = LOWER(TRIM(:title)) AND LOWER(TRIM(artist)) = LOWER(TRIM(:artist)) AND ABS(duration_sec - :durationSec) <= 2 LIMIT 1")
+    suspend fun findTrackByTitleArtist(title: String, artist: String, durationSec: Int): TrackEntity?
     
     @Query("SELECT * FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY last_played_at DESC")
     suspend fun searchTracks(query: String): List<TrackEntity>
