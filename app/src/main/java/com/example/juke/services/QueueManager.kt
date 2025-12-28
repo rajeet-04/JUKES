@@ -318,7 +318,10 @@ class QueueManager private constructor(private val context: Context) {
             }
             
             // CHECK 2: Check if already downloaded (Database check)
-            val existingTrack = trackDao.findTrackByTitleArtist(rec.title, rec.artist, rec.durationSec)
+            val candidates = trackDao.findTracksByTitleAndDuration(rec.title, rec.durationSec)
+            val existingTrack = candidates.find { 
+                com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, rec.artist) 
+            }
             if (existingTrack != null && existingTrack.localUri != null) {
                 Log.d(TAG, "Track already exists: ${rec.title}")
                 
@@ -527,6 +530,7 @@ class QueueManager private constructor(private val context: Context) {
     fun cleanup() {
         cancelPendingRecommendationDownloads()
         serviceScope.cancel()
-        Log.d(TAG, "QueueManager cleaned up")
+        instance = null
+        Log.d(TAG, "QueueManager cleaned up and instance reset")
     }
 }

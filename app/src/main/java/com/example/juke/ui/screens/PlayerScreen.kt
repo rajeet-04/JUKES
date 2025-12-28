@@ -8,6 +8,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -917,6 +918,13 @@ private fun CustomSeekBar(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    // Handle tap to seek
+                    val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
+                    onProgressChange(newProgress)
+                }
+            }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { _: Offset -> isDragging = true },

@@ -15,6 +15,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+enum class SortOption {
+    RECENTLY_ADDED,
+    TITLE,
+    ARTIST,
+    LAST_PLAYED
+}
+
 data class LibraryUiState(
     val tracks: List<Track> = emptyList(),
     val playlists: List<PlaylistEntity> = emptyList(),
@@ -23,7 +30,9 @@ data class LibraryUiState(
     val selectedPlaylist: PlaylistEntity? = null,
     val searchQuery: String = "",
     val downloadingTracks: Set<String> = emptySet(),
-    val recommendationDownloads: List<DownloadInfo> = emptyList()
+    val recommendationDownloads: List<DownloadInfo> = emptyList(),
+    val sortOption: SortOption = SortOption.RECENTLY_ADDED,
+    val showSortSheet: Boolean = false
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -46,8 +55,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             trackDao.getDownloadedTracksFlow().collect { trackEntities ->
                 val currentState = _uiState.value
                 if (!currentState.showFavoritesOnly && currentState.selectedPlaylist == null) {
+                    val tracks = trackEntities.map { it.toTrack() }
+                    val filteredTracks = filterTracksBySearch(tracks)
+                    val sortedTracks = sortTracks(filteredTracks, currentState.sortOption)
+                    
                     _uiState.value = currentState.copy(
-                        tracks = trackEntities.map { it.toTrack() },
+                        tracks = sortedTracks,
                         isLoading = false
                     )
                 }
@@ -80,9 +93,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
             
             val filteredTracks = filterTracksBySearch(tracks)
+            val sortedTracks = sortTracks(filteredTracks, _uiState.value.sortOption)
             
             _uiState.value = _uiState.value.copy(
-                tracks = filteredTracks,
+                tracks = sortedTracks,
                 isLoading = false,
                 selectedPlaylist = null
             )
@@ -106,9 +120,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val playlist = playlistDao.getPlaylist(playlistId)
             val tracks = playlistDao.getPlaylistTracks(playlistId).map { it.toTrack() }
             val filteredTracks = filterTracksBySearch(tracks)
+            val sortedTracks = sortTracks(filteredTracks, _uiState.value.sortOption)
             
             _uiState.value = _uiState.value.copy(
-                tracks = filteredTracks,
+                tracks = sortedTracks,
                 showFavoritesOnly = false,
                 selectedPlaylist = playlist,
                 isLoading = false
@@ -194,6 +209,28 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 ?.replace(Regex("\\[\\d+:\\d+]"), "")?.trim()?.contains(lowerQuery) == true)
         }
     }
+    
+    private fun sortTracks(tracks: List<Track>, sortOption: SortOption): List<Track> {
+        return when (sortOption) {
+            SortOption.RECENTLY_ADDED -> tracks.sortedByDescending { it.downloadedAt ?: 0L }
+            SortOption.TITLE -> tracks.sortedBy { it.title.lowercase() }
+            SortOption.ARTIST -> tracks.sortedBy { it.artist.lowercase() }
+            SortOption.LAST_PLAYED -> tracks.sortedByDescending { it.lastPlayedAt }
+        }
+    }
+    
+    fun updateSortOption(option: SortOption) {
+        _uiState.value = _uiState.value.copy(sortOption = option, showSortSheet = false)
+        if (_uiState.value.selectedPlaylist != null) {
+            loadPlaylistTracks(_uiState.value.selectedPlaylist!!.id)
+        } else {
+            loadTracks()
+        }
+    }
+    
+    fun toggleSortSheet() {
+        _uiState.value = _uiState.value.copy(showSortSheet = !_uiState.value.showSortSheet)
+    }
     fun createPlaylist(name: String) {
         viewModelScope.launch {
             val uuid = java.util.UUID.randomUUID().toString()
@@ -207,6 +244,17 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     
+    fun deletePlaylist(playlist: com.example.juke.database.PlaylistEntity) {
+        viewModelScope.launch {
+            playlistDao.deletePlaylist(playlist.id)
+            if (_uiState.value.selectedPlaylist?.id == playlist.id) {
+                // Return to all tracks if the deleted playlist was selected
+                loadAllTracks()
+            }
+        }
+    }
+    
+
     suspend fun addToPlaylist(playlist: com.example.juke.database.PlaylistEntity, track: Track) {
         // Check if track is already in playlist
         val existingTracks = playlistDao.getPlaylistTracks(playlist.id)

@@ -63,6 +63,8 @@ class PlaybackService : MediaLibraryService() {
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
     
     private var wasPlayingBeforeCall = false
+    private var wasPlayingBeforeFocusLoss = false
+    private lateinit var audioManager: android.media.AudioManager
 
     // 1. Define the Receiver
     private val callStateReceiver = object : BroadcastReceiver() {
@@ -101,6 +103,44 @@ class PlaybackService : MediaLibraryService() {
                         }
                     }
                 }
+            }
+        }
+    }
+    
+    // Audio focus listener to handle other apps playing audio
+    private val audioFocusChangeListener = android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            android.media.AudioManager.AUDIOFOCUS_LOSS -> {
+                // Permanent loss (another app took focus permanently)
+                if (player.isPlaying) {
+                    player.pause()
+                    Log.d(TAG, "Audio focus lost permanently - paused")
+                }
+                wasPlayingBeforeFocusLoss = false
+            }
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // Temporary loss (notification, alarm, etc.)
+                if (player.isPlaying) {
+                    wasPlayingBeforeFocusLoss = true
+                    player.pause()
+                    Log.d(TAG, "Audio focus lost temporarily - paused")
+                }
+            }
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Can duck (lower volume) - we'll just pause for simplicity
+                if (player.isPlaying) {
+                    wasPlayingBeforeFocusLoss = true
+                    player.pause()
+                    Log.d(TAG, "Audio focus ducked - paused")
+                }
+            }
+            android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                // Regained focus - resume if we were playing before
+                if (wasPlayingBeforeFocusLoss && !wasPlayingBeforeCall) {
+                    player.play()
+                    Log.d(TAG, "Audio focus regained - resumed")
+                }
+                wasPlayingBeforeFocusLoss = false
             }
         }
     }
@@ -289,15 +329,48 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         
         database = MusicDatabase.getDatabase(applicationContext)
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
         
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
             .setEnableDecoderFallback(true)
 
         player = ExoPlayer.Builder(this, renderersFactory)
-            .setAudioAttributes(audioAttributes, false) // Set to FALSE to allow playback during calls
+            .setAudioAttributes(audioAttributes, false) // Keep FALSE to allow manual call control
             .setHandleAudioBecomingNoisy(true)
             .build()
+        
+        // Request audio focus when player starts playing
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        audioManager.requestAudioFocus(
+                            android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+                                .setAudioAttributes(
+                                    android.media.AudioAttributes.Builder()
+                                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                                        .build()
+                                )
+                                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                                .build()
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        audioManager.requestAudioFocus(
+                            audioFocusChangeListener,
+                            android.media.AudioManager.STREAM_MUSIC,
+                            android.media.AudioManager.AUDIOFOCUS_GAIN
+                        )
+                    }
+                    
+                    if (result != android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                        Log.w(TAG, "Audio focus not granted")
+                    }
+                }
+            }
+        })
         
         // Listen for audio session ID changes to attach audio effects
         player.addAnalyticsListener(object : AnalyticsListener {
@@ -578,6 +651,10 @@ class PlaybackManager(private val context: Context) {
     // Audio effect controller
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(context) }
     
+    // Shuffle state
+    private val _isShuffleEnabled = MutableStateFlow(false)
+    val isShuffleEnabledFlow: StateFlow<Boolean> = _isShuffleEnabled.asStateFlow()
+    
     // Queue manager for recommendations
     private val queueManager: QueueManager by lazy { QueueManager.getInstance(context) }
     
@@ -670,6 +747,11 @@ class PlaybackManager(private val context: Context) {
                                             }
                                         }
                                     }
+                                }
+                                
+                                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                                    _isShuffleEnabled.value = shuffleModeEnabled
+                                    Log.d(TAG, "Shuffle mode changed: $shuffleModeEnabled")
                                 }
                             }
                             try {
@@ -838,6 +920,14 @@ class PlaybackManager(private val context: Context) {
             }
         }
         Log.d(TAG, "Skip to previous")
+    }
+    
+    fun toggleShuffle() {
+        controller?.let {
+            it.shuffleModeEnabled = !it.shuffleModeEnabled
+            _isShuffleEnabled.value = it.shuffleModeEnabled
+            Log.d(TAG, "Shuffle toggled: ${it.shuffleModeEnabled}")
+        }
     }
     
     fun seekTo(positionMs: Long) {

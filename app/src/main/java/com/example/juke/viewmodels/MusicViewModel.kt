@@ -51,7 +51,8 @@ data class MusicUiState(
     val error: String? = null,
     val downloadQueue: List<DownloadItem> = emptyList(),
     val currentDownload: DownloadItem? = null,
-    val isQueueOperationInProgress: Boolean = false
+    val isQueueOperationInProgress: Boolean = false,
+    val isShuffleEnabled: Boolean = false
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -95,6 +96,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playbackManager.isPlayingFlow.collect { playing ->
                 _uiState.update { it.copy(isPlaying = playing) }
+            }
+        }
+        
+        // Observe shuffle state changes
+        viewModelScope.launch {
+            playbackManager.isShuffleEnabledFlow.collect { shuffleEnabled ->
+                _uiState.update { it.copy(isShuffleEnabled = shuffleEnabled) }
             }
         }
         
@@ -255,6 +263,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playbackManager.togglePlayPause()
         // rely on playbackManager.isPlayingFlow to update UI via collector
     }
+    
+    fun toggleShuffle() {
+        playbackManager.toggleShuffle()
+        // rely on playbackManager.isShuffleEnabledFlow to update UI via collector
+    }
 
     /**
      * Insert a track so it plays immediately after the current track.
@@ -409,7 +422,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun downloadAndPlay(song: SpotdownSong) {
         // Check if already exists
         val durationSec = SpotifyApi.parseDuration(song.duration)
-        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
+        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+        val existingTrack = candidates.find { 
+            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) 
+        }
         
         if (existingTrack != null && existingTrack.localUri != null) {
             // Already downloaded, play immediately
@@ -423,7 +439,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun downloadSong(song: SpotdownSong): Track {
         // Check if already exists
         val durationSec = SpotifyApi.parseDuration(song.duration)
-        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
+        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+        val existingTrack = candidates.find { 
+            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) 
+        }
 
         return if (existingTrack != null && existingTrack.localUri != null) {
             // Already downloaded
@@ -452,7 +471,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             
             // Check if already exists in database
             val durationSec = SpotifyApi.parseDuration(song.duration)
-            val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
+            val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+            val existingTrack = candidates.find { 
+                com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) 
+            }
             if (existingTrack != null && existingTrack.localUri != null) {
                 Log.d("MusicViewModel", "Song already downloaded: ${song.title}")
                 if (shouldPlayAfterDownload) {

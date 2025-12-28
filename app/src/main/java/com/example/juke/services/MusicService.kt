@@ -67,7 +67,11 @@ class MusicService(private val context: Context) {
         val durationSec = SpotifyApi.parseDuration(song.duration)
         
         // Check if track already exists in database
-        val existingTrack = trackDao.findTrackByTitleArtist(song.title, song.artist, durationSec)
+        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+        val existingTrack = candidates.find { 
+            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) 
+        }
+        
         if (existingTrack != null && existingTrack.localUri != null) {
             Log.d(TAG, "Track already exists in database: ${song.title} by ${song.artist}")
             return Track(

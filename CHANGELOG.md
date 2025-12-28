@@ -1,6 +1,39 @@
 # JUKES - Release Notes
 
-## Version 1.0.1-beta_2 - December 2025
+## Changelog
+
+## [Unreleased]
+
+### Added
+
+- **Playlist Deletion**: Added option to delete playlists via a context menu on playlist chips
+- **Robust Artist Matching**: Improved duplicate detection for playlist imports and smart downloads
+  - Handles multiple artists (comma, &, feat)
+  - Ignores artist order and case variations to prevent re-downloads
+- **Library Screen Rework**: New UI layout with 70% search field and 10% sort button in a single row
+- **Sort Options**: Added sorting by Recently Added (default), Title, Artist, and Last Played
+- **Sort Bottom Sheet**: Modal sheet to select sorting options with visual feedback
+- **Shuffle & Play Controls**: Added shuffle toggle and play button to Library Screen header
+  - Shuffle button shows active state with primary color
+  - Play button plays all visible/filtered tracks
+  - Shuffle mode shuffles queue before playback
+- **Tap-to-Seek**: Added tap gesture to seek bar for instant position changes
+- **Audio Focus Handling**: Music now pauses for other apps (YouTube, notifications) and auto-resumes when they stop
+  - Preserves manual playback control during phone calls
+
+### Fixed
+
+- **Library UI**: Fixed Sort button height alignment with search field
+- Sort order now persists after playing tracks (no longer resets to Recently Played)
+- Queue respects shuffle state - shuffled tracks are added in random order when shuffle is enabled
+
+### Performance & Build
+
+- **Queue Recommendation Reliability**: Fixed critical issue where recommendations stopped generating after prolonged use or app restart.
+  - Implemented proper lifecycle reset for `QueueManager` to prevent "zombie" instance state.
+- **ProGuard Optimization**: Updated rules to safely strip logging for battery saving while preserving critical data models and Room database classes.
+
+## [1.0.1-beta_2] - December 2025
 
 This release brings significant UI/UX improvements, enhanced queue management, and several bug fixes for a more polished music experience.
 

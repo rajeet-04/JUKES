@@ -281,6 +281,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE LOWER(TRIM(title)) = LOWER(TRIM(:title)) AND LOWER(TRIM(artist)) = LOWER(TRIM(:artist)) AND ABS(duration_sec - :durationSec) <= 2 LIMIT 1")
     suspend fun findTrackByTitleArtist(title: String, artist: String, durationSec: Int): TrackEntity?
     
+    @Query("SELECT * FROM tracks WHERE LOWER(TRIM(title)) = LOWER(TRIM(:title)) AND ABS(duration_sec - :durationSec) <= 2")
+    suspend fun findTracksByTitleAndDuration(title: String, durationSec: Int): List<TrackEntity>
+    
     @Query("SELECT * FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY last_played_at DESC")
     suspend fun searchTracks(query: String): List<TrackEntity>
     
