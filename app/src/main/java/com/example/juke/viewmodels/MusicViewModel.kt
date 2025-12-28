@@ -15,6 +15,7 @@ import com.example.juke.network.SpotifyApi
 import com.example.juke.services.MusicService
 import com.example.juke.services.PlaybackManager
 import com.example.juke.services.QueueManager
+import com.example.juke.utils.DatabaseMigrationHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,6 +70,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     init {
         playbackManager.initialize()
+
+        // Run database migration helper to fix download timestamps
+        viewModelScope.launch {
+            DatabaseMigrationHelper.fixDownloadTimestamps(application)
+        }
         
         // Observe restored state and update UI with saved queue
         viewModelScope.launch {

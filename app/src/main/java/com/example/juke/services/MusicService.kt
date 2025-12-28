@@ -82,7 +82,8 @@ class MusicService(private val context: Context) {
                 plainLyrics = existingTrack.plainLyrics,
                 isFavourite = existingTrack.isFavourite,
                 playCount = existingTrack.playCount,
-                lastPlayedAt = existingTrack.lastPlayedAt
+                lastPlayedAt = existingTrack.lastPlayedAt,
+                downloadedAt = existingTrack.downloadedAt
             )
         }
         
@@ -169,7 +170,8 @@ class MusicService(private val context: Context) {
                 plainLyrics = lyricsResult?.plainLyrics,
                 isFavourite = false,
                 playCount = 0,
-                lastPlayedAt = null
+                lastPlayedAt = null,
+                downloadedAt = System.currentTimeMillis()
             )
             
             trackDao.insertTrack(track.toEntity())

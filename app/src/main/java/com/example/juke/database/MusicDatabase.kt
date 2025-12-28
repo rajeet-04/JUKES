@@ -88,11 +88,30 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 }
 
 /**
+ * Migration from version 4 to 5
+ * Adds downloaded_at column to tracks table
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Add downloaded_at column, default to current timestamp for existing rows
+        // We use System.currentTimeMillis() effectively by setting a default value, 
+        // but SQLite DEFAULT expects a constant or expression. 
+        // We'll set it to 0 initially or null? 
+        // User asked: "previous tracks might not have that new column so initialize them to current time"
+        // So we should update them.
+        
+        val currentTime = System.currentTimeMillis()
+        db.execSQL("ALTER TABLE tracks ADD COLUMN downloaded_at INTEGER")
+        db.execSQL("UPDATE tracks SET downloaded_at = $currentTime")
+    }
+}
+
+/**
  * Room Database for JUKE music player.
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {
@@ -110,7 +129,7 @@ abstract class MusicDatabase : RoomDatabase() {
                     MusicDatabase::class.java,
                     "music_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
@@ -158,8 +177,12 @@ data class TrackEntity(
     @ColumnInfo(name = "play_count", defaultValue = "0")
     val playCount: Int = 0,
     
+    
     @ColumnInfo(name = "last_played_at")
-    val lastPlayedAt: String? = null
+    val lastPlayedAt: String? = null,
+
+    @ColumnInfo(name = "downloaded_at")
+    val downloadedAt: Long? = null
 )
 
 /**
@@ -178,7 +201,8 @@ fun TrackEntity.toTrack(): Track {
         plainLyrics = plainLyrics,
         isFavourite = isFavourite,
         playCount = playCount,
-        lastPlayedAt = lastPlayedAt
+        lastPlayedAt = lastPlayedAt,
+        downloadedAt = downloadedAt
     )
 }
 
@@ -198,7 +222,8 @@ fun Track.toEntity(): TrackEntity {
         plainLyrics = plainLyrics,
         isFavourite = isFavourite,
         playCount = playCount,
-        lastPlayedAt = lastPlayedAt
+        lastPlayedAt = lastPlayedAt,
+        downloadedAt = downloadedAt
     )
 }
 

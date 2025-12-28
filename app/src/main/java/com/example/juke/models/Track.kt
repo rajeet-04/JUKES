@@ -18,7 +18,8 @@ data class Track(
     val plainLyrics: String? = null,
     val isFavourite: Boolean = false,
     val playCount: Int = 0,
-    val lastPlayedAt: String? = null
+    val lastPlayedAt: String? = null,
+    val downloadedAt: Long? = null
 )
 
 /**
