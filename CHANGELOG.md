@@ -82,6 +82,7 @@ This release brings significant UI/UX improvements, enhanced queue management, a
 - **"Move" Functionality**: Adding a song already in the queue now moves it to the new position instead of creating a duplicate.
 - **Queue Hydration Safety**: Fixed queue contamination issue where selecting a new song while recommendations were downloading would pollute the new queue with old recommendations.
 - **App Restart Duplication Fix**: Fixed issue where tracks from index 0 were duplicated and added below the last track when app was restarted. Removed duplicate `QueueManager.initializeQueue()` call in `MusicViewModel.loadRestoredQueue()`.
+- **Auto-Resume After Call**: Implemented smart playback handling for phone calls. Music now explicitly pauses on incoming/outgoing calls and automatically resumes when the call ends, provided it was playing before the interruption.
 - See [QUEUE_HYDRATION_FIX.md](QUEUE_HYDRATION_FIX.md) for technical details on the fix.
 
 ### Track Matching Accuracy
