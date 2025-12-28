@@ -7,6 +7,7 @@
 ### Added
 
 - **Playlist Deletion**: Added option to delete playlists via a context menu on playlist chips
+- **Undo Delete**: Added a 3-second undo window for track deletion with a circular countdown timer and refined UI
 - **Robust Artist Matching**: Improved duplicate detection for playlist imports and smart downloads
   - Handles multiple artists (comma, &, feat)
   - Ignores artist order and case variations to prevent re-downloads

@@ -14,6 +14,7 @@
 .cxx
 local.properties
 *.salive
+app/release/
 
 .kotlin
 LINKEDIN_*.md

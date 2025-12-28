@@ -32,7 +32,8 @@ data class LibraryUiState(
     val downloadingTracks: Set<String> = emptySet(),
     val recommendationDownloads: List<DownloadInfo> = emptyList(),
     val sortOption: SortOption = SortOption.RECENTLY_ADDED,
-    val showSortSheet: Boolean = false
+    val showSortSheet: Boolean = false,
+    val pendingDeleteTrack: Track? = null
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -161,23 +162,78 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     
+    private var deletionJob: kotlinx.coroutines.Job? = null
+
     fun deleteTrack(trackUuid: String) {
+        // If there's a pending delete, commit it immediately before starting a new one
+        if (deletionJob?.isActive == true) {
+             val pending = _uiState.value.pendingDeleteTrack
+             // If we are deleting a different track, we can't undo the previous one anymore
+             if (pending != null && pending.uuid != trackUuid) {
+                 commitDelete()
+             }
+        }
+
         viewModelScope.launch {
-            // Get the track from current state to ensure we have the latest data
+            // Get the track from current state
             val track = _uiState.value.tracks.find { it.uuid == trackUuid }
             if (track != null) {
-                // Optimistic update
+                // Store pending track for undo
+                _uiState.value = _uiState.value.copy(pendingDeleteTrack = track)
+
+                // Optimistic remove from UI
                 val updatedTracks = _uiState.value.tracks.filter { it.uuid != trackUuid }
                 _uiState.value = _uiState.value.copy(tracks = updatedTracks)
-                
-                musicService.deleteTrackAndFiles(track)
-                
-                // Refresh silently to sync with database
-                if (_uiState.value.selectedPlaylist != null) {
-                    loadPlaylistTracks(_uiState.value.selectedPlaylist!!.id, silent = true)
-                } else {
-                    loadTracks(silent = true)
+
+                // Start timer
+                deletionJob?.cancel()
+                deletionJob = launch {
+                    kotlinx.coroutines.delay(3000) // 3 seconds wait
+                    commitDelete()
                 }
+            }
+        }
+    }
+
+    private fun commitDelete() {
+        val pendingTrack = _uiState.value.pendingDeleteTrack ?: return
+        
+        viewModelScope.launch {
+            musicService.deleteTrackAndFiles(pendingTrack)
+            
+            // Clear pending state
+            _uiState.value = _uiState.value.copy(pendingDeleteTrack = null)
+            
+            // Refresh silent logic (kept from original)
+            if (_uiState.value.selectedPlaylist != null) {
+                loadPlaylistTracks(_uiState.value.selectedPlaylist!!.id, silent = true)
+            } else {
+                loadTracks(silent = true)
+            }
+        }
+    }
+
+    fun undoDelete() {
+        if (deletionJob?.isActive == true) {
+            deletionJob?.cancel()
+            val pendingTrack = _uiState.value.pendingDeleteTrack
+            
+            if (pendingTrack != null) {
+                // Restore track to UI
+                // We need to figure out where to insert it, or just reload to be safe and simple
+                // Simple append for now or reload? Reloading might lose scroll position but ensures correct sort.
+                // Let's try to just insert it back to `uiState` for instant feedback if possible,
+                // but sort order matters.
+                
+                // Easiest correct way: add back to list and re-sort
+                val currentTracks = _uiState.value.tracks.toMutableList()
+                currentTracks.add(pendingTrack)
+                val sorted = sortTracks(filterTracksBySearch(currentTracks), _uiState.value.sortOption)
+                
+                _uiState.value = _uiState.value.copy(
+                    tracks = sorted,
+                    pendingDeleteTrack = null
+                )
             }
         }
     }

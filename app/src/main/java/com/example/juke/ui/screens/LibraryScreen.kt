@@ -665,6 +665,88 @@ fun LibraryScreen(
             }
         }
     }
+
+    
+    // Undo Delete Popup
+    uiState.pendingDeleteTrack?.let { track ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 16.dp + bottomPadding),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            val progress = remember { androidx.compose.animation.core.Animatable(1f) }
+            
+            LaunchedEffect(track) {
+                progress.snapTo(1f)
+                progress.animateTo(
+                    targetValue = 0f,
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = 3000,
+                        easing = androidx.compose.animation.core.LinearEasing
+                    )
+                )
+            }
+
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 8.dp) // Reduced padding for compactness
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        // Circular Countdown
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                progress = { progress.value },
+                                modifier = Modifier.size(28.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                strokeWidth = 3.dp,
+                            )
+                            Text(
+                                text = kotlin.math.ceil(progress.value * 3).toInt().coerceAtLeast(1).toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        
+                        Text(
+                            text = "Deleted \"${track.title}\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    
+                    TextButton(
+                        onClick = { libraryViewModel.undoDelete() },
+                        // Reducing visual weight of button to emphasize the countdown/content
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text("Undo")
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
