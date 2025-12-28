@@ -78,8 +78,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     // Load the restored queue from PlaybackManager
                     loadRestoredQueue()
                     
-                    // Check if we need recommendations for the restored queue
-                    queueManager.checkAndFetchRecommendations()
+                    // No need to call checkAndFetchRecommendations() here
+                    // PlaybackService.restorePlaybackState() already initialized QueueManager
+                    // and it will auto-fetch recommendations if queue size <= 2
                 }
             }
         }
@@ -131,6 +132,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // Add recommended tracks to the main queue if they're not already there
                 val currentQueue = _uiState.value.queue
+                
+                // If current queue is empty (e.g. app restart), sync with QueueManager but DON'T add to PlaybackManager
+                // because PlaybackManager/Restoration logic is what populated QueueManager in the first place.
+                if (currentQueue.isEmpty()) {
+                    if (recommendedTracks.isNotEmpty()) {
+                        Log.d("MusicViewModel", "Syncing UI queue from QueueManager (Startup/Restoration)")
+                        _uiState.update { it.copy(queue = recommendedTracks) }
+                    }
+                    return@collect
+                }
+
                 val newTracks = recommendedTracks.filter { recommended ->
                     !currentQueue.any { existing -> existing.uuid == recommended.uuid }
                 }
@@ -789,8 +801,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 
-                // Ensure QueueManager has the restored queue
-                queueManager.initializeQueue(tracks)
+                // DO NOT call queueManager.initializeQueue() here!
+                // PlaybackService.restorePlaybackState() already initialized QueueManager
+                // Calling it again causes duplicate tracks
                 
                 Log.d("MusicViewModel", "Restored queue with ${tracks.size} tracks, current index: $savedIndex")
             }

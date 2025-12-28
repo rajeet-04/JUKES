@@ -8,7 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.annotation.OptIn
-import androidx.core.app.NotificationCompat
+
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -62,26 +62,43 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var database: MusicDatabase
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
     
+    private var wasPlayingBeforeCall = false
+
     // 1. Define the Receiver
     private val callStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
                 val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
+                Log.d(TAG, "Phone state changed: $state")
+                
                 when (state) {
                     android.telephony.TelephonyManager.EXTRA_STATE_RINGING -> {
-                        // Call coming in: PAUSE immediately
+                        // Call coming in: Pause and save state
                         if (player.isPlaying) {
+                            wasPlayingBeforeCall = true
                             player.pause()
                             Log.d(TAG, "Paused playback due to incoming call")
                         }
                     }
                     android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                        // Call answered/active: Do NOTHING.
-                        // This allows the user to manually press 'Play' if they want.
+                        // Call active (or outgoing call started)
+                        // If user makes an outgoing call while music is playing, pause and save state
+                        if (player.isPlaying) {
+                            wasPlayingBeforeCall = true
+                            player.pause()
+                            Log.d(TAG, "Paused playback due to active/outgoing call")
+                        }
                     }
                     android.telephony.TelephonyManager.EXTRA_STATE_IDLE -> {
-                        // Call ended: Optional - Auto resume? 
-                        // We do nothing here to respect the user's manual control.
+                        // Call ended: Auto resume if we were playing before
+                        if (wasPlayingBeforeCall) {
+                            // Only resume if not already playing
+                            if (!player.isPlaying) {
+                                player.play()
+                                Log.d(TAG, "Auto-resumed playback after call")
+                            }
+                            wasPlayingBeforeCall = false
+                        }
                     }
                 }
             }
@@ -91,29 +108,78 @@ class PlaybackService : MediaLibraryService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        super.onStartCommand(intent, flags, startId)
-        // Ensure notification channel exists for Android 8+
+        // Create notification channel for Android 8+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 "media_playback",
                 "Media Playback",
                 android.app.NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(android.app.NotificationManager::class.java).createNotificationChannel(channel)
+            ).apply {
+                description = "Media playback controls"
+                setShowBadge(false)
+            }
+            getSystemService(android.app.NotificationManager::class.java)
+                .createNotificationChannel(channel)
         }
 
-        // Create a minimal notification for foreground service
-        val notificationId = 1
-        val notification = NotificationCompat.Builder(this, "media_playback")
-            .setContentTitle("Juke")
-            .setContentText("Playing music")
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        // Manually start foreground to prevent ForegroundServiceStartNotAllowedException
+        // when resuming playback from notification while app is in background
+        try {
+            val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                // Use platform MediaStyle for proper notification display
+                android.app.Notification.Builder(this, "media_playback")
+                    .setContentTitle("Juke")
+                    .setContentText("Ready to play")
+                    .setSmallIcon(android.R.drawable.ic_media_play)
+                    .setOngoing(true)
+                    .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+                    .apply {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            setStyle(android.app.Notification.MediaStyle()
+                                .setShowActionsInCompactView()
+                            )
+                        }
+                    }
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                android.app.Notification.Builder(this)
+                    .setContentTitle("Juke")
+                    .setContentText("Ready to play")
+                    .setSmallIcon(android.R.drawable.ic_media_play)
+                    .setOngoing(true)
+                    .setPriority(android.app.Notification.PRIORITY_LOW)
+                    .build()
+            }
 
-        startForeground(notificationId, notification)
-        return START_STICKY
+            // Start foreground with proper service type for Android 14+
+            if (Build.VERSION.SDK_INT >= 34) { // Android 14+
+                startForeground(
+                    1,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(1, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground service: ${e.message}", e)
+            // Handle Android 12+ background restrictions
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e is android.app.ForegroundServiceStartNotAllowedException
+            ) {
+                Log.w(TAG, "Cannot start foreground service from background")
+                return START_NOT_STICKY
+            }
+        }
+
+        // Let Media3 handle the rest (it will replace our basic notification with the proper one)
+        return try {
+            super.onStartCommand(intent, flags, startId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in super.onStartCommand: ${e.message}", e)
+            START_STICKY
+        }
     }
 
     /**

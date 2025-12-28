@@ -81,6 +81,7 @@ This release brings significant UI/UX improvements, enhanced queue management, a
 - **Duplicate Prevention**: The system now prevents duplicate songs from being added to the queue, whether through recommendations or manual user additions.
 - **"Move" Functionality**: Adding a song already in the queue now moves it to the new position instead of creating a duplicate.
 - **Queue Hydration Safety**: Fixed queue contamination issue where selecting a new song while recommendations were downloading would pollute the new queue with old recommendations.
+- **App Restart Duplication Fix**: Fixed issue where tracks from index 0 were duplicated and added below the last track when app was restarted. Removed duplicate `QueueManager.initializeQueue()` call in `MusicViewModel.loadRestoredQueue()`.
 - See [QUEUE_HYDRATION_FIX.md](QUEUE_HYDRATION_FIX.md) for technical details on the fix.
 
 ### Track Matching Accuracy
@@ -90,6 +91,11 @@ This release brings significant UI/UX improvements, enhanced queue management, a
 ### Equalizer Fix
 
 - **Sound Output Debugging**: Addressed issues where adjusting the equalizer in Audio Settings did not affect sound output. Ensured equalizer settings are correctly applied to the audio player's session.
+
+### Notification Visibility Fix (Samsung One UI 6.x+)
+
+- **Media Notification Fix**: Fixed notification not appearing on Samsung Galaxy S25 and Tab S11+ devices (Android 14/15). Uses platform MediaStyle notification formatting to ensure Samsung devices recognize it as a valid media player notification.
+- **Background Playback Crash Fix**: Fixed `ForegroundServiceStartNotAllowedException` crash when resuming playback from notification while app is in background. Added manual `startForeground()` call with proper Android 14+ service type (`FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK`).
 
 ### Navigation & State Fixes
 
