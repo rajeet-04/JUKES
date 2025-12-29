@@ -12,8 +12,10 @@ import kotlinx.coroutines.withContext
 object UpdateManager {
     private const val REPO_OWNER = "rajeet-04"
     private const val REPO_NAME = "JUKES"
+
     // Use /releases (list) instead of /releases/latest to see pre-releases
-    private const val GITHUB_API_URL = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases"
+    private const val GITHUB_API_URL =
+        "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases"
 
     suspend fun checkForUpdates(): GithubRelease? = withContext(Dispatchers.IO) {
         try {
@@ -25,7 +27,7 @@ object UpdateManager {
 
             // The API usually returns sorted by date, but we take the first one as 'latest'
             val latestRelease = releases.first()
-            
+
             // Clean up version strings (remove 'v' prefix)
             val currentVersion = BuildConfig.VERSION_NAME // e.g., "1.0.1-beta"
             val latestVersionTag = latestRelease.tagName.removePrefix("v") // e.g., "1.0.2"
@@ -40,7 +42,7 @@ object UpdateManager {
     }
 
     /**
-     * Compares two version strings. 
+     * Compares two version strings.
      * Returns true if [remote] is newer than [current].
      * Handles standard SemVer (1.0.0 vs 1.0.1) and basic suffixes.
      */
@@ -68,8 +70,8 @@ object UpdateManager {
         val remoteIsBeta = remote.contains("beta", true) || remote.contains("alpha", true)
 
         if (currIsBeta && !remoteIsBeta) return true // Upgrade from beta to stable
-        
+
         // If both are beta or both stable, and numbers are equal, assume same version (false)
-        return false 
+        return false
     }
 }

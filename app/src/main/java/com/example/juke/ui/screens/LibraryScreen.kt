@@ -531,10 +531,10 @@ fun LibraryScreen(
                     }
 
                     // Show downloaded tracks
-                    items(
+                    itemsIndexed(
                         items = uiState.tracks,
-                        key = { track -> track.uuid }
-                    ) { track ->
+                        key = { index, track -> "${track.uuid}_$index" }
+                    ) { index, track ->
                         SwipeToAddNextContainer(
                             onAddNext = { musicViewModel.addNext(track) },
                             onDelete = { libraryViewModel.deleteTrack(track.uuid) }

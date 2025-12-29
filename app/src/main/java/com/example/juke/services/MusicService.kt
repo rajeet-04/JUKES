@@ -195,6 +195,9 @@ class MusicService(private val context: Context) {
 
     suspend fun deleteTrackAndFiles(track: Track) {
         try {
+            // Get playlists that contain this track before deleting
+            val playlistsToUpdate = database.playlistDao().getPlaylistsForTrack(track.uuid).map { it.id }
+            
             track.localUri?.let { uri ->
                 File(uri).delete()
             }
@@ -204,6 +207,13 @@ class MusicService(private val context: Context) {
             }
             
             trackDao.deleteTrack(track.uuid)
+            
+            // Update track counts for affected playlists
+            playlistsToUpdate.forEach { playlistId ->
+                val newCount = database.playlistDao().getPlaylistTrackCount(playlistId)
+                database.playlistDao().updatePlaylistTrackCount(playlistId, newCount)
+                Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
+            }
             
             Log.d(TAG, "Deleted track: ${track.title}")
         } catch (e: Exception) {

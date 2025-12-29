@@ -50,6 +50,8 @@ import java.util.Date
 import java.util.Locale
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import android.os.Handler
+import android.os.Looper
 
 /**
  * Media Playback Service using Media3 (ExoPlayer) with Android Auto support.
@@ -66,6 +68,8 @@ class PlaybackService : MediaLibraryService() {
     private var wasPlayingBeforeCall = false
     private var wasPlayingBeforeFocusLoss = false
     private lateinit var audioManager: android.media.AudioManager
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var resumeRunnable: Runnable? = null
 
     // 1. Define the Receiver
     private val callStateReceiver = object : BroadcastReceiver() {
@@ -94,13 +98,24 @@ class PlaybackService : MediaLibraryService() {
                     }
                     android.telephony.TelephonyManager.EXTRA_STATE_IDLE -> {
                         // Call ended: Auto resume if we were playing before
+                        // IMPORTANT: Post the resume with a delay to allow the app to come to foreground
+                        // This prevents ForegroundServiceStartNotAllowedException when Media3 tries to update the notification
                         if (wasPlayingBeforeCall) {
-                            // Only resume if not already playing
-                            if (!player.isPlaying) {
-                                player.play()
-                                Log.d(TAG, "Auto-resumed playback after call")
-                            }
                             wasPlayingBeforeCall = false
+                            // Remove any pending resume
+                            resumeRunnable?.let { mainHandler.removeCallbacks(it) }
+                            // Post resume with 500ms delay to ensure app is in foreground
+                            resumeRunnable = Runnable {
+                                if (!player.isPlaying) {
+                                    try {
+                                        player.play()
+                                        Log.d(TAG, "Auto-resumed playback after call (delayed)")
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Failed to resume after call: ${e.message}", e)
+                                    }
+                                }
+                            }
+                            mainHandler.postDelayed(resumeRunnable!!, 500)
                         }
                     }
                 }
@@ -137,9 +152,20 @@ class PlaybackService : MediaLibraryService() {
             }
             android.media.AudioManager.AUDIOFOCUS_GAIN -> {
                 // Regained focus - resume if we were playing before
+                // Post with a small delay to avoid conflicts with call state handling
                 if (wasPlayingBeforeFocusLoss && !wasPlayingBeforeCall) {
-                    player.play()
-                    Log.d(TAG, "Audio focus regained - resumed")
+                    resumeRunnable?.let { mainHandler.removeCallbacks(it) }
+                    resumeRunnable = Runnable {
+                        try {
+                            if (!player.isPlaying) {
+                                player.play()
+                                Log.d(TAG, "Audio focus regained - resumed (delayed)")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to resume on audio focus gain: ${e.message}", e)
+                        }
+                    }
+                    mainHandler.postDelayed(resumeRunnable!!, 100)
                 }
                 wasPlayingBeforeFocusLoss = false
             }
@@ -149,54 +175,69 @@ class PlaybackService : MediaLibraryService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Manually start foreground to prevent ForegroundServiceStartNotAllowedException
-        // when resuming playback from notification while app is in background
-        try {
-            val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                // Use platform MediaStyle for proper notification display
-                android.app.Notification.Builder(this, "media_playback")
-                    .setContentTitle("Juke")
-                    .setContentText("Ready to play")
-                    .setSmallIcon(android.R.drawable.ic_media_play)
-                    .setOngoing(true)
-                    .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
-                    .apply {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            setStyle(android.app.Notification.MediaStyle()
-                                .setShowActionsInCompactView()
-                            )
-                        }
-                    }
-                    .build()
-            } else {
-                @Suppress("DEPRECATION")
-                android.app.Notification.Builder(this)
-                    .setContentTitle("Juke")
-                    .setContentText("Ready to play")
-                    .setSmallIcon(android.R.drawable.ic_media_play)
-                    .setOngoing(true)
-                    .setPriority(android.app.Notification.PRIORITY_LOW)
-                    .build()
+        // Fix: Check if app is in background before attempting to start foreground service
+        // This prevents ForegroundServiceStartNotAllowedException on Android 12+
+        var isAppInForeground = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val currentState = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                isAppInForeground = currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                if (!isAppInForeground) {
+                     Log.w(TAG, "App is in background, suppressing initial startForeground to avoid crash")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to check app lifecycle state: ${e.message}")
             }
+        }
 
-            // Start foreground with proper service type for Android 14+
-            if (Build.VERSION.SDK_INT >= 34) { // Android 14+
-                startForeground(
-                    1,
-                    notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                )
-            } else {
-                startForeground(1, notification)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start foreground service: ${e.message}", e)
-            // Handle Android 12+ background restrictions
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                e is android.app.ForegroundServiceStartNotAllowedException
-            ) {
-                Log.w(TAG, "Cannot start foreground service from background")
-                return START_NOT_STICKY
+        if (isAppInForeground) {
+            try {
+                val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    // Use platform MediaStyle for proper notification display
+                    android.app.Notification.Builder(this, "media_playback")
+                        .setContentTitle("Juke")
+                        .setContentText("Ready to play")
+                        .setSmallIcon(android.R.drawable.ic_media_play)
+                        .setOngoing(true)
+                        .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+                        .apply {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                setStyle(android.app.Notification.MediaStyle()
+                                    .setShowActionsInCompactView()
+                                )
+                            }
+                        }
+                        .build()
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.app.Notification.Builder(this)
+                        .setContentTitle("Juke")
+                        .setContentText("Ready to play")
+                        .setSmallIcon(android.R.drawable.ic_media_play)
+                        .setOngoing(true)
+                        .setPriority(android.app.Notification.PRIORITY_LOW)
+                        .build()
+                }
+
+                // Start foreground with proper service type for Android 14+
+                if (Build.VERSION.SDK_INT >= 34) { // Android 14+
+                    startForeground(
+                        1,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                } else {
+                    startForeground(1, notification)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start foreground service: ${e.message}", e)
+                // Handle Android 12+ background restrictions
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    e is android.app.ForegroundServiceStartNotAllowedException
+                ) {
+                    Log.w(TAG, "Cannot start foreground service from background")
+                    return START_NOT_STICKY
+                }
             }
         }
 
@@ -433,8 +474,43 @@ class PlaybackService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         return mediaSession
     }
+
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        // On Android 12+ (API 31), starting a foreground service from the background is restricted
+        // and throws ForegroundServiceStartNotAllowedException.
+        if (startInForegroundRequired && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            try {
+                // Check if the app is effectively in the background
+                val currentState = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                val isAppInForeground = currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                
+                if (!isAppInForeground) {
+                    Log.w(TAG, "App is in background, skipping notification update to avoid ForegroundServiceStartNotAllowedException")
+                    // CRITICAL: Do NOT call super.onUpdateNotification. 
+                    // Media3's default implementation will try to start the service in foreground even if we pass false,
+                    // or it uses startForegroundService which crashes.
+                    // By returning here, we suppress the crash at the cost of not updating the notification 
+                    // until the app is foregrounded again.
+                    return
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to check app lifecycle state: ${e.message}")
+            }
+        }
+
+        try {
+            super.onUpdateNotification(session, startInForegroundRequired)
+        } catch (e: Exception) {
+            // Catch synchronous failures as a fallback
+            Log.w(TAG, "Failed to update notification/start foreground: ${e.message}")
+        }
+    }
     
     override fun onDestroy() {
+        // Clean up pending resume operations
+        resumeRunnable?.let { mainHandler.removeCallbacks(it) }
+        resumeRunnable = null
+        
         mediaSession?.run {
             player.release()
             release()
