@@ -20,6 +20,7 @@ import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
@@ -148,20 +149,6 @@ class PlaybackService : MediaLibraryService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Create notification channel for Android 8+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "media_playback",
-                "Media Playback",
-                android.app.NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Media playback controls"
-                setShowBadge(false)
-            }
-            getSystemService(android.app.NotificationManager::class.java)
-                .createNotificationChannel(channel)
-        }
-
         // Manually start foreground to prevent ForegroundServiceStartNotAllowedException
         // when resuming playback from notification while app is in background
         try {
@@ -327,6 +314,29 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        
+        // Create notification channel for Android 8+
+        // IMPORTANT: Must be created before Media3 initializes to avoid notification conflicts
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "media_playback",
+                "Media Playback",
+                android.app.NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Media playback controls"
+                setShowBadge(false)
+            }
+            getSystemService(android.app.NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
+        
+        // Configure Media3 to use the same Notification ID and Channel
+        // This prevents notification conflicts on Samsung and other devices
+        val notificationProvider = DefaultMediaNotificationProvider.Builder(applicationContext)
+            .setNotificationId(1) // IMPORTANT: Must match the ID in onStartCommand
+            .setChannelId("media_playback")
+            .build()
+        setMediaNotificationProvider(notificationProvider)
         
         database = MusicDatabase.getDatabase(applicationContext)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
