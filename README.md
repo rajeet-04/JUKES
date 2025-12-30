@@ -6,7 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
-[![Version](https://img.shields.io/badge/Version-1.0.0-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/Version-1.0.3--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -23,23 +23,24 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 ## 📦 Latest Release
 
-**JUKE v1.0.0** is now available! 🎉
+**JUKE v1.0.3-beta** is now available! 🎉
 
-### What's New in v1.0.0
-- ✅ Complete Spotify integration with search and metadata
-- ✅ Smart recommendation system using YouTube Music
-- ✅ Playlist import with real-time progress tracking
-- ✅ Offline playback with local storage
-- ✅ Material Design 3 UI with modern interface
-- ✅ Synced lyrics support
-- ✅ Queue management with swipe gestures
-- ✅ Background playback and notification controls
+### What's New in v1.0.3-beta
 
-[📥 Download v1.0.0](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0) | [📋 Release Notes](RELEASE_NOTES.md)
+- ✅ Multi-selection bulk delete with batched database operations
+- ✅ Enhanced haptic feedback for selection and destructive actions
+- ✅ Extended delete undo window to 5 seconds
+- ✅ Spotify navigation (clickable artists, Go to Album, Share)
+- ✅ Fixed Samsung notification visibility
+- ✅ App stops playback when swiped from recents
+- ✅ Critical crash fixes (CursorWindow, LazyColumn, background resume)
+
+[📥 Download v1.0.3-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta) | [📋 Release Notes](RELEASE_NOTES.md)
 
 ## ✨ Features
 
 ### 🎵 Core Features
+
 - **Spotify Integration**: Search and browse millions of tracks, artists, albums, and playlists
 - **Smart Downloads**: Automatically download tracks with album art, lyrics, and metadata
 - **Playlist Import**: Import entire Spotify playlists with real-time progress tracking
@@ -47,12 +48,14 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - **Synced Lyrics**: Display time-synced lyrics during playback (when available)
 
 ### 🎯 Smart Recommendations
+
 - **AI-Powered Queue**: Automatically generates similar song recommendations using YouTube Music's algorithm
 - **Seamless Playback**: Pre-downloads upcoming tracks for uninterrupted listening
 - **Infinite Radio**: Never-ending music stream based on your current track
 - **High-Quality Matches**: Validates recommendations against Spotify for accuracy
 
 ### 🎨 User Interface
+
 - **Material Design 3**: Modern, beautiful UI following Google's latest design guidelines
 - **Dark Theme**: Eye-friendly dark mode for comfortable viewing
 - **Swipe Gestures**: Queue management with intuitive swipe-to-add-next functionality
@@ -60,6 +63,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - **Full-Screen Player**: Immersive player with lyrics, queue management, and album art
 
 ### 📚 Library Management
+
 - **All Tracks View**: Browse all downloaded music in one place
 - **Favorites**: Mark and filter your favorite songs
 - **Playlist Organization**: View imported playlists as separate collections
@@ -67,6 +71,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - **Most Played**: Discover your top tracks
 
 ### 🔍 Search & Discovery
+
 - **Multi-Format Search**: Search by track name, artist, album, or URL
 - **URL Support**: Direct Spotify URL/URI parsing for tracks, albums, artists, and playlists
 - **Artist Deep Dive**: View artist details, top tracks, and full discography
@@ -74,6 +79,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - **Playlist Preview**: View playlist details before importing
 
 ### 🎛️ Playback Controls
+
 - **Queue Management**: Drag-to-reorder, swipe-to-delete queue items
 - **Add Next**: Smart queue insertion for up-next playback
 - **Shuffle & Repeat**: Standard playback modes
@@ -105,6 +111,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 ## 🚀 Installation
 
 ### Prerequisites
+
 - Android Studio Hedgehog (2023.1.1) or later
 - Android SDK 26 or higher
 - Spotify Developer Account (for API credentials)
@@ -112,15 +119,16 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 ### Setup Instructions
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/rajeet-04/JUKES.git
    cd JUKES
    ```
 
 2. **Download from Releases** (Recommended for end users)
-   
-   **Latest Release: [v1.0.0](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)**
-   
+
+   **Latest Release: [v1.0.3-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta)**
+
    - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
    - Install the APK on your Android device
    - Grant necessary permissions when prompted
@@ -130,20 +138,23 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
    - Create a new app
    - Copy your Client ID and Client Secret
    - Create `local.properties` in the project root:
+
      ```properties
      sdk.dir=/path/to/android/sdk
      SPOTIFY_CLIENT_ID=your_client_id_here
      SPOTIFY_CLIENT_SECRET=your_client_secret_here
      ```
-   
+
    > 📖 For detailed Spotify setup instructions, see [SPOTIFY_SETUP.md](SPOTIFY_SETUP.md)
 
-3. **Build the project**
+4. **Build the project**
+
    ```bash
    ./gradlew assembleDebug
    ```
 
-4. **Install on device/emulator**
+5. **Install on device/emulator**
+
    ```bash
    ./gradlew installDebug
    ```
@@ -153,17 +164,20 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 ### Tech Stack
 
 **UI Layer**
+
 - **Jetpack Compose**: Declarative UI framework
 - **Material Design 3**: Modern design components
 - **Navigation Compose**: Type-safe navigation
 - **Coil**: Image loading and caching
 
 **Data Layer**
+
 - **Room Database**: Local SQLite database with Flow-based reactive queries
 - **Kotlin Coroutines**: Asynchronous programming
 - **StateFlow**: Reactive state management
 
 **Network Layer**
+
 - **Ktor Client**: HTTP client for API calls
 - **Kotlinx Serialization**: JSON parsing
 - **Spotify Web API**: Music metadata and search
@@ -172,6 +186,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - **LRCLib API**: Lyrics fetching
 
 **Media Playback**
+
 - **Media3 ExoPlayer**: Audio playback engine
 - **MediaSession**: System media controls integration
 - **Notification Controls**: Background playback support
@@ -328,21 +343,25 @@ implementation("androidx.media3:media3-session:1.2.0")
 ## 📝 API Usage
 
 ### Spotify Web API
+
 - **Authentication**: Client Credentials Flow
 - **Endpoints**: Search, track details, artist info, album tracks, playlist metadata
 - **Rate Limits**: 180 requests/minute (normal tier)
 
 ### YouTube Music API
+
 - **Purpose**: Music recommendations and radio generation
 - **Method**: Unofficial API via HTTP POST
 - **Data**: Track titles, artists, video IDs
 
 ### Spotdown API
+
 - **Purpose**: MP3 file downloads
 - **Cache**: Server-side caching for faster downloads
 - **Format**: High-quality MP3 audio
 
 ### LRCLib API
+
 - **Purpose**: Synced and plain lyrics
 - **Matching**: By title, artist, album, and duration
 - **Format**: LRC format for synced lyrics
@@ -375,20 +394,24 @@ This project follows [Kotlin Coding Conventions](https://kotlinlang.org/docs/cod
 ### Common Issues
 
 **"Spotify credentials not configured"**
+
 - Ensure `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are in `local.properties`
 - Rebuild the project after adding credentials
 
 **No search results**
+
 - Check internet connection
 - Verify Spotify credentials are correct
 - Try different search terms
 
 **Download failures**
+
 - Check available storage space
 - Verify internet connection stability
 - Check Spotdown API status
 
 **Playback issues**
+
 - Ensure tracks are fully downloaded
 - Check file permissions
 - Verify ExoPlayer initialization
@@ -438,6 +461,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY RASH**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v1.0.0-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.0)
+[![Release](https://img.shields.io/badge/Release-v1.0.3--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta)
 
 </div>

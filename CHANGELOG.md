@@ -6,27 +6,31 @@
 
 ### Added
 
-- **Playlist Deletion**: Added option to delete playlists via a context menu on playlist chips
-- **Undo Delete**: Added a 3-second undo window for track deletion with a circular countdown timer and refined UI
-- **Robust Artist Matching**: Improved duplicate detection for playlist imports and smart downloads
-  - Handles multiple artists (comma, &, feat)
-  - Ignores artist order and case variations to prevent re-downloads
-- **Library Screen Rework**: New UI layout with 70% search field and 10% sort button in a single row
-- **Sort Options**: Added sorting by Recently Added (default), Title, Artist, and Last Played
-- **Sort Bottom Sheet**: Modal sheet to select sorting options with visual feedback
-- **Shuffle & Play Controls**: Added shuffle toggle and play button to Library Screen header
-  - Shuffle button shows active state with primary color
-  - Play button plays all visible/filtered tracks
-  - Shuffle mode shuffles queue before playback
-- **Tap-to-Seek**: Added tap gesture to seek bar for instant position changes
-- **Audio Focus Handling**: Music now pauses for other apps (YouTube, notifications) and auto-resumes when they stop
-  - Preserves manual playback control during phone calls
+- **Multi-Selection Bulk Delete**: Long-press any track to enter selection mode; features "Select All", batched deletion, and haptic feedback.
+- **Enhanced Haptics**: Integrated tactile feedback for track selection, long-press gestures, and destructive confirmations.
+- **Undo Timeout Update**: Increased deletion undo window from 3 seconds to 5 seconds for better recoverability.
+- **Service Termination Lifecycle**: Application now explicitly stops playback and terminates background service when swiped away from recents.
+- **Spotify Navigation Integration**:
+  - Clickable artist names in Player Screen with a selection dialog for multi-artist tracks.
+  - "Go to Album" and "Share Track" options added to the player context menu.
+- **AI & OCR Modules**:
+  - Integrated OpenRouter Gemma 3 model for image processing.
+  - Local Image-to-Text extraction using Ollama and DeepSeek model.
+  - On-device offline OCR using Google ML Kit with CameraX and Text-to-Speech support.
+- **Playlist Deletion**: Added option to delete playlists via a context menu on playlist chips.
+- **Robust Artist Matching**: Improved duplicate detection for playlist imports and smart downloads (handles multi-artists/case variations).
+- **Library Screen Rework**: New UI layout with 70% search field and 10% sort button; includes persistent sort order and shuffle/play controls.
+- **Tap-to-Seek**: Added tap gesture to seek bar for instant position changes.
+- **Audio Focus Handling**: Music now pauses for other apps and auto-resumes correctly.
 
 ### Fixed
 
-- **Library UI**: Fixed Sort button height alignment with search field
-- Sort order now persists after playing tracks (no longer resets to Recently Played)
-- Queue respects shuffle state - shuffled tracks are added in random order when shuffle is enabled
+- **Samsung Media Notification Sync**: Fixed issue on Samsung devices where playback controls disappeared. Synchronized Notification IDs between manual `startForeground` and Media3 `DefaultMediaNotificationProvider` (ID 1).
+- **Playlist Sync**: Fixed `track_count` desynchronization when tracks are deleted from the library.
+- **UI Crash (Duplicate Keys)**: Fixed `IllegalArgumentException` in playlist `LazyColumn` by implementing a unique key strategy for duplicate tracks.
+- **Background Resume Crash**: Resolved `ForegroundServiceStartNotAllowedException` when resuming playback from background on Android 12+.
+- **Library UI**: Fixed Sort button height alignment with search field.
+- **Queue Shuffle Logic**: Queue now correctly respects shuffle state when adding tracks.
 
 ### Performance & Build
 
