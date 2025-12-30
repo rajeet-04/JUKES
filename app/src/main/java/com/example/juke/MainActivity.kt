@@ -28,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import com.example.juke.models.GithubRelease
 
@@ -118,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 val searchViewModel: SearchViewModel = viewModel()
                 val playlistDetailViewModel: PlaylistDetailViewModel = viewModel()
                 val albumDetailViewModel: AlbumDetailViewModel = viewModel()
+                val context = LocalContext.current
                 var showPlayerModal by remember { mutableStateOf(false) }
                 var searchResetTrigger by remember { mutableStateOf(0) }
 
@@ -386,9 +388,28 @@ class MainActivity : ComponentActivity() {
                 // Player Modal
                 if (showPlayerModal) {
                     PlayerScreen(
-                        musicViewModel = musicViewModel,
-                        onDismiss = { showPlayerModal = false }
-                    )
+                    musicViewModel = musicViewModel,
+                    onDismiss = { showPlayerModal = false },
+                    onNavigateToArtist = { artistId ->
+                        showPlayerModal = false
+                        searchViewModel.loadArtistDetailsById(artistId)
+                        navController.navigate("artist/$artistId")
+                    },
+                    onNavigateToAlbum = { albumId ->
+                        showPlayerModal = false
+                        albumDetailViewModel.loadAlbumDetailsById(albumId)
+                        navController.navigate("album/$albumId")
+                    },
+                    onShareTrack = { spotifyId ->
+                        val sendIntent: Intent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, "https://open.spotify.com/track/$spotifyId")
+                            type = "text/plain"
+                        }
+                        val shareIntent = Intent.createChooser(sendIntent, null)
+                        context.startActivity(shareIntent)
+                    }
+                )
                 }
             }
         }

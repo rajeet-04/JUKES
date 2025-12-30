@@ -19,7 +19,10 @@ data class Track(
     val isFavourite: Boolean = false,
     val playCount: Int = 0,
     val lastPlayedAt: String? = null,
-    val downloadedAt: Long? = null
+    val downloadedAt: Long? = null,
+    val spotifyId: String? = null,
+    val albumSpotifyId: String? = null,
+    val artistSpotifyIds: List<String>? = null
 )
 
 /**
@@ -33,7 +36,10 @@ data class SpotdownSong(
     val thumbnail: String,
     val url: String,
     val duration: String,
-    val cached: Boolean = false
+    val cached: Boolean = false,
+    val spotifyId: String? = null,
+    val albumSpotifyId: String? = null,
+    val artistSpotifyIds: List<String>? = null
 )
 
 /**

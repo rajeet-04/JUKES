@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,11 +34,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,7 +90,10 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
 @Composable
 fun PlayerScreen(
     musicViewModel: MusicViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onNavigateToArtist: (String) -> Unit,
+    onNavigateToAlbum: (String) -> Unit,
+    onShareTrack: (String) -> Unit
 ) {
     // Intercept back gesture/button to dismiss instead of exiting app
     BackHandler(onBack = onDismiss)
@@ -97,6 +103,7 @@ fun PlayerScreen(
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showArtistSelectionSheet by remember { mutableStateOf(false) }
     val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
     
     val configuration = LocalConfiguration.current
@@ -146,7 +153,11 @@ fun PlayerScreen(
                     onDismiss = onDismiss,
                     onShowQueue = { showQueue = true },
                     onShowSleepTimer = { showSleepTimerDialog = true },
-                    musicViewModel = musicViewModel
+                    onShowArtistSelection = { showArtistSelectionSheet = true },
+                    musicViewModel = musicViewModel,
+                    onNavigateToArtist = onNavigateToArtist,
+                    onNavigateToAlbum = onNavigateToAlbum,
+                    onShareTrack = onShareTrack
                 )
             } else {
                 PortraitPlayer(
@@ -158,8 +169,12 @@ fun PlayerScreen(
                     onDismiss = onDismiss,
                     onShowQueue = { showQueue = true },
                     onShowSleepTimer = { showSleepTimerDialog = true },
+                    onShowArtistSelection = { showArtistSelectionSheet = true },
                     musicViewModel = musicViewModel,
-                    isTablet = isTablet
+                    isTablet = isTablet,
+                    onNavigateToArtist = onNavigateToArtist,
+                    onNavigateToAlbum = onNavigateToAlbum,
+                    onShareTrack = onShareTrack
                 )
             }
         }
@@ -178,6 +193,7 @@ fun PlayerScreen(
             dragHandle = null // Remove drag handle since we disabled dragging
         ) {
             QueueBottomSheetContent(
+
                 currentTrack = currentTrack,
                 queue = uiState.queue,
                 queueIndex = uiState.queueIndex,
@@ -187,6 +203,51 @@ fun PlayerScreen(
                 onRemoveTrack = { trackId -> musicViewModel.removeFromQueue(trackId) },
                 onPlayTrack = { track -> musicViewModel.playTrackFromQueue(track) }
             )
+        }
+    }
+
+    // Artist Selection Bottom Sheet
+    if (showArtistSelectionSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showArtistSelectionSheet = false },
+            sheetState = rememberModalBottomSheetState(),
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Select Artist",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
+                )
+
+                val artistNames = remember(currentTrack.artist) { currentTrack.artist.split(", ").map { it.trim() } }
+                val ids = currentTrack.artistSpotifyIds ?: emptyList()
+                
+                ids.forEachIndexed { index, id ->
+                    val name = artistNames.getOrElse(index) { "Artist ${index + 1}" }
+                    ListItem(
+                        headlineContent = { Text(name) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showArtistSelectionSheet = false
+                                onNavigateToArtist(id)
+                            }
+                    )
+                }
+                
+                if (ids.isEmpty()) {
+                     ListItem(
+                        headlineContent = { Text(currentTrack.artist) },
+                         modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
     }
     
@@ -223,6 +284,8 @@ private fun QueueBottomSheetContent(
     onRemoveTrack: (trackId: String) -> Unit,
     onPlayTrack: (track: com.example.juke.models.Track) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -367,6 +430,7 @@ private fun QueueBottomSheetContent(
                         confirmValueChange = { dismissValue ->
                             // Only allow dismiss when not dragging
                             if (!isDragging && dismissValue == SwipeToDismissBoxValue.EndToStart) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onRemoveTrack(track.uuid)
                                 true
                             } else {
@@ -494,6 +558,7 @@ private fun QueueBottomSheetContent(
                                             if (!uiState.isQueueOperationInProgress) {
                                                 detectDragGestures(
                                                     onDragStart = {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         dragOffset = 0f
                                                         isDragging = true
                                                     },
@@ -563,7 +628,11 @@ private fun TabletLandscapePlayer(
     onDismiss: () -> Unit,
     onShowQueue: () -> Unit,
     onShowSleepTimer: () -> Unit,
-    musicViewModel: MusicViewModel
+    musicViewModel: MusicViewModel,
+    onNavigateToArtist: (String) -> Unit,
+    onNavigateToAlbum: (String) -> Unit,
+    onShareTrack: (String) -> Unit,
+    onShowArtistSelection: () -> Unit
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -660,6 +729,16 @@ private fun TabletLandscapePlayer(
                                 onShowSleepTimer()
                             }
                         )
+                        
+                        if (currentTrack.albumSpotifyId != null) {
+                            DropdownMenuItem(
+                                text = { Text("Go to Album") },
+                                onClick = {
+                                    showMenu = false
+                                    onNavigateToAlbum(currentTrack.albumSpotifyId)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -680,13 +759,23 @@ private fun TabletLandscapePlayer(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
+                val artistNames = remember(currentTrack.artist) { currentTrack.artist.split(", ").map { it.trim() } }
                 Text(
                     text = currentTrack.artist,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee()
+                    modifier = Modifier.basicMarquee().clickable {
+                        val ids = currentTrack.artistSpotifyIds
+                        if (!ids.isNullOrEmpty()) {
+                            if (ids.size == 1) {
+                                onNavigateToArtist(ids[0])
+                            } else {
+                                onShowArtistSelection()
+                            }
+                        }
+                    }
                 )
                 
                 Spacer(modifier = Modifier.height(48.dp))
@@ -720,6 +809,15 @@ private fun TabletLandscapePlayer(
                             tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                         )
                     }
+                    if (currentTrack.spotifyId != null) {
+                        IconButton(onClick = { onShareTrack(currentTrack.spotifyId) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Share,
+                                contentDescription = "Share",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                     IconButton(onClick = onShowQueue) {
                         Icon(Icons.AutoMirrored.Filled.List, "Queue")
                     }
@@ -742,7 +840,11 @@ private fun PortraitPlayer(
     onShowQueue: () -> Unit,
     onShowSleepTimer: () -> Unit,
     musicViewModel: MusicViewModel,
-    isTablet: Boolean
+    isTablet: Boolean,
+    onNavigateToArtist: (String) -> Unit,
+    onNavigateToAlbum: (String) -> Unit,
+    onShareTrack: (String) -> Unit,
+    onShowArtistSelection: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -782,6 +884,16 @@ private fun PortraitPlayer(
                             onShowSleepTimer()
                         }
                     )
+                    
+                    if (currentTrack.albumSpotifyId != null) {
+                        DropdownMenuItem(
+                            text = { Text("Go to Album") },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToAlbum(currentTrack.albumSpotifyId)
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -855,13 +967,23 @@ private fun PortraitPlayer(
         
         Spacer(modifier = Modifier.height(8.dp))
         
+        val artistNames = remember(currentTrack.artist) { currentTrack.artist.split(", ").map { it.trim() } }
         Text(
             text = currentTrack.artist,
             style = if (isTablet) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             maxLines = 1,
-            modifier = Modifier.fillMaxWidth().basicMarquee()
+            modifier = Modifier.fillMaxWidth().basicMarquee().clickable {
+                val ids = currentTrack.artistSpotifyIds
+                if (!ids.isNullOrEmpty()) {
+                    if (ids.size == 1) {
+                        onNavigateToArtist(ids[0])
+                    } else {
+                        onShowArtistSelection()
+                    }
+                }
+            }
         )
         
         Spacer(modifier = Modifier.height(if (isTablet) 32.dp else 24.dp))
@@ -895,6 +1017,15 @@ private fun PortraitPlayer(
                     tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                 )
             }
+            if (currentTrack.spotifyId != null) {
+                IconButton(onClick = { onShareTrack(currentTrack.spotifyId) }) {
+                    Icon(
+                        imageVector = Icons.Filled.Share,
+                        contentDescription = "Share",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
             IconButton(onClick = onShowQueue) {
                 Icon(Icons.AutoMirrored.Filled.List, "Queue")
             }
@@ -912,6 +1043,7 @@ private fun CustomSeekBar(
     onProgressChange: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
     var isDragging by remember { mutableStateOf(false) }
 
     Box(
@@ -931,6 +1063,9 @@ private fun CustomSeekBar(
                     onDragEnd = { isDragging = false },
                     onHorizontalDrag = { change: androidx.compose.ui.input.pointer.PointerInputChange, _: Float ->
                         val newProgress = (change.position.x / size.width).coerceIn(0f, 1f)
+                        if (newProgress != progress) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
                         onProgressChange(newProgress)
                     }
                 )

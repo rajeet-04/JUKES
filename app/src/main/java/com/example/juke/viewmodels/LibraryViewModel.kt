@@ -33,7 +33,9 @@ data class LibraryUiState(
     val recommendationDownloads: List<DownloadInfo> = emptyList(),
     val sortOption: SortOption = SortOption.RECENTLY_ADDED,
     val showSortSheet: Boolean = false,
-    val pendingDeleteTrack: Track? = null
+    val pendingDeleteTrack: Track? = null,
+    val isSelectionMode: Boolean = false,
+    val selectedTrackUuids: Set<String> = emptySet()
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -188,7 +190,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 // Start timer
                 deletionJob?.cancel()
                 deletionJob = launch {
-                    kotlinx.coroutines.delay(3000) // 3 seconds wait
+                    kotlinx.coroutines.delay(5000) // 5 seconds wait
                     commitDelete()
                 }
             }
@@ -358,5 +360,74 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     
     suspend fun getPlaylistsForTrack(trackUuid: String): List<PlaylistEntity> {
         return playlistDao.getPlaylistsForTrack(trackUuid)
+    }
+    
+    // Selection Mode Logic
+    
+    fun toggleSelectionMode(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = enabled,
+            selectedTrackUuids = if (!enabled) emptySet() else _uiState.value.selectedTrackUuids
+        )
+    }
+    
+    fun toggleTrackSelection(trackUuid: String) {
+        val currentSelection = _uiState.value.selectedTrackUuids.toMutableSet()
+        if (currentSelection.contains(trackUuid)) {
+            currentSelection.remove(trackUuid)
+            // If last item deselected, exit selection mode
+            if (currentSelection.isEmpty()) {
+                toggleSelectionMode(false)
+            } else {
+                _uiState.value = _uiState.value.copy(selectedTrackUuids = currentSelection)
+            }
+        } else {
+            currentSelection.add(trackUuid)
+             // Enable selection mode if not already enabled (e.g. on long press first item)
+            val isModeEnabled = _uiState.value.isSelectionMode
+            _uiState.value = _uiState.value.copy(
+                selectedTrackUuids = currentSelection,
+                isSelectionMode = true
+            )
+        }
+    }
+    
+    fun clearSelection() {
+        toggleSelectionMode(false)
+    }
+    
+    fun selectAll() {
+        val allTrackIds = _uiState.value.tracks.map { it.uuid }.toSet()
+        _uiState.value = _uiState.value.copy(
+            selectedTrackUuids = allTrackIds,
+            isSelectionMode = true
+        )
+    }
+    
+    fun deleteSelectedTracks() {
+        val selectedIds = _uiState.value.selectedTrackUuids
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            // Find tracks to delete
+             val tracksToDelete = _uiState.value.tracks.filter { selectedIds.contains(it.uuid) }
+            
+             if (tracksToDelete.isNotEmpty()) {
+                 // Use batch delete to prevent CursorWindow errors from rapid individual updates
+                 musicService.deleteTracksAndFiles(tracksToDelete)
+             }
+             
+             // Clear selection and refresh
+             clearSelection()
+             
+            if (_uiState.value.selectedPlaylist != null) {
+                loadPlaylistTracks(_uiState.value.selectedPlaylist!!.id, silent = true)
+            } else {
+                // For main track list, the Flow will automatically update
+                // forcing a reload might be redundant or safe depending on implementation
+                // kept for consistency with original code
+                loadTracks(silent = true)
+            }
+        }
     }
 }

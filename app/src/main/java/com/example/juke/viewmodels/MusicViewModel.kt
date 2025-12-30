@@ -56,19 +56,20 @@ data class MusicUiState(
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     private val database = MusicDatabase.getDatabase(application)
     private val trackDao = database.trackDao()
     private val musicService = MusicService(application)
     val playbackManager = PlaybackManager(application)
     private val queueManager = QueueManager.getInstance(application)
-    
+
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
-    
+
     private var isProcessingQueue = false
-    private val pendingQueueOperations = java.util.Collections.synchronizedSet(mutableSetOf<String>())
-    
+    private val pendingQueueOperations =
+        java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     init {
         playbackManager.initialize()
 
@@ -76,7 +77,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             DatabaseMigrationHelper.fixDownloadTimestamps(application)
         }
-        
+
         // Observe restored state and update UI with saved queue
         viewModelScope.launch {
             playbackManager.hasRestoredState.collect { hasState ->
@@ -84,52 +85,58 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     Log.d("MusicViewModel", "Playback state restored, updating UI")
                     // Load the restored queue from PlaybackManager
                     loadRestoredQueue()
-                    
+
                     // No need to call checkAndFetchRecommendations() here
                     // PlaybackService.restorePlaybackState() already initialized QueueManager
                     // and it will auto-fetch recommendations if queue size <= 2
                 }
             }
         }
-        
+
         // Observe playback state changes coming from the MediaController (notifications/external)
         viewModelScope.launch {
             playbackManager.isPlayingFlow.collect { playing ->
                 _uiState.update { it.copy(isPlaying = playing) }
             }
         }
-        
+
         // Observe shuffle state changes
         viewModelScope.launch {
             playbackManager.isShuffleEnabledFlow.collect { shuffleEnabled ->
                 _uiState.update { it.copy(isShuffleEnabled = shuffleEnabled) }
             }
         }
-        
+
         // Observe current track changes from PlaybackManager
         viewModelScope.launch {
             playbackManager.currentTrackIdFlow.collect { trackId ->
                 trackId?.let { id ->
                     Log.d("MusicViewModel", "Current track changed to: $id")
-                    
+
                     // Find the track in the current queue
                     val currentQueue = _uiState.value.queue
                     val trackIndex = currentQueue.indexOfFirst { it.uuid == id }
-                    
+
                     if (trackIndex >= 0) {
                         val track = currentQueue[trackIndex]
-                        _uiState.update { 
+                        _uiState.update {
                             it.copy(
                                 currentTrack = track,
                                 queueIndex = trackIndex
                             )
                         }
-                        Log.d("MusicViewModel", "Updated UI state - Current track: ${track.title}, Index: $trackIndex")
-                        
+                        Log.d(
+                            "MusicViewModel",
+                            "Updated UI state - Current track: ${track.title}, Index: $trackIndex"
+                        )
+
                         // Check if we need more recommendations (queue getting low)
                         val remainingTracks = currentQueue.size - trackIndex - 1
                         if (remainingTracks <= 2) {
-                            Log.d("MusicViewModel", "Queue low, fetching recommendations for: ${track.title}")
+                            Log.d(
+                                "MusicViewModel",
+                                "Queue low, fetching recommendations for: ${track.title}"
+                            )
                             queueManager.fetchAndQueueRecommendations(track)
                         }
                     } else {
@@ -138,20 +145,26 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        
+
         // Observe recommendation queue changes
         viewModelScope.launch {
             queueManager.currentQueue.collect { recommendedTracks ->
-                Log.d("MusicViewModel", "QueueManager queue updated: ${recommendedTracks.size} tracks")
-                
+                Log.d(
+                    "MusicViewModel",
+                    "QueueManager queue updated: ${recommendedTracks.size} tracks"
+                )
+
                 // Add recommended tracks to the main queue if they're not already there
                 val currentQueue = _uiState.value.queue
-                
+
                 // If current queue is empty (e.g. app restart), sync with QueueManager but DON'T add to PlaybackManager
                 // because PlaybackManager/Restoration logic is what populated QueueManager in the first place.
                 if (currentQueue.isEmpty()) {
                     if (recommendedTracks.isNotEmpty()) {
-                        Log.d("MusicViewModel", "Syncing UI queue from QueueManager (Startup/Restoration)")
+                        Log.d(
+                            "MusicViewModel",
+                            "Syncing UI queue from QueueManager (Startup/Restoration)"
+                        )
                         _uiState.update { it.copy(queue = recommendedTracks) }
                     }
                     return@collect
@@ -160,33 +173,39 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val newTracks = recommendedTracks.filter { recommended ->
                     !currentQueue.any { existing -> existing.uuid == recommended.uuid }
                 }
-                
+
                 if (newTracks.isNotEmpty()) {
                     val updatedQueue = currentQueue + newTracks
                     _uiState.update { it.copy(queue = updatedQueue) }
-                    
+
                     // Add new tracks to the playback queue without interrupting current playback
                     playbackManager.addToQueue(newTracks)
-                    
-                    Log.d("MusicViewModel", "Added ${newTracks.size} recommended tracks to main queue. Total queue size: ${updatedQueue.size}")
+
+                    Log.d(
+                        "MusicViewModel",
+                        "Added ${newTracks.size} recommended tracks to main queue. Total queue size: ${updatedQueue.size}"
+                    )
                 } else {
                     Log.d("MusicViewModel", "No new tracks to add from recommendations")
                 }
             }
         }
-        
+
         // Observe downloading tracks from recommendations
         viewModelScope.launch {
             queueManager.downloadingTracks.collect { downloading ->
-                Log.d("MusicViewModel", "Recommendation downloads in progress: ${downloading.size} tracks")
+                Log.d(
+                    "MusicViewModel",
+                    "Recommendation downloads in progress: ${downloading.size} tracks"
+                )
             }
         }
     }
-    
+
     fun playTrack(track: Track) {
         viewModelScope.launch {
             // Set up the queue with the current track
-            _uiState.update { 
+            _uiState.update {
                 it.copy(
                     currentTrack = track,
                     queue = listOf(track), // Initialize queue with current track
@@ -195,10 +214,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     duration = track.durationSec.toLong() * 1000
                 )
             }
-            
+
             // Set the queue in the playback manager (starts playing automatically)
             playbackManager.setQueue(listOf(track), 0)
-            
+
             // Initialize recommendation queue for this track
             // This automatically cancels any pending recommendations from the previous song
             // and starts fetching fresh recommendations for the new track
@@ -206,24 +225,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             queueManager.initializeQueue(listOf(track))
         }
     }
-    
+
     fun playTrackFromQueue(track: Track) {
         viewModelScope.launch {
             val currentState = _uiState.value
             val queue = currentState.queue
-            
+
             // Find the track index in the current queue
             val trackIndex = queue.indexOfFirst { it.uuid == track.uuid }
             if (trackIndex == -1) {
                 Log.w("MusicViewModel", "Track ${track.title} not found in current queue")
                 return@launch
             }
-            
+
             // Seek to the track in the playback manager
             playbackManager.seekToIndex(trackIndex)
-            
+
             // Update UI state to reflect the new current track
-            _uiState.update { 
+            _uiState.update {
                 it.copy(
                     currentTrack = track,
                     queueIndex = trackIndex,
@@ -231,15 +250,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     duration = track.durationSec.toLong() * 1000
                 )
             }
-            
+
             Log.d("MusicViewModel", "Playing track from queue: ${track.title} at index $trackIndex")
         }
     }
-    
+
     fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
         viewModelScope.launch {
             playbackManager.setQueue(tracks, startIndex)
-            _uiState.update { 
+            _uiState.update {
                 it.copy(
                     queue = tracks,
                     queueIndex = startIndex,
@@ -247,23 +266,26 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     isPlaying = true
                 )
             }
-            
+
             // Initialize recommendation queue - check if we need more tracks
             if (tracks.size <= 2) {
                 val currentTrack = tracks.getOrNull(startIndex)
                 currentTrack?.let {
-                    Log.d("MusicViewModel", "Queue size ${tracks.size}, initializing recommendations for: ${it.title}")
+                    Log.d(
+                        "MusicViewModel",
+                        "Queue size ${tracks.size}, initializing recommendations for: ${it.title}"
+                    )
                     queueManager.initializeQueue(tracks)
                 }
             }
         }
     }
-    
+
     fun togglePlayPause() {
         playbackManager.togglePlayPause()
         // rely on playbackManager.isPlayingFlow to update UI via collector
     }
-    
+
     fun toggleShuffle() {
         playbackManager.toggleShuffle()
         // rely on playbackManager.isShuffleEnabledFlow to update UI via collector
@@ -286,27 +308,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     // Track current queue index - may need adjustment if we remove a track before it
                     var currentQueueIndex = currentState.queueIndex
-                    
+
                     // Check if track already exists in queue and remove it first (Move operation)
                     val existingIndex = currentQueue.indexOfFirst { it.uuid == track.uuid }
                     if (existingIndex != -1) {
-                        Log.d("MusicViewModel", "Track ${track.title} already in queue at index $existingIndex, removing to move it")
+                        Log.d(
+                            "MusicViewModel",
+                            "Track ${track.title} already in queue at index $existingIndex, removing to move it"
+                        )
                         playbackManager.removeFromQueue(track.uuid)
                         queueManager.removeFromQueue(track.uuid)
                         currentQueue.removeAt(existingIndex)
-                        
+
                         // Adjust the working queue index if the removed track was before current position
                         if (existingIndex < currentQueueIndex) {
                             currentQueueIndex -= 1
-                            Log.d("MusicViewModel", "Adjusted queue index from ${currentState.queueIndex} to $currentQueueIndex after removing track before current position")
+                            Log.d(
+                                "MusicViewModel",
+                                "Adjusted queue index from ${currentState.queueIndex} to $currentQueueIndex after removing track before current position"
+                            )
                         }
                     }
-                    
+
                     val insertIndex = (currentQueueIndex + 1)
                         .coerceAtMost(currentQueue.size)
                     currentQueue.add(insertIndex, track)
-                    
-                    Log.d("MusicViewModel", "Inserting track ${track.title} at index $insertIndex (currentQueueIndex=$currentQueueIndex, queue size=${currentQueue.size})")
+
+                    Log.d(
+                        "MusicViewModel",
+                        "Inserting track ${track.title} at index $insertIndex (currentQueueIndex=$currentQueueIndex, queue size=${currentQueue.size})"
+                    )
 
                     val inserted = playbackManager.addToQueueAt(track, insertIndex)
                     if (!inserted) {
@@ -392,22 +423,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    
+
     fun skipToNext() {
         playbackManager.skipToNext()
         // UI state will be updated automatically via currentTrackIdFlow
     }
-    
+
     fun skipToPrevious() {
         playbackManager.skipToPrevious()
         // UI state will be updated automatically via currentTrackIdFlow
     }
-    
+
     fun seekTo(positionMs: Long) {
         playbackManager.seekTo(positionMs)
         _uiState.update { it.copy(position = positionMs) }
     }
-    
+
     fun updateProgress() {
         val currentPos = playbackManager.getCurrentPosition()
         val durationMs = playbackManager.getDuration()
@@ -418,15 +449,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
-    
+
     suspend fun downloadAndPlay(song: SpotdownSong) {
         // Check if already exists
         val durationSec = SpotifyApi.parseDuration(song.duration)
         val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-        val existingTrack = candidates.find { 
-            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) 
+        val existingTrack = candidates.find {
+            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
         }
-        
+
         if (existingTrack != null && existingTrack.localUri != null) {
             // Already downloaded, play immediately
             playTrack(existingTrack.toTrack())
@@ -435,13 +466,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             addToDownloadQueue(song, shouldPlayAfterDownload = true)
         }
     }
-    
+
     suspend fun downloadSong(song: SpotdownSong): Track {
         // Check if already exists
         val durationSec = SpotifyApi.parseDuration(song.duration)
         val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-        val existingTrack = candidates.find { 
-            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) 
+        val existingTrack = candidates.find {
+            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
         }
 
         return if (existingTrack != null && existingTrack.localUri != null) {
@@ -452,28 +483,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             musicService.smartDownloadAndIndex(song)
         }
     }
-    
+
     fun addToDownloadQueue(song: SpotdownSong, shouldPlayAfterDownload: Boolean = false) {
         viewModelScope.launch {
             // Check if already in queue or downloading
             val currentState = _uiState.value
-            val alreadyQueued = currentState.downloadQueue.any { 
-                it.song.title == song.title && it.song.artist == song.artist 
+            val alreadyQueued = currentState.downloadQueue.any {
+                it.song.title == song.title && it.song.artist == song.artist
             }
             val currentlyDownloading = currentState.currentDownload?.let {
                 it.song.title == song.title && it.song.artist == song.artist
             } ?: false
-            
+
             if (alreadyQueued || currentlyDownloading) {
                 Log.d("MusicViewModel", "Song already in queue or downloading: ${song.title}")
                 return@launch
             }
-            
+
             // Check if already exists in database
             val durationSec = SpotifyApi.parseDuration(song.duration)
             val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-            val existingTrack = candidates.find { 
-                com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) 
+            val existingTrack = candidates.find {
+                com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
             }
             if (existingTrack != null && existingTrack.localUri != null) {
                 Log.d("MusicViewModel", "Song already downloaded: ${song.title}")
@@ -482,37 +513,40 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 return@launch
             }
-            
+
             val downloadItem = DownloadItem(
                 song = song,
                 status = DownloadStatus.QUEUED,
                 shouldPlayAfterDownload = shouldPlayAfterDownload
             )
-            
+
             _uiState.update { state ->
                 state.copy(
                     downloadQueue = state.downloadQueue + downloadItem
                 )
             }
-            
-            Log.d("MusicViewModel", "Added to queue: ${song.title} (Queue size: ${_uiState.value.downloadQueue.size})")
-            
+
+            Log.d(
+                "MusicViewModel",
+                "Added to queue: ${song.title} (Queue size: ${_uiState.value.downloadQueue.size})"
+            )
+
             processDownloadQueue()
         }
     }
-    
+
     private fun processDownloadQueue() {
         if (isProcessingQueue) {
             Log.d("MusicViewModel", "Already processing queue")
             return
         }
-        
+
         viewModelScope.launch {
             isProcessingQueue = true
-            
+
             while (_uiState.value.downloadQueue.isNotEmpty()) {
                 val nextItem = _uiState.value.downloadQueue.first()
-                
+
                 // Move from queue to current download
                 _uiState.update { state ->
                     state.copy(
@@ -520,54 +554,57 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         currentDownload = nextItem.copy(status = DownloadStatus.DOWNLOADING)
                     )
                 }
-                
+
                 // Add to QueueManager tracking
                 queueManager.addDownloadTracking(
                     nextItem.song.title,
                     nextItem.song.artist,
                     "manual"
                 )
-                
+
                 Log.d("MusicViewModel", "Starting download: ${nextItem.song.title}")
-                
+
                 try {
                     val track = musicService.smartDownloadAndIndex(nextItem.song)
-                    
+
                     // Remove from QueueManager tracking
                     queueManager.removeDownloadTracking(
                         nextItem.song.title,
                         nextItem.song.artist
                     )
-                    
+
                     // Download successful
                     _uiState.update { state ->
                         state.copy(
                             currentDownload = nextItem.copy(status = DownloadStatus.COMPLETED)
                         )
                     }
-                    
+
                     Log.d("MusicViewModel", "Download completed: ${nextItem.song.title}")
-                    
+
                     // Play if requested
                     if (nextItem.shouldPlayAfterDownload) {
                         playTrack(track)
                     }
-                    
+
                     // Clear current download after a brief delay
                     kotlinx.coroutines.delay(1000)
                     _uiState.update { state ->
                         state.copy(currentDownload = null)
                     }
-                    
+
                 } catch (e: Exception) {
-                    Log.e("MusicViewModel", "Download failed: ${nextItem.song.title} - ${e.message}")
-                    
+                    Log.e(
+                        "MusicViewModel",
+                        "Download failed: ${nextItem.song.title} - ${e.message}"
+                    )
+
                     // Remove from QueueManager tracking on error
                     queueManager.removeDownloadTracking(
                         nextItem.song.title,
                         nextItem.song.artist
                     )
-                    
+
                     // Mark as failed
                     _uiState.update { state ->
                         state.copy(
@@ -577,7 +614,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         )
                     }
-                    
+
                     // Clear failed download after delay
                     kotlinx.coroutines.delay(3000)
                     _uiState.update { state ->
@@ -585,12 +622,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-            
+
             isProcessingQueue = false
             Log.d("MusicViewModel", "Queue processing completed")
         }
     }
-    
+
     fun cancelDownload(downloadId: String) {
         _uiState.update { state ->
             state.copy(
@@ -598,7 +635,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
-    
+
     fun retryFailedDownload(downloadItem: DownloadItem) {
         viewModelScope.launch {
             // Reset the download item status and add back to queue
@@ -606,55 +643,55 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 status = DownloadStatus.QUEUED,
                 error = null
             )
-            
+
             _uiState.update { state ->
                 state.copy(
                     downloadQueue = listOf(resetItem) + state.downloadQueue
                 )
             }
-            
+
             Log.d("MusicViewModel", "Retrying failed download: ${downloadItem.song.title}")
-            
+
             // Process the queue to start the retry
             processDownloadQueue()
         }
     }
-    
+
     fun removeFromQueue(trackId: String) {
         viewModelScope.launch {
             // Set loading state
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
-            
+
             val currentState = _uiState.value
             val currentQueue = currentState.queue
             val currentIndex = currentState.queueIndex
-            
+
             // Find the track to remove
             val trackIndex = currentQueue.indexOfFirst { it.uuid == trackId }
             if (trackIndex == -1) {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
                 return@launch
             }
-            
+
             // Remove from playback queue first
             val playbackResult = playbackManager.removeFromQueue(trackId)
-            
+
             if (playbackResult) {
                 // Keep recommendation queue in sync so deleted tracks don't reappear
                 queueManager.removeFromQueue(trackId)
 
                 // Remove from UI queue
                 val newQueue = currentQueue.toMutableList().apply { removeAt(trackIndex) }
-                
+
                 // Calculate new queue index
                 val newQueueIndex = when {
                     trackIndex < currentIndex -> currentIndex - 1 // Track before current, shift index down
                     trackIndex == currentIndex -> currentIndex // Removing current track, keep same index (will be next track)
                     else -> currentIndex // Track after current, index unchanged
                 }.coerceIn(0, newQueue.size - 1)
-                
+
                 // Update UI state
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
                         queue = newQueue,
                         queueIndex = newQueueIndex,
@@ -662,7 +699,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         isQueueOperationInProgress = false
                     )
                 }
-                
+
                 Log.d("MusicViewModel", "Removed track $trackId from queue")
             } else {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
@@ -670,32 +707,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    
+
     fun moveInQueue(fromIndex: Int, toIndex: Int) {
         viewModelScope.launch {
             // Set loading state
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
-            
+
             val currentState = _uiState.value
             val currentQueue = currentState.queue
             val currentQueueIndex = currentState.queueIndex
-            
-            if (fromIndex < 0 || fromIndex >= currentQueue.size || 
-                toIndex < 0 || toIndex >= currentQueue.size) {
+
+            if (fromIndex < 0 || fromIndex >= currentQueue.size ||
+                toIndex < 0 || toIndex >= currentQueue.size
+            ) {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
                 return@launch
             }
-            
+
             // Move in playback queue first
             val playbackResult = playbackManager.moveInQueue(fromIndex, toIndex)
-            
+
             if (playbackResult) {
                 // Create new queue with item moved
                 val newQueue = currentQueue.toMutableList().apply {
                     val item = removeAt(fromIndex)
                     add(toIndex, item)
                 }
-                
+
                 // Calculate new queue index
                 var newQueueIndex = currentQueueIndex
                 if (fromIndex == currentQueueIndex) {
@@ -705,9 +743,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 } else if (currentQueueIndex in toIndex..<fromIndex) {
                     newQueueIndex = currentQueueIndex + 1
                 }
-                
+
                 // Update UI state
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
                         queue = newQueue,
                         queueIndex = newQueueIndex,
@@ -715,10 +753,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         isQueueOperationInProgress = false
                     )
                 }
-                
+
                 // Sync with QueueManager
                 queueManager.initializeQueue(newQueue)
-                
+
                 Log.d("MusicViewModel", "Moved track from index $fromIndex to $toIndex")
             } else {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
@@ -726,17 +764,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    
+
     override fun onCleared() {
         super.onCleared()
         playbackManager.release()
         queueManager.cleanup()
     }
-    
+
     fun toggleFavorite(track: Track) {
         viewModelScope.launch {
             trackDao.updateTrackFavourite(track.uuid, !track.isFavourite)
-            
+
             // Update UI state if it's the current track
             _uiState.update { state ->
                 if (state.currentTrack?.uuid == track.uuid) {
@@ -747,46 +785,46 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    
+
     // Sleep Timer
     val sleepTimerRemaining = playbackManager.sleepTimerRemaining
-    
+
     fun startSleepTimer(minutes: Int) {
         playbackManager.startSleepTimer(minutes)
     }
-    
+
     fun cancelSleepTimer() {
         playbackManager.cancelSleepTimer()
     }
-    
+
     // Equalizer
     val equalizerBands = playbackManager.audioEffectController.equalizerBands
     val isEqualizerEnabled = playbackManager.audioEffectController.isEqualizerEnabled
-    
+
     fun toggleEqualizer(enabled: Boolean) {
         playbackManager.audioEffectController.setEqualizerEnabled(enabled)
     }
-    
+
     fun setEqualizerBand(bandIndex: Int, level: Int) {
         playbackManager.audioEffectController.setEqualizerBandLevel(bandIndex, level)
     }
-    
+
     fun resetEqualizer() {
         playbackManager.audioEffectController.resetEqualizer()
     }
-    
+
     fun getEqualizerLevelRange(): Pair<Int, Int> {
         return playbackManager.audioEffectController.getEqualizerBandLevelRange()
     }
-    
+
     // Volume Booster
     val boosterLevel = playbackManager.audioEffectController.boosterLevel
     val isBoosterEnabled = playbackManager.audioEffectController.isBoosterEnabled
-    
+
     fun toggleVolumeBooster(enabled: Boolean) {
         playbackManager.audioEffectController.setBoosterEnabled(enabled)
     }
-    
+
     fun setVolumeBoosterLevel(level: Int) {
         playbackManager.audioEffectController.setBoosterLevel(level)
     }
@@ -797,16 +835,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleVolumeNormalization(enabled: Boolean) {
         playbackManager.audioEffectController.setNormalizationEnabled(enabled)
     }
-    
+
+    // Recommendation Settings
+    private val settingsPrefs = getApplication<Application>().getSharedPreferences(
+        "music_settings_prefs",
+        android.content.Context.MODE_PRIVATE
+    )
+
+    private val _recommendationCount = MutableStateFlow(settingsPrefs.getInt("recommendation_count", 5))
+    val recommendationCount: StateFlow<Int> = _recommendationCount.asStateFlow()
+
+    fun setRecommendationCount(count: Int) {
+        val clampedCount = count.coerceIn(3, 15)
+        _recommendationCount.value = clampedCount
+        settingsPrefs.edit().putInt("recommendation_count", clampedCount).apply()
+        Log.d("MusicViewModel", "Recommendation count set to $clampedCount")
+    }
+
     private suspend fun loadRestoredQueue() {
         try {
             // Get track IDs from SharedPreferences
-            val prefs = getApplication<Application>().getSharedPreferences("playback_state_prefs", android.content.Context.MODE_PRIVATE)
+            val prefs = getApplication<Application>().getSharedPreferences(
+                "playback_state_prefs",
+                android.content.Context.MODE_PRIVATE
+            )
             val trackIds = prefs.getString("queue_track_ids", "") ?: ""
             val savedIndex = prefs.getInt("queue_start_index", 0)
-            
+
             if (trackIds.isEmpty()) return
-            
+
             val ids = trackIds.split(",")
             val tracks = withContext(Dispatchers.IO) {
                 ids.mapNotNull { id ->
@@ -817,10 +874,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-            
+
             if (tracks.isNotEmpty()) {
                 val currentTrack = tracks.getOrNull(savedIndex)
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
                         queue = tracks,
                         queueIndex = savedIndex,
@@ -828,18 +885,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         duration = currentTrack?.durationSec?.toLong()?.times(1000) ?: 0L
                     )
                 }
-                
+
                 // DO NOT call queueManager.initializeQueue() here!
                 // PlaybackService.restorePlaybackState() already initialized QueueManager
                 // Calling it again causes duplicate tracks
-                
-                Log.d("MusicViewModel", "Restored queue with ${tracks.size} tracks, current index: $savedIndex")
+
+                Log.d(
+                    "MusicViewModel",
+                    "Restored queue with ${tracks.size} tracks, current index: $savedIndex"
+                )
             }
         } catch (e: Exception) {
             Log.e("MusicViewModel", "Failed to load restored queue: ${e.message}", e)
         }
     }
-    
+
     /**
      * Set queue from Spotify tracks (for Artist, Playlist screens)
      * Downloads the first track and queues the remaining tracks sequentially
@@ -848,26 +908,26 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return@launch
-                
+
                 // Download and play the first track
                 downloadAndPlay(
                     SpotifyApi.spotifyTrackToSong(spotifyTracks[startIndex])
                 )
-                
+
                 // Wait for the first track to start playing before queuing others
                 // This ensures proper queue order and avoids parallel download crashes
                 kotlinx.coroutines.delay(800)
-                
+
                 // Queue the remaining tracks sequentially - one at a time with proper delays
                 // This prevents download parallelization and maintains queue order
                 for (i in (startIndex + 1) until spotifyTracks.size) {
                     // Add delay to prevent overwhelming the download system
                     kotlinx.coroutines.delay(200)
-                    
+
                     // Queue each track individually to the QueueManager's normal flow
                     // The queueSpotifyTrackNext will add them to queue one by one
                     queueSpotifyTrackNext(spotifyTracks[i])
-                    
+
                     // Wait for the queue operation to complete before adding next
                     // The isQueueOperationInProgress flag ensures sequential queueing
                     while (_uiState.value.isQueueOperationInProgress) {
@@ -879,7 +939,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    
+
     /**
      * Set queue from Simplified tracks (for Album screen)
      * Downloads the first track and queues the remaining tracks sequentially
@@ -892,26 +952,26 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return@launch
-                
+
                 // Download and play the first track
                 downloadAndPlay(
                     SpotifyApi.simplifiedTrackToSong(simplifiedTracks[startIndex], album)
                 )
-                
+
                 // Wait for the first track to start playing before queuing others
                 // This ensures proper queue order and avoids parallel download crashes
                 kotlinx.coroutines.delay(800)
-                
+
                 // Queue the remaining tracks sequentially - one at a time with proper delays
                 // This prevents download parallelization and maintains queue order
                 for (i in (startIndex + 1) until simplifiedTracks.size) {
                     // Add delay to prevent overwhelming the download system
                     kotlinx.coroutines.delay(200)
-                    
+
                     // Queue each track individually to the QueueManager's normal flow
                     // The queueSimplifiedTrackNext will add them to queue one by one
                     queueSimplifiedTrackNext(simplifiedTracks[i], album)
-                    
+
                     // Wait for the queue operation to complete before adding next
                     // The isQueueOperationInProgress flag ensures sequential queueing
                     while (_uiState.value.isQueueOperationInProgress) {
@@ -919,7 +979,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("MusicViewModel", "Error setting queue from simplified tracks: ${e.message}", e)
+                Log.e(
+                    "MusicViewModel",
+                    "Error setting queue from simplified tracks: ${e.message}",
+                    e
+                )
             }
         }
     }

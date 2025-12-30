@@ -71,6 +71,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,6 +100,19 @@ fun LibraryScreen(
     val uiState by libraryViewModel.uiState.collectAsState()
     val musicUiState by musicViewModel.uiState.collectAsState()
 
+    LocalContext.current
+    val view = LocalView.current
+
+    // Helper for haptics
+    fun performHapticFeedback() {
+        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+    }
+
+    // Handle back press to exit selection mode
+    androidx.activity.compose.BackHandler(enabled = uiState.isSelectionMode) {
+        libraryViewModel.toggleSelectionMode(false)
+    }
+
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
@@ -124,62 +139,143 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Search and Sort Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Search Field (70%)
-                TextField(
-                    value = uiState.searchQuery,
-                    onValueChange = { libraryViewModel.updateSearchQuery(it) },
-                    modifier = Modifier.weight(0.7f),
-                    placeholder = { Text("Search Anything...") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search"
-                        )
-                    },
-                    trailingIcon = {
-                        if (uiState.searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { libraryViewModel.clearSearch() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "Clear search"
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = TextFieldDefaults.colors(
-                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
-                    )
-                )
-                Button(
-                    onClick = { libraryViewModel.toggleSortSheet() },
+            // Search and Sort Row OR Selection Top Bar
+            if (uiState.isSelectionMode) {
+                // Selection Top Bar
+                Row(
                     modifier = Modifier
-                        .weight(0.1f)
-                        .heightIn(min = 56.dp),
-                    contentPadding = PaddingValues(0.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(0.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(onClick = { libraryViewModel.toggleSelectionMode(false) }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Close selection")
+                    }
+
                     Text(
-                        "Sort",
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1
+                        text = "${uiState.selectedTrackUuids.size} selected",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 16.dp)
                     )
+
+                    // Select All / Deselect All
+                    TextButton(onClick = {
+                        performHapticFeedback()
+                        if (uiState.selectedTrackUuids.size == uiState.tracks.size && uiState.tracks.isNotEmpty()) {
+                            libraryViewModel.clearSelection()
+                        } else {
+                            libraryViewModel.selectAll()
+                        }
+                    }) {
+                        Text(if (uiState.selectedTrackUuids.size == uiState.tracks.size && uiState.tracks.isNotEmpty()) "Deselect All" else "Select All")
+                    }
+
+                    var showDeleteDialog by remember { mutableStateOf(false) }
+
+                    IconButton(
+                        onClick = {
+                            if (uiState.selectedTrackUuids.isNotEmpty()) {
+                                performHapticFeedback()
+                                showDeleteDialog = true
+                            }
+                        },
+                        enabled = uiState.selectedTrackUuids.isNotEmpty()
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete selected",
+                            tint = if (uiState.selectedTrackUuids.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(
+                                alpha = 0.38f
+                            )
+                        )
+                    }
+
+                    if (showDeleteDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteDialog = false },
+                            title = { Text("Delete ${uiState.selectedTrackUuids.size} tracks?") },
+                            text = { Text("This action cannot be undone. Are you sure you want to delete these tracks?") },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        performHapticFeedback()
+                                        libraryViewModel.deleteSelectedTracks()
+                                        showDeleteDialog = false
+                                    },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Delete")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showDeleteDialog = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
+                }
+            } else {
+                // Search and Sort Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Search Field (70%)
+                    TextField(
+                        value = uiState.searchQuery,
+                        onValueChange = { libraryViewModel.updateSearchQuery(it) },
+                        modifier = Modifier.weight(0.7f),
+                        placeholder = { Text("Search Anything...") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search"
+                            )
+                        },
+                        trailingIcon = {
+                            if (uiState.searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { libraryViewModel.clearSearch() }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Clear search"
+                                    )
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                        )
+                    )
+                    Button(
+                        onClick = { libraryViewModel.toggleSortSheet() },
+                        modifier = Modifier
+                            .weight(0.1f)
+                            .heightIn(min = 56.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(0.dp)
+                    ) {
+                        Text(
+                            "Sort",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
             // Enhanced Filter Row
@@ -541,11 +637,22 @@ fun LibraryScreen(
                         ) {
                             LibraryTrackItem(
                                 track = track,
+                                isSelectionMode = uiState.isSelectionMode,
+                                isSelected = uiState.selectedTrackUuids.contains(track.uuid),
                                 onPlay = {
-                                    musicViewModel.setQueue(
-                                        uiState.tracks,
-                                        uiState.tracks.indexOf(track)
-                                    )
+                                    if (uiState.isSelectionMode) {
+                                        performHapticFeedback()
+                                        libraryViewModel.toggleTrackSelection(track.uuid)
+                                    } else {
+                                        musicViewModel.setQueue(
+                                            uiState.tracks,
+                                            uiState.tracks.indexOf(track)
+                                        )
+                                    }
+                                },
+                                onLongClick = {
+                                    performHapticFeedback()
+                                    libraryViewModel.toggleTrackSelection(track.uuid)
                                 },
                                 onToggleFavorite = {
                                     libraryViewModel.toggleFavorite(track.uuid)
@@ -666,7 +773,7 @@ fun LibraryScreen(
         }
     }
 
-    
+
     // Undo Delete Popup
     uiState.pendingDeleteTrack?.let { track ->
         Box(
@@ -676,13 +783,13 @@ fun LibraryScreen(
             contentAlignment = Alignment.BottomCenter
         ) {
             val progress = remember { androidx.compose.animation.core.Animatable(1f) }
-            
+
             LaunchedEffect(track) {
                 progress.snapTo(1f)
                 progress.animateTo(
                     targetValue = 0f,
                     animationSpec = androidx.compose.animation.core.tween(
-                        durationMillis = 3000,
+                        durationMillis = 5000,
                         easing = androidx.compose.animation.core.LinearEasing
                     )
                 )
@@ -701,7 +808,10 @@ fun LibraryScreen(
             ) {
                 Row(
                     modifier = Modifier
-                        .padding(horizontal = 12.dp, vertical = 8.dp) // Reduced padding for compactness
+                        .padding(
+                            horizontal = 12.dp,
+                            vertical = 8.dp
+                        ) // Reduced padding for compactness
                         .fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -721,13 +831,14 @@ fun LibraryScreen(
                                 strokeWidth = 3.dp,
                             )
                             Text(
-                                text = kotlin.math.ceil(progress.value * 3).toInt().coerceAtLeast(1).toString(),
+                                text = kotlin.math.ceil(progress.value * 5).toInt().coerceAtLeast(1)
+                                    .toString(),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        
+
                         Text(
                             text = "Deleted \"${track.title}\"",
                             style = MaterialTheme.typography.bodyMedium,
@@ -735,7 +846,7 @@ fun LibraryScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    
+
                     TextButton(
                         onClick = { libraryViewModel.undoDelete() },
                         // Reducing visual weight of button to emphasize the countdown/content

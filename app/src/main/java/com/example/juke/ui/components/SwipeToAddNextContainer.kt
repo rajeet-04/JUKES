@@ -23,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,15 +35,19 @@ fun SwipeToAddNextContainer(
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { distance -> distance * 0.35f },
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onAddNext()
                     false // Reset after triggering action
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onDelete?.invoke()
                     false // Reset after triggering action
                 }

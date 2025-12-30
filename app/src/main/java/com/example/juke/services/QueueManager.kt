@@ -53,6 +53,12 @@ class QueueManager private constructor(private val context: Context) {
     private val trackDao = database.trackDao()
     private val musicService = MusicService(context)
     
+    // Settings for user-defined recommendation count
+    private val settingsPrefs = context.getSharedPreferences(
+        "music_settings_prefs",
+        Context.MODE_PRIVATE
+    )
+    
     // Coroutine scope for background tasks
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
@@ -262,11 +268,16 @@ class QueueManager private constructor(private val context: Context) {
                 // This helps the validater prioritize tracks that match the user's recent listening history
                 val contextArtists = (listOf(currentTrack.artist) + recentArtists).joinToString(", ")
                 
-                // Validate with Spotify and get top 5, prioritizing recommendations with matching artists
+                // Get user-defined recommendation count from settings (default: 5)
+                val targetCount = settingsPrefs.getInt("recommendation_count", 5)
+                Log.d(TAG, "Target recommendation count: $targetCount")
+                
+                // Validate with Spotify - fetch 2x the target to allow for filtering duplicates
+                // This ensures we can still meet the target even after removing library duplicates
                 val validatedRecs = RecommenderApi.validateAndFilterWithSpotify(
                     recommendations,
                     originalArtists = contextArtists,
-                    maxResults = 5
+                    maxResults = targetCount * 2
                 )
                 
                 if (validatedRecs.isEmpty()) {
@@ -276,8 +287,61 @@ class QueueManager private constructor(private val context: Context) {
                 
                 Log.d(TAG, "Got ${validatedRecs.size} validated recommendations")
                 
+                // CRITICAL: Filter out tracks already in current queue BEFORE categorization
+                // This prevents adding songs the user is already listening to
+                val currentQueueTitles = _currentQueue.value.map { it.title.lowercase() to it.artist.lowercase() }
+                val filteredRecs = validatedRecs.filter { rec ->
+                    val trackPair = rec.title.lowercase() to rec.artist.lowercase()
+                    !currentQueueTitles.contains(trackPair)
+                }
+                
+                Log.d(TAG, "After queue filtering: ${filteredRecs.size} recommendations (removed ${validatedRecs.size - filteredRecs.size} already in queue)")
+                
+                if (filteredRecs.isEmpty()) {
+                    Log.e(TAG, "No new recommendations after filtering current queue")
+                    return@launch
+                }
+                
+                // Separate recommendations into "New" (not in library) and "Library" (already downloaded)
+                val newRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
+                val libraryRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
+                
+                for (rec in filteredRecs) {
+                    // Check if track already exists in database
+                    val candidates = trackDao.findTracksByTitleAndDuration(rec.title, rec.durationSec)
+                    val existsInLibrary = candidates.any { 
+                        com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, rec.artist) && it.localUri != null
+                    }
+                    
+                    if (existsInLibrary) {
+                        libraryRecs.add(rec)
+                    } else {
+                        newRecs.add(rec)
+                    }
+                }
+                
+                Log.d(TAG, "Categorized: ${newRecs.size} new tracks, ${libraryRecs.size} library tracks")
+                
+                // Build final list: prioritize new tracks, fill remainder with library tracks
+                val finalRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
+                finalRecs.addAll(newRecs.take(targetCount))
+                
+                // If we have fewer than targetCount, add library tracks to meet the target
+                if (finalRecs.size < targetCount) {
+                    val remaining = targetCount - finalRecs.size
+                    finalRecs.addAll(libraryRecs.take(remaining))
+                    Log.d(TAG, "Added ${libraryRecs.take(remaining).size} library tracks to meet target count")
+                }
+                
+                Log.d(TAG, "Final selection: ${finalRecs.size} tracks (${newRecs.take(targetCount).size} new, ${finalRecs.size - newRecs.take(targetCount).size} library)")
+                
+                if (finalRecs.isEmpty()) {
+                    Log.e(TAG, "No recommendations to queue")
+                    return@launch
+                }
+                
                 // Add to pending queue
-                validatedRecs.forEach { rec ->
+                finalRecs.forEach { rec ->
                     pendingRecommendations.offer(rec)
                     Log.d(TAG, "Queued for download: ${rec.title} by ${rec.artist}")
                 }

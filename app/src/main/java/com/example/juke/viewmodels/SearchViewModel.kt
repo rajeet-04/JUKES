@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.database.PlaylistTrackEntity
@@ -19,8 +20,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import com.example.juke.analytics.AnalyticsManager
 
 data class SearchUiState(
     val query: String = "",
@@ -47,26 +48,26 @@ data class ArtistDetailUiState(
 )
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     private val database = MusicDatabase.getDatabase(application)
     private val trackDao = database.trackDao()
     private val playlistDao = database.playlistDao()
     private val queueManager = QueueManager.getInstance(application)
-    
+
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
-    
+
     private val _artistDetailState = MutableStateFlow(ArtistDetailUiState())
     val artistDetailState: StateFlow<ArtistDetailUiState> = _artistDetailState.asStateFlow()
-    
+
     private var searchJob: Job? = null
-    
+
     fun updateQuery(query: String) {
         _uiState.value = _uiState.value.copy(query = query)
-        
+
         // Cancel previous search job
         searchJob?.cancel()
-        
+
         // Start new search job with 1.369 second delay
         if (query.isNotBlank()) {
             searchJob = viewModelScope.launch {
@@ -85,7 +86,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
     }
-    
+
     fun search(query: String) {
         if (query.isBlank()) {
             _uiState.value = _uiState.value.copy(
@@ -96,17 +97,17 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             )
             return
         }
-        
+
         // Track search query
         AnalyticsManager.getInstance().trackSearchQuery(query)
-        
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSearching = true, error = null)
-            
+
             try {
                 // Check if query is a Spotify URL
                 val urlInfo = parseSpotifyUrl(query)
-                
+
                 if (urlInfo != null) {
                     // Handle URL-based search
                     when (urlInfo.type) {
@@ -122,6 +123,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 playlistId = null
                             )
                         }
+
                         "artist" -> {
                             val artist = SpotifyApi.getArtist(urlInfo.id)
                             _uiState.value = _uiState.value.copy(
@@ -134,6 +136,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 playlistId = null
                             )
                         }
+
                         "playlist" -> {
                             val playlist = SpotifyApi.getPlaylist(urlInfo.id)
                             _uiState.value = _uiState.value.copy(
@@ -146,6 +149,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 playlistId = urlInfo.id
                             )
                         }
+
                         "album" -> {
                             val album = SpotifyApi.getAlbum(urlInfo.id)
                             _uiState.value = _uiState.value.copy(
@@ -162,7 +166,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     // Regular text search
                     val response = SpotifyApi.search(query)
-                    
+
                     _uiState.value = _uiState.value.copy(
                         tracks = response.tracks?.items ?: emptyList(),
                         artists = response.artists?.items ?: emptyList(),
@@ -181,9 +185,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
-    
+
     private data class SpotifyUrlInfo(val type: String, val id: String)
-    
+
     private fun parseSpotifyUrl(query: String): SpotifyUrlInfo? {
         // Match Spotify URLs in different formats:
         // https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6
@@ -191,33 +195,34 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         // https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
         // https://open.spotify.com/album/6DEjYFkNZh67HP7R9PSZvv
         // spotify:track:6rqhFgbbKwnb9MLmUQDhG6
-        
-        val httpRegex = """https?://open\.spotify\.com/(track|artist|playlist|album)/([a-zA-Z0-9]+)""".toRegex()
+
+        val httpRegex =
+            """https?://open\.spotify\.com/(track|artist|playlist|album)/([a-zA-Z0-9]+)""".toRegex()
         val uriRegex = """spotify:(track|artist|playlist|album):([a-zA-Z0-9]+)""".toRegex()
-        
+
         httpRegex.find(query)?.let {
             return SpotifyUrlInfo(it.groupValues[1], it.groupValues[2])
         }
-        
+
         uriRegex.find(query)?.let {
             return SpotifyUrlInfo(it.groupValues[1], it.groupValues[2])
         }
-        
+
         return null
     }
-    
+
     fun loadArtistDetails(artist: SpotifyArtist) {
         viewModelScope.launch {
             _artistDetailState.value = ArtistDetailUiState(
                 artist = artist,
                 isLoading = true
             )
-            
+
             try {
                 if (artist.id != null) {
                     val albums = SpotifyApi.getArtistAlbums(artist.id)
                     val topTracks = SpotifyApi.getArtistTopTracks(artist.id)
-                    
+
                     _artistDetailState.value = _artistDetailState.value.copy(
                         albums = albums.items,
                         topTracks = topTracks.tracks,
@@ -237,19 +242,43 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
-    
+
+    fun loadArtistDetailsById(artistId: String) {
+        viewModelScope.launch {
+            _artistDetailState.value = ArtistDetailUiState(isLoading = true)
+
+            try {
+                // Fetch artist details first
+                val artist = SpotifyApi.getArtist(artistId)
+
+                // Then proceed with loading other details
+                if (artist != null) {
+                    loadArtistDetails(artist)
+                } else {
+                    _artistDetailState.update {
+                        it.copy(isLoading = false, error = "Artist not found")
+                    }
+                }
+            } catch (e: Exception) {
+                _artistDetailState.update {
+                    it.copy(isLoading = false, error = e.message)
+                }
+            }
+        }
+    }
+
     fun setDownloading(songId: String?) {
         _uiState.value = _uiState.value.copy(downloadingId = songId)
     }
-    
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
-    
+
     fun clearArtistDetail() {
         _artistDetailState.value = ArtistDetailUiState()
     }
-    
+
     fun importPlaylist(playlistId: String, onTrackDownloaded: suspend (SpotifyTrack) -> Track) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
@@ -258,11 +287,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 importTotal = 0,
                 error = null
             )
-            
+
             try {
                 // Fetch playlist info
                 val playlist = SpotifyApi.getPlaylist(playlistId)
-                
+
                 // Save playlist to database
                 val playlistEntity = PlaylistEntity(
                     id = playlist.id,
@@ -273,13 +302,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     trackCount = playlist.tracks.total
                 )
                 playlistDao.insertPlaylist(playlistEntity)
-                
+
                 // Fetch all playlist tracks
                 val response = SpotifyApi.getPlaylistTracks(playlistId)
                 val tracks = response.items.mapNotNull { it.track }
-                
+
                 _uiState.value = _uiState.value.copy(importTotal = tracks.size)
-                
+
                 // Download each track and add to playlist
                 val playlistTracks = mutableListOf<PlaylistTrackEntity>()
                 tracks.forEachIndexed { index, track ->
@@ -290,15 +319,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                             track.artists.joinToString(", ") { it.name },
                             "playlist"
                         )
-                        
+
                         val downloadedTrack = onTrackDownloaded(track)
-                        
+
                         // Remove from download tracking
                         queueManager.removeDownloadTracking(
                             track.name,
                             track.artists.joinToString(", ") { it.name }
                         )
-                        
+
                         // Add to playlist tracks
                         val playlistTrack = PlaylistTrackEntity(
                             playlistId = playlist.id,
@@ -317,16 +346,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         Log.e("SearchViewModel", "Failed to download track: ${track.name}", e)
                     }
                 }
-                
+
                 // Update playlist track count
                 playlistDao.updatePlaylistTrackCount(playlist.id, playlistTracks.size)
-                
+
                 _uiState.value = _uiState.value.copy(
                     isImportingPlaylist = false,
                     importProgress = 0,
                     importTotal = 0
                 )
-                
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isImportingPlaylist = false,

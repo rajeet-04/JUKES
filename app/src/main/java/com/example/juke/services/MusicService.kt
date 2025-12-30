@@ -87,7 +87,10 @@ class MusicService(private val context: Context) {
                 isFavourite = existingTrack.isFavourite,
                 playCount = existingTrack.playCount,
                 lastPlayedAt = existingTrack.lastPlayedAt,
-                downloadedAt = existingTrack.downloadedAt
+                downloadedAt = existingTrack.downloadedAt,
+                spotifyId = existingTrack.spotifyId,
+                albumSpotifyId = existingTrack.albumSpotifyId,
+                artistSpotifyIds = existingTrack.artistSpotifyIds
             )
         }
         
@@ -175,7 +178,10 @@ class MusicService(private val context: Context) {
                 isFavourite = false,
                 playCount = 0,
                 lastPlayedAt = null,
-                downloadedAt = System.currentTimeMillis()
+                downloadedAt = System.currentTimeMillis(),
+                spotifyId = song.spotifyId,
+                albumSpotifyId = song.albumSpotifyId,
+                artistSpotifyIds = song.artistSpotifyIds
             )
             
             trackDao.insertTrack(track.toEntity())
@@ -221,4 +227,48 @@ class MusicService(private val context: Context) {
         }
     }
 
+    suspend fun deleteTracksAndFiles(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        
+        try {
+            // Delete files for all tracks
+            tracks.forEach { track ->
+                track.localUri?.let { uri ->
+                    File(uri).delete()
+                }
+                track.thumbnailUri?.let { uri ->
+                    File(uri).delete()
+                }
+            }
+            
+            // Collect all UUIDs and Playlist IDs involved
+            val trackUuids = tracks.map { it.uuid }
+            val playlistDao = database.playlistDao()
+            
+            // Get all unique playlist IDs that contain ANY of these tracks
+            val affectedPlaylistIds = mutableSetOf<String>()
+            tracks.forEach { track ->
+                try {
+                    val playlists = playlistDao.getPlaylistsForTrack(track.uuid)
+                    affectedPlaylistIds.addAll(playlists.map { it.id })
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error fetching playlists for track ${track.uuid}", e)
+                }
+            }
+            
+            // Bulk delete from DB to prevent multiple invalidations and Cursor leaks
+            trackDao.deleteTracks(trackUuids)
+            Log.d(TAG, "Bulk deleted ${tracks.size} tracks from database")
+            
+            // Update track counts for affected playlists
+            affectedPlaylistIds.forEach { playlistId ->
+                val newCount = playlistDao.getPlaylistTrackCount(playlistId)
+                playlistDao.updatePlaylistTrackCount(playlistId, newCount)
+                Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in bulk delete: ${e.message}", e)
+        }
+    }
 }

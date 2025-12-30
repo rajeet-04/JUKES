@@ -475,6 +475,14 @@ class PlaybackService : MediaLibraryService() {
         return mediaSession
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.d(TAG, "App removed from recents, stopping service and playback")
+        player.pause()
+        player.stop()
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         // On Android 12+ (API 31), starting a foreground service from the background is restricted
         // and throws ForegroundServiceStartNotAllowedException.

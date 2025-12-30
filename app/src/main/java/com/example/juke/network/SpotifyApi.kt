@@ -728,7 +728,10 @@ object SpotifyApi {
             url = track.externalUrls.spotify ?: "",
             thumbnail = thumbnail,
             duration = durationStr,
-            cached = false // Will check separately if needed
+            cached = false, // Will check separately if needed
+            spotifyId = track.id,
+            albumSpotifyId = track.album.id,
+            artistSpotifyIds = track.artists.mapNotNull { it.id }
         )
     }
     
@@ -759,7 +762,10 @@ object SpotifyApi {
             url = track.externalUrls.spotify ?: "",
             thumbnail = thumbnail,
             duration = durationStr,
-            cached = false
+            cached = false,
+            spotifyId = track.id,
+            albumSpotifyId = album.id,
+            artistSpotifyIds = track.artists.mapNotNull { it.id }
         )
     }
 }
