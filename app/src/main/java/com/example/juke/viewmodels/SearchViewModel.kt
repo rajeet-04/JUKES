@@ -250,15 +250,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 // Fetch artist details first
                 val artist = SpotifyApi.getArtist(artistId)
-
                 // Then proceed with loading other details
-                if (artist != null) {
-                    loadArtistDetails(artist)
-                } else {
-                    _artistDetailState.update {
-                        it.copy(isLoading = false, error = "Artist not found")
-                    }
-                }
+                loadArtistDetails(artist)
             } catch (e: Exception) {
                 _artistDetailState.update {
                     it.copy(isLoading = false, error = e.message)

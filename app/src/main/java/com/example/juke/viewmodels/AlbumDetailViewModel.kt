@@ -66,14 +66,7 @@ class AlbumDetailViewModel : ViewModel() {
             try {
                 // Fetch album details first
                 val album = SpotifyApi.getAlbum(albumId)
-
-                if (album != null) {
-                    loadAlbumDetails(album)
-                } else {
-                    _uiState.update {
-                        it.copy(isLoading = false, error = "Album not found")
-                    }
-                }
+                loadAlbumDetails(album)
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(isLoading = false, error = e.message)

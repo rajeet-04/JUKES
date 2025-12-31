@@ -12,7 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.viewmodels.DownloadItem
@@ -25,6 +27,8 @@ fun DownloadingTrackItem(
     onRetry: () -> Unit = {},
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -118,7 +122,10 @@ fun DownloadingTrackItem(
             
             when (downloadItem.status) {
                 DownloadStatus.FAILED -> {
-                    IconButton(onClick = onRetry) {
+                    IconButton(onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onRetry()
+                    }) {
                         Icon(
                             Icons.Default.Refresh,
                             contentDescription = "Retry",
@@ -127,7 +134,10 @@ fun DownloadingTrackItem(
                     }
                 }
                 DownloadStatus.QUEUED -> {
-                    IconButton(onClick = onCancel) {
+                    IconButton(onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onCancel()
+                    }) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "Cancel",

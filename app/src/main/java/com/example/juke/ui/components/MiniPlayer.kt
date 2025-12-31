@@ -8,8 +8,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -24,6 +26,7 @@ fun MiniPlayer(
 ) {
     val uiState by musicViewModel.uiState.collectAsState()
     val currentTrack = uiState.currentTrack
+    val haptic = LocalHapticFeedback.current
     
     // Poll for progress updates when playing
     LaunchedEffect(uiState.isPlaying) {
@@ -41,7 +44,10 @@ fun MiniPlayer(
                 .fillMaxWidth()
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { onExpand() }
+                        onTap = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onExpand() 
+                        }
                     )
                 }
                 .pointerInput(Unit) {
@@ -49,8 +55,10 @@ fun MiniPlayer(
                         onDragEnd = {
                             // Swipe threshold ~50dp
                             if (offsetX < -100f) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 musicViewModel.skipToNext()
                             } else if (offsetX > 100f) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 musicViewModel.skipToPrevious()
                             }
                             offsetX = 0f
@@ -113,7 +121,10 @@ fun MiniPlayer(
                     }
                     
                     IconButton(
-                        onClick = { musicViewModel.togglePlayPause() }
+                        onClick = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            musicViewModel.togglePlayPause() 
+                        }
                     ) {
                         Icon(
                             painter = painterResource(if (uiState.isPlaying) com.example.juke.R.drawable.baseline_pause_24 else com.example.juke.R.drawable.baseline_play_24),

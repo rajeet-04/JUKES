@@ -16,6 +16,7 @@ media3 = "1.5.0"
 coil = "2.7.0"
 navigation = "2.8.5"
 gson = "2.10.1"
+foundationLayout = "1.10.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -63,6 +64,7 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 
 # Gson
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

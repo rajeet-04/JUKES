@@ -25,7 +25,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,10 +56,19 @@ fun VerticalEqualizerSlider(
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     trackColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
 ) {
+    val haptic = LocalHapticFeedback.current
+
     Box(
         modifier = modifier
             .pointerInput(Unit) {
-                detectDragGestures { change, _ ->
+                detectDragGestures(
+                    onDragStart = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    },
+                    onDragEnd = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                ) { change, _ ->
                     change.consume()
                     // Use absolute position to avoid stale state issues and ensure smooth tracking
                     // 0 (top) -> Max Value
@@ -71,6 +82,9 @@ fun VerticalEqualizerSlider(
                     val rangeSpan = range.endInclusive - range.start
                     val newValue = (range.start + (fraction * rangeSpan)).coerceIn(range)
                     
+                    if (newValue != value) {
+                        // haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) // Too frequent?
+                    }
                     onValueChange(newValue)
                 }
             }
@@ -121,6 +135,7 @@ fun CircularBooster(
     maxBoost: Float = 100f
 ) {
     var angle by remember { mutableFloatStateOf(0f) }
+    val haptic = LocalHapticFeedback.current
     
     // Map value (0..maxBoost) to angle (135..405 degrees)
     // 0 -> 135 deg (Bottom Left)
@@ -131,7 +146,14 @@ fun CircularBooster(
     Box(
         modifier = modifier
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
+                detectDragGestures(
+                    onDragStart = {
+                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    },
+                    onDragEnd = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                ) { change, dragAmount ->
                     change.consume()
                     // Simplified drag logic: Dragging right/up increases, left/down decreases
                     // Or ideally, track angle relative to center.
@@ -139,6 +161,9 @@ fun CircularBooster(
                     val sensitivity = 1.0f
                     val dragVal = (dragAmount.x - dragAmount.y) * sensitivity
                     val newValue = (value + dragVal).coerceIn(0f, maxBoost)
+                    if (newValue != value) {
+                        // haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
                     onValueChange(newValue)
                 }
             },

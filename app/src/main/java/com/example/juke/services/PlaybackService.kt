@@ -209,12 +209,11 @@ class PlaybackService : MediaLibraryService() {
                         }
                         .build()
                 } else {
-                    android.app.Notification.Builder(this)
+                    android.app.Notification.Builder(this, "media_playback")
                         .setContentTitle("Juke")
                         .setContentText("Ready to play")
                         .setSmallIcon(android.R.drawable.ic_media_play)
                         .setOngoing(true)
-                        .setPriority(android.app.Notification.PRIORITY_LOW)
                         .build()
                 }
 
