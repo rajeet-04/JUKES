@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.ui.components.AddToPlaylistDialog
 import com.example.juke.ui.components.DownloadingTrackItem
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.ui.components.SwipeToAddNextContainer
@@ -954,86 +955,3 @@ fun CreatePlaylistDialog(
     )
 }
 
-@Composable
-fun AddToPlaylistDialog(
-    playlists: List<com.example.juke.database.PlaylistEntity>,
-    track: Track,
-    trackPlaylists: List<com.example.juke.database.PlaylistEntity>,
-    onDismiss: () -> Unit,
-    onAddToPlaylist: (com.example.juke.database.PlaylistEntity) -> Unit,
-    onRemoveFromPlaylist: (com.example.juke.database.PlaylistEntity) -> Unit,
-    onRemoveFromCurrentPlaylist: ((com.example.juke.database.PlaylistEntity) -> Unit)? = null,
-    currentPlaylist: com.example.juke.database.PlaylistEntity? = null
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add to Playlist") },
-        text = {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 300.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // If we are in a playlist context, we might want to show "Remove from current" prominently, 
-                // but per user request, we are handling that with the minus icon.
-                // However, if the modal IS opened (though unlikely in playlist view due to minus icon), we keep logic generic.
-
-                items(playlists) { playlist ->
-                    val isAlreadyAdded = trackPlaylists.any { it.id == playlist.id }
-
-                    ListItem(
-                        headlineContent = { Text(playlist.name) },
-                        supportingContent = {
-                            if (isAlreadyAdded) Text(
-                                "Already added",
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            else Text("${playlist.trackCount} tracks")
-                        },
-                        leadingContent = {
-                            Icon(
-                                Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null
-                            )
-                        },
-                        trailingContent = {
-                            if (isAlreadyAdded) {
-                                IconButton(onClick = { onRemoveFromPlaylist(playlist) }) {
-                                    Icon(
-                                        Icons.Default.RemoveCircle,
-                                        contentDescription = "Remove",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            } else {
-                                IconButton(onClick = { onAddToPlaylist(playlist) }) {
-                                    Icon(
-                                        Icons.Default.AddCircle,
-                                        contentDescription = "Add",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        },
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                    )
-                }
-
-                if (playlists.isEmpty()) {
-                    item {
-                        Text(
-                            "No playlists available",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(16.dp),
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
-            }
-        }
-    )
-}

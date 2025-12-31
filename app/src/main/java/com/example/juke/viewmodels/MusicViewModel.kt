@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.database.MusicDatabase
+import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyAlbum
@@ -366,9 +367,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Download a Spotify track (if needed) and queue it to play next.
      */
     fun queueSpotifyTrackNext(spotifyTrack: SpotifyTrack) {
-        val key = "${spotifyTrack.name}-${spotifyTrack.artists.firstOrNull()?.name ?: ""}"
+        val spotdownSong = SpotifyApi.spotifyTrackToSong(spotifyTrack)
+        val key = "${spotdownSong.title}-${spotdownSong.artist}"
+
+        // Check pending operations
         if (pendingQueueOperations.contains(key)) {
             Log.d("MusicViewModel", "Ignoring duplicate queue request for: $key")
+            return
+        }
+
+        // Check active download queue
+        val currentState = _uiState.value
+        val alreadyDownloading = currentState.downloadQueue.any {
+            it.song.title == spotdownSong.title && it.song.artist == spotdownSong.artist
+        } || (currentState.currentDownload?.song?.title == spotdownSong.title &&
+                currentState.currentDownload?.song?.artist == spotdownSong.artist)
+
+        if (alreadyDownloading) {
+            Log.d("MusicViewModel", "Song already downloading (queueSpotifyTrackNext): $key")
             return
         }
 
@@ -377,7 +393,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
 
             try {
-                val spotdownSong = SpotifyApi.spotifyTrackToSong(spotifyTrack)
+                // spotdownSong is already created above
                 val track = withContext(Dispatchers.IO) {
                     musicService.smartDownloadAndIndex(spotdownSong)
                 }
@@ -399,9 +415,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Download a simplified Spotify track (album context) and queue it to play next.
      */
     fun queueSimplifiedTrackNext(track: SpotifySimplifiedTrack, album: SpotifyAlbum) {
-        val key = "${track.name}-${track.artists.firstOrNull()?.name ?: ""}"
+        val spotdownSong = SpotifyApi.simplifiedTrackToSong(track, album)
+        val key = "${spotdownSong.title}-${spotdownSong.artist}"
+
         if (pendingQueueOperations.contains(key)) {
             Log.d("MusicViewModel", "Ignoring duplicate queue request for: $key")
+            return
+        }
+
+        // Check active download queue
+        val currentState = _uiState.value
+        val alreadyDownloading = currentState.downloadQueue.any {
+            it.song.title == spotdownSong.title && it.song.artist == spotdownSong.artist
+        } || (currentState.currentDownload?.song?.title == spotdownSong.title &&
+                currentState.currentDownload?.song?.artist == spotdownSong.artist)
+
+        if (alreadyDownloading) {
+            Log.d("MusicViewModel", "Song already downloading (queueSimplifiedTrackNext): $key")
             return
         }
 
@@ -410,7 +440,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
 
             try {
-                val spotdownSong = SpotifyApi.simplifiedTrackToSong(track, album)
+                // spotdownSong created above
                 val downloaded = withContext(Dispatchers.IO) {
                     musicService.smartDownloadAndIndex(spotdownSong)
                 }
@@ -500,6 +530,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
+            // Check pending operations from other paths
+            val key = "${song.title}-${song.artist}"
+            if (pendingQueueOperations.contains(key)) {
+                Log.d("MusicViewModel", "Song overlap with pending operation: ${song.title}")
+                return@launch
+            }
+
             // Check if already exists in database
             val durationSec = SpotifyApi.parseDuration(song.duration)
             val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
@@ -511,6 +548,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 if (shouldPlayAfterDownload) {
                     playTrack(existingTrack.toTrack())
                 }
+                return@launch
+            }
+
+            // Re-check if already in queue or downloading (Race condition fix)
+            val updatedState = _uiState.value
+            val alreadyQueuedRecheck = updatedState.downloadQueue.any {
+                it.song.title == song.title && it.song.artist == song.artist
+            }
+            val currentlyDownloadingRecheck = updatedState.currentDownload?.let {
+                it.song.title == song.title && it.song.artist == song.artist
+            } ?: false
+
+            if (alreadyQueuedRecheck || currentlyDownloadingRecheck) {
+                Log.d("MusicViewModel", "Song appeared in queue during DB check: ${song.title}")
+                return@launch
+            }
+
+            // Re-check pending operations
+            if (pendingQueueOperations.contains(key)) {
+                Log.d(
+                    "MusicViewModel",
+                    "Song overlap with pending operation during DB check: ${song.title}"
+                )
                 return@launch
             }
 
@@ -797,7 +857,56 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playbackManager.cancelSleepTimer()
     }
 
-    // Equalizer
+
+    fun refreshLyrics(track: Track) {
+        viewModelScope.launch {
+            Log.d("MusicViewModel", "Refreshing lyrics for: ${track.title}")
+            try {
+                // Fetch lyrics from LRCLib
+                val result = withContext(Dispatchers.IO) {
+                    SpotifyApi.searchLyrics(
+                        title = track.title,
+                        artist = track.artist,
+                        duration = track.durationSec
+                    )
+                }
+
+                if (result != null) {
+                    Log.d("MusicViewModel", "New lyrics found for: ${track.title}")
+
+                    // Update track with new lyrics
+                    val updatedTrack = track.copy(
+                        syncedLyrics = result.syncedLyrics,
+                        plainLyrics = result.plainLyrics
+                    )
+
+                    // Update database
+                    trackDao.insertTrack(updatedTrack.toEntity())
+
+                    // Update UI State (Current Track + Queue)
+                    _uiState.update { state ->
+                        val updatedQueue = state.queue.map {
+                            if (it.uuid == track.uuid) updatedTrack else it
+                        }
+                        
+                        state.copy(
+                            queue = updatedQueue,
+                            currentTrack = if (state.currentTrack?.uuid == track.uuid) updatedTrack else state.currentTrack
+                        )
+                    }
+
+                    // No need to explicitly update PlaybackManager queue as it's primarily used for playback context
+                    // and doesn't display lyrics. The UI observes currentTrackId and pulls from UI queue.
+
+                } else {
+                    Log.d("MusicViewModel", "No lyrics found for: ${track.title}")
+                }
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to refresh lyrics: ${e.message}", e)
+            }
+        }
+    }
+
     val equalizerBands = playbackManager.audioEffectController.equalizerBands
     val isEqualizerEnabled = playbackManager.audioEffectController.isEqualizerEnabled
 
@@ -842,7 +951,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         android.content.Context.MODE_PRIVATE
     )
 
-    private val _recommendationCount = MutableStateFlow(settingsPrefs.getInt("recommendation_count", 5))
+    private val _recommendationCount =
+        MutableStateFlow(settingsPrefs.getInt("recommendation_count", 5))
     val recommendationCount: StateFlow<Int> = _recommendationCount.asStateFlow()
 
     fun setRecommendationCount(count: Int) {

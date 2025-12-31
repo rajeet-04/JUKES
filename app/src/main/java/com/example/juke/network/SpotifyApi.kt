@@ -690,6 +690,7 @@ object SpotifyApi {
         duration: Int? = null
     ): LRCLibResult? {
         return try {
+            // 1. Primary Search
             val response = ApiClient.httpClient.get("$LRCLIB_BASE_URL/search") {
                 parameter("track_name", title)
                 parameter("artist_name", artist)
@@ -700,16 +701,63 @@ object SpotifyApi {
             
             val results: List<LRCLibResult> = response.body()
             
-            if (results.isEmpty()) {
-                return null
-            }
-            
             // Find the best matching result based on validation score
-            val bestMatch = results
-                .map { result -> result to validateLyricsMatch(result, title, artist, duration) }
-                .filter { it.second > 0 } // Only consider results with some match
-                .maxByOrNull { it.second }
-                ?.first
+            var bestMatch = if (results.isNotEmpty()) {
+                results
+                    .map { result -> result to validateLyricsMatch(result, title, artist, duration) }
+                    .filter { it.second > 0 } // Only consider results with some match
+                    .maxByOrNull { it.second }
+                    ?.first
+            } else null
+
+            // 2. Fallback Search (Individual Artists)
+            if (bestMatch == null) {
+                val separators = charArrayOf(',', '&')
+                val individualArtists = artist.split(*separators)
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && !it.equals(artist, ignoreCase = true) }
+
+                if (individualArtists.isNotEmpty()) {
+                    Log.d(TAG, "Primary lyrics search failed. Attempting fallback for artists: $individualArtists")
+                    
+                    for (singleArtist in individualArtists) {
+                        try {
+                            val fallbackResponse = ApiClient.httpClient.get("$LRCLIB_BASE_URL/search") {
+                                parameter("track_name", title)
+                                parameter("artist_name", singleArtist)
+                            }
+                            
+                            val fallbackResults: List<LRCLibResult> = fallbackResponse.body()
+                            
+                            // Strict Validation for Fallback
+                            // Duration must be within 5% tolerance
+                            val validFallback = fallbackResults.find { result ->
+                                val resultTitle = result.trackName.lowercase().trim()
+                                val normalizedTitle = title.lowercase().trim()
+                                val titleMatch = resultTitle.contains(normalizedTitle) || normalizedTitle.contains(resultTitle)
+                                
+                                val durationMatch = if (duration != null && duration > 0) {
+                                    val tolerance = duration * 0.05 // 5% tolerance
+                                    val diff = abs(result.duration - duration)
+                                    diff <= tolerance
+                                } else {
+                                    true // Cannot validate duration strictly if not provided, but usually it is
+                                }
+
+                                titleMatch && durationMatch
+                            }
+
+                            if (validFallback != null) {
+                                Log.d(TAG, "Fallback lyrics found with artist '$singleArtist'")
+                                bestMatch = validFallback
+                                break // Stop if we found a good match
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Fallback search failed for artist '$singleArtist': ${e.message}")
+                        }
+                    }
+                }
+            }
             
             bestMatch
             

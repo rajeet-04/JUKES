@@ -310,6 +310,8 @@ class PlaybackService : MediaLibraryService() {
                             // Create fresh metadata with validated artwork
                             serviceScope.launch {
                                 try {
+                                    // Delay to force notification repaint
+                                    kotlinx.coroutines.delay(500)
                                     val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
                                     if (track != null) {
                                         val validatedItem = createValidatedMediaItem(track)

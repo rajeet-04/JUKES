@@ -1,5 +1,8 @@
 package com.example.juke.ui.screens
 
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -66,7 +69,13 @@ import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
 import com.example.juke.ui.components.player.QueueBottomSheetContent
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.juke.database.PlaylistEntity
+import com.example.juke.ui.components.AddToPlaylistDialog
+import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
+import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.AddCircle
 import kotlinx.coroutines.delay
 
 // Re-export LyricLine for compatibility if needed elsewhere, 
@@ -112,6 +121,7 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
 @Composable
 fun PlayerScreen(
     musicViewModel: MusicViewModel,
+    libraryViewModel: LibraryViewModel = viewModel(),
     onDismiss: () -> Unit,
     onNavigateToArtist: (String) -> Unit,
     onNavigateToAlbum: (String) -> Unit,
@@ -119,6 +129,7 @@ fun PlayerScreen(
 ) {
     BackHandler(onBack = onDismiss)
 
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val uiState by musicViewModel.uiState.collectAsState()
     val currentTrack = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
@@ -126,6 +137,19 @@ fun PlayerScreen(
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showArtistSelectionSheet by remember { mutableStateOf(false) }
     val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
+
+    var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
+    var trackPlaylists by remember {
+        mutableStateOf<List<PlaylistEntity>>(emptyList())
+    }
+    val libraryUiState by libraryViewModel.uiState.collectAsState()
+
+    // Fetch playlists for the selected track when dialog opens
+    LaunchedEffect(showAddToPlaylistDialog) {
+        showAddToPlaylistDialog?.let { track ->
+            trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
+        }
+    }
 
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -205,6 +229,7 @@ fun PlayerScreen(
                             currentTrack.albumSpotifyId
                         )
                     },
+                    onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
                     showMenuOption = true,
                     isAlbumAvailable = currentTrack.albumSpotifyId != null
                 )
@@ -257,16 +282,32 @@ fun PlayerScreen(
                     }
 
                     // Favorite Button (Right side)
-                    IconButton(
-                        onClick = { musicViewModel.toggleFavorite(currentTrack) },
-                        modifier = Modifier.size(48.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = if (currentTrack.isFavourite) "Remove from favorites" else "Add to favorites",
-                            tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else Color.White,
-                            modifier = Modifier.size(32.dp)
-                        )
+                        IconButton(
+                            onClick = { showAddToPlaylistDialog = currentTrack },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddCircle,
+                                contentDescription = "Add to Playlist",
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { musicViewModel.toggleFavorite(currentTrack) },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = if (currentTrack.isFavourite) "Remove from favorites" else "Add to favorites",
+                                tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
                     }
                 }
 
@@ -291,58 +332,71 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.height(32.dp))
 
                 // Bottom Action Row (Queue & Share)
-                Row(
+                // Wrap in Box to capture swipe gestures
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 48.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .clickable {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                showQueue = true
+                        .padding(bottom = 48.dp)
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                if (dragAmount.y < -50) { // Swipe up
+                                    showQueue = true
+                                }
                             }
-                            .padding(12.dp)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Queue",
-                            tint = Color.White
-                        )
-                        Text(
-                            "Queue",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White
-                        )
-                    }
+                        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
-                    if (currentTrack.spotifyId != null) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .clip(androidx.compose.foundation.shape.CircleShape)
                                 .clickable {
                                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    onShareTrack(currentTrack.spotifyId)
+                                    showQueue = true
                                 }
                                 .padding(12.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Share,
-                                contentDescription = "Share",
+                                imageVector = Icons.AutoMirrored.Filled.List,
+                                contentDescription = "Queue",
                                 tint = Color.White
                             )
                             Text(
-                                "Share",
+                                "Queue",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White
                             )
+                        }
+
+                        if (currentTrack.spotifyId != null) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .clickable {
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        onShareTrack(currentTrack.spotifyId)
+                                    }
+                                    .padding(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Share,
+                                    contentDescription = "Share",
+                                    tint = Color.White
+                                )
+                                Text(
+                                    "Share",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
                 }
@@ -406,6 +460,32 @@ fun PlayerScreen(
             }
         )
     }
+
+    showAddToPlaylistDialog?.let { track ->
+        AddToPlaylistDialog(
+            playlists = libraryUiState.playlists, // Use playlists from LibraryViewModel state
+            track = track,
+            trackPlaylists = trackPlaylists,
+            onDismiss = {
+                showAddToPlaylistDialog = null
+                trackPlaylists = emptyList()
+            },
+            onAddToPlaylist = { playlist ->
+                coroutineScope.launch {
+                    libraryViewModel.addToPlaylist(playlist, track)
+                    // Refresh list of playlists for this track
+                    trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
+                }
+            },
+            onRemoveFromPlaylist = { playlist ->
+                coroutineScope.launch {
+                    libraryViewModel.removeFromPlaylist(playlist, track)
+                    // Refresh list of playlists for this track
+                    trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -413,6 +493,7 @@ fun PlayerHeader(
     onDismiss: () -> Unit,
     onShowSleepTimer: () -> Unit,
     onNavigateToAlbum: () -> Unit,
+    onRefreshLyrics: () -> Unit,
     showMenuOption: Boolean,
     isAlbumAvailable: Boolean
 ) {
@@ -468,6 +549,13 @@ fun PlayerHeader(
                             }
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text("Refresh Lyrics") },
+                        onClick = {
+                            showMenu = false
+                            onRefreshLyrics()
+                        }
+                    )
                 }
             }
         } else {

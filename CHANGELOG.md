@@ -6,6 +6,16 @@
 
 ### Added
 
+- **Swipe-to-Open Queue**: Swipe up from the Player Screen bottom controls to open the queue.
+- **Refresh Lyrics**: Added "Refresh Lyrics" option to the player 3-dots menu to re-fetch lyrics from LRCLib.
+- **Smart Lyrics Fallback**: If primary lyrics search fails for multi-artist tracks, the app now retries with each artist individually (5% duration tolerance for strict matching).
+- **Add to Playlist on Player**: Added a "+" button on the Player Screen to manage playlist membership for the current track.
+- **Spotmate Fallback**: Added Spotmate as a secondary download source if Spotdown fails, with CSRF token handling.
+
+## [Beta-Released]
+
+### Added
+
 - **Multi-Selection Bulk Delete**: Long-press any track to enter selection mode; features "Select All", batched deletion, and haptic feedback.
 - **Enhanced Haptics**: Integrated tactile feedback for track selection, long-press gestures, and destructive confirmations.
 - **Undo Timeout Update**: Increased deletion undo window from 3 seconds to 5 seconds for better recoverability.
@@ -31,6 +41,9 @@
 - **Background Resume Crash**: Resolved `ForegroundServiceStartNotAllowedException` when resuming playback from background on Android 12+.
 - **Library UI**: Fixed Sort button height alignment with search field.
 - **Queue Shuffle Logic**: Queue now correctly respects shuffle state when adding tracks.
+- **Duplicate Download Bug**: Fixed race condition and cross-path duplication issues when adding songs to the download queue via different methods (swipe vs. click).
+- **Lyrics Persistence Bug**: Refreshed lyrics now persist correctly when navigating between queue tracks.
+- **Notification Thumbnail Repaint**: Added 500ms delay to notification metadata update to force thumbnail refresh on track change.
 
 ### Performance & Build
 
