@@ -701,12 +701,22 @@ object SpotifyApi {
             
             val results: List<LRCLibResult> = response.body()
             
-            // Find the best matching result based on validation score
+            // Find the best matching result based on validation score AND duration proximity AND synced lyrics availability
             var bestMatch = if (results.isNotEmpty()) {
                 results
-                    .map { result -> result to validateLyricsMatch(result, title, artist, duration) }
+                    .map { result -> 
+                        val score = validateLyricsMatch(result, title, artist, duration)
+                        val durationDiff = if (duration != null) abs(result.duration - duration) else Double.MAX_VALUE
+                        val hasSynced = !result.syncedLyrics.isNullOrBlank()
+                        Triple(result, score, durationDiff)
+                    }
                     .filter { it.second > 0 } // Only consider results with some match
-                    .maxByOrNull { it.second }
+                    .sortedWith(
+                        compareByDescending<Triple<LRCLibResult, Int, Double>> { it.second } // 1. Highest Score
+                        .thenByDescending { it.first.syncedLyrics?.isNotBlank() == true }    // 2. Has Synced Lyrics
+                        .thenBy { it.third } // 3. Lowest Duration Difference
+                    )
+                    .firstOrNull()
                     ?.first
             } else null
 
@@ -731,21 +741,28 @@ object SpotifyApi {
                             
                             // Strict Validation for Fallback
                             // Duration must be within 5% tolerance
-                            val validFallback = fallbackResults.find { result ->
-                                val resultTitle = result.trackName.lowercase().trim()
-                                val normalizedTitle = title.lowercase().trim()
-                                val titleMatch = resultTitle.contains(normalizedTitle) || normalizedTitle.contains(resultTitle)
-                                
-                                val durationMatch = if (duration != null && duration > 0) {
-                                    val tolerance = duration * 0.05 // 5% tolerance
-                                    val diff = abs(result.duration - duration)
-                                    diff <= tolerance
-                                } else {
-                                    true // Cannot validate duration strictly if not provided, but usually it is
+                            // Find ALL valid candidates, then pick based on criteria
+                            val validFallback = fallbackResults
+                                .filter { result ->
+                                    val resultTitle = result.trackName.lowercase().trim()
+                                    val normalizedTitle = title.lowercase().trim()
+                                    val titleMatch = resultTitle.contains(normalizedTitle) || normalizedTitle.contains(resultTitle)
+                                    
+                                    val durationMatch = if (duration != null && duration > 0) {
+                                        val tolerance = duration * 0.05 // 5% tolerance
+                                        val diff = abs(result.duration - duration)
+                                        diff <= tolerance
+                                    } else {
+                                        true 
+                                    }
+    
+                                    titleMatch && durationMatch
                                 }
-
-                                titleMatch && durationMatch
-                            }
+                                .sortedWith(
+                                    compareByDescending<LRCLibResult> { !it.syncedLyrics.isNullOrBlank() } // 1. Has Synced Lyrics
+                                    .thenBy { if (duration != null) abs(it.duration - duration) else 0.0 } // 2. Closest Duration
+                                )
+                                .firstOrNull()
 
                             if (validFallback != null) {
                                 Log.d(TAG, "Fallback lyrics found with artist '$singleArtist'")

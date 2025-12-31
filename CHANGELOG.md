@@ -12,6 +12,10 @@
 - **Add to Playlist on Player**: Added a "+" button on the Player Screen to manage playlist membership for the current track.
 - **Spotmate Fallback**: Added Spotmate as a secondary download source if Spotdown fails, with CSRF token handling.
 
+### Fixed
+
+- **Refined Lyrics Selection**: Improved lyrics selection logic to prioritize synced lyrics and tie-break equal scores using duration proximity. This ensures the most accurate version (e.g., standard vs. extended/lo-fi) is selected.
+
 ## [Beta-Released]
 
 ### Added
