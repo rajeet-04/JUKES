@@ -31,7 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -49,14 +50,17 @@ fun LyricsOverlay(
     isLandscape: Boolean,
     onDismiss: () -> Unit
 ) {
-    val configuration = LocalConfiguration.current
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
     val syncedLyrics = currentTrack.syncedLyrics
 
     // Calculate padding to center active line in the image
-    val verticalPadding = if (isTablet && isLandscape) {
-        (configuration.screenHeightDp.toFloat() / 2).dp
-    } else {
-        (configuration.screenWidthDp.toFloat() / 2).dp
+    val verticalPadding = with(density) {
+        if (isTablet && isLandscape) {
+            (windowInfo.containerSize.height.toDp() / 2)
+        } else {
+            (windowInfo.containerSize.width.toDp() / 2)
+        }
     }
 
     Box(

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,7 +22,6 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -37,8 +37,10 @@ fun SwipeToAddNextContainer(
 ) {
     val haptic = LocalHapticFeedback.current
 
+    // Increased threshold to reduce sensitivity (requires 65% swipe to trigger)
+    // This ensures users must swipe deliberately to trigger delete/add-next actions
     val dismissState = rememberSwipeToDismissBoxState(
-        positionalThreshold = { distance -> distance * 0.35f },
+        positionalThreshold = { distance -> distance * 0.65f },
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
@@ -46,11 +48,13 @@ fun SwipeToAddNextContainer(
                     onAddNext()
                     false // Reset after triggering action
                 }
+
                 SwipeToDismissBoxValue.EndToStart -> {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onDelete?.invoke()
                     false // Reset after triggering action
                 }
+
                 else -> false
             }
         }
