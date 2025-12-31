@@ -30,6 +30,7 @@ object SpotifyApi {
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
     private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
+    private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val LRCLIB_BASE_URL = "https://lrclib.net/api"
     
     private var accessToken: String? = null
@@ -581,6 +582,90 @@ object SpotifyApi {
                 return downloadSong(spotifyUrl, retryAttempt + 1)
             }
             
+            throw e
+        }
+    }
+
+    /**
+     * Download from Spotmate (Fallback Source).
+     *
+     * @param spotifyUrl Spotify track URL
+     * @return ByteArray of MP3 file data
+     */
+    suspend fun downloadSongFromSpotmate(spotifyUrl: String): ByteArray {
+        Log.d(TAG, "Attempting fallback download from Spotmate for: $spotifyUrl")
+        
+        try {
+            // 1. GET request to fetch cookies and CSRF token
+            val initialResponse: HttpResponse = ApiClient.httpClient.get("$SPOTMATE_BASE_URL/en1")
+            val body = initialResponse.bodyAsText()
+            val setCookieHeaders = initialResponse.headers.getAll("Set-Cookie") ?: emptyList()
+            
+            // 2. Extract Cookies
+            var xsrfToken = ""
+            var spotSession = ""
+            var siteTotalId = ""
+            
+            for (cookie in setCookieHeaders) {
+                if (cookie.contains("XSRF-TOKEN=")) {
+                    xsrfToken = cookie.substringAfter("XSRF-TOKEN=").substringBefore(";")
+                }
+                if (cookie.contains("spotmateonline_session=")) {
+                    spotSession = cookie.substringAfter("spotmateonline_session=").substringBefore(";")
+                }
+                if (cookie.contains("SITE_TOTAL_ID=")) {
+                    siteTotalId = cookie.substringAfter("SITE_TOTAL_ID=").substringBefore(";")
+                }
+            }
+            
+            // 3. Extract CSRF from Meta Tag
+            val csrfPattern = Regex("<meta name=\"csrf-token\" content=\"([^\"]+)\"")
+            val xCsrfToken = csrfPattern.find(body)?.groupValues?.get(1) ?: ""
+            
+            Log.d(TAG, "Spotmate tokens acquired. XSRF: ${xsrfToken.take(10)}..., CSRF: ${xCsrfToken.take(10)}...")
+            
+            // 4. POST request to convert
+            val postResponse: HttpResponse = ApiClient.httpClient.post("$SPOTMATE_BASE_URL/convert") {
+                header("Origin", SPOTMATE_BASE_URL)
+                header("Referer", "$SPOTMATE_BASE_URL/en1")
+                header("Sec-Fetch-Site", "same-site")
+                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
+                header("X-CSRF-TOKEN", xCsrfToken)
+                header("Cookie", "XSRF-TOKEN=$xsrfToken; spotmateonline_session=$spotSession; SITE_TOTAL_ID=$siteTotalId;")
+                
+                setBody(FormDataContent(Parameters.build {
+                    append("urls", spotifyUrl)
+                }))
+            }
+            
+            val postBody = postResponse.bodyAsText()
+            Log.d(TAG, "Spotmate convert response: $postBody")
+            
+            // 5. Extract URL from JSON
+            // Expected: {"error":false,"url":"..."}
+            val urlPattern = Regex("\"url\":\"([^\"]+)\"")
+            val downloadUrlMatch = urlPattern.find(postBody)
+            
+            if (downloadUrlMatch != null) {
+                var downloadUrl = downloadUrlMatch.groupValues[1].replace("\\/", "/")
+                Log.d(TAG, "Extracted Spotmate download URL: $downloadUrl")
+                
+                // 6. Download the file
+                val response: HttpResponse = ApiClient.httpClient.get(downloadUrl)
+                val audioData: ByteArray = response.body()
+                
+                if (audioData.size < 100_000) {
+                     throw Exception("Spotmate download too small")
+                }
+                
+                return audioData
+            } else {
+                Log.e(TAG, "Failed to extract URL. Response body: $postBody")
+                throw Exception("Failed to extract URL from Spotmate response")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error downloading from Spotmate: ${e.message}", e)
             throw e
         }
     }

@@ -209,7 +209,6 @@ class PlaybackService : MediaLibraryService() {
                         }
                         .build()
                 } else {
-                    @Suppress("DEPRECATION")
                     android.app.Notification.Builder(this)
                         .setContentTitle("Juke")
                         .setContentText("Ready to play")
