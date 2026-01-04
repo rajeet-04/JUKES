@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
@@ -53,7 +54,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,7 +70,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -82,7 +81,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.ui.components.AddToPlaylistDialog
+import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.ui.components.DownloadingTrackItem
+import com.example.juke.ui.components.EditPlaylistDialog
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.LibraryViewModel
@@ -115,6 +116,7 @@ fun LibraryScreen(
     }
 
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var showEditPlaylistDialog by remember { mutableStateOf(false) }
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
     var trackPlaylists by remember {
@@ -552,7 +554,10 @@ fun LibraryScreen(
                     // Playlist hero if one is selected
                     uiState.selectedPlaylist?.let { playlist ->
                         item(key = "playlist_header_${playlist.id}") {
-                            PlaylistHeader(playlist)
+                            PlaylistHeader(
+                                playlist = playlist,
+                                onEditClick = { showEditPlaylistDialog = true }
+                            )
                         }
                     }
 
@@ -692,6 +697,19 @@ fun LibraryScreen(
         )
     }
 
+    if (showEditPlaylistDialog && uiState.selectedPlaylist != null) {
+        val playlist = uiState.selectedPlaylist!!
+        EditPlaylistDialog(
+            initialName = playlist.name,
+            initialThumbnailUri = playlist.thumbnailUri,
+            onDismiss = { showEditPlaylistDialog = false },
+            onConfirm = { newName, newUri ->
+                libraryViewModel.updatePlaylist(playlist, newName, newUri)
+                showEditPlaylistDialog = false
+            }
+        )
+    }
+
     showAddToPlaylistDialog?.let { track ->
         AddToPlaylistDialog(
             playlists = uiState.playlists,
@@ -715,6 +733,7 @@ fun LibraryScreen(
                     trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
                 }
             },
+            onCreatePlaylist = { showCreatePlaylistDialog = true },
             onRemoveFromCurrentPlaylist = if (uiState.selectedPlaylist != null) {
                 { playlist ->
                     if (playlist.id == uiState.selectedPlaylist?.id) {
@@ -862,7 +881,10 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun PlaylistHeader(playlist: com.example.juke.database.PlaylistEntity) {
+private fun PlaylistHeader(
+    playlist: com.example.juke.database.PlaylistEntity,
+    onEditClick: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -891,6 +913,7 @@ private fun PlaylistHeader(playlist: com.example.juke.database.PlaylistEntity) {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+
                 Text(
                     text = playlist.name,
                     style = MaterialTheme.typography.titleLarge.copy(
@@ -899,6 +922,21 @@ private fun PlaylistHeader(playlist: com.example.juke.database.PlaylistEntity) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                // Edit Button
+                FilledTonalButton(
+                    onClick = onEditClick,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Playlist",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Edit", style = MaterialTheme.typography.labelMedium)
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -921,37 +959,5 @@ private fun PlaylistHeader(playlist: com.example.juke.database.PlaylistEntity) {
 }
 
 
-@Composable
-fun CreatePlaylistDialog(
-    onDismiss: () -> Unit,
-    onCreate: (String) -> Unit
-) {
-    var name by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("New Playlist") },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Playlist Name") },
-                singleLine = true
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onCreate(name) },
-                enabled = name.isNotBlank()
-            ) {
-                Text("Create")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
 

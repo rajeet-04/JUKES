@@ -6,11 +6,23 @@
 
 ### Added
 
+- **Spotify Region Selector**: New option in Audio Settings to choose your Spotify market region (ISO 3166-1 alpha-2). Includes 20 popular markets (IN, US, GB, PK, NP, BD, LK, etc.) with a searchable dialog. All Spotify API searches now use the selected region for personalized results.
+- **Instant Playback with Concurrent Lyrics**: Songs now start playing immediately via streaming while downloading in the background. Lyrics are fetched concurrently and appear within 1-2 seconds of playback start.
+- **Queue Persistence for Streaming**: Streaming tracks are now saved to the database immediately, allowing queue restoration across app restarts. When downloads complete, the same track record is updated with the local file path.
+- **Deleted Track Safety**: Critical safety features to prevent crashes when tracks are deleted:
+  - Deleted tracks are automatically removed from the playback queue
+  - If a deleted track is playing, playback automatically skips to the next song
+  - File-not-found errors gracefully skip to next track instead of crashing
+- **Play Statistics Preservation**: Play count and last played time are now preserved when streaming tracks are downloaded, maintaining accurate listening history.
+- **Create Playlist from Player**: Added "Create Playlist" option to the "Add to Playlist" dialog on both Player Screen and Library Screen for quick playlist creation.
+- **Improved Delete UX**: When deleting multiple tracks rapidly, pending deletes are now committed immediately before starting a new countdown, allowing true one-swipe deletion.
 - **Swipe-to-Open Queue**: Swipe up from the Player Screen bottom controls to open the queue.
 - **Refresh Lyrics**: Added "Refresh Lyrics" option to the player 3-dots menu to re-fetch lyrics from LRCLib.
 - **Smart Lyrics Fallback**: If primary lyrics search fails for multi-artist tracks, the app now retries with each artist individually (5% duration tolerance for strict matching).
 - **Add to Playlist on Player**: Added a "+" button on the Player Screen to manage playlist membership for the current track.
 - **Spotmate Fallback**: Added Spotmate as a secondary download source if Spotdown fails, with CSRF token handling.
+- **Search Screen Redesign**: Premium redesign with glassmorphic search bar, filter chips (All, Tracks, Artists, Playlists, Albums), and frosted glass track cards. Enhanced empty states and polished result list.
+- **Save Playlist Offline**: Added "Save Playlist Offline" button to Playlist Detail screens to download all tracks with progress indicator.
 
 ### Fixed
 

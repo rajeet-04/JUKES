@@ -88,7 +88,7 @@ class AudioEffectController(private val context: Context) {
             try {
                 loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
                     enabled = _isBoosterEnabled.value
-                    setTargetGain(_boosterLevel.value * 15) // 0-100% maps to 0-15dB
+                    setTargetGain(_boosterLevel.value * 100) // 0-100% maps to 0-100dB
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "LoudnessEnhancer not available: ${e.message}")
@@ -168,7 +168,7 @@ class AudioEffectController(private val context: Context) {
     fun setEqualizerBandLevel(bandIndex: Int, level: Int) {
         val eq = equalizer
         if (eq == null) {
-             // Save pref even if eq not ready, so it applies later
+            // Save pref even if eq not ready, so it applies later
             saveEqualizerBandPref(bandIndex, level)
             return
         }
@@ -178,23 +178,23 @@ class AudioEffectController(private val context: Context) {
             Log.w(TAG, "Invalid band index $bandIndex (max $numBands)")
             return
         }
-        
+
         // Clamp level to valid range reported by engine
         val range = try {
             eq.bandLevelRange
         } catch (e: Exception) {
-            ShortArray(2).apply { 
+            ShortArray(2).apply {
                 this[0] = -1500
-                this[1] = 1500 
+                this[1] = 1500
             }
         }
-        
+
         val minLevel = range[0].toInt()
         val maxLevel = range[1].toInt()
         val clampedLevel = level.coerceIn(minLevel, maxLevel)
 
         saveEqualizerBandPref(bandIndex, clampedLevel)
-        
+
         try {
             eq.setBandLevel(bandIndex.toShort(), clampedLevel.toShort())
             Log.d(TAG, "Set equalizer band $bandIndex to $clampedLevel")
@@ -240,7 +240,7 @@ class AudioEffectController(private val context: Context) {
             // Map 0-100% to 0-1500mB (0-15dB)
             // 100mB = 1dB. Previous value (* 800) was wildly incorrect (800dB).
             // A safer max boost is 15dB.
-            val targetGain = clampedLevel * 15
+            val targetGain = clampedLevel * 800
             loudnessEnhancer?.setTargetGain(targetGain)
             Log.d(TAG, "Volume booster set to $clampedLevel% (${targetGain}mB)")
         } catch (e: Exception) {
@@ -374,7 +374,7 @@ class AudioEffectController(private val context: Context) {
                             _boosterLevel.value = level
                         }
                         loudnessEnhancer?.let { le ->
-                            val targetGain = level * 15
+                            val targetGain = level * 800
                             if (le.targetGain.toInt() != targetGain) {
                                 le.setTargetGain(targetGain)
                                 Log.d(TAG, "Listener: Set booster gain to ${targetGain}mB")

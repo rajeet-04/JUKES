@@ -1,5 +1,6 @@
 package com.example.juke.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -8,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.RemoveCircle
 import androidx.compose.material3.AlertDialog
@@ -33,6 +35,7 @@ fun AddToPlaylistDialog(
     onDismiss: () -> Unit,
     onAddToPlaylist: (PlaylistEntity) -> Unit,
     onRemoveFromPlaylist: (PlaylistEntity) -> Unit,
+    onCreatePlaylist: () -> Unit,
     onRemoveFromCurrentPlaylist: ((PlaylistEntity) -> Unit)? = null,
     currentPlaylist: PlaylistEntity? = null
 ) {
@@ -47,6 +50,22 @@ fun AddToPlaylistDialog(
                 // If we are in a playlist context, we might want to show "Remove from current" prominently, 
                 // but per user request, we are handling that with the minus icon.
                 // However, if the modal IS opened (though unlikely in playlist view due to minus icon), we keep logic generic.
+
+                item {
+                    ListItem(
+                        headlineContent = { Text("Create new playlist") },
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Create new playlist",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onCreatePlaylist() }
+                    )
+                }
 
                 items(playlists) { playlist ->
                     val isAlreadyAdded = trackPlaylists.any { it.id == playlist.id }

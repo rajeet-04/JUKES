@@ -76,29 +76,41 @@ class MusicService(private val context: Context) {
             com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
         }
 
+        // If track exists with a remote/streaming URL, we'll update it with the downloaded file
+        // Otherwise if it has a local file, just return it
         if (existingTrack != null && existingTrack.localUri != null) {
-            Log.d(TAG, "Track already exists in database: ${song.title} by ${song.artist}")
-            return Track(
-                uuid = existingTrack.uuid,
-                title = existingTrack.title,
-                artist = existingTrack.artist,
-                thumbnailUri = existingTrack.thumbnailUri,
-                durationSec = existingTrack.durationSec,
-                localUri = existingTrack.localUri,
-                ytVideoId = existingTrack.ytVideoId,
-                syncedLyrics = existingTrack.syncedLyrics,
-                plainLyrics = existingTrack.plainLyrics,
-                isFavourite = existingTrack.isFavourite,
-                playCount = existingTrack.playCount,
-                lastPlayedAt = existingTrack.lastPlayedAt,
-                downloadedAt = existingTrack.downloadedAt,
-                spotifyId = existingTrack.spotifyId,
-                albumSpotifyId = existingTrack.albumSpotifyId,
-                artistSpotifyIds = existingTrack.artistSpotifyIds
-            )
+            // Check if it's a streaming URL (http/https) - needs replacing
+            val isStreamingUrl = existingTrack.localUri.startsWith("http", ignoreCase = true)
+            
+            if (!isStreamingUrl) {
+                // Already has a local file, return it
+                Log.d(TAG, "Track already exists in database with local file: ${song.title} by ${song.artist}")
+                return Track(
+                    uuid = existingTrack.uuid,
+                    title = existingTrack.title,
+                    artist = existingTrack.artist,
+                    thumbnailUri = existingTrack.thumbnailUri,
+                    durationSec = existingTrack.durationSec,
+                    localUri = existingTrack.localUri,
+                    ytVideoId = existingTrack.ytVideoId,
+                    syncedLyrics = existingTrack.syncedLyrics,
+                    plainLyrics = existingTrack.plainLyrics,
+                    isFavourite = existingTrack.isFavourite,
+                    playCount = existingTrack.playCount,
+                    lastPlayedAt = existingTrack.lastPlayedAt,
+                    downloadedAt = existingTrack.downloadedAt,
+                    spotifyId = existingTrack.spotifyId,
+                    albumSpotifyId = existingTrack.albumSpotifyId,
+                    artistSpotifyIds = existingTrack.artistSpotifyIds
+                )
+            } else {
+                // Has streaming URL, we'll download and update this same record
+                Log.d(TAG, "Found streaming track in database, will update with downloaded file: ${song.title}")
+            }
         }
 
-        val uuid = generateUUID()
+        // Use existing UUID if track exists (streaming version), otherwise generate new one
+        val uuid = existingTrack?.uuid ?: generateUUID()
         val musicDir = File(context.filesDir, "music")
         if (!musicDir.exists()) musicDir.mkdirs()
 
@@ -269,6 +281,15 @@ class MusicService(private val context: Context) {
                 Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
             }
 
+            // SAFETY: Remove from playback queue if present
+            try {
+                val playbackManager = PlaybackManager.getInstance(context)
+                playbackManager.removeDeletedTrackFromQueue(track.uuid)
+                Log.d(TAG, "Removed deleted track from playback queue: ${track.title}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not remove track from playback queue: ${e.message}")
+            }
+
             Log.d(TAG, "Deleted track: ${track.title}")
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting track: ${e.message}", e)
@@ -313,6 +334,17 @@ class MusicService(private val context: Context) {
                 val newCount = playlistDao.getPlaylistTrackCount(playlistId)
                 playlistDao.updatePlaylistTrackCount(playlistId, newCount)
                 Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
+            }
+
+            // SAFETY: Remove all deleted tracks from playback queue
+            try {
+                val playbackManager = PlaybackManager.getInstance(context)
+                trackUuids.forEach { uuid ->
+                    playbackManager.removeDeletedTrackFromQueue(uuid)
+                }
+                Log.d(TAG, "Removed ${trackUuids.size} deleted tracks from playback queue")
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not remove tracks from playback queue: ${e.message}")
             }
 
         } catch (e: Exception) {

@@ -335,6 +335,9 @@ interface TrackDao {
     @Query("UPDATE tracks SET play_count = play_count + 1, last_played_at = :lastPlayedAt WHERE uuid = :uuid")
     suspend fun incrementPlayCount(uuid: String, lastPlayedAt: String)
 
+    @Query("UPDATE tracks SET play_count = :playCount, last_played_at = :lastPlayedAt WHERE uuid = :uuid")
+    suspend fun updateTrackPlayStats(uuid: String, playCount: Int, lastPlayedAt: String?)
+
     @Query("DELETE FROM tracks WHERE uuid = :uuid")
     suspend fun deleteTrack(uuid: String)
 

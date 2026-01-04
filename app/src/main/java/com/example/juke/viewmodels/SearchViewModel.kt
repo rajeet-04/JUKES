@@ -71,7 +71,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         // Start new search job with 1.369 second delay
         if (query.isNotBlank()) {
             searchJob = viewModelScope.launch {
-                delay(1369) // 1.369 second debounce
+                delay(769) // 0.769 second debounce
                 search(query)
             }
         } else {

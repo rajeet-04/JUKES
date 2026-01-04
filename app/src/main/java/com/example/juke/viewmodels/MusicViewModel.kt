@@ -2,6 +2,7 @@ package com.example.juke.viewmodels
 
 import android.app.Application
 import android.util.Log
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.database.MusicDatabase
@@ -18,6 +19,7 @@ import com.example.juke.services.PlaybackManager
 import com.example.juke.services.QueueManager
 import com.example.juke.utils.DatabaseMigrationHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,7 +63,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val database = MusicDatabase.getDatabase(application)
     private val trackDao = database.trackDao()
     private val musicService = MusicService(application)
-    val playbackManager = PlaybackManager(application)
+    val playbackManager = PlaybackManager.getInstance(application)
     private val queueManager = QueueManager.getInstance(application)
 
     private val _uiState = MutableStateFlow(MusicUiState())
@@ -409,8 +411,152 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Download a simplified Spotify track (album context) and queue it to play next.
+     * Play a Spotify track instantly (Stream) and download in background.
      */
+    fun playInstant(spotifyTrack: SpotifyTrack) {
+        val spotdownSong = SpotifyApi.spotifyTrackToSong(spotifyTrack)
+        playInstant(spotdownSong)
+    }
+
+    /**
+     * Overload for SpotdownSong (used by Search/Artist/Album screens via downloadAndPlay)
+     */
+    fun playInstant(song: SpotdownSong) {
+        viewModelScope.launch {
+            try {
+                // 1. Check if already downloaded
+                val durationSec = SpotifyApi.parseDuration(song.duration)
+                val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+                val existingTrack = candidates.find {
+                    com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
+                }
+
+                if (existingTrack != null && existingTrack.localUri != null) {
+                    Log.d(
+                        "MusicViewModel",
+                        "Track exists locally, playing from storage: ${song.title}"
+                    )
+                    playTrack(existingTrack.toTrack())
+                    return@launch
+                }
+
+                // 2. Not downloaded -> Stream Instant via Spotmate
+                Log.d(
+                    "MusicViewModel",
+                    "Track not local, starting instant stream with lyrics: ${song.title}"
+                )
+                _uiState.update { it.copy(isLoading = true) }
+
+                try {
+                    // Start concurrent tasks
+                    val streamUrlDeferred = async(Dispatchers.IO) {
+                        try {
+                            SpotifyApi.getSpotmateStreamUrl(song.url)
+                        } catch (e: Exception) {
+                            Log.e("MusicViewModel", "Stream fetch failed: ${e.message}")
+                            null
+                        }
+                    }
+
+                    val lyricsDeferred = async(Dispatchers.IO) {
+                        try {
+                            SpotifyApi.searchLyrics(
+                                title = song.title,
+                                artist = song.artist,
+                                album = song.album,
+                                duration = durationSec
+                            )
+                        } catch (e: Exception) {
+                            Log.e("MusicViewModel", "Lyrics fetch failed: ${e.message}")
+                            null
+                        }
+                    }
+
+                    // Wait for stream URL (Critical for playback)
+                    val streamUrl = streamUrlDeferred.await()
+
+                    if (streamUrl == null) {
+                        throw Exception("Failed to get stream URL")
+                    }
+
+                    // Create Transient Track for Streaming (Initially without lyrics)
+                    var tempTrack = Track(
+                        uuid = UUID.randomUUID().toString(),
+                        title = song.title,
+                        artist = song.artist,
+                        thumbnailUri = song.thumbnail,
+                        durationSec = durationSec,
+                        localUri = streamUrl, // REMOTE URL
+                        spotifyId = song.spotifyId,
+                        albumSpotifyId = song.albumSpotifyId,
+                        artistSpotifyIds = song.artistSpotifyIds,
+                        downloadedAt = System.currentTimeMillis() // Mark as "downloaded" even though it's streaming
+                    )
+
+                    // CRITICAL: Save streaming track to database immediately
+                    // This allows queue persistence to work across app restarts
+                    withContext(Dispatchers.IO) {
+                        trackDao.insertTrack(tempTrack.toEntity())
+                        Log.d("MusicViewModel", "Saved streaming track to database: ${song.title}")
+                    }
+
+                    // Play immediately
+                    playTrack(tempTrack)
+                    _uiState.update { it.copy(isLoading = false) }
+                    
+                    // 3. Trigger Background Download (Persistence)
+                    Log.d(
+                        "MusicViewModel",
+                        "Queueing background download for persistence: ${song.title}"
+                    )
+                    addToDownloadQueue(song, shouldPlayAfterDownload = false)
+
+                    // 4. Update with lyrics when available
+                    val lyrics = lyricsDeferred.await()
+                    if (lyrics != null) {
+                        Log.d("MusicViewModel", "Lyrics fetched for instant play: ${song.title}")
+                        tempTrack = tempTrack.copy(
+                            syncedLyrics = lyrics.syncedLyrics,
+                            plainLyrics = lyrics.plainLyrics
+                        )
+
+                        // Update database with lyrics
+                        withContext(Dispatchers.IO) {
+                            trackDao.insertTrack(tempTrack.toEntity())
+                        }
+                        
+                        // Update UI State with new lyrics
+                        _uiState.update { state ->
+                            val updatedQueue = state.queue.map {
+                                if (it.uuid == tempTrack.uuid) tempTrack else it
+                            }
+                            state.copy(
+                                queue = updatedQueue,
+                                currentTrack = if (state.currentTrack?.uuid == tempTrack.uuid) tempTrack else state.currentTrack
+                            )
+                        }
+                    }
+
+                } catch (e: Exception) {
+                    Log.e("MusicViewModel", "Instant play failed (stream fetch): ${e.message}", e)
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Failed to stream: ${e.message}"
+                        )
+                    }
+
+                    // Fallback: Queue normal download (will play if user waits or clicks again)
+                    addToDownloadQueue(song, shouldPlayAfterDownload = true)
+                }
+
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Instant play failed: ${e.message}", e)
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
     /**
      * Download a simplified Spotify track (album context) and queue it to play next.
      */
@@ -481,20 +627,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun downloadAndPlay(song: SpotdownSong) {
-        // Check if already exists
-        val durationSec = SpotifyApi.parseDuration(song.duration)
-        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-        val existingTrack = candidates.find {
-            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
-        }
-
-        if (existingTrack != null && existingTrack.localUri != null) {
-            // Already downloaded, play immediately
-            playTrack(existingTrack.toTrack())
-        } else {
-            // Add to queue with play flag
-            addToDownloadQueue(song, shouldPlayAfterDownload = true)
-        }
+        // Redirect to instant play logic
+        playInstant(song)
     }
 
     suspend fun downloadSong(song: SpotdownSong): Track {
@@ -641,6 +775,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     Log.d("MusicViewModel", "Download completed: ${nextItem.song.title}")
+
+                    // Check if this track is currently in the queue (streaming version)
+                    // Since we preserve UUIDs, the track object already has the correct UUID
+                    val currentTrack = _uiState.value.currentTrack
+                    val isInQueue = _uiState.value.queue.any { it.uuid == track.uuid }
+                    
+                    if (isInQueue) {
+                        Log.d("MusicViewModel", "Downloaded track is in queue, updating UI and playback: ${track.title}")
+                        
+                        // Update UI queue with downloaded version
+                        val updatedQueue = _uiState.value.queue.map {
+                            if (it.uuid == track.uuid) track else it
+                        }
+                        _uiState.update { state ->
+                            state.copy(
+                                queue = updatedQueue,
+                                currentTrack = if (state.currentTrack?.uuid == track.uuid) track else state.currentTrack
+                            )
+                        }
+                        
+                        // Update playback manager queue with new local file path
+                        playbackManager.replaceTrackInQueue(track.uuid, track)
+                    }
 
                     // Play if requested
                     if (nextItem.shouldPlayAfterDownload) {
@@ -888,7 +1045,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         val updatedQueue = state.queue.map {
                             if (it.uuid == track.uuid) updatedTrack else it
                         }
-                        
+
                         state.copy(
                             queue = updatedQueue,
                             currentTrack = if (state.currentTrack?.uuid == track.uuid) updatedTrack else state.currentTrack
@@ -958,9 +1115,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun setRecommendationCount(count: Int) {
         val clampedCount = count.coerceIn(3, 15)
         _recommendationCount.value = clampedCount
-        settingsPrefs.edit().putInt("recommendation_count", clampedCount).apply()
+        settingsPrefs.edit { putInt("recommendation_count", clampedCount) }
         Log.d("MusicViewModel", "Recommendation count set to $clampedCount")
     }
+
+    // Market Code Settings (ISO 3166-1 alpha-2)
+    private val _marketCode = MutableStateFlow(
+        settingsPrefs.getString("spotify_market_code", "IN") ?: "IN"
+    )
+    val marketCode: StateFlow<String> = _marketCode.asStateFlow()
+
+    fun setMarketCode(code: String) {
+        // Validate it's a 2-letter code
+        val validCode = code.uppercase().take(2)
+        _marketCode.value = validCode
+        settingsPrefs.edit { putString("spotify_market_code", validCode) }
+        Log.d("MusicViewModel", "Market code set to $validCode")
+    }
+
 
     private suspend fun loadRestoredQueue() {
         try {

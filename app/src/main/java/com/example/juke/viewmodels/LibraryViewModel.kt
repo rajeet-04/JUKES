@@ -167,16 +167,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var deletionJob: kotlinx.coroutines.Job? = null
 
     fun deleteTrack(trackUuid: String) {
-        // If there's a pending delete, commit it immediately before starting a new one
-        if (deletionJob?.isActive == true) {
-             val pending = _uiState.value.pendingDeleteTrack
-             // If we are deleting a different track, we can't undo the previous one anymore
-             if (pending != null && pending.uuid != trackUuid) {
-                 commitDelete()
-             }
-        }
-
         viewModelScope.launch {
+            // If there's a pending delete, commit it immediately before starting a new one
+            if (deletionJob?.isActive == true) {
+                val pending = _uiState.value.pendingDeleteTrack
+                // If we are deleting a different track, commit the previous one immediately
+                if (pending != null && pending.uuid != trackUuid) {
+                    deletionJob?.cancel()
+                    // Immediately commit the pending delete
+                    musicService.deleteTrackAndFiles(pending)
+                    _uiState.value = _uiState.value.copy(pendingDeleteTrack = null)
+                }
+            }
+
             // Get the track from current state
             val track = _uiState.value.tracks.find { it.uuid == trackUuid }
             if (track != null) {
@@ -289,7 +292,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun toggleSortSheet() {
         _uiState.value = _uiState.value.copy(showSortSheet = !_uiState.value.showSortSheet)
     }
-    fun createPlaylist(name: String) {
+    fun createPlaylist(name: String, onCreated: ((String) -> Unit)? = null) {
         viewModelScope.launch {
             val uuid = java.util.UUID.randomUUID().toString()
             val newPlaylist = com.example.juke.database.PlaylistEntity(
@@ -299,6 +302,50 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 createdAt = System.currentTimeMillis()
             )
             playlistDao.insertPlaylist(newPlaylist)
+            onCreated?.invoke(uuid)
+        }
+    }
+
+    fun updatePlaylist(playlist: PlaylistEntity, newName: String, newThumbnailUriString: String?) {
+        viewModelScope.launch {
+            var finalUriString = newThumbnailUriString
+
+            // If URI changed and is a content URI, copy it to internal storage
+            if (newThumbnailUriString != null && newThumbnailUriString != playlist.thumbnailUri) {
+                val uri = android.net.Uri.parse(newThumbnailUriString)
+                if (uri.scheme == "content") {
+                    val context = getApplication<Application>()
+                    try {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        val filename = "playlist_cover_${playlist.id}_${System.currentTimeMillis()}.jpg"
+                        val file = java.io.File(context.filesDir, "covers")
+                        if (!file.exists()) file.mkdirs()
+                        val destFile = java.io.File(file, filename)
+
+                        inputStream?.use { input ->
+                            java.io.FileOutputStream(destFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        finalUriString = destFile.toURI().toString()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        // On error, fallback to null or keep original if valid? 
+                        // For now we keep what was passed, but it might fail to load later if permission lost.
+                    }
+                }
+            }
+
+            val updatedPlaylist = playlist.copy(
+                name = newName,
+                thumbnailUri = finalUriString
+            )
+            playlistDao.updatePlaylist(updatedPlaylist)
+
+            // Refresh if selected
+            if (_uiState.value.selectedPlaylist?.id == playlist.id) {
+                loadPlaylistTracks(playlist.id, silent = true)
+            }
         }
     }
     

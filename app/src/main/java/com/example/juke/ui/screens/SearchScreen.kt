@@ -1,42 +1,90 @@
 package com.example.juke.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
+import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.AlbumCard
 import com.example.juke.ui.components.ArtistCard
 import com.example.juke.ui.components.PlaylistCard
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
-import com.example.juke.network.SpotifyApi
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     musicViewModel: MusicViewModel,
@@ -51,425 +99,443 @@ fun SearchScreen(
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
-    
+
     // Track previous trigger value to detect actual changes
-    var previousTrigger by remember { mutableStateOf(searchResetTrigger) }
-    
-    // Handle search reset when tab is re-tapped (only on change, not on restore)
+    var previousTrigger by remember { mutableIntStateOf(searchResetTrigger) }
+
+    // Filter state
+    var selectedFilter by remember { mutableStateOf("All") }
+    val filters = listOf("All", "Tracks", "Artists", "Playlists", "Albums")
+
+    // Handle search reset when tab is re-tapped
     LaunchedEffect(searchResetTrigger) {
         if (searchResetTrigger != previousTrigger && searchResetTrigger > 0) {
             searchViewModel.updateQuery("")
             focusRequester.requestFocus()
             keyboardController?.show()
-            previousTrigger = searchResetTrigger
         }
     }
-    
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Search") }
-            )
-        }
-    ) { paddingValues ->
+
+    Scaffold { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(bottom = paddingValues.calculateBottomPadding())
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            // Modern Search Bar
-            TextField(
-                value = uiState.query,
-                onValueChange = { searchViewModel.updateQuery(it) },
+            // --- Custom Header & Search Bar ---
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 16.dp)
-                    .focusRequester(focusRequester),
-                placeholder = {
-                    Text(
-                        "Search songs, artists, playlists or import links...",
-                        maxLines = 1,
-                        modifier = Modifier.basicMarquee()
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search"
-                    )
-                },
-                trailingIcon = {
-                    if (uiState.isSearching) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else if (uiState.query.isNotEmpty()) {
-                        IconButton(onClick = { searchViewModel.updateQuery("") }) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear"
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.0f)
                             )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
-                ),
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    imeAction = ImeAction.Search
-                ),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                    onSearch = {
-                        if (uiState.query.isNotBlank() && !uiState.isSearching) {
-                            keyboardController?.hide()
-                            searchViewModel.search(uiState.query)
-                        }
-                    }
+                        )
+                    )
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .statusBarsPadding()
+            ) {
+                Text(
+                    text = "Search",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = Modifier.padding(bottom = 16.dp)
                 )
-            )
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            // Show import playlist button if playlist URL detected
-            if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
-                val playlist = uiState.playlists.first()
-                Card(
+
+                // Glassmorphic Search Bar
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = "Import Playlist",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
-                                        musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Import ${playlist.tracks.total} tracks")
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(20.dp))
-            }
-            
-            // Show import progress
-            if (uiState.isImportingPlaylist) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(
-                            "Importing Playlist...",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = {
-                                if (uiState.importTotal > 0) {
-                                    uiState.importProgress.toFloat() / uiState.importTotal.toFloat()
-                                } else 0f
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "${uiState.importProgress} / ${uiState.importTotal} tracks",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(20.dp))
-            }
-            
-            if (uiState.error != null) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    shape = RoundedCornerShape(12.dp)
+                        .height(56.dp)
+                        .shadow(
+                            elevation = 8.dp,
+                            spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(16.dp)
+                        ),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+                    )
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text(
-                            uiState.error!!,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            
-            val hasResults = uiState.tracks.isNotEmpty() || 
-                           uiState.artists.isNotEmpty() || 
-                           uiState.playlists.isNotEmpty() ||
-                           uiState.albums.isNotEmpty()
-            
-            if (!hasResults && !uiState.isSearching && uiState.query.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth().padding(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.SearchOff,
-                                contentDescription = null,
-                                modifier = Modifier.size(80.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "No results found",
-                                style = MaterialTheme.typography.headlineSmall.copy(
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Try different keywords or check spelling",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else if (!hasResults && uiState.query.isBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth().padding(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(80.dp),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Search for music",
-                                style = MaterialTheme.typography.headlineSmall.copy(
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Find songs, artists, albums, and playlists",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else if (hasResults) {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
-                    contentPadding = PaddingValues(
-                        start = 20.dp,
-                        end = 20.dp,
-                        bottom = 20.dp + bottomPadding
-                    )
-                ) {
-                        // Tracks Section
-                        if (uiState.tracks.isNotEmpty()) {
-                            item {
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (uiState.query.isEmpty()) {
                                 Text(
-                                    text = "Tracks (${uiState.tracks.size})",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    text = "Songs, artists, or playlists...",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
                             }
 
-                            items(uiState.tracks) { track ->
-                                SwipeToAddNextContainer(
-                                    onAddNext = {
-                                        scope.launch {
-                                            searchViewModel.setDownloading(track.id)
-                                            try {
-                                                musicViewModel.queueSpotifyTrackNext(track)
-                                            } finally {
-                                                searchViewModel.setDownloading(null)
-                                            }
+                            BasicTextField(
+                                value = uiState.query,
+                                onValueChange = { searchViewModel.updateQuery(it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester),
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                singleLine = true,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(
+                                    onSearch = {
+                                        if (uiState.query.isNotBlank() && !uiState.isSearching) {
+                                            keyboardController?.hide()
+                                            searchViewModel.search(uiState.query)
                                         }
                                     }
-                                ) {
-                                    TrackItem(
-                                        track = track,
-                                        isDownloading = uiState.downloadingId == track.id,
-                                        onClick = {
-                                            scope.launch {
-                                                searchViewModel.setDownloading(track.id)
-                                                musicViewModel.downloadAndPlay(
-                                                    SpotifyApi.spotifyTrackToSong(track)
-                                                )
-                                                // Keep indicator visible for 2 seconds to show download started
-                                                kotlinx.coroutines.delay(2000)
-                                                searchViewModel.setDownloading(null)
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
+                                )
+                            )
                         }
 
-                        // Artists Section
-                        if (uiState.artists.isNotEmpty()) {
-                            item {
-                                Text(
-                                    text = "Artists (${uiState.artists.size})",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold
-                                    )
+                        if (uiState.isSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else if (uiState.query.isNotEmpty()) {
+                            IconButton(
+                                onClick = { searchViewModel.updateQuery("") },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                        }
+                    }
+                }
 
-                            item {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    items(uiState.artists) { artist ->
-                                        ArtistCard(
-                                            artist = artist,
-                                            onClick = { onNavigateToArtist(artist) }
-                                        )
-                                    }
+                // Filter Chips
+                if (uiState.query.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filters) { filter ->
+                            FilterChip(
+                                selected = selectedFilter == filter,
+                                onClick = { selectedFilter = filter },
+                                label = { Text(filter) },
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = selectedFilter == filter,
+                                    borderColor = Color.Transparent,
+                                    selectedBorderColor = Color.Transparent
+                                ),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(
+                                        alpha = 0.5f
+                                    ),
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                ),
+                                shape = CircleShape
+                            )
+                        }
+                    }
+                }
+            }
+
+            // --- Content Area ---
+            Box(modifier = Modifier.weight(1f)) {
+
+                // Import Playlist Card
+                if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
+                    val playlist = uiState.playlists.first()
+                    ImportPlaylistCard(
+                        playlist = playlist,
+                        onImport = {
+                            scope.launch {
+                                searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
+                                    musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
                                 }
                             }
                         }
+                    )
+                }
 
-                        // Playlists Section
-                        if (uiState.playlists.isNotEmpty()) {
-                            item {
-                                Text(
-                                    text = "Playlists (${uiState.playlists.size})",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                )
-                            }
+                // Import Progress
+                else if (uiState.isImportingPlaylist) {
+                    ImportProgressCard(
+                        progress = uiState.importProgress,
+                        total = uiState.importTotal
+                    )
+                }
 
-                            item {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    items(uiState.playlists) { playlist ->
-                                        PlaylistCard(
-                                            playlist = playlist,
-                                            onClick = {
-                                                onNavigateToPlaylist(playlist)
-                                            }
-                                        )
-                                    }
-                                }
+                // Search Results
+                else if (hasResults(uiState)) {
+                    SearchResultsList(
+                        uiState = uiState,
+                        selectedFilter = selectedFilter,
+                        musicViewModel = musicViewModel,
+                        searchViewModel = searchViewModel,
+                        scope = scope,
+                        onNavigateToArtist = onNavigateToArtist,
+                        onNavigateToPlaylist = onNavigateToPlaylist,
+                        onNavigateToAlbum = onNavigateToAlbum,
+                        bottomPadding = bottomPadding
+                    )
+                }
+
+                // Empty States
+                else {
+                    EmptySearchState(
+                        isQueryEmpty = uiState.query.isBlank(),
+                        isSearching = uiState.isSearching,
+                        bottomPadding = bottomPadding
+                    )
+                }
+
+                // Error State
+                if (uiState.error != null) {
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                uiState.error!!,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun hasResults(uiState: com.example.juke.viewmodels.SearchUiState): Boolean {
+    return uiState.tracks.isNotEmpty() ||
+            uiState.artists.isNotEmpty() ||
+            uiState.playlists.isNotEmpty() ||
+            uiState.albums.isNotEmpty()
+}
+
+@Composable
+private fun ImportPlaylistCard(
+    playlist: SpotifyPlaylist,
+    onImport: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Column {
+                    Text(
+                        text = "Import Playlist",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        text = "${playlist.tracks.total} tracks ready to download",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(
+                onClick = onImport,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    contentColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Start Import", fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportProgressCard(progress: Int, total: Int) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text(
+                "Importing...",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            LinearProgressIndicator(
+                progress = { if (total > 0) progress.toFloat() / total.toFloat() else 0f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "$progress / $total tracks",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                modifier = Modifier.align(Alignment.End)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchResultsList(
+    uiState: com.example.juke.viewmodels.SearchUiState,
+    selectedFilter: String,
+    musicViewModel: MusicViewModel,
+    searchViewModel: SearchViewModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onNavigateToArtist: (SpotifyArtist) -> Unit,
+    onNavigateToPlaylist: (SpotifyPlaylist) -> Unit,
+    onNavigateToAlbum: (SpotifyAlbum) -> Unit,
+    bottomPadding: Dp
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(bottom = bottomPadding + 20.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        // Tracks
+        if ((selectedFilter == "All" || selectedFilter == "Tracks") && uiState.tracks.isNotEmpty()) {
+            item { SectionHeader("Songs") }
+            items(uiState.tracks) { track ->
+                SwipeToAddNextContainer(
+                    onAddNext = {
+                        scope.launch {
+                            searchViewModel.setDownloading(track.id)
+                            try {
+                                musicViewModel.queueSpotifyTrackNext(track)
+                            } finally {
+                                searchViewModel.setDownloading(null)
                             }
                         }
-
-                        // Albums Section
-                        if (uiState.albums.isNotEmpty()) {
-                            item {
-                                Text(
-                                    text = "Albums (${uiState.albums.size})",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                )
-                            }
-
-                            item {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    items(uiState.albums) { album ->
-                                        AlbumCard(
-                                            album = album,
-                                            onClick = {
-                                                onNavigateToAlbum(album)
-                                            }
-                                        )
-                                    }
-                                }
+                    }
+                ) {
+                    PremiumTrackItem(
+                        track = track,
+                        isDownloading = uiState.downloadingId == track.id,
+                        onClick = {
+                            scope.launch {
+                                searchViewModel.setDownloading(track.id)
+                                musicViewModel.downloadAndPlay(SpotifyApi.spotifyTrackToSong(track))
+                                kotlinx.coroutines.delay(2000)
+                                searchViewModel.setDownloading(null)
                             }
                         }
+                    )
+                }
+            }
+        }
+
+        // Artists
+        if ((selectedFilter == "All" || selectedFilter == "Artists") && uiState.artists.isNotEmpty()) {
+            item { SectionHeader("Artists") }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(uiState.artists) { artist ->
+                        ArtistCard(artist = artist, onClick = { onNavigateToArtist(artist) })
+                    }
+                }
+            }
+        }
+
+        // Playlists
+        if ((selectedFilter == "All" || selectedFilter == "Playlists") && uiState.playlists.isNotEmpty()) {
+            item { SectionHeader("Playlists") }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(uiState.playlists) { playlist ->
+                        PlaylistCard(
+                            playlist = playlist,
+                            onClick = { onNavigateToPlaylist(playlist) })
+                    }
+                }
+            }
+        }
+
+        // Albums
+        if ((selectedFilter == "All" || selectedFilter == "Albums") && uiState.albums.isNotEmpty()) {
+            item { SectionHeader("Albums") }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(uiState.albums) { album ->
+                        AlbumCard(album = album, onClick = { onNavigateToAlbum(album) })
+                    }
                 }
             }
         }
@@ -477,111 +543,141 @@ fun SearchScreen(
 }
 
 @Composable
-private fun TrackItem(
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+        modifier = Modifier.padding(horizontal = 20.dp),
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}
+
+@Composable
+private fun PremiumTrackItem(
     track: com.example.juke.models.SpotifyTrack,
     isDownloading: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onClick: () -> Unit
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        onClick = if (!isDownloading) onClick else { {} },
-        enabled = !isDownloading,
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+        shadowElevation = 2.dp,
+        tonalElevation = 1.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .clickable(
+                    onClick = if (!isDownloading) onClick else {
+                        {}
+                    })
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Album Art with Download Overlay
-            Box {
-                Card(
-                    modifier = Modifier.size(72.dp),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    coil.compose.AsyncImage(
-                        model = track.album.images.lastOrNull()?.url ?: "",
-                        contentDescription = track.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                }
-                
+            // Album Art
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                AsyncImage(
+                    model = track.album.images.lastOrNull()?.url ?: "",
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+
                 if (isDownloading) {
                     Box(
                         modifier = Modifier
-                            .size(72.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                                shape = RoundedCornerShape(8.dp)
-                            ),
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.6f)),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(32.dp),
-                            strokeWidth = 3.dp
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
                         )
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+
+            // Info
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.name,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isDownloading) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
-                
-                if (isDownloading) {
-                    Text(
-                        text = "Downloading...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                } else {
-                    Text(
-                        text = track.artists.joinToString(", ") { it.name },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                }
-                
                 Text(
-                    text = track.album.name,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-            }
-            
-            Spacer(modifier = Modifier.width(12.dp))
-            
-            // Duration Badge
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Text(
-                    text = formatDuration(track.durationMs),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = track.artists.joinToString(", ") { it.name },
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Duration / Menu
+            Text(
+                text = formatDuration(track.durationMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptySearchState(
+    isQueryEmpty: Boolean,
+    isSearching: Boolean,
+    bottomPadding: Dp
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = bottomPadding),
+        contentAlignment = BiasAlignment(0f, -0.3f)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            val icon = if (isQueryEmpty) Icons.Outlined.Search else Icons.Outlined.SearchOff
+            val title = if (isQueryEmpty) "Discover" else "No Results"
+            val message =
+                if (isQueryEmpty) "Find your next favorite song" else "Try a different spelling or keyword"
+
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(100.dp),
+                tint = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 }
@@ -592,4 +688,3 @@ private fun formatDuration(durationMs: Int): String {
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
-

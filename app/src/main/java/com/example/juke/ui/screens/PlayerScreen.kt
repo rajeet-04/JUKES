@@ -72,6 +72,7 @@ import com.example.juke.ui.components.player.QueueBottomSheetContent
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.ui.components.AddToPlaylistDialog
+import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.launch
@@ -139,6 +140,7 @@ fun PlayerScreen(
     val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
+    var showNewPlaylistDialog by remember { mutableStateOf(false) }
     var trackPlaylists by remember {
         mutableStateOf<List<PlaylistEntity>>(emptyList())
     }
@@ -483,6 +485,17 @@ fun PlayerScreen(
                     // Refresh list of playlists for this track
                     trackPlaylists = libraryViewModel.getPlaylistsForTrack(track.uuid)
                 }
+            },
+            onCreatePlaylist = { showNewPlaylistDialog = true }
+        )
+    }
+
+    if (showNewPlaylistDialog) {
+        CreatePlaylistDialog(
+            onDismiss = { showNewPlaylistDialog = false },
+            onCreate = { name ->
+                libraryViewModel.createPlaylist(name)
+                showNewPlaylistDialog = false
             }
         )
     }

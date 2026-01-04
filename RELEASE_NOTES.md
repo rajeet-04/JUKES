@@ -1,3 +1,80 @@
+# JUKE v1.0.4-beta Release Notes
+
+## 🎉 Release Overview
+
+**Release Date:** January 4, 2026  
+**Version:** 1.0.4-beta  
+**Status:** Beta Release  
+
+JUKE v1.0.4-beta introduces the Spotify Region Selector for personalized search results, a completely redesigned Search Screen with modern glassmorphism aesthetics, instant streaming playback with queue persistence, and Save Playlist Offline functionality.
+
+## ✨ What's New in v1.0.4-beta
+
+### 🚀 Major Features
+
+#### 🌍 Spotify Region Selector
+
+- **Custom Market Code**: Choose your Spotify region in Audio Settings for personalized search results
+- **20 Popular Markets**: Includes IN, US, GB, PK, NP, BD, LK, CA, AU, DE, FR, JP, BR, MX, ES, IT, KR, AR, NL, SE
+- **Searchable Dialog**: Quickly find and select your country with search filtering
+- **Persistent Setting**: Region preference saves and applies across app restarts
+
+#### 🔍 Search Screen Redesign
+
+- **Glassmorphic Search Bar**: Premium translucent search field with soft shadow effects
+- **Smart Filter Chips**: Filter by All, Tracks, Artists, Playlists, or Albums with pill-shaped chips
+- **Frosted Glass Track Cards**: Track items now have solid backgrounds that hide swipe indicators
+- **Enhanced Empty States**: Beautiful "Discover" and "No Results" visuals
+
+#### ⚡ Instant Playback with Queue Persistence
+
+- **Streaming First**: Songs start playing immediately via streaming while downloading in background
+- **Concurrent Lyrics**: Lyrics fetched in parallel and appear within 1-2 seconds
+- **Queue Persistence**: Streaming tracks saved to database immediately for cross-restart queue restoration
+- **Seamless Download Upgrade**: When downloads complete, the same track record updates with local file path
+
+#### 💾 Save Playlist Offline
+
+- **One-Click Download**: "Save Playlist Offline" button on Playlist Detail screens
+- **Real-Time Progress**: Progress indicator showing "X / Y tracks" during import
+- **Background Processing**: Downloads continue while you browse the app
+
+### 🛠️ Additional Improvements
+
+- **Deleted Track Safety**: Automatically removes deleted tracks from queue; skips to next if playing
+- **Play Statistics Preservation**: Play count and last played time preserved when streaming tracks download
+- **Create Playlist from Player**: New "Create Playlist" option in Add to Playlist dialog
+- **Improved Delete UX**: Pending deletes committed immediately for true one-swipe deletion
+- **Swipe-to-Open Queue**: Swipe up from Player Screen bottom controls
+- **Refresh Lyrics**: Re-fetch lyrics from 3-dots menu
+- **Smart Lyrics Fallback**: Retries individual artists with 5% duration tolerance
+- **Spotmate Fallback**: Secondary download source with CSRF token handling
+
+### 🐛 Bug Fixes
+
+- **Refined Lyrics Selection**: Prioritizes synced lyrics and uses duration proximity for tie-breaking
+
+## 📝 Changelog
+
+### v1.0.4-beta (January 4, 2026)
+
+- 🌍 Added Spotify Region Selector (20 markets: IN, US, GB, PK, NP, BD, LK, etc.)
+- 🔍 Redesigned Search Screen with glassmorphism and filter chips
+- ⚡ Instant streaming playback with concurrent lyrics
+- 💾 Queue persistence for streaming tracks across app restarts
+- 📥 Save Playlist Offline with progress indicator
+- 🗑️ Deleted track safety (auto-remove from queue)
+- 📊 Play statistics preservation during download upgrades
+- ➕ Create Playlist option in Add to Playlist dialog
+- ✂️ Improved rapid delete UX
+- 👆 Swipe-to-open queue gesture
+- 🔄 Refresh Lyrics menu option
+- 🎵 Smart lyrics fallback for multi-artist tracks
+- 🔀 Spotmate fallback download source
+- 🐛 Improved lyrics selection accuracy
+
+---
+
 # JUKE v1.0.3-beta Release Notes
 
 ## 🎉 Release Overview
@@ -109,8 +186,6 @@ This is a beta release. Please report any issues you encounter.
 **Status:** Beta Release  
 
 JUKE v1.0.2-beta is a major update focusing on playlist management, UI/UX redesigns, enhanced recommendation intelligence, and numerous quality-of-life improvements. This release delivers a significantly more polished and feature-rich music experience.
-
-
 
 ## ✨ What's New in v1.0.2-beta
 

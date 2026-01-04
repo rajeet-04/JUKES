@@ -253,6 +253,25 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun createValidatedMediaItem(track: Track): MediaItem? {
         if (track.localUri == null) return null
+        
+        // Check if it's a remote URL (http/https)
+        val isRemote = track.localUri.startsWith("http", ignoreCase = true)
+
+        // Only validate file existence if it's a local path
+        if (!isRemote) {
+            try {
+                val uri = track.localUri.toUri()
+                val file = java.io.File(uri.path ?: "")
+                if (!file.exists() || !file.canRead() || file.length() <= 0) {
+                    // Start of workaround for content:// URIs
+                    if (!track.localUri.startsWith("content://")) {
+                         return null
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error validating local file: ${e.message}")
+            }
+        }
 
         val metadataBuilder = MediaMetadata.Builder()
             .setTitle(track.title)
@@ -262,9 +281,13 @@ class PlaybackService : MediaLibraryService() {
         track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
             try {
                 val uri = uriString.toUri()
-                val file = java.io.File(uri.path ?: "")
-                if (file.exists() && file.canRead() && file.length() > 0) {
-                    metadataBuilder.setArtworkUri(uri)
+                if (!uriString.startsWith("http")) { 
+                    val file = java.io.File(uri.path ?: "")
+                    if (file.exists() && file.canRead() && file.length() > 0) {
+                        metadataBuilder.setArtworkUri(uri)
+                    }
+                } else {
+                     metadataBuilder.setArtworkUri(uri)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Invalid artwork URI for ${track.title}: ${e.message}")
@@ -717,7 +740,18 @@ class PlaybackService : MediaLibraryService() {
  * Playback Manager for controlling media playback.
  * This connects to PlaybackService via MediaController to enable notification controls.
  */
-class PlaybackManager(private val context: Context) {
+class PlaybackManager private constructor(private val context: Context) {
+    
+    companion object {
+        @Volatile
+        private var INSTANCE: PlaybackManager? = null
+        
+        fun getInstance(context: Context): PlaybackManager {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: PlaybackManager(context.applicationContext).also { INSTANCE = it }
+            }
+        }
+    }
     
     private val TAG = "PlaybackManager"
     private val prefs = context.getSharedPreferences("playback_state_prefs", Context.MODE_PRIVATE)
@@ -801,6 +835,39 @@ class PlaybackManager(private val context: Context) {
                                     Log.d(TAG, "PlayerListener playbackStateChanged: $playbackState")
                                     if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
                                         savePlaybackState()
+                                    }
+                                }
+
+                                override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) {
+                                    if (error != null) {
+                                        Log.e(TAG, "Player error: ${error.message}", error)
+                                        
+                                        // Check if it's a file not found error (deleted track)
+                                        val errorMessage = error.message ?: ""
+                                        val causeMessage = error.cause?.message ?: ""
+                                        
+                                        if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+                                            errorMessage.contains("ENOENT") ||
+                                            errorMessage.contains("FileNotFoundException") ||
+                                            errorMessage.contains("No such file or directory") ||
+                                            causeMessage.contains("ENOENT") ||
+                                            causeMessage.contains("FileNotFoundException")) {
+                                            
+                                            Log.w(TAG, "Track file not found (likely deleted), skipping to next track")
+                                            
+                                            // Skip to next track if available
+                                            controller?.let { ctrl ->
+                                                if (ctrl.hasNextMediaItem()) {
+                                                    ctrl.seekToNext()
+                                                    ctrl.prepare()
+                                                    ctrl.play()
+                                                } else {
+                                                    // No next track, stop playback
+                                                    ctrl.stop()
+                                                    Log.d(TAG, "No next track available, stopping playback")
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1068,12 +1135,106 @@ class PlaybackManager(private val context: Context) {
     }
     
     /**
+     * Replace a track in the queue with a new track (e.g., replacing streaming with downloaded version).
+     * Useful for seamlessly transitioning from streaming to offline playback.
+     * 
+     * @param oldMediaId The media ID of the track to replace
+     * @param newTrack The new track to replace it with
+     * @return true if the track was replaced, false otherwise
+     */
+    fun replaceTrackInQueue(oldMediaId: String, newTrack: Track): Boolean {
+        controller?.let { ctrl ->
+            val index = (0 until ctrl.mediaItemCount).firstOrNull { i ->
+                ctrl.getMediaItemAt(i).mediaId == oldMediaId
+            } ?: return false
+
+            val newMediaItem = createValidatedMediaItem(newTrack)
+            if (newMediaItem == null) {
+                Log.w(TAG, "Cannot replace track without valid media item: ${newTrack.title}")
+                return false
+            }
+
+            // Check if this is the currently playing track
+            val isCurrentTrack = ctrl.currentMediaItemIndex == index
+            val currentPosition = if (isCurrentTrack) ctrl.currentPosition else 0L
+
+            // Replace: remove old, insert new at same position
+            ctrl.removeMediaItem(index)
+            ctrl.addMediaItem(index, newMediaItem)
+
+            // If it was the current track, seek back to maintain position
+            if (isCurrentTrack) {
+                ctrl.seekTo(index, currentPosition)
+                _currentTrackId.value = newTrack.uuid
+            }
+
+            Log.d(TAG, "Replaced track $oldMediaId with ${newTrack.uuid} at index $index")
+            
+            // Save updated queue structure
+            scope.launch {
+                saveQueueStructure()
+            }
+            return true
+        }
+        return false
+    }
+    
+    /**
      * Move a track to a new position in the queue.
      * 
      * @param fromIndex Current index of the track
      * @param toIndex New index for the track
      * @return true if the move was successful, false otherwise
      */
+    /**
+     * Remove a deleted track from the queue to prevent playback errors.
+     * Should be called when a track is deleted from the library.
+     * 
+     * @param trackUuid UUID of the deleted track
+     */
+    fun removeDeletedTrackFromQueue(trackUuid: String) {
+        controller?.let { ctrl ->
+            // Find all instances of this track in the queue
+            val indicesToRemove = mutableListOf<Int>()
+            for (i in 0 until ctrl.mediaItemCount) {
+                if (ctrl.getMediaItemAt(i).mediaId == trackUuid) {
+                    indicesToRemove.add(i)
+                }
+            }
+            
+            if (indicesToRemove.isEmpty()) {
+                return
+            }
+            
+            val currentIndex = ctrl.currentMediaItemIndex
+            val isCurrentTrack = indicesToRemove.contains(currentIndex)
+            
+            // Remove from queue (remove in reverse order to maintain indices)
+            indicesToRemove.sortedDescending().forEach { index ->
+                ctrl.removeMediaItem(index)
+                Log.d(TAG, "Removed deleted track from queue at index $index")
+            }
+            
+            // If the deleted track was playing, skip to next
+            if (isCurrentTrack) {
+                Log.w(TAG, "Deleted track was currently playing, skipping to next")
+                if (ctrl.hasNextMediaItem()) {
+                    ctrl.prepare()
+                    ctrl.play()
+                } else {
+                    ctrl.stop()
+                    _currentTrackId.value = null
+                    Log.d(TAG, "No next track available after deletion, stopping playback")
+                }
+            }
+            
+            // Save updated queue
+            scope.launch {
+                saveQueueStructure()
+            }
+        }
+    }
+    
     fun moveInQueue(fromIndex: Int, toIndex: Int): Boolean {
         controller?.let { ctrl ->
             if (fromIndex < 0 || fromIndex >= ctrl.mediaItemCount ||

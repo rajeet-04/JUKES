@@ -36,6 +36,15 @@ object SpotifyApi {
     private var accessToken: String? = null
     private var tokenExpiryTime: Long = 0
     private val tokenMutex = Mutex()
+    
+    // Dynamic market code (set from app preferences)
+    var defaultMarket: String = "US"
+        private set
+    
+    fun setDefaultMarket(marketCode: String) {
+        defaultMarket = marketCode.uppercase().take(2)
+        Log.d(TAG, "Default market set to: $defaultMarket")
+    }
 
     private var json: Json
         get() = Json { ignoreUnknownKeys = true }
@@ -120,13 +129,13 @@ object SpotifyApi {
      * 
      * @param query Search query
      * @param types Types to search (track, artist, playlist, album)
-     * @param market Market code (default NP for Nepal)
+     * @param market Market code (default PK for Nepal)
      * @return SpotifySearchResponse with all requested types
      */
     suspend fun search(
         query: String,
         types: List<String> = listOf("track", "artist", "playlist", "album"),
-        market: String = "NP"
+        market: String = defaultMarket
     ): SpotifySearchResponse {
         Log.d(TAG, "Searching Spotify for: $query (types: ${types.joinToString(",")})")
         
@@ -165,7 +174,7 @@ object SpotifyApi {
      */
     suspend fun getArtistAlbums(
         artistId: String,
-        market: String = "NP",
+        market: String = defaultMarket,
         limit: Int = 50
     ): SpotifyAlbumsResponse {
         Log.d(TAG, "Fetching albums for artist: $artistId")
@@ -205,7 +214,7 @@ object SpotifyApi {
      */
     suspend fun getArtistTopTracks(
         artistId: String,
-        market: String = "NP"
+        market: String = defaultMarket
     ): SpotifyTopTracksResponse {
         Log.d(TAG, "Fetching top tracks for artist: $artistId")
         
@@ -236,7 +245,7 @@ object SpotifyApi {
      */
     suspend fun getAlbumTracks(
         albumId: String,
-        market: String = "NP",
+        market: String = defaultMarket,
         limit: Int = 50
     ): SpotifyAlbumTracksResponse {
         Log.d(TAG, "Fetching album tracks: $albumId")
@@ -276,7 +285,7 @@ object SpotifyApi {
      */
     suspend fun getTrack(
         trackId: String,
-        market: String = "NP"
+        market: String = defaultMarket
     ): SpotifyTrack {
         Log.d(TAG, "Fetching track: $trackId")
         
@@ -333,7 +342,7 @@ object SpotifyApi {
      */
     suspend fun getPlaylist(
         playlistId: String,
-        market: String = "NP"
+        market: String = defaultMarket
     ): SpotifyPlaylist {
         Log.d(TAG, "Fetching playlist: $playlistId")
         
@@ -370,7 +379,7 @@ object SpotifyApi {
      */
     suspend fun getAlbum(
         albumId: String,
-        market: String = "NP"
+        market: String = defaultMarket
     ): SpotifyAlbum {
         Log.d(TAG, "Fetching album: $albumId")
         
@@ -402,7 +411,7 @@ object SpotifyApi {
      */
     suspend fun getPlaylistTracks(
         playlistId: String,
-        market: String = "NP"
+        market: String = defaultMarket
     ): SpotifyPlaylistTracksResponse {
         Log.d(TAG, "Fetching all playlist tracks: $playlistId")
 
@@ -481,7 +490,7 @@ object SpotifyApi {
                 header("Authorization", "Bearer $token")
                 parameter("q", query)
                 parameter("type", "track")
-                parameter("market", "NP")
+                parameter("market", defaultMarket)
                 parameter("limit", 20)
             }
             
@@ -592,8 +601,15 @@ object SpotifyApi {
      * @param spotifyUrl Spotify track URL
      * @return ByteArray of MP3 file data
      */
-    suspend fun downloadSongFromSpotmate(spotifyUrl: String): ByteArray {
-        Log.d(TAG, "Attempting fallback download from Spotmate for: $spotifyUrl")
+    /**
+     * Get the direct download/stream URL from Spotmate.
+     * Useful for instant playback.
+     * 
+     * @param spotifyUrl Spotify track URL
+     * @return Direct MP3 URL
+     */
+    suspend fun getSpotmateStreamUrl(spotifyUrl: String): String {
+        Log.d(TAG, "Fetching Spotmate stream URL for: $spotifyUrl")
         
         try {
             // 1. GET request to fetch cookies and CSRF token
@@ -622,8 +638,6 @@ object SpotifyApi {
             val csrfPattern = Regex("<meta name=\"csrf-token\" content=\"([^\"]+)\"")
             val xCsrfToken = csrfPattern.find(body)?.groupValues?.get(1) ?: ""
             
-            Log.d(TAG, "Spotmate tokens acquired. XSRF: ${xsrfToken.take(10)}..., CSRF: ${xCsrfToken.take(10)}...")
-            
             // 4. POST request to convert
             val postResponse: HttpResponse = ApiClient.httpClient.post("$SPOTMATE_BASE_URL/convert") {
                 header("Origin", SPOTMATE_BASE_URL)
@@ -639,30 +653,45 @@ object SpotifyApi {
             }
             
             val postBody = postResponse.bodyAsText()
-            Log.d(TAG, "Spotmate convert response: $postBody")
             
             // 5. Extract URL from JSON
-            // Expected: {"error":false,"url":"..."}
             val urlPattern = Regex("\"url\":\"([^\"]+)\"")
             val downloadUrlMatch = urlPattern.find(postBody)
             
             if (downloadUrlMatch != null) {
-                var downloadUrl = downloadUrlMatch.groupValues[1].replace("\\/", "/")
-                Log.d(TAG, "Extracted Spotmate download URL: $downloadUrl")
-                
-                // 6. Download the file
-                val response: HttpResponse = ApiClient.httpClient.get(downloadUrl)
-                val audioData: ByteArray = response.body()
-                
-                if (audioData.size < 100_000) {
-                     throw Exception("Spotmate download too small")
-                }
-                
-                return audioData
+                return downloadUrlMatch.groupValues[1].replace("\\/", "/")
             } else {
-                Log.e(TAG, "Failed to extract URL. Response body: $postBody")
                 throw Exception("Failed to extract URL from Spotmate response")
             }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting Spotmate URL: ${e.message}", e)
+            throw e
+        }
+    }
+
+    /**
+     * Download from Spotmate (Fallback Source).
+     *
+     * @param spotifyUrl Spotify track URL
+     * @return ByteArray of MP3 file data
+     */
+    suspend fun downloadSongFromSpotmate(spotifyUrl: String): ByteArray {
+        Log.d(TAG, "Attempting fallback download from Spotmate for: $spotifyUrl")
+        
+        try {
+            val downloadUrl = getSpotmateStreamUrl(spotifyUrl)
+            Log.d(TAG, "Extracted Spotmate download URL: $downloadUrl")
+            
+            // Download the file
+            val response: HttpResponse = ApiClient.httpClient.get(downloadUrl)
+            val audioData: ByteArray = response.body()
+            
+            if (audioData.size < 100_000) {
+                 throw Exception("Spotmate download too small")
+            }
+            
+            return audioData
             
         } catch (e: Exception) {
             Log.e(TAG, "Error downloading from Spotmate: ${e.message}", e)
