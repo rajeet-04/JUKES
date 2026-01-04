@@ -263,31 +263,8 @@ fun SearchScreen(
             // --- Content Area ---
             Box(modifier = Modifier.weight(1f)) {
 
-                // Import Playlist Card
-                if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
-                    val playlist = uiState.playlists.first()
-                    ImportPlaylistCard(
-                        playlist = playlist,
-                        onImport = {
-                            scope.launch {
-                                searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
-                                    musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
-                                }
-                            }
-                        }
-                    )
-                }
-
-                // Import Progress
-                else if (uiState.isImportingPlaylist) {
-                    ImportProgressCard(
-                        progress = uiState.importProgress,
-                        total = uiState.importTotal
-                    )
-                }
-
-                // Search Results
-                else if (hasResults(uiState)) {
+                // Search Results - show regardless of import state
+                if (hasResults(uiState) && !uiState.isPlaylistUrl) {
                     SearchResultsList(
                         uiState = uiState,
                         selectedFilter = selectedFilter,
@@ -301,8 +278,31 @@ fun SearchScreen(
                     )
                 }
 
+                // Import Playlist Card (only when viewing a playlist URL and not currently importing)
+                else if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
+                    val playlist = uiState.playlists.first()
+                    ImportPlaylistCard(
+                        playlist = playlist,
+                        onImport = {
+                            scope.launch {
+                                searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
+                                    musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
+                                }
+                            }
+                        }
+                    )
+                }
+
+                // Import Progress Card (show as overlay when importing, allowing user to search)
+                else if (uiState.isImportingPlaylist && uiState.query.isBlank()) {
+                    ImportProgressCard(
+                        progress = uiState.importProgress,
+                        total = uiState.importTotal
+                    )
+                }
+
                 // Empty States
-                else {
+                else if (!hasResults(uiState) && !uiState.isImportingPlaylist) {
                     EmptySearchState(
                         isQueryEmpty = uiState.query.isBlank(),
                         isSearching = uiState.isSearching,
