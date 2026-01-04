@@ -6,7 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
-[![Version](https://img.shields.io/badge/Version-1.0.3--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta)
+[![Version](https://img.shields.io/badge/Version-1.0.4--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -23,29 +23,33 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 ## 📦 Latest Release
 
-**JUKE v1.0.3-beta** is now available! 🎉
+**JUKE v1.0.4-beta** is now available! 🎉
 
-### What's New in v1.0.3-beta
+### What's New in v1.0.4-beta
 
-- ✅ Multi-selection bulk delete with batched database operations
-- ✅ Enhanced haptic feedback for selection and destructive actions
-- ✅ Extended delete undo window to 5 seconds
-- ✅ Spotify navigation (clickable artists, Go to Album, Share)
-- ✅ Fixed Samsung notification visibility
-- ✅ App stops playback when swiped from recents
-- ✅ Critical crash fixes (CursorWindow, LazyColumn, background resume)
+- 🌍 **Spotify Region Selector**: Choose your market (IN, US, GB, PK, NP, BD, LK, etc.) for personalized search
+- 🔍 **Search Screen Redesign**: Glassmorphic search bar, filter chips, and frosted glass track cards
+- ⚡ **Instant Playback**: Songs stream immediately while downloading in background
+- 💾 **Queue Persistence**: Streaming tracks saved for cross-restart restoration
+- 📥 **Save Playlist Offline**: One-click download all playlist tracks with progress
+- 🎵 **Concurrent Lyrics**: Lyrics appear within 1-2 seconds of playback start
+- 🛡️ **Deleted Track Safety**: Auto-remove deleted tracks from queue
+- ➕ **Create Playlist from Player**: Quick playlist creation in Add dialog
 
-[📥 Download v1.0.3-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta) | [📋 Release Notes](RELEASE_NOTES.md)
+[📥 Download v1.0.4-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta) | [📋 Release Notes](RELEASE_NOTES.md)
 
 ## ✨ Features
 
 ### 🎵 Core Features
 
 - **Spotify Integration**: Search and browse millions of tracks, artists, albums, and playlists
+- **Region Selection**: Choose your Spotify market for localized search results
 - **Smart Downloads**: Automatically download tracks with album art, lyrics, and metadata
+- **Instant Playback**: Stream songs immediately while background download completes
 - **Playlist Import**: Import entire Spotify playlists with real-time progress tracking
+- **Save Playlist Offline**: Download all tracks from any playlist with one click
 - **Offline Playback**: Play downloaded music without internet connection
-- **Synced Lyrics**: Display time-synced lyrics during playback (when available)
+- **Synced Lyrics**: Display time-synced lyrics during playback (fetched concurrently)
 
 ### 🎯 Smart Recommendations
 
@@ -57,10 +61,11 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 ### 🎨 User Interface
 
 - **Material Design 3**: Modern, beautiful UI following Google's latest design guidelines
+- **Glassmorphic Search**: Premium translucent search bar with filter chips
 - **Dark Theme**: Eye-friendly dark mode for comfortable viewing
-- **Swipe Gestures**: Queue management with intuitive swipe-to-add-next functionality
-- **Mini Player**: Persistent mini player for quick playback control
-- **Full-Screen Player**: Immersive player with lyrics, queue management, and album art
+- **Swipe Gestures**: Queue management with intuitive swipe-to-add-next and swipe-to-open-queue
+- **Mini Player**: Persistent mini player with progress line and swipe skip gestures
+- **Full-Screen Player**: Immersive player with lyrics, queue management, album art, and artist navigation
 
 ### 📚 Library Management
 
@@ -86,6 +91,13 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - **Skip Controls**: Previous, pause/play, next with seek bar
 - **Background Playback**: Continue playing while using other apps
 - **Notification Controls**: Media controls in notification shade
+- **Sleep Timer**: Auto-stop playback after 1 minute to 3 hours
+
+### 🎛️ Audio Controls
+
+- **10-Band Equalizer**: Professional-grade audio equalizer with 10 frequency bands
+- **Volume Booster**: Enhanced volume up to 200% amplification
+- **Phone Call Handling**: Auto-pause on incoming calls, resume when call ends
 
 ## 📸 Screenshots
 
@@ -127,7 +139,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 2. **Download from Releases** (Recommended for end users)
 
-   **Latest Release: [v1.0.3-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta)**
+   **Latest Release: [v1.0.4-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta)**
 
    - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
    - Install the APK on your Android device
@@ -435,10 +447,13 @@ For issues, questions, or feature requests, please [open an issue](https://githu
 
 ## 🗺️ Roadmap
 
+- [x] ~~Equalizer and audio effects~~
+- [x] ~~Sleep timer~~
+- [x] ~~Instant streaming playback~~
+- [x] ~~Queue persistence~~
+- [x] ~~Spotify region selector~~
 - [ ] User accounts and cloud sync
 - [ ] Social features (share playlists, collaborative queues)
-- [ ] Equalizer and audio effects
-- [ ] Sleep timer
 - [ ] Chromecast support
 - [ ] Android Auto integration
 - [ ] Podcast support
@@ -461,6 +476,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY RASH**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v1.0.3--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.3-beta)
+[![Release](https://img.shields.io/badge/Release-v1.0.4--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta)
 
 </div>
