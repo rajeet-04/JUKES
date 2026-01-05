@@ -32,6 +32,7 @@
     public static int i(...);
     public static int w(...);
     # We intentionally keep Log.e so you can still track crashes
+    # public static int e(...);
 }
 
 # -----------------------------------------------------------------
