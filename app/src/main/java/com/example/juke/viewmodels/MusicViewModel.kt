@@ -114,27 +114,38 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playbackManager.currentTrackIdFlow.collect { trackId ->
                 trackId?.let { id ->
-                    Log.d("MusicViewModel", "Current track changed to: $id")
+                    Log.d("MusicViewModel", "Current track ID changed to: $id")
+                    // Note: Actual UI state update is now handled by currentQueueIndexFlow
+                    // to support duplicate tracks correctly.
+                }
+            }
+        }
 
-                    // Find the track in the current queue
-                    val currentQueue = _uiState.value.queue
-                    val trackIndex = currentQueue.indexOfFirst { it.uuid == id }
+        // Observe current queue index changes from PlaybackManager
+        // This is the source of truth for "what is playing" to handle duplicate tracks
+        viewModelScope.launch {
+            playbackManager.currentQueueIndexFlow.collect { index ->
+                val currentState = _uiState.value
+                val currentQueue = currentState.queue
 
-                    if (trackIndex >= 0) {
-                        val track = currentQueue[trackIndex]
+                if (index >= 0 && index < currentQueue.size) {
+                    val track = currentQueue[index]
+                    
+                    // Only update if something changed
+                    if (currentState.queueIndex != index || currentState.currentTrack?.uuid != track.uuid) {
                         _uiState.update {
                             it.copy(
                                 currentTrack = track,
-                                queueIndex = trackIndex
+                                queueIndex = index
                             )
                         }
                         Log.d(
                             "MusicViewModel",
-                            "Updated UI state - Current track: ${track.title}, Index: $trackIndex"
+                            "Updated UI state - Index: $index, Track: ${track.title} (deduced from index)"
                         )
 
                         // Check if we need more recommendations (queue getting low)
-                        val remainingTracks = currentQueue.size - trackIndex - 1
+                        val remainingTracks = currentQueue.size - index - 1
                         if (remainingTracks <= 2) {
                             Log.d(
                                 "MusicViewModel",
@@ -142,9 +153,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             )
                             queueManager.fetchAndQueueRecommendations(track)
                         }
-                    } else {
-                        Log.w("MusicViewModel", "Track with ID $id not found in current queue")
                     }
+                } else if (currentQueue.isNotEmpty()) {
+                    Log.w("MusicViewModel", "Queue index $index out of bounds (size: ${currentQueue.size})")
                 }
             }
         }

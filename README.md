@@ -6,7 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
-[![Version](https://img.shields.io/badge/Version-1.0.4--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta)
+[![Version](https://img.shields.io/badge/Version-1.0.5--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.5-beta)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -23,9 +23,9 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 ## 📦 Latest Release
 
-**JUKE v1.0.4-beta** is now available! 🎉
+**JUKE v1.0.5-beta** is now available! 🎉
 
-### What's New in v1.0.4-beta
+### What's New in v1.0.5-beta
 
 - 🌍 **Spotify Region Selector**: Choose your market (IN, US, GB, PK, NP, BD, LK, etc.) for personalized search
 - 🔍 **Search Screen Redesign**: Glassmorphic search bar, filter chips, and frosted glass track cards
@@ -36,7 +36,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - 🛡️ **Deleted Track Safety**: Auto-remove deleted tracks from queue
 - ➕ **Create Playlist from Player**: Quick playlist creation in Add dialog
 
-[📥 Download v1.0.4-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta) | [📋 Release Notes](RELEASE_NOTES.md)
+[📥 Download v1.0.5-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.5-beta) | [📋 Release Notes](RELEASE_NOTES.md)
 
 ## ✨ Features
 
@@ -65,7 +65,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 - **Dark Theme**: Eye-friendly dark mode for comfortable viewing
 - **Swipe Gestures**: Queue management with intuitive swipe-to-add-next and swipe-to-open-queue
 - **Mini Player**: Persistent mini player with progress line and swipe skip gestures
-- **Full-Screen Player**: Immersive player with lyrics, queue management, album art, and artist navigation
+- **Full-Screen Player**: Immersive player with lyrics, queue management, album art, swipe-to-skip gestures, and artist navigation
 
 ### 📚 Library Management
 
@@ -139,7 +139,7 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 2. **Download from Releases** (Recommended for end users)
 
-   **Latest Release: [v1.0.4-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta)**
+   **Latest Release: [v1.0.5-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.5-beta)**
 
    - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
    - Install the APK on your Android device
@@ -452,6 +452,8 @@ For issues, questions, or feature requests, please [open an issue](https://githu
 - [x] ~~Instant streaming playback~~
 - [x] ~~Queue persistence~~
 - [x] ~~Spotify region selector~~
+- [x] ~~Player screen swipe gestures~~
+- [x] ~~Queue synchronization for duplicates~~
 - [ ] User accounts and cloud sync
 - [ ] Social features (share playlists, collaborative queues)
 - [ ] Chromecast support
@@ -476,6 +478,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY RASH**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v1.0.4--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.4-beta)
+[![Release](https://img.shields.io/badge/Release-v1.0.5--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.5-beta)
 
 </div>

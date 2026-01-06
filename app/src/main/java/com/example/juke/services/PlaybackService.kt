@@ -321,6 +321,11 @@ class PlaybackService : MediaLibraryService() {
         }
         
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // Prevent infinite loops from metadata updates
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                return
+            }
+
             mediaItem?.let {
                 val trackId = it.mediaId
                 Log.d(TAG, "Media item transition: $trackId, reason: $reason")
@@ -335,14 +340,29 @@ class PlaybackService : MediaLibraryService() {
                                 try {
                                     // Delay to force notification repaint
                                     kotlinx.coroutines.delay(500)
+                                    
+                                    // CRITICAL FIX: Ensure we are still playing the same track
+                                    // Rapid skipping causes this coroutine to fire after we've moved to a new track
+                                    val actualCurrentItem = withContext(Dispatchers.Main) { player.currentMediaItem }
+                                    if (actualCurrentItem?.mediaId != trackId) {
+                                        Log.d(TAG, "Skipping metadata update - player moved to different track")
+                                        return@launch
+                                    }
+
                                     val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
                                     if (track != null) {
                                         val validatedItem = createValidatedMediaItem(track)
                                         validatedItem?.let { newItem ->
                                             // Replace current item with validated metadata
-                                            val currentIndex = player.currentMediaItemIndex
-                                            player.replaceMediaItem(currentIndex, newItem)
-                                            Log.d(TAG, "Updated media item with validated metadata for ${track.title}")
+                                            // Use Main dispatcher for player operations
+                                            withContext(Dispatchers.Main) {
+                                                // Double check before applying change
+                                                if (player.currentMediaItem?.mediaId == trackId) {
+                                                    val currentIndex = player.currentMediaItemIndex
+                                                    player.replaceMediaItem(currentIndex, newItem)
+                                                    Log.d(TAG, "Updated media item with validated metadata for ${track.title}")
+                                                }
+                                            }
                                         }
                                     }
                                 } catch (e: Exception) {
@@ -354,6 +374,7 @@ class PlaybackService : MediaLibraryService() {
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to refresh player metadata: ${e.message}")
                 }
+
 
                 serviceScope.launch {
                     try {
@@ -770,6 +791,10 @@ class PlaybackManager private constructor(private val context: Context) {
     // Flow to indicate if restored state is available
     private val _hasRestoredState = MutableStateFlow(false)
     val hasRestoredState: StateFlow<Boolean> = _hasRestoredState.asStateFlow()
+
+    // Flow to emit current queue index
+    private val _currentQueueIndex = MutableStateFlow(0)
+    val currentQueueIndexFlow: StateFlow<Int> = _currentQueueIndex.asStateFlow()
     
     // Sleep timer state
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
@@ -875,7 +900,12 @@ class PlaybackManager private constructor(private val context: Context) {
                                     mediaItem?.let { item ->
                                         val trackId = item.mediaId
                                         _currentTrackId.value = trackId
-                                        Log.d(TAG, "Media item transition: $trackId")
+                                        
+                                        // Update the queue index immediately
+                                        val currentIndex = controller?.currentMediaItemIndex ?: 0
+                                        _currentQueueIndex.value = currentIndex
+                                        
+                                        Log.d(TAG, "Media item transition: $trackId at index $currentIndex")
                                         savePlaybackState()
                                         
                                         // Save queue structure to persist auto-added songs
@@ -883,8 +913,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                             saveQueueStructure()
                                         }
                                         
-                                        // Capture position in queue on main thread before launching coroutine
-                                        val positionInQueue = controller?.currentMediaItemIndex ?: 0
+
                                         
                                         // Track song play in analytics
                                         scope.launch {
@@ -898,7 +927,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                         songTitle = track.title,
                                                         songArtist = track.artist,
                                                         songDuration = track.durationSec * 1000L,
-                                                        positionInQueue = positionInQueue
+                                                        positionInQueue = currentIndex
                                                     )
                                                 } else {
                                                     Log.w(TAG, "Analytics: Track not found in database for ID: $trackId")
@@ -934,6 +963,15 @@ class PlaybackManager private constructor(private val context: Context) {
                                             _isPlaying.value = playing
                                             Log.d(TAG, "Polled controller isPlaying: $playing")
                                             last = playing
+                                        }
+                                        
+                                        // Also poll index to ensure sync
+                                        val currentIndex = withContext(Dispatchers.Main) { 
+                                            controller?.currentMediaItemIndex ?: 0 
+                                        }
+                                        if (currentIndex != _currentQueueIndex.value) {
+                                            _currentQueueIndex.value = currentIndex
+                                            Log.d(TAG, "Polled controller index updated: $currentIndex")
                                         }
                                         
                                         // Save position every 5 seconds when playing
@@ -979,6 +1017,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
         // Emit the current track ID
         _currentTrackId.value = track.uuid
+        _currentQueueIndex.value = 0
 
         Log.d(TAG, "Playing track: ${track.title}")
     }
@@ -997,6 +1036,7 @@ class PlaybackManager private constructor(private val context: Context) {
         // Emit the initial track ID
         tracks.getOrNull(startIndex)?.let { startTrack ->
             _currentTrackId.value = startTrack.uuid
+            _currentQueueIndex.value = startIndex
         }
 
         Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex")
@@ -1166,6 +1206,7 @@ class PlaybackManager private constructor(private val context: Context) {
             if (isCurrentTrack) {
                 ctrl.seekTo(index, currentPosition)
                 _currentTrackId.value = newTrack.uuid
+                _currentQueueIndex.value = index
             }
 
             Log.d(TAG, "Replaced track $oldMediaId with ${newTrack.uuid} at index $index")
@@ -1400,6 +1441,9 @@ class PlaybackManager private constructor(private val context: Context) {
                 tracks.getOrNull(savedIndex)?.let { track ->
                     _currentTrackId.value = track.uuid
                 }
+                
+                // Set the restored index
+                _currentQueueIndex.value = savedIndex
                 
                 // Update QueueManager with remaining tracks from current position
                 // QueueManager treats index 0 as "current track", so we pass only tracks from savedIndex onwards

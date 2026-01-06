@@ -3,6 +3,7 @@ package com.example.juke.ui.screens
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -189,9 +190,9 @@ fun PlayerScreen(
                     detectHorizontalDragGestures(
                         onDragStart = { totalDrag = 0f },
                         onDragEnd = {
-                            if (totalDrag < -150) { // Swipe Left -> Next
+                            if (totalDrag < -150f) {
                                 musicViewModel.skipToNext()
-                            } else if (totalDrag > 150) { // Swipe Right -> Previous
+                            } else if (totalDrag > 150f) {
                                 musicViewModel.skipToPrevious()
                             }
                             totalDrag = 0f
