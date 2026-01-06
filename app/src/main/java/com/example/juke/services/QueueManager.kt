@@ -142,6 +142,25 @@ class QueueManager private constructor(private val context: Context) {
         _currentQueue.value = currentList
         Log.d(TAG, "Added to queue: ${track.title}")
     }
+
+    /**
+     * Insert a track at a specific index in the queue.
+     *
+     * @param index Index to insert at (0-based)
+     * @param track Track to insert
+     */
+    fun insertQueueItem(index: Int, track: Track) {
+        val currentList = _currentQueue.value.toMutableList()
+        val safeIndex = index.coerceIn(0, currentList.size)
+        currentList.add(safeIndex, track)
+        _currentQueue.value = currentList
+        Log.d(TAG, "Inserted track into queue at index $safeIndex: ${track.title}")
+
+        // Ensure next 2 songs are downloaded if we modified near the top
+        if (safeIndex <= 2) {
+            ensureNext2Downloaded()
+        }
+    }
     
     /**
      * Remove a track from the queue.

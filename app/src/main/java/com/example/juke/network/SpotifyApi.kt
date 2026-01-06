@@ -2,6 +2,7 @@ package com.example.juke.network
 
 import android.util.Base64
 import android.util.Log
+import android.util.Log.e
 import com.example.juke.BuildConfig
 import com.example.juke.models.*
 import io.ktor.client.call.*
@@ -613,8 +614,11 @@ object SpotifyApi {
         
         try {
             // 1. GET request to fetch cookies and CSRF token
+            Log.d(TAG, "Spotmate Initial GET: $SPOTMATE_BASE_URL/en1")
             val initialResponse: HttpResponse = ApiClient.httpClient.get("$SPOTMATE_BASE_URL/en1")
+            val initialStatus = initialResponse.status.value
             val body = initialResponse.bodyAsText()
+            Log.d(TAG, "Spotmate Initial Response ($initialStatus): ${body.take(500)}")
             val setCookieHeaders = initialResponse.headers.getAll("Set-Cookie") ?: emptyList()
             
             // 2. Extract Cookies
@@ -637,8 +641,10 @@ object SpotifyApi {
             // 3. Extract CSRF from Meta Tag
             val csrfPattern = Regex("<meta name=\"csrf-token\" content=\"([^\"]+)\"")
             val xCsrfToken = csrfPattern.find(body)?.groupValues?.get(1) ?: ""
+            Log.d(TAG, "Spotmate Extracted: XSRF-TOKEN=${xsrfToken.take(10)}..., Session=${spotSession.take(10)}..., MetaCSRF=${xCsrfToken.take(10)}...")
             
-            // 4. POST request to convert
+            // 4. POST request to convert using JSON body
+            Log.d(TAG, "Spotmate POST /convert for: $spotifyUrl")
             val postResponse: HttpResponse = ApiClient.httpClient.post("$SPOTMATE_BASE_URL/convert") {
                 header("Origin", SPOTMATE_BASE_URL)
                 header("Referer", "$SPOTMATE_BASE_URL/en1")
@@ -646,21 +652,26 @@ object SpotifyApi {
                 header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
                 header("X-CSRF-TOKEN", xCsrfToken)
                 header("Cookie", "XSRF-TOKEN=$xsrfToken; spotmateonline_session=$spotSession; SITE_TOTAL_ID=$siteTotalId;")
+                contentType(ContentType.Application.Json)
                 
-                setBody(FormDataContent(Parameters.build {
-                    append("urls", spotifyUrl)
-                }))
+                setBody(mapOf("urls" to spotifyUrl))
             }
             
+            val postStatus = postResponse.status.value
             val postBody = postResponse.bodyAsText()
+            Log.d(TAG, "Spotmate Convert Response ($postStatus): ${postBody.take(1000)}")
             
             // 5. Extract URL from JSON
-            val urlPattern = Regex("\"url\":\"([^\"]+)\"")
+            // Handle potentially escaped forward slashes and surrounding quotes/spaces
+            val urlPattern = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"")
             val downloadUrlMatch = urlPattern.find(postBody)
             
             if (downloadUrlMatch != null) {
+                // Remove escaped slashes if present (e.g. \/ -> /)
                 return downloadUrlMatch.groupValues[1].replace("\\/", "/")
             } else {
+                Log.e(TAG, "Failed to extract URL from Spotmate response. Body length: ${postBody.length}")
+                Log.e(TAG, "Response Body Quote: ${postBody.take(1000)}")
                 throw Exception("Failed to extract URL from Spotmate response")
             }
             
@@ -719,8 +730,9 @@ object SpotifyApi {
         duration: Int? = null
     ): LRCLibResult? {
         return try {
-            // 1. Primary Search
+            Log.d(TAG, "LRCLib Search: $LRCLIB_BASE_URL/search?track_name=$title&artist_name=$artist")
             val response = ApiClient.httpClient.get("$LRCLIB_BASE_URL/search") {
+                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
                 parameter("track_name", title)
                 parameter("artist_name", artist)
                 if (album.isNotBlank()) {
@@ -728,7 +740,16 @@ object SpotifyApi {
                 }
             }
             
-            val results: List<LRCLibResult> = response.body()
+            val statusCode = response.status.value
+            val raw = response.bodyAsText()
+            Log.d(TAG, "LRCLib Response ($statusCode): ${raw.take(1000)}")
+            
+            val results: List<LRCLibResult> = try {
+                json.decodeFromString(raw)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to decode LRCLib response: ${e.message}")
+                emptyList()
+            }
             
             // Find the best matching result based on validation score AND duration proximity AND synced lyrics availability
             var bestMatch = if (results.isNotEmpty()) {
@@ -762,6 +783,7 @@ object SpotifyApi {
                     for (singleArtist in individualArtists) {
                         try {
                             val fallbackResponse = ApiClient.httpClient.get("$LRCLIB_BASE_URL/search") {
+                                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
                                 parameter("track_name", title)
                                 parameter("artist_name", singleArtist)
                             }

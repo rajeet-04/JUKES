@@ -60,7 +60,7 @@ class AudioEffectController(private val context: Context) {
             return
         }
 
-        release()
+        releaseEffects()
         currentAudioSessionId = audioSessionId
 
         try {
@@ -71,14 +71,28 @@ class AudioEffectController(private val context: Context) {
 
                     // Verify we have bands available
                     val numBands = numberOfBands.toInt()
-                    Log.d(TAG, "Equalizer has $numBands bands")
+                    val levelRange = bandLevelRange
+                    val minLevel = levelRange[0]
+                    val maxLevel = levelRange[1]
+                    Log.d(TAG, "Equalizer initialized: $numBands bands, Range: $minLevel to $maxLevel mB")
+
+                    // Log frequencies for debugging
+                    for (i in 0 until numBands) {
+                        val centerFreq = getCenterFreq(i.toShort()) / 1000
+                        Log.d(TAG, "  Band $i: ${centerFreq}Hz")
+                    }
 
                     // Apply saved band levels (up to available bands)
                     _equalizerBands.value.forEachIndexed { index, level ->
                         if (index < numBands) {
-                            setBandLevel(index.toShort(), level.toShort())
+                            val safeLevel = level.coerceIn(minLevel.toInt(), maxLevel.toInt())
+                            setBandLevel(index.toShort(), safeLevel.toShort())
+                            Log.d(TAG, "  Applied Band $index: $safeLevel mB")
                         }
                     }
+                    
+                    // Force enable update to ensure it takes effect
+                    enabled = _isEqualizerEnabled.value
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Equalizer not available on this device: ${e.message}")
@@ -88,7 +102,9 @@ class AudioEffectController(private val context: Context) {
             try {
                 loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
                     enabled = _isBoosterEnabled.value
-                    setTargetGain(_boosterLevel.value * 100) // 0-100% maps to 0-100dB
+                    // Map 0-100% to 0-50000mB (0-500dB)
+                    val targetGain = _boosterLevel.value * 500
+                    setTargetGain(targetGain) 
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "LoudnessEnhancer not available: ${e.message}")
@@ -237,10 +253,9 @@ class AudioEffectController(private val context: Context) {
         prefs.edit { putInt("booster_level", clampedLevel) }
 
         try {
-            // Map 0-100% to 0-1500mB (0-15dB)
-            // 100mB = 1dB. Previous value (* 800) was wildly incorrect (800dB).
-            // A safer max boost is 15dB.
-            val targetGain = clampedLevel * 800
+            // Map 0-100% to 0-5000mB (0-500dB)
+            // Increased to 50x factor as 15x was reported insufficient
+            val targetGain = clampedLevel * 500 
             loudnessEnhancer?.setTargetGain(targetGain)
             Log.d(TAG, "Volume booster set to $clampedLevel% (${targetGain}mB)")
         } catch (e: Exception) {
@@ -374,7 +389,7 @@ class AudioEffectController(private val context: Context) {
                             _boosterLevel.value = level
                         }
                         loudnessEnhancer?.let { le ->
-                            val targetGain = level * 800
+                            val targetGain = level * 500
                             if (le.targetGain.toInt() != targetGain) {
                                 le.setTargetGain(targetGain)
                                 Log.d(TAG, "Listener: Set booster gain to ${targetGain}mB")
@@ -399,23 +414,55 @@ class AudioEffectController(private val context: Context) {
         }
 
     init {
+        loadPreferences()
         prefs.registerOnSharedPreferenceChangeListener(prefListener)
     }
 
+    private fun loadPreferences() {
+        // Load enabled states
+        _isEqualizerEnabled.value = prefs.getBoolean("equalizer_enabled", false)
+        _isBoosterEnabled.value = prefs.getBoolean("booster_enabled", false)
+        _isNormalizationEnabled.value = prefs.getBoolean("normalization_enabled", false)
+        
+        // Load booster level
+        _boosterLevel.value = prefs.getInt("booster_level", 0)
+        
+        // Load eq bands
+        val loadedBands = MutableList(10) { 0 }
+        for (i in 0 until 10) {
+            loadedBands[i] = prefs.getInt("eq_band_$i", 0)
+        }
+        _equalizerBands.value = loadedBands
+        
+        Log.d(TAG, "Loaded preferences: EqEnabled=${_isEqualizerEnabled.value}, BoosterEnabled=${_isBoosterEnabled.value}, Level=${_boosterLevel.value}")
+    }
+
     /**
-     * Release audio effects resources.
+     * Release audio effects resources without unregistering listener.
      */
-    fun release() {
+    private fun releaseEffects() {
         try {
-            prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
             equalizer?.release()
             loudnessEnhancer?.release()
             dynamicsProcessing?.release()
             equalizer = null
             loudnessEnhancer = null
             dynamicsProcessing = null
+            Log.d(TAG, "Audio effects keys released")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to release audio effects: ${e.message}")
+        }
+    }
+
+    /**
+     * Release all resources including listener.
+     */
+    fun release() {
+        try {
+            prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+            releaseEffects()
             currentAudioSessionId = 0
-            Log.d(TAG, "Audio effects released")
+            Log.d(TAG, "Audio effects fully released")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to release audio effects: ${e.message}")
         }

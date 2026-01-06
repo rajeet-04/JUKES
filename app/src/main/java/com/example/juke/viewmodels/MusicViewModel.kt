@@ -255,6 +255,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             Log.d("MusicViewModel", "Playing track from queue: ${track.title} at index $trackIndex")
+
+            // Sync QueueManager to the new position
+            val remainingTracks = queue.drop(trackIndex)
+            if (remainingTracks.isNotEmpty()) {
+                queueManager.initializeQueue(remainingTracks)
+            }
         }
     }
 
@@ -278,7 +284,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         "MusicViewModel",
                         "Queue size ${tracks.size}, initializing recommendations for: ${it.title}"
                     )
-                    queueManager.initializeQueue(tracks)
+                    // Pass only tracks from startIndex onwards to QueueManager
+                    // QueueManager treats index 0 as current track
+                    val remainingTracks = tracks.drop(startIndex)
+                    if (remainingTracks.isNotEmpty()) {
+                        queueManager.initializeQueue(remainingTracks)
+                    }
                 }
             }
         }
@@ -343,7 +354,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     )
 
                     val inserted = playbackManager.addToQueueAt(track, insertIndex)
-                    if (!inserted) {
+                    if (inserted) {
+                        // Also insert into QueueManager if it's within the range it cares about
+                        // QueueManager starts from currentQueueIndex
+                        val queueManagerIndex = insertIndex - currentQueueIndex
+                        if (queueManagerIndex >= 0) {
+                            queueManager.insertQueueItem(queueManagerIndex, track)
+                        }
+                    } else {
                         // Fallback: reset full queue to keep UI and player in sync
                         playbackManager.setQueue(currentQueue, currentState.queueIndex)
                     }
@@ -972,7 +990,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // Sync with QueueManager
-                queueManager.initializeQueue(newQueue)
+                // Pass only relevant future tracks to avoid desync
+                val queueManagerTracks = newQueue.drop(newQueueIndex)
+                if (queueManagerTracks.isNotEmpty()) {
+                    queueManager.initializeQueue(queueManagerTracks)
+                }
 
                 Log.d("MusicViewModel", "Moved track from index $fromIndex to $toIndex")
             } else {

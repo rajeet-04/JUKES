@@ -2,7 +2,7 @@ package com.example.juke.ui.screens
 
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGestures
-
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -182,7 +182,25 @@ fun PlayerScreen(
         dragHandle = null
     ) {
         Box(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    var totalDrag = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDrag = 0f },
+                        onDragEnd = {
+                            if (totalDrag < -150) { // Swipe Left -> Next
+                                musicViewModel.skipToNext()
+                            } else if (totalDrag > 150) { // Swipe Right -> Previous
+                                musicViewModel.skipToPrevious()
+                            }
+                            totalDrag = 0f
+                        }
+                    ) { change, dragAmount ->
+                        change.consume()
+                        totalDrag += dragAmount
+                    }
+                }
         ) {
             // Immersive Background
             if (currentTrack.thumbnailUri != null) {

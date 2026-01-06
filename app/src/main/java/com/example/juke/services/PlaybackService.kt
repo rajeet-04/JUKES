@@ -1401,8 +1401,13 @@ class PlaybackManager private constructor(private val context: Context) {
                     _currentTrackId.value = track.uuid
                 }
                 
-                // Update QueueManager with restored queue
-                queueManager.initializeQueue(tracks)
+                // Update QueueManager with remaining tracks from current position
+                // QueueManager treats index 0 as "current track", so we pass only tracks from savedIndex onwards
+                // This prevents state desync between ExoPlayer's position and QueueManager's internal state
+                val remainingTracks = tracks.drop(savedIndex)
+                if (remainingTracks.isNotEmpty()) {
+                    queueManager.initializeQueue(remainingTracks)
+                }
                 
                 _hasRestoredState.value = true
                 Log.d(TAG, "Playback state restored successfully")
