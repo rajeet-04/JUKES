@@ -32,7 +32,7 @@ object SpotifyApi {
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
     private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
-    private const val LRCLIB_BASE_URL = "https://lrclib.net/api"
+    private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
     
     private var accessToken: String? = null
     private var tokenExpiryTime: Long = 0
@@ -730,13 +730,13 @@ object SpotifyApi {
         duration: Int? = null
     ): LRCLibResult? {
         return try {
-            Log.d(TAG, "LRCLib Search: $LRCLIB_BASE_URL/search?track_name=$title&artist_name=$artist")
-            val response = ApiClient.httpClient.get("$LRCLIB_BASE_URL/search") {
+            Log.d(TAG, "LRCLib Search: $LRCLIB_BASE_URL?track=$title&artist=$artist")
+            val response = ApiClient.httpClient.get(LRCLIB_BASE_URL) {
                 header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
-                parameter("track_name", title)
-                parameter("artist_name", artist)
+                parameter("track", title)
+                parameter("artist", artist)
                 if (album.isNotBlank()) {
-                    parameter("album_name", album)
+                    parameter("album", album)
                 }
             }
             
@@ -782,10 +782,10 @@ object SpotifyApi {
                     
                     for (singleArtist in individualArtists) {
                         try {
-                            val fallbackResponse = ApiClient.httpClient.get("$LRCLIB_BASE_URL/search") {
+                            val fallbackResponse = ApiClient.httpClient.get(LRCLIB_BASE_URL) {
                                 header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
-                                parameter("track_name", title)
-                                parameter("artist_name", singleArtist)
+                                parameter("track", title)
+                                parameter("artist", singleArtist)
                             }
                             
                             val fallbackResults: List<LRCLibResult> = fallbackResponse.body()
