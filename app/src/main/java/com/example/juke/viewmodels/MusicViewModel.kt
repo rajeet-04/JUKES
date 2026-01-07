@@ -66,6 +66,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val playbackManager = PlaybackManager.getInstance(application)
     private val queueManager = QueueManager.getInstance(application)
 
+    private val audioPrefs = application.getSharedPreferences("audio_effects_prefs", android.content.Context.MODE_PRIVATE)
+
+    // Skip Silence State
+    private val _isSkipSilenceEnabled = MutableStateFlow(audioPrefs.getBoolean("skip_silence_enabled", false))
+    val isSkipSilenceEnabled: StateFlow<Boolean> = _isSkipSilenceEnabled.asStateFlow()
+
+    fun toggleSkipSilence(enabled: Boolean) {
+        _isSkipSilenceEnabled.value = enabled
+        audioPrefs.edit().putBoolean("skip_silence_enabled", enabled).apply()
+    }
+
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
 

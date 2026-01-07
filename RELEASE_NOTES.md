@@ -30,6 +30,9 @@ JUKE v1.0.6-beta introduces major workflow improvements including Local Audio Im
 
 #### 🎛️ Advanced Audio Controls
 
+- **Skip Silence**: Automatically detects and skips silent intros and outros effectively cutting the "dead air" between tracks.
+- **Audio Settings**: Toggle "Stable Volume", "Skip Silence", and adjust "Equalizer" directly from settings.
+
 - **10-Band Equalizer**: Professional-grade audio equalizer with 10 frequency bands for precise sound customization
 - **Volume Booster**: Enhanced volume control allowing up to 200% amplification for quiet tracks
 - **Stable Volume Management**: Consistent volume levels across different audio sources and playback scenarios

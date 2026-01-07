@@ -65,6 +65,17 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var database: MusicDatabase
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
     
+    // Preference listener for skip silence 
+    private val audioSettingsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        if (key == "skip_silence_enabled") {
+            val isEnabled = prefs.getBoolean("skip_silence_enabled", false)
+            if (::player.isInitialized) {
+                player.skipSilenceEnabled = isEnabled
+                Log.d(TAG, "Skip silence enabled: $isEnabled")
+            }
+        }
+    }
+    
     private var wasPlayingBeforeCall = false
     private var wasPlayingBeforeFocusLoss = false
     private lateinit var audioManager: android.media.AudioManager
@@ -434,6 +445,11 @@ class PlaybackService : MediaLibraryService() {
             .setAudioAttributes(audioAttributes, false) // Keep FALSE to allow manual call control
             .setHandleAudioBecomingNoisy(true)
             .build()
+            
+        // Initialize Skip Silence from Preferences
+        val prefs = getSharedPreferences("audio_effects_prefs", Context.MODE_PRIVATE)
+        player.skipSilenceEnabled = prefs.getBoolean("skip_silence_enabled", false)
+        prefs.registerOnSharedPreferenceChangeListener(audioSettingsListener)
         
         // Request audio focus when player starts playing
         player.addListener(object : Player.Listener {

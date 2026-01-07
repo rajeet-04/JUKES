@@ -19,6 +19,7 @@
 - **Playlist Management**: Added "Add to Queue" for entire playlists and inline "Rename" functionality.
 - **Library UI Refinements**: Updated Library header to display active playlist name and integrated quick action buttons.
 - **Player Visuals**: Solid black background for tracks with missing album art.
+- **Audio Settings**: Added "Skip Silence" option to skip silent parts at start/end of tracks.
 
 ### Fixed
 

@@ -15,12 +15,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,12 +32,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextButton
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -53,10 +54,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassCard
 import com.example.juke.ui.components.VerticalEqualizerSlider
 import com.example.juke.viewmodels.MusicViewModel
-import com.example.juke.network.SpotifyApi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,7 +70,7 @@ fun AudioSettingsScreen(
     val isBoosterEnabled by musicViewModel.isBoosterEnabled.collectAsState()
     val boosterLevel by musicViewModel.boosterLevel.collectAsState()
     val isNormalizationEnabled by musicViewModel.isNormalizationEnabled.collectAsState()
-    
+
     // Gradient Background
     Box(
         modifier = Modifier
@@ -148,6 +149,50 @@ fun AudioSettingsScreen(
                     }
                 }
 
+                // Skip Silence Section
+                item {
+                    val isSkipSilenceEnabled by musicViewModel.isSkipSilenceEnabled.collectAsState()
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    Icons.Default.HourglassEmpty,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Column {
+                                    Text(
+                                        "Skip Silence",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        "Skip silent parts at start/end of tracks",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = isSkipSilenceEnabled,
+                                onCheckedChange = { musicViewModel.toggleSkipSilence(it) }
+                            )
+                        }
+                    }
+                }
+
                 // Equalizer Section
                 item {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -159,8 +204,8 @@ fun AudioSettingsScreen(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        Icons.Default.Equalizer, 
-                                        null, 
+                                        Icons.Default.Equalizer,
+                                        null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.padding(end = 8.dp)
                                     )
@@ -176,11 +221,22 @@ fun AudioSettingsScreen(
                                     onCheckedChange = { musicViewModel.toggleEqualizer(it) }
                                 )
                             }
-                            
+
                             Spacer(modifier = Modifier.height(24.dp))
-                            
+
                             if (isEqualizerEnabled) {
-                                val frequencies = listOf("31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K")
+                                val frequencies = listOf(
+                                    "31",
+                                    "62",
+                                    "125",
+                                    "250",
+                                    "500",
+                                    "1K",
+                                    "2K",
+                                    "4K",
+                                    "8K",
+                                    "16K"
+                                )
                                 val range = musicViewModel.getEqualizerLevelRange()
                                 val minLevel = range.first.toFloat()
                                 val maxLevel = range.second.toFloat()
@@ -198,7 +254,12 @@ fun AudioSettingsScreen(
                                         ) {
                                             VerticalEqualizerSlider(
                                                 value = level.toFloat(),
-                                                onValueChange = { musicViewModel.setEqualizerBand(index, it.toInt()) },
+                                                onValueChange = {
+                                                    musicViewModel.setEqualizerBand(
+                                                        index,
+                                                        it.toInt()
+                                                    )
+                                                },
                                                 range = minLevel..maxLevel,
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -214,9 +275,9 @@ fun AudioSettingsScreen(
                                         }
                                     }
                                 }
-                                
+
                                 Spacer(modifier = Modifier.height(16.dp))
-                                
+
                                 OutlinedButton(
                                     onClick = { musicViewModel.resetEqualizer() },
                                     modifier = Modifier.align(Alignment.End),
@@ -252,8 +313,8 @@ fun AudioSettingsScreen(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        Icons.AutoMirrored.Filled.VolumeUp, 
-                                        null, 
+                                        Icons.AutoMirrored.Filled.VolumeUp,
+                                        null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.padding(end = 8.dp)
                                     )
@@ -269,9 +330,9 @@ fun AudioSettingsScreen(
                                     onCheckedChange = { musicViewModel.toggleVolumeBooster(it) }
                                 )
                             }
-                            
+
                             Spacer(modifier = Modifier.height(24.dp))
-                            
+
                             if (isBoosterEnabled) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
@@ -280,7 +341,7 @@ fun AudioSettingsScreen(
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
-                                    
+
                                     Slider(
                                         value = boosterLevel.toFloat(),
                                         onValueChange = { musicViewModel.setVolumeBoosterLevel(it.toInt()) },
@@ -288,9 +349,9 @@ fun AudioSettingsScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
-                                
+
                                 Spacer(modifier = Modifier.height(16.dp))
-                                
+
                                 Text(
                                     "WARNING: Output > 100% may distort audio or damage speakers.",
                                     style = MaterialTheme.typography.labelSmall,
@@ -302,11 +363,11 @@ fun AudioSettingsScreen(
                         }
                     }
                 }
-                
+
                 // Recommendation Settings Section
                 item {
                     val recommendationCount by musicViewModel.recommendationCount.collectAsState()
-                    
+
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -316,8 +377,8 @@ fun AudioSettingsScreen(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        Icons.Default.GraphicEq, 
-                                        null, 
+                                        Icons.Default.GraphicEq,
+                                        null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.padding(end = 8.dp)
                                     )
@@ -329,9 +390,9 @@ fun AudioSettingsScreen(
                                     )
                                 }
                             }
-                            
+
                             Spacer(modifier = Modifier.height(24.dp))
-                            
+
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     text = "$recommendationCount tracks per session",
@@ -339,9 +400,9 @@ fun AudioSettingsScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
-                                
+
                                 Spacer(modifier = Modifier.height(8.dp))
-                                
+
                                 Slider(
                                     value = recommendationCount.toFloat(),
                                     onValueChange = { musicViewModel.setRecommendationCount(it.toInt()) },
@@ -349,7 +410,7 @@ fun AudioSettingsScreen(
                                     steps = 11,
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -366,9 +427,9 @@ fun AudioSettingsScreen(
                                     )
                                 }
                             }
-                            
+
                             Spacer(modifier = Modifier.height(16.dp))
-                            
+
                             Text(
                                 "Controls how many songs are automatically queued when your queue runs low.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -379,12 +440,12 @@ fun AudioSettingsScreen(
                         }
                     }
                 }
-                
+
                 // Market Selection Section
                 item {
                     val marketCode by musicViewModel.marketCode.collectAsState()
                     var showDialog by remember { mutableStateOf(false) }
-                    
+
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -426,9 +487,9 @@ fun AudioSettingsScreen(
                                     Text(marketCode, fontWeight = FontWeight.Bold)
                                 }
                             }
-                            
+
                             Spacer(modifier = Modifier.height(8.dp))
-                            
+
                             Text(
                                 "Controls which region's music catalog appears in search results.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -438,7 +499,7 @@ fun AudioSettingsScreen(
                             )
                         }
                     }
-                    
+
                     if (showDialog) {
                         MarketCodeDialog(
                             currentCode = marketCode,
@@ -451,11 +512,11 @@ fun AudioSettingsScreen(
                         )
                     }
                 }
-                
+
                 // Footer
                 item {
-                     val context = LocalContext.current
-                     Column(
+                    val context = LocalContext.current
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 16.dp),
@@ -467,16 +528,19 @@ fun AudioSettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.5f)
                         )
-                        
+
                         Button(
                             onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW, "https://github.com/rajeet-04/JUKES".toUri())
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    "https://github.com/rajeet-04/JUKES".toUri()
+                                )
                                 context.startActivity(intent)
                             },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.2f),
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
                         ) {
                             Text("⭐ Star on GitHub")
                         }
@@ -518,15 +582,15 @@ private fun MarketCodeDialog(
     onSelect: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { 
+        title = {
             Text(
                 "Select Region",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
-            ) 
+            )
         },
         text = {
             Column {
@@ -537,23 +601,23 @@ private fun MarketCodeDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 LazyColumn(modifier = Modifier.height(400.dp)) {
                     val filtered = popularMarkets.filter {
                         it.first.contains(searchQuery, ignoreCase = true) ||
-                        it.second.contains(searchQuery, ignoreCase = true)
+                                it.second.contains(searchQuery, ignoreCase = true)
                     }
-                    
+
                     items(filtered) { (code, name) ->
                         TextButton(
                             onClick = { onSelect(code) },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = if (code == currentCode) 
-                                    MaterialTheme.colorScheme.primary 
-                                else 
+                                contentColor = if (code == currentCode)
+                                    MaterialTheme.colorScheme.primary
+                                else
                                     MaterialTheme.colorScheme.onSurface
                             )
                         ) {
