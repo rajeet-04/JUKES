@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.io.File
 
 enum class DownloadStatus {
     QUEUED,
@@ -386,6 +387,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val currentState = _uiState.value
                 val currentQueue = currentState.queue.toMutableList()
+                val currentTrack = currentState.currentTrack
+                val currentPosition = playbackManager.getCurrentPosition()
+
+                // Maintain single entry per track UUID while preserving the currently playing track
+                if (tracks.isNotEmpty()) {
+                    val incomingUuids = tracks.map { it.uuid }.toSet()
+                    currentQueue.removeAll { item ->
+                        incomingUuids.contains(item.uuid) && item.uuid != currentTrack?.uuid
+                    }
+                }
 
                 if (currentQueue.isEmpty() || currentState.queueIndex < 0) {
                     // Nothing playing yet; start a queue with these tracks
@@ -420,7 +431,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     } else {
                         // Fallback: reset full queue to keep UI and player in sync
-                        playbackManager.setQueue(currentQueue, currentState.queueIndex)
+                        playbackManager.setQueue(currentQueue, currentState.queueIndex, currentPosition)
                     }
 
                     _uiState.update {
@@ -525,7 +536,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
 
             try {
-                // spotdownSong is already created above
+                // notify QueueManager to prevent double download
+                val trackToNotify = Track(
+                    uuid = UUID.randomUUID().toString(),
+                    title = spotdownSong.title,
+                    artist = spotdownSong.artist,
+                    localUri = null,
+                    durationSec = 0
+                )
+                queueManager.notifyDownloadStarted(trackToNotify)
+
                 val track = withContext(Dispatchers.IO) {
                     musicService.smartDownloadAndIndex(spotdownSong)
                 }
@@ -634,12 +654,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     playTrack(tempTrack)
                     _uiState.update { it.copy(isLoading = false) }
                     
-                    // 3. Trigger Background Download (Persistence)
-                    Log.d(
-                        "MusicViewModel",
-                        "Queueing background download for persistence: ${song.title}"
-                    )
-                    addToDownloadQueue(song, shouldPlayAfterDownload = false)
+                    
+                    // Notify QueueManager so it doesn't try to recommend/download this
+                    // The track is already saved to database with streaming URL
+                    // No need to trigger download queue since track will be properly managed
+                    queueManager.notifyDownloadStarted(tempTrack)
 
                     // 4. Update with lyrics when available
                     val lyrics = lyricsDeferred.await()
@@ -716,8 +735,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
 
             try {
+                // Skip download if already in library with a valid local file
+                val existing = withContext(Dispatchers.IO) {
+                    val durationSec = track.durationMs / 1000
+                    trackDao.findTracksByTitleAndDuration(spotdownSong.title, durationSec)
+                        .find {
+                            val localPath = it.localUri
+                            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, spotdownSong.artist) &&
+                                localPath != null &&
+                                !localPath.startsWith("http", ignoreCase = true) &&
+                                File(localPath).exists()
+                        }
+                        ?.toTrack()
+                }
+
+                if (existing != null) {
+                    Log.d("MusicViewModel", "Album track already downloaded, inserting without re-download: ${existing.title}")
+                    addNext(existing)
+                    return@launch
+                }
+
                 // spotdownSong created above
                 val downloaded = withContext(Dispatchers.IO) {
+                    // Notify QueueManager to prevent duplicate downloads
+                    queueManager.notifyDownloadStarted(Track(
+                        uuid = java.util.UUID.randomUUID().toString(),
+                        title = spotdownSong.title,
+                        artist = spotdownSong.artist,
+                        localUri = null,
+                        durationSec = 0
+                    ))
                     musicService.smartDownloadAndIndex(spotdownSong)
                 }
                 addNext(downloaded)

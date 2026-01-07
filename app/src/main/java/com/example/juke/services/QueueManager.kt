@@ -81,6 +81,31 @@ class QueueManager private constructor(private val context: Context) {
     // Track if we're currently fetching recommendations (to prevent multiple concurrent fetches)
     private var isRecommendationFetchInProgress = false
     
+    // External downloads tracking (downloaded outside QueueManager, e.g. Instant Play)
+    // Key: "Title-Artist" to prevent adding them as recommendations
+    private val _externalDownloads = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    
+    /**
+     * Notify QueueManager that a download has started externally (e.g. from Instant Play).
+     * This prevents QueueManager from fetching the same song as a recommendation.
+     * 
+     * @param track The track being downloaded
+     */
+    fun notifyDownloadStarted(track: Track) {
+        val key = "${track.title.lowercase()}-${track.artist.lowercase()}"
+        _externalDownloads.add(key)
+        Log.d(TAG, "Notified of external download: ${track.title} (Key: $key)")
+        
+        // Also add to download tracking for UI
+        addDownloadTracking(track.title, track.artist, "manual")
+        
+        // Auto-remove after 5 minutes to prevent permanent blocking in case of failure
+        serviceScope.launch {
+            kotlinx.coroutines.delay(5 * 60 * 1000L)
+            _externalDownloads.remove(key)
+        }
+    }
+    
     /**
      * Check if we need to fetch recommendations and start downloading if queue is low.
      * This should be called whenever playback starts or resumes.
@@ -309,9 +334,23 @@ class QueueManager private constructor(private val context: Context) {
                 // CRITICAL: Filter out tracks already in current queue BEFORE categorization
                 // This prevents adding songs the user is already listening to
                 val currentQueueTitles = _currentQueue.value.map { it.title.lowercase() to it.artist.lowercase() }
+                
+                // Also filter out the seed track (current playing track) explicitly
+                val seedTrackPair = currentTrack.title.lowercase() to currentTrack.artist.lowercase()
+                
                 val filteredRecs = validatedRecs.filter { rec ->
                     val trackPair = rec.title.lowercase() to rec.artist.lowercase()
-                    !currentQueueTitles.contains(trackPair)
+                    val key = "${rec.title.lowercase()}-${rec.artist.lowercase()}"
+                    
+                    val inQueue = currentQueueTitles.contains(trackPair)
+                    val isSeed = trackPair == seedTrackPair
+                    val isExternallyDownloading = _externalDownloads.contains(key)
+                    
+                    if (isExternallyDownloading) {
+                        Log.d(TAG, "Filtered out external download: ${rec.title}")
+                    }
+                    
+                    !inQueue && !isSeed && !isExternallyDownloading
                 }
                 
                 Log.d(TAG, "After queue filtering: ${filteredRecs.size} recommendations (removed ${validatedRecs.size - filteredRecs.size} already in queue)")
