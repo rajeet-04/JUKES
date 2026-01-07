@@ -185,6 +185,7 @@ fun PlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.Black)
                 .pointerInput(Unit) {
                     var totalDrag = 0f
                     detectHorizontalDragGestures(
@@ -485,7 +486,7 @@ fun PlayerScreen(
     showAddToPlaylistDialog?.let { track ->
         AddToPlaylistDialog(
             playlists = libraryUiState.playlists, // Use playlists from LibraryViewModel state
-            track = track,
+            tracks = listOf(track),
             trackPlaylists = trackPlaylists,
             onDismiss = {
                 showAddToPlaylistDialog = null

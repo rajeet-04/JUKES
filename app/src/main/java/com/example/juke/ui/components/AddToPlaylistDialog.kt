@@ -30,8 +30,10 @@ import com.example.juke.models.Track
 @Composable
 fun AddToPlaylistDialog(
     playlists: List<PlaylistEntity>,
-    track: Track,
-    trackPlaylists: List<PlaylistEntity>,
+    tracks: List<Track>,
+    trackPlaylists: List<PlaylistEntity>, // trackPlaylists might be ambiguous for multiple tracks. 
+    // If multiple, we might pass emptyList or intersection? 
+    // Let's make it optional or just ignore usage if tracks.size > 1
     onDismiss: () -> Unit,
     onAddToPlaylist: (PlaylistEntity) -> Unit,
     onRemoveFromPlaylist: (PlaylistEntity) -> Unit,
@@ -41,7 +43,7 @@ fun AddToPlaylistDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to Playlist") },
+        title = { Text(if (tracks.size > 1) "Add ${tracks.size} tracks to Playlist" else "Add to Playlist") },
         text = {
             LazyColumn(
                 modifier = Modifier.heightIn(max = 300.dp),
@@ -68,12 +70,13 @@ fun AddToPlaylistDialog(
                 }
 
                 items(playlists) { playlist ->
-                    val isAlreadyAdded = trackPlaylists.any { it.id == playlist.id }
-
+                    // Logic for single track
+                    val isAlreadyAdded = if (tracks.size == 1) trackPlaylists.any { it.id == playlist.id } else false
+                    
                     ListItem(
                         headlineContent = { Text(playlist.name) },
                         supportingContent = {
-                            if (isAlreadyAdded) Text(
+                            if (isAlreadyAdded && tracks.size == 1) Text(
                                 "Already added",
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -86,7 +89,7 @@ fun AddToPlaylistDialog(
                             )
                         },
                         trailingContent = {
-                            if (isAlreadyAdded) {
+                            if (isAlreadyAdded && tracks.size == 1) {
                                 IconButton(onClick = { onRemoveFromPlaylist(playlist) }) {
                                     Icon(
                                         Icons.Default.RemoveCircle,

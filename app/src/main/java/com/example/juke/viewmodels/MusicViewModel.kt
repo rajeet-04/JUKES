@@ -120,6 +120,46 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        
+        // Synch UI queue with PlaybackManager source of truth
+        viewModelScope.launch {
+            playbackManager.queueFlow.collect { queueIds ->
+                if (queueIds.isEmpty()) return@collect
+                
+                withContext(Dispatchers.IO) {
+                    // Optimized sync: reuse existing objects, fetch only if missing
+                    val currentTrackMap = _uiState.value.queue.associateBy { it.uuid }
+                    val currentQueueIds = _uiState.value.queue.map { it.uuid }
+                    
+                    if (currentQueueIds != queueIds) {
+                        val newQueue = queueIds.mapNotNull { id ->
+                            currentTrackMap[id] ?: try {
+                                trackDao.getTrackByUuid(id)?.toTrack()
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                        
+                        _uiState.update { state ->
+                            val currentIndex = state.queueIndex
+                            // If index is valid in new queue, update current track because the track at this index might have changed
+                            // (e.g. when the current track is deleted and the next one immediately takes its place)
+                            val newCurrentTrack = if (currentIndex >= 0 && currentIndex < newQueue.size) {
+                                newQueue[currentIndex]
+                            } else {
+                                state.currentTrack
+                            }
+                            
+                            state.copy(
+                                queue = newQueue,
+                                currentTrack = newCurrentTrack
+                            ) 
+                        }
+                        Log.d("MusicViewModel", "Synced UI queue with PlaybackManager: ${newQueue.size} tracks")
+                    }
+                }
+            }
+        }
 
         // Observe current queue index changes from PlaybackManager
         // This is the source of truth for "what is playing" to handle duplicate tracks
@@ -320,6 +360,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Insert a track so it plays immediately after the current track.
      */
     fun addNext(track: Track) {
+        addNext(listOf(track))
+    }
+
+    /**
+     * Insert a list of tracks so they play immediately after the current track.
+     */
+    fun addNext(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+
         viewModelScope.launch {
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
 
@@ -328,49 +377,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val currentQueue = currentState.queue.toMutableList()
 
                 if (currentQueue.isEmpty() || currentState.queueIndex < 0) {
-                    // Nothing playing yet; start a queue with this track
-                    setQueue(listOf(track), 0)
+                    // Nothing playing yet; start a queue with these tracks
+                    setQueue(tracks, 0)
                 } else {
-                    // Track current queue index - may need adjustment if we remove a track before it
-                    var currentQueueIndex = currentState.queueIndex
-
-                    // Check if track already exists in queue and remove it first (Move operation)
-                    val existingIndex = currentQueue.indexOfFirst { it.uuid == track.uuid }
-                    if (existingIndex != -1) {
-                        Log.d(
-                            "MusicViewModel",
-                            "Track ${track.title} already in queue at index $existingIndex, removing to move it"
-                        )
-                        playbackManager.removeFromQueue(track.uuid)
-                        queueManager.removeFromQueue(track.uuid)
-                        currentQueue.removeAt(existingIndex)
-
-                        // Adjust the working queue index if the removed track was before current position
-                        if (existingIndex < currentQueueIndex) {
-                            currentQueueIndex -= 1
-                            Log.d(
-                                "MusicViewModel",
-                                "Adjusted queue index from ${currentState.queueIndex} to $currentQueueIndex after removing track before current position"
-                            )
-                        }
-                    }
-
-                    val insertIndex = (currentQueueIndex + 1)
-                        .coerceAtMost(currentQueue.size)
-                    currentQueue.add(insertIndex, track)
+                    val currentQueueIndex = currentState.queueIndex
+                    
+                    // Simple insert for batch to avoid complex index shifting with moves
+                    // We just insert them right after current
+                    
+                    val insertIndex = (currentQueueIndex + 1).coerceAtMost(currentQueue.size)
+                    currentQueue.addAll(insertIndex, tracks)
 
                     Log.d(
                         "MusicViewModel",
-                        "Inserting track ${track.title} at index $insertIndex (currentQueueIndex=$currentQueueIndex, queue size=${currentQueue.size})"
+                        "Inserting ${tracks.size} tracks at index $insertIndex"
                     )
 
-                    val inserted = playbackManager.addToQueueAt(track, insertIndex)
+                    val inserted = playbackManager.addToQueueAt(tracks, insertIndex)
                     if (inserted) {
-                        // Also insert into QueueManager if it's within the range it cares about
-                        // QueueManager starts from currentQueueIndex
+                         // Also insert into QueueManager if it's within the range it cares about
                         val queueManagerIndex = insertIndex - currentQueueIndex
                         if (queueManagerIndex >= 0) {
-                            queueManager.insertQueueItem(queueManagerIndex, track)
+                            // QueueManager might not support batch insert yet? 
+                            // It does not seem to have batch insert based on previous reads, but we can loop.
+                            // Actually QueueManager logic in addNext(Track) calls insertQueueItem.
+                            // We should probably add batch support there too or loop. 
+                            // looping is fine for small batches.
+                            tracks.forEachIndexed { i, track ->
+                                queueManager.insertQueueItem(queueManagerIndex + i, track)
+                            }
                         }
                     } else {
                         // Fallback: reset full queue to keep UI and player in sync
@@ -384,9 +419,64 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("MusicViewModel", "Failed to add next: ${e.message}", e)
+                Log.e("MusicViewModel", "Failed to add next batch: ${e.message}", e)
             } finally {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
+            }
+        }
+    }
+
+    fun addToQueue(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isQueueOperationInProgress = true) }
+            try {
+                // Update local UI state
+                val currentState = _uiState.value
+                val currentQueue = currentState.queue.toMutableList()
+                val currentTrack = currentState.currentTrack
+                val currentTrackUuid = currentTrack?.uuid
+                
+                // Get current position before modification to maintain playback continuity
+                val currentPosition = playbackManager.getCurrentPosition()
+                // Use current index from simple calculation or reliable flow source if needed
+                // But since we are modifying structure, we must rely on UUID to find playing track location
+                
+                // 1. Filter out the currently playing track from the incoming list
+                val tracksToAdd = tracks.filter { track ->
+                    currentTrackUuid == null || track.uuid != currentTrackUuid
+                }
+
+                if (tracksToAdd.isEmpty()) return@launch
+
+                // 2. Remove existing instances of these tracks from the current queue
+                // User requirement: "keep single entry of each song uuid not repetation"
+                val trackUuidsToAdd = tracksToAdd.map { it.uuid }.toSet()
+                currentQueue.removeAll { it.uuid in trackUuidsToAdd }
+
+                // 3. Add the tracks to the end of the queue
+                currentQueue.addAll(tracksToAdd)
+                
+                // 4. Update UI State immediately
+                _uiState.update { it.copy(queue = currentQueue) }
+                
+                // 5. Update PlaybackManager
+                // Calculate new index of the currently playing track in the modified queue
+                val newIndex = if (currentTrackUuid != null) {
+                    val index = currentQueue.indexOfFirst { it.uuid == currentTrackUuid }
+                    if (index != -1) index else currentState.queueIndex.coerceIn(0, currentQueue.size.coerceAtLeast(1) - 1)
+                } else {
+                    currentState.queueIndex
+                }
+                
+                // Use setQueue with explicit position maintenance to prevent restarts or random jumps
+                playbackManager.setQueue(currentQueue, newIndex, currentPosition)
+                
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to add to queue batch: ${e.message}", e)
+            } finally {
+                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             }
         }
     }

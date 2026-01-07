@@ -1,12 +1,28 @@
-# JUKE v1.0.1-beta Release Notes
+# JUKE v1.0.6-beta Release Notes
 
 ## 🎉 Release Overview
 
-**Release Date:** December 26, 2025  
-**Version:** 1.0.1-beta  
+**Release Date:** January 8, 2026  
+**Version:** 1.0.6-beta  
 **Status:** Beta Release  
 
-JUKE v1.0.1-beta is a feature-packed beta update that introduces advanced audio controls, enhanced playback stability, and several critical bug fixes. This release focuses on improving the core music playback experience with professional-grade audio features while maintaining the app's lightweight footprint.
+JUKE v1.0.6-beta introduces major workflow improvements including Local Audio Import, advanced Batch Operations, and critical fixes for queue stability and lyrics reliability. This update bridges the gap between streaming and local library management.
+
+## � Key Highlights
+
+### 📂 Local Music & Batch Control
+
+- **Local Import**: Finally! You can now import your own MP3/FLAC files from device storage. They get full treatment: metadata, cover art, and persistence.
+- **Batch Operations**: "Select All" -> "Add to Queue"? Yes. Long-press enabling multi-select in Library allows for powerful batch management.
+- **Playlist Quick Actions**: Add entire playlists to your queue with one tap. Respects current sort order and shuffle state.
+- **Inline Playlist Editing**: Rename your local playlists directly from the Library header.
+
+### 🐛 Critical Stability Fixes
+
+- **Queue Synchronization**: Fixed the "ghost song" bug where the player UI wouldn't update after deleting the current track.
+- **Queue Deduplication**: Intelligently handles duplicate tracks by moving them to the end and preventing the currently playing song from being duplicated.
+- **Playback Continuity**: Fixed bugs where adding tracks to the queue would restart the current song or cause random jumps; playback now remains perfectly seamless.
+- **Robust Lyrics**: Switched to a new, more reliable LRCLib mirror to ensure lyrics always load.
 
 ## ✨ What's New in v1.0.1-beta
 
@@ -172,7 +188,7 @@ This is a beta release. Please report any issues you encounter.
 
 ---
 
-# JUKE v1.0.0 Release Notes
+## JUKE v1.0.0 Release Notes
 
 ## 🎉 Release Overview
 

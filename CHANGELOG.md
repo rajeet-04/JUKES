@@ -10,6 +10,27 @@
 
 ---
 
+## [1.0.6-beta] - 2026-01-08
+
+### Added
+
+- **Local Audio Import**: Seamlessly import audio files from device storage. Copied to internal storage `imported_music/` with cover art extraction.
+- **Batch Operations**: Multi-select songs in Library to "Add to Queue", "Play Next", or "Add to Playlist".
+- **Playlist Management**: Added "Add to Queue" for entire playlists and inline "Rename" functionality.
+- **Library UI Refinements**: Updated Library header to display active playlist name and integrated quick action buttons.
+- **Player Visuals**: Solid black background for tracks with missing album art.
+
+### Fixed
+
+- **Queue Synchronization**: Fixed critical bug where deleting the playing track desynchronized the UI. `MusicViewModel` now observes `queueFlow` for real-time updates.
+- **LRCLib Source**: Updated lyrics API endpoint to `https://lrclib.meek.workers.dev` for improved reliability.
+- **Batch Deletion**: Optimized deletion logic to use batch database operations.
+- **Compilation**: Fixed `PlayerScreen` crash by updating `AddToPlaylistDialog` signature.
+- **Queue Duplication**: Implemented intelligent deduplication logic—new tracks are added and duplicates are moved to the end while excluding the currently playing song.
+- **Playback Continuity**: Fixed playback restarts and random skips when updating queue structure by precisely maintaining current position and calculating shifted indices.
+
+---
+
 ## [1.0.5-beta] - January 2026 (Emergency Release)
 
 > ⚠️ **Emergency Release**: Critical fixes for queue, player, and lyrics issues.

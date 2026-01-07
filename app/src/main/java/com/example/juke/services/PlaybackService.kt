@@ -796,6 +796,10 @@ class PlaybackManager private constructor(private val context: Context) {
     private val _currentQueueIndex = MutableStateFlow(0)
     val currentQueueIndexFlow: StateFlow<Int> = _currentQueueIndex.asStateFlow()
     
+    // Flow to emit current queue structure (list of Media IDs/UUIDs)
+    private val _queueFlow = MutableStateFlow<List<String>>(emptyList())
+    val queueFlow: StateFlow<List<String>> = _queueFlow.asStateFlow()
+    
     // Sleep timer state
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
     private val _sleepTimerRemaining = MutableStateFlow<Long?>(null)
@@ -851,6 +855,26 @@ class PlaybackManager private constructor(private val context: Context) {
                             Log.d(TAG, "MediaController connected to PlaybackService")
                             // Add a Player.Listener on the controller's underlying player
                             playerListener = object : Player.Listener {
+                                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                                    super.onTimelineChanged(timeline, reason)
+                                    // Update queue flow when timeline changes (add/remove/move)
+                                    controller?.let { ctrl ->
+                                        val count = ctrl.mediaItemCount
+                                        val newScan = (0 until count).map { i ->
+                                            ctrl.getMediaItemAt(i).mediaId
+                                        }
+                                        _queueFlow.value = newScan
+                                        
+                                        // Also update queue index as it might have shifted
+                                        val currentIndex = ctrl.currentMediaItemIndex
+                                        if (currentIndex != _currentQueueIndex.value) {
+                                            _currentQueueIndex.value = currentIndex
+                                        }
+                                        
+                                        Log.d(TAG, "Timeline changed (reason=$reason), updated queue flow with ${newScan.size} items")
+                                    }
+                                }
+
                                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                                     _isPlaying.value = isPlaying
                                     Log.d(TAG, "PlayerListener onIsPlayingChanged: $isPlaying")
@@ -1022,13 +1046,13 @@ class PlaybackManager private constructor(private val context: Context) {
         Log.d(TAG, "Playing track: ${track.title}")
     }
     
-    fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
+    fun setQueue(tracks: List<Track>, startIndex: Int = 0, startPositionMs: Long = C.TIME_UNSET) {
         initialize()
 
         val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
 
         controller?.apply {
-            setMediaItems(mediaItems, startIndex, 0)
+            setMediaItems(mediaItems, startIndex, startPositionMs)
             prepare()
             play()
         }
@@ -1039,7 +1063,7 @@ class PlaybackManager private constructor(private val context: Context) {
             _currentQueueIndex.value = startIndex
         }
 
-        Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex")
+        Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex pos $startPositionMs")
 
         // Save queue to preferences
         scope.launch {
@@ -1084,6 +1108,30 @@ class PlaybackManager private constructor(private val context: Context) {
             val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
             ctrl.addMediaItem(targetIndex, mediaItem)
             Log.d(TAG, "Inserted track ${track.title} at index $targetIndex")
+            
+            // Save updated queue structure
+            scope.launch {
+                saveQueueStructure()
+            }
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * Insert a list of tracks at a specific position in the current queue without interrupting playback.
+     */
+    fun addToQueueAt(tracks: List<Track>, index: Int): Boolean {
+        val mediaItems = tracks.mapNotNull { createValidatedMediaItem(it) }
+        if (mediaItems.isEmpty()) return false
+
+        initialize()
+
+        controller?.let { ctrl ->
+            val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
+            ctrl.addMediaItems(targetIndex, mediaItems)
+            Log.d(TAG, "Inserted ${mediaItems.size} tracks at index $targetIndex")
             
             // Save updated queue structure
             scope.launch {
