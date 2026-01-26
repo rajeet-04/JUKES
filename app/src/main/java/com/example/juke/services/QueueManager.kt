@@ -423,87 +423,76 @@ class QueueManager private constructor(private val context: Context) {
      */
     private fun processNextDownload() {
         serviceScope.launch {
-            // Limit concurrent downloads to 2
-            if (downloadJobs.size >= 2) {
-                Log.d(TAG, "Already downloading 2 tracks, waiting...")
-                return@launch
-            }
-            
-            val rec = pendingRecommendations.poll() ?: return@launch
-            
-            // CHECK 1: Check if already in current queue (Prevent Duplicates)
-            // This prevents adding the same song multiple times to the queue
-            if (_currentQueue.value.any { it.title.equals(rec.title, ignoreCase = true) && it.artist.equals(rec.artist, ignoreCase = true) }) {
-                Log.d(TAG, "Skipping duplicate recommendation (already in queue): ${rec.title}")
-                processNextDownload()
-                return@launch
-            }
-            
-            // CHECK 2: Check if already downloaded (Database check)
-            val candidates = trackDao.findTracksByTitleAndDuration(rec.title, rec.durationSec)
-            val existingTrack = candidates.find { 
-                com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, rec.artist) 
-            }
-            if (existingTrack != null && existingTrack.localUri != null) {
-                Log.d(TAG, "Track already exists: ${rec.title}")
-                
-                // Add to queue
-                addToQueue(existingTrack.toTrack())
-                
-                // Process next
-                processNextDownload()
-                return@launch
-            }
-            
-            if (_downloadingTracks.value.any { it.title == rec.title && it.artist == rec.artist }) {
-                Log.d(TAG, "Track already downloading: ${rec.title}")
-                processNextDownload()
-                return@launch
-            }
-            
-            // Start download
-            val downloadJob = launch {
-                try {
-                    Log.d(TAG, "Starting download: ${rec.title} by ${rec.artist}")
-                    
-                    // Mark as downloading
-                    val downloadInfo = DownloadInfo(rec.title, rec.artist, "recommendation")
-                    _downloadingTracks.value += downloadInfo
-                    
-                    // Use the pre-validated Spotify URL from recommendation validation
-                    // This ensures we download the exact song that was matched during validation
-                    val trackId = rec.spotifyUrl.substringAfterLast("/").substringBefore("?")
-                    val spotifyTrack = SpotifyApi.getTrack(trackId)
-                    val song = SpotifyApi.spotifyTrackToSong(spotifyTrack)
-                    
-                    // Download and index
-                    val track = musicService.smartDownloadAndIndex(song)
-                    
-                    Log.d(TAG, "Successfully downloaded: ${track.title}")
-                    
-                    // Add to queue
-                    addToQueue(track)
-                    
-                    // Add to recent artists immediately upon adding to queue? 
-                    // No, likely better to wait until played, or maybe now is fine.
-                    // Following user instruction: "as you add them" -> but usually variety is about history.
-                    // Let's stick to adding on playback completion (moveToNext) for history tracking.
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error downloading ${rec.title}: ${e.message}", e)
-                } finally {
-                    // Remove from downloading
-                    _downloadingTracks.value = _downloadingTracks.value.filterNot { 
-                        it.title == rec.title && it.artist == rec.artist 
+            while (true) {
+                // Check capacity safely
+                val shouldStop = synchronized(downloadJobs) {
+                    downloadJobs.size >= 6
+                }
+                if (shouldStop) break
+
+                val rec = pendingRecommendations.poll() ?: break
+
+                // CHECK 1: Check if already in current queue (Prevent Duplicates)
+                if (_currentQueue.value.any { it.title.equals(rec.title, ignoreCase = true) && it.artist.equals(rec.artist, ignoreCase = true) }) {
+                    Log.d(TAG, "Skipping duplicate recommendation (already in queue): ${rec.title}")
+                    continue
+                }
+
+                // CHECK 2: Check if already downloaded (Database check)
+                // This is a suspending function, so it must be outside synchronized block
+                val candidates = trackDao.findTracksByTitleAndDuration(rec.title, rec.durationSec)
+                val existingTrack = candidates.find {
+                    com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, rec.artist)
+                }
+                if (existingTrack != null && existingTrack.localUri != null) {
+                    Log.d(TAG, "Track already exists: ${rec.title}")
+                    addToQueue(existingTrack.toTrack())
+                    continue
+                }
+
+                if (_downloadingTracks.value.any { it.title == rec.title && it.artist == rec.artist }) {
+                    Log.d(TAG, "Track already downloading: ${rec.title}")
+                    continue
+                }
+
+                // Start download
+                val downloadJob = launch {
+                    try {
+                        Log.d(TAG, "Starting download: ${rec.title} by ${rec.artist}")
+
+                        val downloadInfo = DownloadInfo(rec.title, rec.artist, "recommendation")
+                        _downloadingTracks.value += downloadInfo
+
+                        val trackId = rec.spotifyUrl.substringAfterLast("/").substringBefore("?")
+                        val spotifyTrack = SpotifyApi.getTrack(trackId)
+                        val song = SpotifyApi.spotifyTrackToSong(spotifyTrack)
+
+                        val track = musicService.smartDownloadAndIndex(song)
+
+                        Log.d(TAG, "Successfully downloaded: ${track.title}")
+                        addToQueue(track)
+
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error downloading ${rec.title}: ${e.message}", e)
+                    } finally {
+                        _downloadingTracks.value = _downloadingTracks.value.filterNot {
+                            it.title == rec.title && it.artist == rec.artist
+                        }
+
+                        synchronized(downloadJobs) {
+                            downloadJobs.remove(rec.title)
+                        }
+
+                        // Process next batch of downloads
+                        processNextDownload()
                     }
-                    downloadJobs.remove(rec.title)
-                    
-                    // Process next download
-                    processNextDownload()
+                }
+
+                // Register job safely
+                synchronized(downloadJobs) {
+                    downloadJobs[rec.title] = downloadJob
                 }
             }
-            
-            downloadJobs[rec.title] = downloadJob
         }
     }
     /**
