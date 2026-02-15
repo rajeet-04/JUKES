@@ -1,28 +1,35 @@
-# JUKE v1.0.6-beta Release Notes
+# JUKE v1.0.7-beta Release Notes
 
 ## 🎉 Release Overview
 
-**Release Date:** January 8, 2026  
-**Version:** 1.0.6-beta  
+**Release Date:** February 15, 2026  
+**Version:** 1.0.7-beta  
 **Status:** Beta Release  
 
-JUKE v1.0.6-beta introduces major workflow improvements including Local Audio Import, advanced Batch Operations, and critical fixes for queue stability and lyrics reliability. This update bridges the gap between streaming and local library management.
+JUKE v1.0.7-beta delivers powerful new features and critical stability fixes. This release introduces the **Purge** storage cleanup tool, a one-tap **Radio** mode for infinite discovery, **Repeat** controls, **Notification Favorites**, and resolves major playback issues with shuffle mode and Spotdown API connectivity.
 
-## � Key Highlights
+## 🔑 Key Highlights
 
-### 📂 Local Music & Batch Control
+### 🗑️ Purge Redundant Tracks & Storage Cleanup
 
-- **Local Import**: Finally! You can now import your own MP3/FLAC files from device storage. They get full treatment: metadata, cover art, and persistence.
-- **Batch Operations**: "Select All" -> "Add to Queue"? Yes. Long-press enabling multi-select in Library allows for powerful batch management.
-- **Playlist Quick Actions**: Add entire playlists to your queue with one tap. Respects current sort order and shuffle state.
-- **Inline Playlist Editing**: Rename your local playlists directly from the Library header.
+- **Smart Purge**: Identify and batch-delete unused songs from Audio Settings. Flags old-unplayed, never-played, short audio, and incomplete-metadata tracks while protecting Favorites and playlisted songs.
+- **Storage Savings**: See estimated space to be freed before confirming deletion.
+
+### 📻 Radio Mode & Repeat Controls
+
+- **Radio Button**: Tap once on the Player Screen to reset the queue and start a fresh recommendation-driven radio session based on the current track.
+- **Repeat Mode**: New Repeat button cycles through Repeat Off → Repeat All → Repeat One.
+- **Shuffle in Controls**: Quick shuffle toggle now directly in player controls.
+
+### ❤️ Notification Favorites
+
+- **Heart Toggle**: Favorite/unfavorite the current track directly from the media notification. Real-time icon sync.
 
 ### 🐛 Critical Stability Fixes
 
-- **Queue Synchronization**: Fixed the "ghost song" bug where the player UI wouldn't update after deleting the current track.
-- **Queue Deduplication**: Intelligently handles duplicate tracks by moving them to the end and preventing the currently playing song from being duplicated.
-- **Playback Continuity**: Fixed bugs where adding tracks to the queue would restart the current song or cause random jumps; playback now remains perfectly seamless.
-- **Robust Lyrics**: Switched to a new, more reliable LRCLib mirror to ensure lyrics always load.
+- **Shuffle Queue Fix**: Resolved bug where shuffle mode stopped after ~14 tracks due to ExoPlayer shuffle order being inadvertently reset on track transitions.
+- **Shuffle Recommendations**: Fixed premature recommendation triggers during shuffle by accurately counting remaining tracks in the shuffle order.
+- **Spotdown API**: Added required API key header and structured error handling to prevent download failures.
 
 ## ✨ What's New in v1.0.1-beta
 

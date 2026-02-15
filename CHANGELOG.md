@@ -10,6 +10,25 @@
 
 ---
 
+## [1.0.7-beta] - 2026-02-15
+
+### Added
+
+- **Purge Redundant Tracks**: New storage cleanup feature in Audio Settings. Identifies and deletes unused songs based on: low play count (< 5 plays, > 14 days old), never-played downloads (> 30 days), short audio (< 60s), and incomplete metadata. Excludes Favorites and playlisted tracks. Shows estimated storage savings with multi-select deletion.
+- **Radio Mode**: One-tap radio button on the Player Screen. Resets the current queue to only the playing song, clears recommendation history, and fetches fresh recommendations based on the current track for an infinite, discovery-driven listening session.
+- **Repeat Mode**: Added Repeat One, Repeat All, and Repeat Off modes. Cycle through modes via a new Repeat button in the player controls next to the Next button.
+- **Notification Favorites**: Added a Heart (Favorite) toggle button to the media notification. Tapping it toggles the current track's favorite status in real-time with filled/border heart icon updates.
+- **Shuffle Button in Player Controls**: Shuffle toggle now available directly in the player controls for easier access.
+
+### Fixed
+
+- **Shuffle Queue Premature End**: Fixed critical bug where shuffle mode would stop playing after ~14 tracks. Root cause was `player.replaceMediaItem()` in `onMediaItemTransition` which reset ExoPlayer's internal shuffle order/seed. Removed the offending call; metadata is now correctly set when tracks are initially added to the queue.
+- **Spotdown API Key Requirement**: Updated `SpotifyApi` to include the required `x-api-key` header for `checkDirectDownload` and `downloadSong` requests. Added `SpotdownCheckResponse` data class for structured error handling. Prevents `Unexpected JSON token` parsing failures.
+- **Spotdown Error Handling**: Implemented robust JSON parsing error handling and network exception catching in `SpotifyApi` to gracefully handle API failures and fall through to Spotmate.
+- **Shuffle Recommendation Trigger**: Fixed recommendations triggering prematurely during shuffle play. Added `getRemainingTracksCount()` to `PlaybackManager` which traverses ExoPlayer's timeline using `getNextWindowIndex` to accurately count remaining songs in the shuffle order instead of relying on the linear queue index.
+
+---
+
 ## [1.0.6-beta] - 2026-01-08
 
 ### Added
