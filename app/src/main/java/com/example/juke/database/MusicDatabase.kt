@@ -368,4 +368,18 @@ interface TrackDao {
 
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int
+
+    @Query("""
+        SELECT * FROM tracks 
+        WHERE (
+            (play_count < 5 AND last_played_at < :lastPlayedThreshold) OR 
+            (play_count = 0 AND downloaded_at < :downloadedThreshold) OR 
+            (duration_sec < 60) OR
+            (thumbnail_uri IS NULL OR artist = 'Unknown')
+        )
+        AND is_favourite = 0 
+        AND uuid NOT IN (SELECT track_uuid FROM playlist_tracks)
+        ORDER BY downloaded_at ASC
+    """)
+    suspend fun getPurgeableTracks(lastPlayedThreshold: String, downloadedThreshold: Long): List<TrackEntity>
 }

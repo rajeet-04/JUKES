@@ -1487,4 +1487,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    suspend fun getPurgeableTracks(): List<Track> {
+        return withContext(Dispatchers.IO) {
+            val calendar = java.util.Calendar.getInstance()
+
+            // 14 days ago for last played
+            calendar.add(java.util.Calendar.DAY_OF_YEAR, -14)
+            val lastPlayedThresholdDate = calendar.time
+            val lastPlayedThreshold = java.text.SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                java.util.Locale.US
+            ).format(lastPlayedThresholdDate)
+
+            // Reset and go back 30 days for downloads
+            calendar.time = java.util.Date()
+            calendar.add(java.util.Calendar.DAY_OF_YEAR, -30)
+            val downloadedThreshold = calendar.timeInMillis
+
+            val candidates = trackDao.getPurgeableTracks(lastPlayedThreshold, downloadedThreshold)
+
+            // Map to Track model
+            // Note: Broken files (ghost tracks) are not explicitly searched for here to avoid
+            // scanning the entire library file system, but they will be included if they match the SQL criteria.
+             candidates.map { it.toTrack() }
+        }
+    }
+
+    fun purgeTracks(tracks: List<Track>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            musicService.deleteTracksAndFiles(tracks)
+        }
+    }
 }

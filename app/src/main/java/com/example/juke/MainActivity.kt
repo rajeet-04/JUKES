@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -158,7 +159,7 @@ class MainActivity : ComponentActivity() {
                 val albumDetailViewModel: AlbumDetailViewModel = viewModel()
                 val context = LocalContext.current
                 var showPlayerModal by remember { mutableStateOf(false) }
-                var searchResetTrigger by remember { mutableStateOf(0) }
+                var searchResetTrigger by remember { mutableIntStateOf(0) }
 
                 // --- UPDATE CHECK LOGIC ---
                 var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
@@ -380,6 +381,17 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("settings") {
                             AudioSettingsScreen(
+                                musicViewModel = musicViewModel,
+                                onNavigateBack = {
+                                    navController.popBackStack()
+                                },
+                                onNavigateToPurge = {
+                                    navController.navigate("settings/purge")
+                                }
+                            )
+                        }
+                        composable("settings/purge") {
+                            com.example.juke.ui.screens.PurgeSelectionScreen(
                                 musicViewModel = musicViewModel,
                                 onNavigateBack = {
                                     navController.popBackStack()
