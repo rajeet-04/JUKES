@@ -56,7 +56,8 @@ data class MusicUiState(
     val downloadQueue: List<DownloadItem> = emptyList(),
     val currentDownload: DownloadItem? = null,
     val isQueueOperationInProgress: Boolean = false,
-    val isShuffleEnabled: Boolean = false
+    val isShuffleEnabled: Boolean = false,
+    val repeatMode: Int = androidx.media3.common.Player.REPEAT_MODE_OFF
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -119,6 +120,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playbackManager.isShuffleEnabledFlow.collect { shuffleEnabled ->
                 _uiState.update { it.copy(isShuffleEnabled = shuffleEnabled) }
+            }
+        }
+
+        // Observe repeat mode changes
+        viewModelScope.launch {
+            playbackManager.repeatModeFlow.collect { mode ->
+                _uiState.update { it.copy(repeatMode = mode) }
             }
         }
 
@@ -197,11 +205,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         )
 
                         // Check if we need more recommendations (queue getting low)
-                        val remainingTracks = currentQueue.size - index - 1
+                        // Use PlaybackManager's smart count which handles Shuffle correctly
+                        val remainingTracks = playbackManager.getRemainingTracksCount()
                         if (remainingTracks <= 2) {
                             Log.d(
                                 "MusicViewModel",
-                                "Queue low, fetching recommendations for: ${track.title}"
+                                "Queue low (remaining: $remainingTracks), fetching recommendations for: ${track.title}"
                             )
                             queueManager.fetchAndQueueRecommendations(track)
                         }
@@ -366,6 +375,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleShuffle() {
         playbackManager.toggleShuffle()
         // rely on playbackManager.isShuffleEnabledFlow to update UI via collector
+    }
+
+    fun toggleRepeat() {
+        playbackManager.toggleRepeatMode()
     }
 
     /**

@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -23,13 +24,17 @@ import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
+import com.example.juke.R
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
@@ -59,6 +64,11 @@ import java.util.Locale
 class PlaybackService : MediaLibraryService() {
 
     private val TAG = "PlaybackService"
+
+    companion object {
+        private const val CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID =
+            "CUSTOM_COMMAND_TOGGLE_FAVORITE"
+    }
 
     private var mediaSession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
@@ -413,6 +423,18 @@ class PlaybackService : MediaLibraryService() {
                         Log.e(TAG, "Error updating play count: ${e.message}", e)
                     }
                 }
+
+                // Update custom layout (Notification Button)
+                serviceScope.launch {
+                    try {
+                        val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
+                        if (track != null) {
+                            updateCustomLayout(track.isFavourite)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating custom layout: ${e.message}")
+                    }
+                }
             }
         }
 
@@ -618,9 +640,81 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
+     * Helper to update custom layout (Favorite button)
+     */
+    private fun updateCustomLayout(isFavorite: Boolean) {
+        val iconResId =
+            if (isFavorite) R.drawable.baseline_favorite_24 else R.drawable.baseline_favorite_border_24
+        val favoriteButton = CommandButton.Builder()
+            .setDisplayName("Favorite")
+            .setIconResId(iconResId)
+            .setSessionCommand(
+                SessionCommand(
+                    CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID,
+                    Bundle.EMPTY
+                )
+            )
+            .build()
+
+        mediaSession?.setCustomLayout(listOf(favoriteButton))
+    }
+
+    /**
      * MediaLibrarySession callback for Android Auto browsing support
      */
     private inner class MediaLibrarySessionCallback : MediaLibrarySession.Callback {
+
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val sessionCommands =
+                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                    .add(
+                        SessionCommand(
+                            CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID,
+                            Bundle.EMPTY
+                        )
+                    )
+                    .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(sessionCommands)
+                .setAvailablePlayerCommands(
+                    MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+                )
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID) {
+                val currentTrackId = player.currentMediaItem?.mediaId
+                if (currentTrackId != null) {
+                    serviceScope.launch {
+                        try {
+                            val track =
+                                database.trackDao().getTrackByUuid(currentTrackId)?.toTrack()
+                            if (track != null) {
+                                val newStatus = !track.isFavourite
+                                database.trackDao().updateTrackFavourite(track.uuid, newStatus)
+                                withContext(Dispatchers.Main) {
+                                    updateCustomLayout(newStatus)
+                                }
+                                Log.d(TAG, "Toggled favorite via notification: $newStatus")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing favorite command: ${e.message}")
+                        }
+                    }
+                }
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            return super.onCustomCommand(session, controller, customCommand, args)
+        }
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
@@ -852,6 +946,10 @@ class PlaybackManager private constructor(private val context: Context) {
     private val _isShuffleEnabled = MutableStateFlow(false)
     val isShuffleEnabledFlow: StateFlow<Boolean> = _isShuffleEnabled.asStateFlow()
 
+    // Repeat state
+    private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    val repeatModeFlow: StateFlow<Int> = _repeatMode.asStateFlow()
+
     // Queue manager for recommendations
     private val queueManager: QueueManager by lazy { QueueManager.getInstance(context) }
 
@@ -1024,6 +1122,11 @@ class PlaybackManager private constructor(private val context: Context) {
                         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                             _isShuffleEnabled.value = shuffleModeEnabled
                             Log.d(TAG, "Shuffle mode changed: $shuffleModeEnabled")
+                        }
+
+                        override fun onRepeatModeChanged(repeatMode: Int) {
+                            _repeatMode.value = repeatMode
+                            Log.d(TAG, "Repeat mode changed: $repeatMode")
                         }
                     }
                     try {
@@ -1237,6 +1340,21 @@ class PlaybackManager private constructor(private val context: Context) {
             it.shuffleModeEnabled = !it.shuffleModeEnabled
             _isShuffleEnabled.value = it.shuffleModeEnabled
             Log.d(TAG, "Shuffle toggled: ${it.shuffleModeEnabled}")
+            Log.d(TAG, "Shuffle toggled: ${it.shuffleModeEnabled}")
+        }
+    }
+
+    fun toggleRepeatMode() {
+        controller?.let {
+            val nextMode = when (it.repeatMode) {
+                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_OFF
+                else -> Player.REPEAT_MODE_OFF
+            }
+            it.repeatMode = nextMode
+            _repeatMode.value = nextMode
+            Log.d(TAG, "Repeat mode toggled to: $nextMode")
         }
     }
 
@@ -1256,6 +1374,47 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun getDuration(): Long {
         return controller?.duration ?: 0L
+    }
+
+    /**
+     * Correctly calculates remaining tracks in the current playback functionality.
+     * Handles Shuffle mode correctly by traversing the timeline in shuffle order.
+     */
+    fun getRemainingTracksCount(): Int {
+        val ctrl = controller ?: return 0
+
+        // If shuffle is OFF, it's simple math
+        if (!ctrl.shuffleModeEnabled) {
+            val current = ctrl.currentMediaItemIndex
+            val total = ctrl.mediaItemCount
+            return if (current in 0 until total) total - current - 1 else 0
+        }
+
+        // If shuffle is ON, we must walk the timeline to see how many "next" items exist
+        // before we hit the end (C.INDEX_UNSET).
+        val timeline = ctrl.currentTimeline
+        if (timeline.isEmpty) return 0
+
+        var count = 0
+        var currentIndex = ctrl.currentMediaItemIndex
+
+        // We only really care if it's less than a threshold (e.g. 5), so limit the loop
+        val checkLimit = 5
+
+        // Use REPEAT_MODE_OFF to detect the true "end" of the shuffle queue
+        // even if the player is currently in Repeat All.
+        val repeatMode = Player.REPEAT_MODE_OFF
+
+        for (i in 0 until checkLimit) {
+            val nextIndex = timeline.getNextWindowIndex(currentIndex, repeatMode, true)
+            if (nextIndex == C.INDEX_UNSET || nextIndex == currentIndex) {
+                break
+            }
+            currentIndex = nextIndex
+            count++
+        }
+
+        return count
     }
 
     /**

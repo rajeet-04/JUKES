@@ -10,6 +10,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.juke.R
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.media3.common.Player
 import com.example.juke.viewmodels.MusicUiState
 import com.example.juke.viewmodels.MusicViewModel
 
@@ -31,6 +36,18 @@ fun PlayerControls(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Shuffle Button
+        IconButton(
+            onClick = { musicViewModel.toggleShuffle() },
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Shuffle,
+                contentDescription = "Shuffle",
+                tint = if (uiState.isShuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier.size(28.dp)
+            )
+        }
         IconButton(
             onClick = { 
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -76,6 +93,25 @@ fun PlayerControls(
                 contentDescription = "Next",
                 modifier = Modifier.size(iconSize),
                 tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        // Repeat Button
+        IconButton(
+            onClick = { musicViewModel.toggleRepeat() },
+            modifier = Modifier.size(48.dp)
+        ) {
+            val (icon, tint) = when (uiState.repeatMode) {
+                Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne to MaterialTheme.colorScheme.primary
+                Player.REPEAT_MODE_ALL -> Icons.Default.Repeat to MaterialTheme.colorScheme.primary
+                else -> Icons.Default.Repeat to MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            }
+            
+            Icon(
+                imageVector = icon,
+                contentDescription = "Repeat",
+                tint = tint,
+                modifier = Modifier.size(28.dp)
             )
         }
     }
