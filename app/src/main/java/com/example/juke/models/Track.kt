@@ -43,6 +43,16 @@ data class SpotdownSong(
 )
 
 /**
+ * Spotdown check download response.
+ */
+@Serializable
+data class SpotdownCheckResponse(
+    val cached: Boolean = false,
+    val success: Boolean = true,
+    val message: String? = null
+)
+
+/**
  * Lyrics result from LRCLib API.
  */
 @Serializable

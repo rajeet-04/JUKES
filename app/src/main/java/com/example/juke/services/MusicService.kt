@@ -123,10 +123,10 @@ class MusicService(private val context: Context) {
             }
 
             Log.d(TAG, "Checking if song is cached: ${song.title}")
-            val cacheStatus = SpotifyApi.checkDirectDownload(song.url)
-            val isCached = cacheStatus["cached"] ?: false
+            val cacheResponse = SpotifyApi.checkDirectDownload(song.url)
+            val isCached = cacheResponse.cached
 
-            Log.d(TAG, "Cache status: ${if (isCached) "CACHED" else "NOT CACHED"}")
+            Log.d(TAG, "Cache status: ${if (isCached) "CACHED" else "NOT CACHED"} (Success: ${cacheResponse.success}, Msg: ${cacheResponse.message})")
 
             if (isCached) {
                 Log.d(TAG, "Song is cached, downloading immediately: ${song.title}")

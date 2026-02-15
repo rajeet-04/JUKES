@@ -19,3 +19,5 @@ app/release/
 .kotlin
 LINKEDIN_*.md
 ANALYTICS*.md
+
+/maxun

@@ -2,13 +2,16 @@ package com.example.juke.services
 
 import android.app.NotificationChannel
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.OptIn
-
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -48,34 +51,32 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import android.content.BroadcastReceiver
-import android.content.IntentFilter
-import android.os.Handler
-import android.os.Looper
 
 /**
  * Media Playback Service using Media3 (ExoPlayer) with Android Auto support.
  */
+@UnstableApi
 class PlaybackService : MediaLibraryService() {
-    
+
     private val TAG = "PlaybackService"
-    
+
     private var mediaSession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
     private lateinit var database: MusicDatabase
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
-    
+
     // Preference listener for skip silence 
-    private val audioSettingsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-        if (key == "skip_silence_enabled") {
-            val isEnabled = prefs.getBoolean("skip_silence_enabled", false)
-            if (::player.isInitialized) {
-                player.skipSilenceEnabled = isEnabled
-                Log.d(TAG, "Skip silence enabled: $isEnabled")
+    private val audioSettingsListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "skip_silence_enabled") {
+                val isEnabled = prefs.getBoolean("skip_silence_enabled", false)
+                if (::player.isInitialized) {
+                    player.skipSilenceEnabled = isEnabled
+                    Log.d(TAG, "Skip silence enabled: $isEnabled")
+                }
             }
         }
-    }
-    
+
     private var wasPlayingBeforeCall = false
     private var wasPlayingBeforeFocusLoss = false
     private lateinit var audioManager: android.media.AudioManager
@@ -88,7 +89,7 @@ class PlaybackService : MediaLibraryService() {
             if (intent?.action == android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
                 val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
                 Log.d(TAG, "Phone state changed: $state")
-                
+
                 when (state) {
                     android.telephony.TelephonyManager.EXTRA_STATE_RINGING -> {
                         // Call coming in: Pause and save state
@@ -98,6 +99,7 @@ class PlaybackService : MediaLibraryService() {
                             Log.d(TAG, "Paused playback due to incoming call")
                         }
                     }
+
                     android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                         // Call active (or outgoing call started)
                         // If user makes an outgoing call while music is playing, pause and save state
@@ -107,6 +109,7 @@ class PlaybackService : MediaLibraryService() {
                             Log.d(TAG, "Paused playback due to active/outgoing call")
                         }
                     }
+
                     android.telephony.TelephonyManager.EXTRA_STATE_IDLE -> {
                         // Call ended: Auto resume if we were playing before
                         // IMPORTANT: Post the resume with a delay to allow the app to come to foreground
@@ -133,56 +136,60 @@ class PlaybackService : MediaLibraryService() {
             }
         }
     }
-    
+
     // Audio focus listener to handle other apps playing audio
-    private val audioFocusChangeListener = android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            android.media.AudioManager.AUDIOFOCUS_LOSS -> {
-                // Permanent loss (another app took focus permanently)
-                if (player.isPlaying) {
-                    player.pause()
-                    Log.d(TAG, "Audio focus lost permanently - paused")
-                }
-                wasPlayingBeforeFocusLoss = false
-            }
-            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                // Temporary loss (notification, alarm, etc.)
-                if (player.isPlaying) {
-                    wasPlayingBeforeFocusLoss = true
-                    player.pause()
-                    Log.d(TAG, "Audio focus lost temporarily - paused")
-                }
-            }
-            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Can duck (lower volume) - we'll just pause for simplicity
-                if (player.isPlaying) {
-                    wasPlayingBeforeFocusLoss = true
-                    player.pause()
-                    Log.d(TAG, "Audio focus ducked - paused")
-                }
-            }
-            android.media.AudioManager.AUDIOFOCUS_GAIN -> {
-                // Regained focus - resume if we were playing before
-                // Post with a small delay to avoid conflicts with call state handling
-                if (wasPlayingBeforeFocusLoss && !wasPlayingBeforeCall) {
-                    resumeRunnable?.let { mainHandler.removeCallbacks(it) }
-                    resumeRunnable = Runnable {
-                        try {
-                            if (!player.isPlaying) {
-                                player.play()
-                                Log.d(TAG, "Audio focus regained - resumed (delayed)")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to resume on audio focus gain: ${e.message}", e)
-                        }
+    private val audioFocusChangeListener =
+        android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
+            when (focusChange) {
+                android.media.AudioManager.AUDIOFOCUS_LOSS -> {
+                    // Permanent loss (another app took focus permanently)
+                    if (player.isPlaying) {
+                        player.pause()
+                        Log.d(TAG, "Audio focus lost permanently - paused")
                     }
-                    mainHandler.postDelayed(resumeRunnable!!, 100)
+                    wasPlayingBeforeFocusLoss = false
                 }
-                wasPlayingBeforeFocusLoss = false
+
+                android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    // Temporary loss (notification, alarm, etc.)
+                    if (player.isPlaying) {
+                        wasPlayingBeforeFocusLoss = true
+                        player.pause()
+                        Log.d(TAG, "Audio focus lost temporarily - paused")
+                    }
+                }
+
+                android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    // Can duck (lower volume) - we'll just pause for simplicity
+                    if (player.isPlaying) {
+                        wasPlayingBeforeFocusLoss = true
+                        player.pause()
+                        Log.d(TAG, "Audio focus ducked - paused")
+                    }
+                }
+
+                android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                    // Regained focus - resume if we were playing before
+                    // Post with a small delay to avoid conflicts with call state handling
+                    if (wasPlayingBeforeFocusLoss && !wasPlayingBeforeCall) {
+                        resumeRunnable?.let { mainHandler.removeCallbacks(it) }
+                        resumeRunnable = Runnable {
+                            try {
+                                if (!player.isPlaying) {
+                                    player.play()
+                                    Log.d(TAG, "Audio focus regained - resumed (delayed)")
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to resume on audio focus gain: ${e.message}", e)
+                            }
+                        }
+                        mainHandler.postDelayed(resumeRunnable!!, 100)
+                    }
+                    wasPlayingBeforeFocusLoss = false
+                }
             }
         }
-    }
-    
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -191,10 +198,15 @@ class PlaybackService : MediaLibraryService() {
         var isAppInForeground = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
-                val currentState = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
-                isAppInForeground = currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                val currentState =
+                    androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                isAppInForeground =
+                    currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
                 if (!isAppInForeground) {
-                     Log.w(TAG, "App is in background, suppressing initial startForeground to avoid crash")
+                    Log.w(
+                        TAG,
+                        "App is in background, suppressing initial startForeground to avoid crash"
+                    )
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to check app lifecycle state: ${e.message}")
@@ -213,8 +225,9 @@ class PlaybackService : MediaLibraryService() {
                         .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
                         .apply {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                setStyle(android.app.Notification.MediaStyle()
-                                    .setShowActionsInCompactView()
+                                setStyle(
+                                    android.app.Notification.MediaStyle()
+                                        .setShowActionsInCompactView()
                                 )
                             }
                         }
@@ -264,7 +277,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun createValidatedMediaItem(track: Track): MediaItem? {
         if (track.localUri == null) return null
-        
+
         // Check if it's a remote URL (http/https)
         val isRemote = track.localUri.startsWith("http", ignoreCase = true)
 
@@ -276,7 +289,7 @@ class PlaybackService : MediaLibraryService() {
                 if (!file.exists() || !file.canRead() || file.length() <= 0) {
                     // Start of workaround for content:// URIs
                     if (!track.localUri.startsWith("content://")) {
-                         return null
+                        return null
                     }
                 }
             } catch (e: Exception) {
@@ -292,13 +305,13 @@ class PlaybackService : MediaLibraryService() {
         track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
             try {
                 val uri = uriString.toUri()
-                if (!uriString.startsWith("http")) { 
+                if (!uriString.startsWith("http")) {
                     val file = java.io.File(uri.path ?: "")
                     if (file.exists() && file.canRead() && file.length() > 0) {
                         metadataBuilder.setArtworkUri(uri)
                     }
                 } else {
-                     metadataBuilder.setArtworkUri(uri)
+                    metadataBuilder.setArtworkUri(uri)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Invalid artwork URI for ${track.title}: ${e.message}")
@@ -326,11 +339,11 @@ class PlaybackService : MediaLibraryService() {
                 Player.STATE_IDLE -> Log.d(TAG, "Player idle")
             }
         }
-        
+
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             Log.e(TAG, "Player error: ${error.message}", error)
         }
-        
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             // Prevent infinite loops from metadata updates
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
@@ -349,7 +362,8 @@ class PlaybackService : MediaLibraryService() {
                             // Create fresh metadata with validated artwork
                             serviceScope.launch {
                                 try {
-                                    val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
+                                    val track =
+                                        database.trackDao().getTrackByUuid(trackId)?.toTrack()
                                     if (track != null) {
                                         val validatedItem = createValidatedMediaItem(track)
                                         validatedItem?.let { newItem ->
@@ -360,8 +374,11 @@ class PlaybackService : MediaLibraryService() {
                                                 if (player.currentMediaItem?.mediaId == trackId) {
                                                     val currentIndex = player.currentMediaItemIndex
                                                     player.replaceMediaItem(currentIndex, newItem)
-                                                    Log.d(TAG, "Updated media item with validated metadata for ${track.title}")
-                                                    
+                                                    Log.d(
+                                                        TAG,
+                                                        "Updated media item with validated metadata for ${track.title}"
+                                                    )
+
                                                     // Force notification update by setting state
                                                     // This helps with the sync issue without needing delays
                                                     mediaSession?.let { session ->
@@ -398,7 +415,7 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
         }
-        
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             Log.d(TAG, "Is playing: $isPlaying")
         }
@@ -407,7 +424,7 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        
+
         // Create notification channel for Android 8+
         // IMPORTANT: Must be created before Media3 initializes to avoid notification conflicts
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -422,7 +439,7 @@ class PlaybackService : MediaLibraryService() {
             getSystemService(android.app.NotificationManager::class.java)
                 .createNotificationChannel(channel)
         }
-        
+
         // Configure Media3 to use the same Notification ID and Channel
         // This prevents notification conflicts on Samsung and other devices
         val notificationProvider = DefaultMediaNotificationProvider.Builder(applicationContext)
@@ -430,10 +447,10 @@ class PlaybackService : MediaLibraryService() {
             .setChannelId("media_playback")
             .build()
         setMediaNotificationProvider(notificationProvider)
-        
+
         database = MusicDatabase.getDatabase(applicationContext)
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-        
+        audioManager = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
             .setEnableDecoderFallback(true)
@@ -442,12 +459,12 @@ class PlaybackService : MediaLibraryService() {
             .setAudioAttributes(audioAttributes, false) // Keep FALSE to allow manual call control
             .setHandleAudioBecomingNoisy(true)
             .build()
-            
+
         // Initialize Skip Silence from Preferences
-        val prefs = getSharedPreferences("audio_effects_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("audio_effects_prefs", MODE_PRIVATE)
         player.skipSilenceEnabled = prefs.getBoolean("skip_silence_enabled", false)
         prefs.registerOnSharedPreferenceChangeListener(audioSettingsListener)
-        
+
         // Request audio focus when player starts playing
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -472,14 +489,14 @@ class PlaybackService : MediaLibraryService() {
                             android.media.AudioManager.AUDIOFOCUS_GAIN
                         )
                     }
-                    
+
                     if (result != android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                         Log.w(TAG, "Audio focus not granted")
                     }
                 }
             }
         })
-        
+
         // Listen for audio session ID changes to attach audio effects
         player.addAnalyticsListener(object : AnalyticsListener {
             override fun onAudioSessionIdChanged(
@@ -490,14 +507,15 @@ class PlaybackService : MediaLibraryService() {
                 audioEffectController.attachToAudioSession(audioSessionId)
             }
         })
-        
+
         player.addListener(playerListener)
-        
+
         val sessionActivityPendingIntent = packageManager
             ?.getLaunchIntentForPackage(packageName)
             ?.let { sessionIntent ->
                 // FIX: Add these flags to prevent the app from restarting
-                sessionIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                sessionIntent.flags =
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 sessionIntent.putExtra("open_player", true)
                 PendingIntent.getActivity(
                     this,
@@ -506,9 +524,9 @@ class PlaybackService : MediaLibraryService() {
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
             }
-        
+
         val bitmapLoader = DataSourceBitmapLoader(this)
-        
+
         mediaSession = MediaLibrarySession.Builder(this, player, MediaLibrarySessionCallback())
             .apply {
                 sessionActivityPendingIntent?.let { setSessionActivity(it) }
@@ -516,9 +534,9 @@ class PlaybackService : MediaLibraryService() {
             .setBitmapLoader(bitmapLoader)
             .setShowPlayButtonIfPlaybackIsSuppressed(true)
             .build()
-        
+
         Log.d(TAG, "PlaybackService created")
-        
+
         // 2. Register the Receiver safely
         try {
             val filter = IntentFilter(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
@@ -527,7 +545,7 @@ class PlaybackService : MediaLibraryService() {
             Log.e(TAG, "Failed to register call state receiver: ${e.message}")
         }
     }
-    
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         return mediaSession
     }
@@ -543,14 +561,19 @@ class PlaybackService : MediaLibraryService() {
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         // On Android 12+ (API 31), starting a foreground service from the background is restricted
         // and throws ForegroundServiceStartNotAllowedException.
-        if (startInForegroundRequired && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        if (startInForegroundRequired && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 // Check if the app is effectively in the background
-                val currentState = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
-                val isAppInForeground = currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
-                
+                val currentState =
+                    androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                val isAppInForeground =
+                    currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+
                 if (!isAppInForeground) {
-                    Log.w(TAG, "App is in background, skipping notification update to avoid ForegroundServiceStartNotAllowedException")
+                    Log.w(
+                        TAG,
+                        "App is in background, skipping notification update to avoid ForegroundServiceStartNotAllowedException"
+                    )
                     // CRITICAL: Do NOT call super.onUpdateNotification. 
                     // Media3's default implementation will try to start the service in foreground even if we pass false,
                     // or it uses startForegroundService which crashes.
@@ -570,35 +593,35 @@ class PlaybackService : MediaLibraryService() {
             Log.w(TAG, "Failed to update notification/start foreground: ${e.message}")
         }
     }
-    
+
     override fun onDestroy() {
         // Clean up pending resume operations
         resumeRunnable?.let { mainHandler.removeCallbacks(it) }
         resumeRunnable = null
-        
+
         mediaSession?.run {
             player.release()
             release()
             mediaSession = null
         }
         audioEffectController.release()
-        
+
         // 3. Unregister to prevent leaks
         try {
             unregisterReceiver(callStateReceiver)
         } catch (e: Exception) {
             // Ignore if not registered
         }
-        
+
         super.onDestroy()
         Log.d(TAG, "PlaybackService destroyed")
     }
-    
+
     /**
      * MediaLibrarySession callback for Android Auto browsing support
      */
     private inner class MediaLibrarySessionCallback : MediaLibrarySession.Callback {
-        
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -640,6 +663,7 @@ class PlaybackService : MediaLibraryService() {
                     )
                     Futures.immediateFuture(LibraryResult.ofItemList(items, params))
                 }
+
                 "recent" -> loadRecentTracks(params)
                 "favorites" -> loadFavorites(params)
                 "all_tracks" -> loadAllTracks(params)
@@ -667,7 +691,7 @@ class PlaybackService : MediaLibraryService() {
                 }
             }.asListenableFuture()
         }
-        
+
         private fun buildBrowsableItem(mediaId: String, title: String): MediaItem {
             return MediaItem.Builder()
                 .setMediaId(mediaId)
@@ -680,7 +704,7 @@ class PlaybackService : MediaLibraryService() {
                 )
                 .build()
         }
-        
+
         private fun buildPlayableMediaItem(track: Track): MediaItem {
             val metadataBuilder = MediaMetadata.Builder()
                 .setTitle(track.title)
@@ -701,7 +725,10 @@ class PlaybackService : MediaLibraryService() {
                         Log.w(TAG, "Artwork file not accessible for ${track.title}: $uriString")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Invalid artwork URI for track ${track.title}: $uriString - ${e.message}")
+                    Log.w(
+                        TAG,
+                        "Invalid artwork URI for track ${track.title}: $uriString - ${e.message}"
+                    )
                 }
             }
 
@@ -753,7 +780,7 @@ class PlaybackService : MediaLibraryService() {
                 }
             }.asListenableFuture()
         }
-        
+
         @kotlin.OptIn(ExperimentalCoroutinesApi::class)
         private fun <T> kotlinx.coroutines.Deferred<T>.asListenableFuture(): ListenableFuture<T> {
             val deferred = this
@@ -775,18 +802,18 @@ class PlaybackService : MediaLibraryService() {
  * This connects to PlaybackService via MediaController to enable notification controls.
  */
 class PlaybackManager private constructor(private val context: Context) {
-    
+
     companion object {
         @Volatile
         private var INSTANCE: PlaybackManager? = null
-        
+
         fun getInstance(context: Context): PlaybackManager {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: PlaybackManager(context.applicationContext).also { INSTANCE = it }
             }
         }
     }
-    
+
     private val TAG = "PlaybackManager"
     private val prefs = context.getSharedPreferences("playback_state_prefs", Context.MODE_PRIVATE)
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -796,11 +823,11 @@ class PlaybackManager private constructor(private val context: Context) {
     val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    
+
     // Flow to emit current track UUID changes
     private val _currentTrackId = MutableStateFlow<String?>(null)
     val currentTrackIdFlow: StateFlow<String?> = _currentTrackId.asStateFlow()
-    
+
     // Flow to indicate if restored state is available
     private val _hasRestoredState = MutableStateFlow(false)
     val hasRestoredState: StateFlow<Boolean> = _hasRestoredState.asStateFlow()
@@ -808,26 +835,26 @@ class PlaybackManager private constructor(private val context: Context) {
     // Flow to emit current queue index
     private val _currentQueueIndex = MutableStateFlow(0)
     val currentQueueIndexFlow: StateFlow<Int> = _currentQueueIndex.asStateFlow()
-    
+
     // Flow to emit current queue structure (list of Media IDs/UUIDs)
     private val _queueFlow = MutableStateFlow<List<String>>(emptyList())
     val queueFlow: StateFlow<List<String>> = _queueFlow.asStateFlow()
-    
+
     // Sleep timer state
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
     private val _sleepTimerRemaining = MutableStateFlow<Long?>(null)
     val sleepTimerRemaining: StateFlow<Long?> = _sleepTimerRemaining.asStateFlow()
-    
+
     // Audio effect controller
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(context) }
-    
+
     // Shuffle state
     private val _isShuffleEnabled = MutableStateFlow(false)
     val isShuffleEnabledFlow: StateFlow<Boolean> = _isShuffleEnabled.asStateFlow()
-    
+
     // Queue manager for recommendations
     private val queueManager: QueueManager by lazy { QueueManager.getInstance(context) }
-    
+
     /**
      * Helper function to create validated MediaItem with artwork checking
      */
@@ -857,186 +884,204 @@ class PlaybackManager private constructor(private val context: Context) {
             .setMediaMetadata(metadataBuilder.build())
             .build()
     }
-    
+
+    @OptIn(UnstableApi::class)
     fun initialize() {
         if (controllerFuture == null) {
-            val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+            val sessionToken =
+                SessionToken(context, ComponentName(context, PlaybackService::class.java))
             controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
             controllerFuture?.addListener(
                 {
-                            controller = controllerFuture?.get()
-                            Log.d(TAG, "MediaController connected to PlaybackService")
-                            // Add a Player.Listener on the controller's underlying player
-                            playerListener = object : Player.Listener {
-                                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                                    super.onTimelineChanged(timeline, reason)
-                                    // Update queue flow when timeline changes (add/remove/move)
+                    controller = controllerFuture?.get()
+                    Log.d(TAG, "MediaController connected to PlaybackService")
+                    // Add a Player.Listener on the controller's underlying player
+                    playerListener = object : Player.Listener {
+                        override fun onTimelineChanged(
+                            timeline: androidx.media3.common.Timeline,
+                            reason: Int
+                        ) {
+                            super.onTimelineChanged(timeline, reason)
+                            // Update queue flow when timeline changes (add/remove/move)
+                            controller?.let { ctrl ->
+                                val count = ctrl.mediaItemCount
+                                val newScan = (0 until count).map { i ->
+                                    ctrl.getMediaItemAt(i).mediaId
+                                }
+                                _queueFlow.value = newScan
+
+                                // Also update queue index as it might have shifted
+                                val currentIndex = ctrl.currentMediaItemIndex
+                                if (currentIndex != _currentQueueIndex.value) {
+                                    _currentQueueIndex.value = currentIndex
+                                }
+
+                                Log.d(
+                                    TAG,
+                                    "Timeline changed (reason=$reason), updated queue flow with ${newScan.size} items"
+                                )
+                            }
+                        }
+
+                        override fun onIsPlayingChanged(isPlaying: Boolean) {
+                            _isPlaying.value = isPlaying
+                            Log.d(TAG, "PlayerListener onIsPlayingChanged: $isPlaying")
+                        }
+
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            Log.d(TAG, "PlayerListener playbackStateChanged: $playbackState")
+                            if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
+                                savePlaybackState()
+                            }
+                        }
+
+                        override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) {
+                            if (error != null) {
+                                Log.e(TAG, "Player error: ${error.message}", error)
+
+                                // Check if it's a file not found error (deleted track)
+                                val errorMessage = error.message ?: ""
+                                val causeMessage = error.cause?.message ?: ""
+
+                                if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+                                    errorMessage.contains("ENOENT") ||
+                                    errorMessage.contains("FileNotFoundException") ||
+                                    errorMessage.contains("No such file or directory") ||
+                                    causeMessage.contains("ENOENT") ||
+                                    causeMessage.contains("FileNotFoundException")
+                                ) {
+
+                                    Log.w(
+                                        TAG,
+                                        "Track file not found (likely deleted), skipping to next track"
+                                    )
+
+                                    // Skip to next track if available
                                     controller?.let { ctrl ->
-                                        val count = ctrl.mediaItemCount
-                                        val newScan = (0 until count).map { i ->
-                                            ctrl.getMediaItemAt(i).mediaId
-                                        }
-                                        _queueFlow.value = newScan
-                                        
-                                        // Also update queue index as it might have shifted
-                                        val currentIndex = ctrl.currentMediaItemIndex
-                                        if (currentIndex != _currentQueueIndex.value) {
-                                            _currentQueueIndex.value = currentIndex
-                                        }
-                                        
-                                        Log.d(TAG, "Timeline changed (reason=$reason), updated queue flow with ${newScan.size} items")
-                                    }
-                                }
-
-                                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                                    _isPlaying.value = isPlaying
-                                    Log.d(TAG, "PlayerListener onIsPlayingChanged: $isPlaying")
-                                }
-
-                                override fun onPlaybackStateChanged(playbackState: Int) {
-                                    Log.d(TAG, "PlayerListener playbackStateChanged: $playbackState")
-                                    if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
-                                        savePlaybackState()
-                                    }
-                                }
-
-                                override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) {
-                                    if (error != null) {
-                                        Log.e(TAG, "Player error: ${error.message}", error)
-                                        
-                                        // Check if it's a file not found error (deleted track)
-                                        val errorMessage = error.message ?: ""
-                                        val causeMessage = error.cause?.message ?: ""
-                                        
-                                        if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
-                                            errorMessage.contains("ENOENT") ||
-                                            errorMessage.contains("FileNotFoundException") ||
-                                            errorMessage.contains("No such file or directory") ||
-                                            causeMessage.contains("ENOENT") ||
-                                            causeMessage.contains("FileNotFoundException")) {
-                                            
-                                            Log.w(TAG, "Track file not found (likely deleted), skipping to next track")
-                                            
-                                            // Skip to next track if available
-                                            controller?.let { ctrl ->
-                                                if (ctrl.hasNextMediaItem()) {
-                                                    ctrl.seekToNext()
-                                                    ctrl.prepare()
-                                                    ctrl.play()
-                                                } else {
-                                                    // No next track, stop playback
-                                                    ctrl.stop()
-                                                    Log.d(TAG, "No next track available, stopping playback")
-                                                }
-                                            }
+                                        if (ctrl.hasNextMediaItem()) {
+                                            ctrl.seekToNext()
+                                            ctrl.prepare()
+                                            ctrl.play()
+                                        } else {
+                                            // No next track, stop playback
+                                            ctrl.stop()
+                                            Log.d(TAG, "No next track available, stopping playback")
                                         }
                                     }
-                                }
-
-                                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                                    mediaItem?.let { item ->
-                                        val trackId = item.mediaId
-                                        _currentTrackId.value = trackId
-                                        
-                                        // Update the queue index immediately
-                                        val currentIndex = controller?.currentMediaItemIndex ?: 0
-                                        _currentQueueIndex.value = currentIndex
-                                        
-                                        Log.d(TAG, "Media item transition: $trackId at index $currentIndex")
-                                        savePlaybackState()
-                                        
-                                        // Save queue structure to persist auto-added songs
-                                        scope.launch {
-                                            saveQueueStructure()
-                                        }
-                                        
-
-                                        
-                                        // Track song play in analytics
-                                        scope.launch {
-                                            try {
-                                                Log.d(TAG, "Analytics: Looking up track with ID: $trackId")
-                                                val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
-                                                if (track != null) {
-                                                    Log.d(TAG, "Analytics: Found track '${track.title}' by ${track.artist}, calling trackSongPlayed")
-                                                    AnalyticsManager.getInstance().trackSongPlayed(
-                                                        songId = "${track.title} - ${track.artist}",
-                                                        songTitle = track.title,
-                                                        songArtist = track.artist,
-                                                        songDuration = track.durationSec * 1000L,
-                                                        positionInQueue = currentIndex
-                                                    )
-                                                } else {
-                                                    Log.w(TAG, "Analytics: Track not found in database for ID: $trackId")
-                                                }
-                                            } catch (e: Exception) {
-                                                Log.e(TAG, "Error tracking song play: ${e.message}", e)
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                                    _isShuffleEnabled.value = shuffleModeEnabled
-                                    Log.d(TAG, "Shuffle mode changed: $shuffleModeEnabled")
                                 }
                             }
-                            try {
-                                controller?.addListener(playerListener!!)
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Failed to add player listener: ${e.message}")
-                            }
+                        }
 
-                            // Start a small polling loop as a fallback to ensure external changes
-                            scope.launch {
-                                var last = _isPlaying.value
-                                while (controller != null) {
+                        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                            mediaItem?.let { item ->
+                                val trackId = item.mediaId
+                                _currentTrackId.value = trackId
+
+                                // Update the queue index immediately
+                                val currentIndex = controller?.currentMediaItemIndex ?: 0
+                                _currentQueueIndex.value = currentIndex
+
+                                Log.d(TAG, "Media item transition: $trackId at index $currentIndex")
+                                savePlaybackState()
+
+                                // Save queue structure to persist auto-added songs
+                                scope.launch {
+                                    saveQueueStructure()
+                                }
+
+
+                                // Track song play in analytics
+                                scope.launch {
                                     try {
-                                        val playing = withContext(Dispatchers.Main) { 
-                                            controller?.isPlaying == true 
+                                        Log.d(TAG, "Analytics: Looking up track with ID: $trackId")
+                                        val track =
+                                            database.trackDao().getTrackByUuid(trackId)?.toTrack()
+                                        if (track != null) {
+                                            Log.d(
+                                                TAG,
+                                                "Analytics: Found track '${track.title}' by ${track.artist}, calling trackSongPlayed"
+                                            )
+                                            AnalyticsManager.getInstance().trackSongPlayed(
+                                                songId = "${track.title} - ${track.artist}",
+                                                songTitle = track.title,
+                                                songArtist = track.artist,
+                                                songDuration = track.durationSec * 1000L,
+                                                positionInQueue = currentIndex
+                                            )
+                                        } else {
+                                            Log.w(
+                                                TAG,
+                                                "Analytics: Track not found in database for ID: $trackId"
+                                            )
                                         }
-                                        
-                                        if (playing != last) {
-                                            _isPlaying.value = playing
-                                            Log.d(TAG, "Polled controller isPlaying: $playing")
-                                            last = playing
-                                        }
-                                        
-                                        // Also poll index to ensure sync
-                                        val currentIndex = withContext(Dispatchers.Main) { 
-                                            controller?.currentMediaItemIndex ?: 0 
-                                        }
-                                        if (currentIndex != _currentQueueIndex.value) {
-                                            _currentQueueIndex.value = currentIndex
-                                            Log.d(TAG, "Polled controller index updated: $currentIndex")
-                                        }
-                                        
-                                        // Save position every 5 seconds when playing
-                                        if (playing) {
-                                            withContext(Dispatchers.Main) {
-                                                savePlaybackState()
-                                            }
-                                        }
-                                        kotlinx.coroutines.delay(5000)
                                     } catch (e: Exception) {
-                                        Log.w(TAG, "Polling loop error: ${e.message}")
-                                        break
+                                        Log.e(TAG, "Error tracking song play: ${e.message}", e)
                                     }
                                 }
                             }
-                            
-                            // Restore saved playback state if exists
-                            scope.launch {
-                                restorePlaybackState()
+                        }
+
+                        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                            _isShuffleEnabled.value = shuffleModeEnabled
+                            Log.d(TAG, "Shuffle mode changed: $shuffleModeEnabled")
+                        }
+                    }
+                    try {
+                        controller?.addListener(playerListener!!)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to add player listener: ${e.message}")
+                    }
+
+                    // Start a small polling loop as a fallback to ensure external changes
+                    scope.launch {
+                        var last = _isPlaying.value
+                        while (controller != null) {
+                            try {
+                                val playing = withContext(Dispatchers.Main) {
+                                    controller?.isPlaying == true
+                                }
+
+                                if (playing != last) {
+                                    _isPlaying.value = playing
+                                    Log.d(TAG, "Polled controller isPlaying: $playing")
+                                    last = playing
+                                }
+
+                                // Also poll index to ensure sync
+                                val currentIndex = withContext(Dispatchers.Main) {
+                                    controller?.currentMediaItemIndex ?: 0
+                                }
+                                if (currentIndex != _currentQueueIndex.value) {
+                                    _currentQueueIndex.value = currentIndex
+                                    Log.d(TAG, "Polled controller index updated: $currentIndex")
+                                }
+
+                                // Save position every 5 seconds when playing
+                                if (playing) {
+                                    withContext(Dispatchers.Main) {
+                                        savePlaybackState()
+                                    }
+                                }
+                                kotlinx.coroutines.delay(5000)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Polling loop error: ${e.message}")
+                                break
                             }
+                        }
+                    }
+
+                    // Restore saved playback state if exists
+                    scope.launch {
+                        restorePlaybackState()
+                    }
                 },
                 MoreExecutors.directExecutor()
             )
-            
+
             Log.d(TAG, "PlaybackManager initialized")
         }
     }
-    
+
     fun playTrack(track: Track) {
         val mediaItem = createValidatedMediaItem(track)
         if (mediaItem == null) {
@@ -1058,7 +1103,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
         Log.d(TAG, "Playing track: ${track.title}")
     }
-    
+
     fun setQueue(tracks: List<Track>, startIndex: Int = 0, startPositionMs: Long = C.TIME_UNSET) {
         initialize()
 
@@ -1076,17 +1121,20 @@ class PlaybackManager private constructor(private val context: Context) {
             _currentQueueIndex.value = startIndex
         }
 
-        Log.d(TAG, "Queue set with ${mediaItems.size} tracks, starting at index $startIndex pos $startPositionMs")
+        Log.d(
+            TAG,
+            "Queue set with ${mediaItems.size} tracks, starting at index $startIndex pos $startPositionMs"
+        )
 
         // Save queue to preferences
         scope.launch {
             saveQueueStructure()
         }
     }
-    
+
     /**
      * Add tracks to the end of the current queue without interrupting playback.
-     * 
+     *
      * @param tracks Tracks to add
      */
     fun addToQueue(tracks: List<Track>) {
@@ -1097,7 +1145,7 @@ class PlaybackManager private constructor(private val context: Context) {
         if (mediaItems.isNotEmpty()) {
             controller?.addMediaItems(mediaItems)
             Log.d(TAG, "Added ${mediaItems.size} tracks to queue")
-            
+
             // Save updated queue structure
             scope.launch {
                 saveQueueStructure()
@@ -1121,7 +1169,7 @@ class PlaybackManager private constructor(private val context: Context) {
             val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
             ctrl.addMediaItem(targetIndex, mediaItem)
             Log.d(TAG, "Inserted track ${track.title} at index $targetIndex")
-            
+
             // Save updated queue structure
             scope.launch {
                 saveQueueStructure()
@@ -1145,7 +1193,7 @@ class PlaybackManager private constructor(private val context: Context) {
             val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
             ctrl.addMediaItems(targetIndex, mediaItems)
             Log.d(TAG, "Inserted ${mediaItems.size} tracks at index $targetIndex")
-            
+
             // Save updated queue structure
             scope.launch {
                 saveQueueStructure()
@@ -1172,7 +1220,7 @@ class PlaybackManager private constructor(private val context: Context) {
         controller?.seekToNext()
         Log.d(TAG, "Skip to next")
     }
-    
+
     fun skipToPrevious() {
         controller?.let {
             if (it.currentPosition > 3000) {
@@ -1183,7 +1231,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
         Log.d(TAG, "Skip to previous")
     }
-    
+
     fun toggleShuffle() {
         controller?.let {
             it.shuffleModeEnabled = !it.shuffleModeEnabled
@@ -1191,28 +1239,28 @@ class PlaybackManager private constructor(private val context: Context) {
             Log.d(TAG, "Shuffle toggled: ${it.shuffleModeEnabled}")
         }
     }
-    
+
     fun seekTo(positionMs: Long) {
         controller?.seekTo(positionMs)
         Log.d(TAG, "Seeked to $positionMs ms")
     }
-    
+
     fun seekToIndex(index: Int) {
         controller?.seekTo(index, 0L)
         Log.d(TAG, "Seeked to index $index")
     }
-    
+
     fun getCurrentPosition(): Long {
         return controller?.currentPosition ?: 0L
     }
-    
+
     fun getDuration(): Long {
         return controller?.duration ?: 0L
     }
 
     /**
      * Remove a track from the queue by its media ID.
-     * 
+     *
      * @param mediaId The media ID of the track to remove
      * @return true if the track was removed, false otherwise
      */
@@ -1225,7 +1273,7 @@ class PlaybackManager private constructor(private val context: Context) {
             // Use playlist API to avoid full re-prepare and reduce playback hiccup
             ctrl.removeMediaItem(index)
             Log.d(TAG, "Removed track $mediaId from queue at index $index")
-            
+
             // Save updated queue structure
             scope.launch {
                 saveQueueStructure()
@@ -1234,11 +1282,11 @@ class PlaybackManager private constructor(private val context: Context) {
         }
         return false
     }
-    
+
     /**
      * Replace a track in the queue with a new track (e.g., replacing streaming with downloaded version).
      * Useful for seamlessly transitioning from streaming to offline playback.
-     * 
+     *
      * @param oldMediaId The media ID of the track to replace
      * @param newTrack The new track to replace it with
      * @return true if the track was replaced, false otherwise
@@ -1271,7 +1319,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
 
             Log.d(TAG, "Replaced track $oldMediaId with ${newTrack.uuid} at index $index")
-            
+
             // Save updated queue structure
             scope.launch {
                 saveQueueStructure()
@@ -1280,10 +1328,10 @@ class PlaybackManager private constructor(private val context: Context) {
         }
         return false
     }
-    
+
     /**
      * Move a track to a new position in the queue.
-     * 
+     *
      * @param fromIndex Current index of the track
      * @param toIndex New index for the track
      * @return true if the move was successful, false otherwise
@@ -1291,7 +1339,7 @@ class PlaybackManager private constructor(private val context: Context) {
     /**
      * Remove a deleted track from the queue to prevent playback errors.
      * Should be called when a track is deleted from the library.
-     * 
+     *
      * @param trackUuid UUID of the deleted track
      */
     fun removeDeletedTrackFromQueue(trackUuid: String) {
@@ -1303,20 +1351,20 @@ class PlaybackManager private constructor(private val context: Context) {
                     indicesToRemove.add(i)
                 }
             }
-            
+
             if (indicesToRemove.isEmpty()) {
                 return
             }
-            
+
             val currentIndex = ctrl.currentMediaItemIndex
             val isCurrentTrack = indicesToRemove.contains(currentIndex)
-            
+
             // Remove from queue (remove in reverse order to maintain indices)
             indicesToRemove.sortedDescending().forEach { index ->
                 ctrl.removeMediaItem(index)
                 Log.d(TAG, "Removed deleted track from queue at index $index")
             }
-            
+
             // If the deleted track was playing, skip to next
             if (isCurrentTrack) {
                 Log.w(TAG, "Deleted track was currently playing, skipping to next")
@@ -1329,25 +1377,26 @@ class PlaybackManager private constructor(private val context: Context) {
                     Log.d(TAG, "No next track available after deletion, stopping playback")
                 }
             }
-            
+
             // Save updated queue
             scope.launch {
                 saveQueueStructure()
             }
         }
     }
-    
+
     fun moveInQueue(fromIndex: Int, toIndex: Int): Boolean {
         controller?.let { ctrl ->
             if (fromIndex < 0 || fromIndex >= ctrl.mediaItemCount ||
-                toIndex < 0 || toIndex >= ctrl.mediaItemCount) {
+                toIndex < 0 || toIndex >= ctrl.mediaItemCount
+            ) {
                 return false
             }
 
             // Use playlist move to minimize playback interruption
             ctrl.moveMediaItem(fromIndex, toIndex)
             Log.d(TAG, "Moved track from index $fromIndex to $toIndex via playlist API")
-            
+
             // Save updated queue structure
             scope.launch {
                 saveQueueStructure()
@@ -1356,14 +1405,14 @@ class PlaybackManager private constructor(private val context: Context) {
         }
         return false
     }
-    
+
     /**
      * Start sleep timer that will pause playback after specified minutes.
      * @param minutes Duration in minutes
      */
     fun startSleepTimer(minutes: Int) {
         cancelSleepTimer()
-        
+
         val durationMs = minutes * 60 * 1000L
         sleepTimerJob = scope.launch {
             var remaining = durationMs
@@ -1372,16 +1421,16 @@ class PlaybackManager private constructor(private val context: Context) {
                 kotlinx.coroutines.delay(1000)
                 remaining -= 1000
             }
-            
+
             // Timer finished - pause playback
             _sleepTimerRemaining.value = null
             controller?.pause()
             Log.d(TAG, "Sleep timer finished - paused playback")
         }
-        
+
         Log.d(TAG, "Sleep timer started for $minutes minutes")
     }
-    
+
     /**
      * Cancel active sleep timer.
      */
@@ -1391,7 +1440,7 @@ class PlaybackManager private constructor(private val context: Context) {
         _sleepTimerRemaining.value = null
         Log.d(TAG, "Sleep timer cancelled")
     }
-    
+
     fun release() {
         cancelSleepTimer()
         savePlaybackState() // Save state before releasing
@@ -1400,18 +1449,19 @@ class PlaybackManager private constructor(private val context: Context) {
         // remove player listener if attached
         try {
             playerListener?.let { controller?.removeListener(it) }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         playerListener = null
         controller = null
         controllerFuture = null
         Log.d(TAG, "PlaybackManager released")
     }
-    
+
     private fun savePlaybackState() {
         try {
             val position = controller?.currentPosition ?: 0L
             val currentIndex = controller?.currentMediaItemIndex ?: -1
-            
+
             prefs.edit().apply {
                 putLong("playback_position", position)
                 putInt("queue_start_index", currentIndex)
@@ -1422,7 +1472,7 @@ class PlaybackManager private constructor(private val context: Context) {
             Log.e(TAG, "Failed to save playback state: ${e.message}")
         }
     }
-    
+
     private suspend fun saveQueueStructure() {
         try {
             val trackIds = withContext(Dispatchers.Main) {
@@ -1432,13 +1482,15 @@ class PlaybackManager private constructor(private val context: Context) {
                     ctrl.getMediaItemAt(i).mediaId
                 }
             }
-            
+
             if (trackIds.isEmpty()) return
-            
+
             val idsString = trackIds.joinToString(",")
-            val currentIndex = withContext(Dispatchers.Main) { controller?.currentMediaItemIndex ?: 0 }
-            val currentPosition = withContext(Dispatchers.Main) { controller?.currentPosition ?: 0L }
-            
+            val currentIndex =
+                withContext(Dispatchers.Main) { controller?.currentMediaItemIndex ?: 0 }
+            val currentPosition =
+                withContext(Dispatchers.Main) { controller?.currentPosition ?: 0L }
+
             prefs.edit().apply {
                 putString("queue_track_ids", idsString)
                 putInt("queue_start_index", currentIndex)
@@ -1451,24 +1503,24 @@ class PlaybackManager private constructor(private val context: Context) {
             Log.e(TAG, "Failed to save queue structure: ${e.message}")
         }
     }
-    
+
     private suspend fun restorePlaybackState() {
         try {
             if (!prefs.getBoolean("has_saved_state", false)) {
                 Log.d(TAG, "No saved playback state found")
                 return
             }
-            
+
             val trackIds = prefs.getString("queue_track_ids", "") ?: ""
             if (trackIds.isEmpty()) {
                 Log.d(TAG, "No saved queue found")
                 return
             }
-            
+
             val ids = trackIds.split(",")
             val savedIndex = prefs.getInt("queue_start_index", 0)
             val savedPosition = prefs.getLong("playback_position", 0L)
-            
+
             // Load tracks from database
             val tracks = withContext(Dispatchers.IO) {
                 ids.mapNotNull { id ->
@@ -1480,32 +1532,39 @@ class PlaybackManager private constructor(private val context: Context) {
                     }
                 }
             }
-            
+
             if (tracks.isEmpty()) {
                 Log.d(TAG, "No tracks found in database for saved queue")
                 return
             }
-            
-            Log.d(TAG, "Restoring playback state: ${tracks.size} tracks, index=$savedIndex, position=$savedPosition")
-            
+
+            Log.d(
+                TAG,
+                "Restoring playback state: ${tracks.size} tracks, index=$savedIndex, position=$savedPosition"
+            )
+
             // Restore queue
             val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
-            
+
             // MediaController methods must be called on main thread
             withContext(Dispatchers.Main) {
                 controller?.apply {
-                    setMediaItems(mediaItems, savedIndex.coerceIn(0, mediaItems.size - 1), savedPosition)
+                    setMediaItems(
+                        mediaItems,
+                        savedIndex.coerceIn(0, mediaItems.size - 1),
+                        savedPosition
+                    )
                     prepare()
                     // Don't auto-play, just prepare to paused state
                 }
-                
+
                 tracks.getOrNull(savedIndex)?.let { track ->
                     _currentTrackId.value = track.uuid
                 }
-                
+
                 // Set the restored index
                 _currentQueueIndex.value = savedIndex
-                
+
                 // Update QueueManager with remaining tracks from current position
                 // QueueManager treats index 0 as "current track", so we pass only tracks from savedIndex onwards
                 // This prevents state desync between ExoPlayer's position and QueueManager's internal state
@@ -1513,11 +1572,11 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (remainingTracks.isNotEmpty()) {
                     queueManager.initializeQueue(remainingTracks)
                 }
-                
+
                 _hasRestoredState.value = true
                 Log.d(TAG, "Playback state restored successfully")
             }
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Failed to restore playback state: ${e.message}", e)
         }

@@ -31,6 +31,7 @@ object SpotifyApi {
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
     private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
+    private const val SPOTDOWN_API_KEY = "b7dced12866eeef7ada4537c3fa952135e6c9680b0b332bcad99866823b6199b"
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
     
@@ -512,17 +513,25 @@ object SpotifyApi {
      * Check if a Spotify song is cached on Spotdown for faster download.
      * 
      * @param spotifyUrl Spotify track URL (e.g., https://open.spotify.com/track/...)
-     * @return Map with "cached" boolean key
+     * @return SpotdownCheckResponse with cached boolean and status
      */
-    suspend fun checkDirectDownload(spotifyUrl: String): Map<String, Boolean> {
+    suspend fun checkDirectDownload(spotifyUrl: String): SpotdownCheckResponse {
         return try {
             val response = ApiClient.httpClient.get("$SPOTDOWN_BASE_URL/check-direct-download") {
                 parameter("url", spotifyUrl)
+                header("x-api-key", SPOTDOWN_API_KEY)
             }
-            response.body()
+            
+            try {
+                response.body()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error parsing checkDirectDownload response: ${e.message}")
+                // If parsing fails (e.g. error message structure), assume not cached but log it
+                SpotdownCheckResponse(cached = false, success = false, message = "Parsing error: ${e.message}")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error checking direct download: ${e.message}", e)
-            throw e
+            SpotdownCheckResponse(cached = false, success = false, message = "Network error: ${e.message}")
         }
     }
     
@@ -551,6 +560,7 @@ object SpotifyApi {
             
             val response = ApiClient.httpClient.post("$SPOTDOWN_BASE_URL/download") {
                 contentType(ContentType.Application.Json)
+                header("x-api-key", SPOTDOWN_API_KEY)
                 setBody(mapOf("url" to spotifyUrl))
             }
             
