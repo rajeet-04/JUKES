@@ -364,51 +364,13 @@ class PlaybackService : MediaLibraryService() {
                 val trackId = it.mediaId
                 Log.d(TAG, "Media item transition: $trackId, reason: $reason")
 
-                // Force notification metadata update for Android 16 compatibility
-                try {
-                    mediaSession?.let { session ->
-                        val currentItem = player.currentMediaItem
-                        currentItem?.let { item ->
-                            // Create fresh metadata with validated artwork
-                            serviceScope.launch {
-                                try {
-                                    val track =
-                                        database.trackDao().getTrackByUuid(trackId)?.toTrack()
-                                    if (track != null) {
-                                        val validatedItem = createValidatedMediaItem(track)
-                                        validatedItem?.let { newItem ->
-                                            // Replace current item with validated metadata
-                                            // Use Main dispatcher for player operations
-                                            withContext(Dispatchers.Main) {
-                                                // Double check before applying change
-                                                if (player.currentMediaItem?.mediaId == trackId) {
-                                                    val currentIndex = player.currentMediaItemIndex
-                                                    player.replaceMediaItem(currentIndex, newItem)
-                                                    Log.d(
-                                                        TAG,
-                                                        "Updated media item with validated metadata for ${track.title}"
-                                                    )
 
-                                                    // Force notification update by setting state
-                                                    // This helps with the sync issue without needing delays
-                                                    mediaSession?.let { session ->
-                                                        // Toggling a harmless state or updating session extras can force refresh
-                                                        // But replacing the media item as done above is usually sufficient.
-                                                        // If persistent issues, ensure notification provider is robust.
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "Failed to update media item metadata: ${e.message}")
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to refresh player metadata: ${e.message}")
-                }
+                // [REMOVED] Redundant metadata update block that was breaking Shuffle order
+                // The MediaItems are already validated when added to the queue via PlaybackManager.
+                // Calling replaceMediaItem here triggers a timeline change, which resets the
+                // shuffle order for the current item, potentially ending the queue prematurely.
+
+
 
 
                 serviceScope.launch {
