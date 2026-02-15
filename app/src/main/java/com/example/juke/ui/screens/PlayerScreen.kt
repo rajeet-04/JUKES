@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -392,6 +393,28 @@ fun PlayerScreen(
                             )
                             Text(
                                 "Queue",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White
+                            )
+                        }
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .clickable {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    musicViewModel.startRadio()
+                                }
+                                .padding(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Radio,
+                                contentDescription = "Start Radio",
+                                tint = Color.White
+                            )
+                            Text(
+                                "Radio",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White
                             )

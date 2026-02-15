@@ -301,6 +301,30 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun startRadio() {
+        val current = _uiState.value.currentTrack ?: return
+        viewModelScope.launch {
+            Log.d("MusicViewModel", "Starting radio for: ${current.title}")
+            
+            // 1. Reset PlaybackManager queue to just this song
+            // We use the current position to avoid restarting the song
+            val currentPos = playbackManager.getCurrentPosition()
+            playbackManager.setQueue(listOf(current), 0, currentPos)
+            
+            // 2. Clear QueueManager and re-initialize with just this song
+            // This triggers the recommendation fetch
+            queueManager.initializeQueue(listOf(current))
+            
+            // 3. Update UI state immediately
+            _uiState.update { 
+                it.copy(
+                    queue = listOf(current),
+                    queueIndex = 0
+                )
+            }
+        }
+    }
+
     fun playTrackFromQueue(track: Track) {
         viewModelScope.launch {
             val currentState = _uiState.value
