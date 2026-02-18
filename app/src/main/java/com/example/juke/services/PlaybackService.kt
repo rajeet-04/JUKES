@@ -1193,12 +1193,25 @@ class PlaybackManager private constructor(private val context: Context) {
         Log.d(TAG, "Playing track: ${track.title}")
     }
 
-    fun setQueue(tracks: List<Track>, startIndex: Int = 0, startPositionMs: Long = C.TIME_UNSET) {
+    fun setQueue(
+        tracks: List<Track>,
+        startIndex: Int = 0,
+        startPositionMs: Long = C.TIME_UNSET,
+        keepShuffleMode: Boolean = false
+    ) {
         initialize()
 
         val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
 
         controller?.apply {
+            // When starting a fresh queue the caller is responsible for ordering the tracks
+            // (pre-shuffling in Kotlin when shuffle is on). Disabling ExoPlayer's own shuffle
+            // prevents double-shuffling where ExoPlayer would override the intended playback
+            // order with its own random permutation, causing auto-advance to skip to the
+            // wrong track when a song ends naturally.
+            if (!keepShuffleMode) {
+                shuffleModeEnabled = false
+            }
             setMediaItems(mediaItems, startIndex, startPositionMs)
             prepare()
             play()

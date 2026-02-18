@@ -602,8 +602,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                     } else {
-                        // Fallback: reset full queue to keep UI and player in sync
-                        playbackManager.setQueue(currentQueue, currentState.queueIndex, currentPosition)
+                        // Fallback: reset full queue to keep UI and player in sync.
+                        // keepShuffleMode=true preserves the user's current shuffle state.
+                        playbackManager.setQueue(currentQueue, currentState.queueIndex, currentPosition, keepShuffleMode = true)
                     }
 
                     _uiState.update {
@@ -664,8 +665,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     currentState.queueIndex
                 }
                 
-                // Use setQueue with explicit position maintenance to prevent restarts or random jumps
-                playbackManager.setQueue(currentQueue, newIndex, currentPosition)
+                // Use setQueue with explicit position maintenance to prevent restarts or random jumps.
+                // keepShuffleMode=true preserves the user's current shuffle state during queue updates.
+                playbackManager.setQueue(currentQueue, newIndex, currentPosition, keepShuffleMode = true)
                 
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to add to queue batch: ${e.message}", e)
