@@ -287,37 +287,15 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 },
                                                 label = { Text(screen.title) },
-                                                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true ||
-                                                        // Keep Search tab active when on detail screens
-                                                        (screen == Screen.Search && (currentRoute?.startsWith(
-                                                            "artist/"
-                                                        ) == true ||
-                                                                currentRoute?.startsWith("playlist/") == true ||
-                                                                currentRoute?.startsWith("album/") == true)),
+                                                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                                                 onClick = {
-                                                    // Check if currently on detail screens that belong to Search flow
-                                                    val isOnSearchDetailScreen =
-                                                        currentRoute?.startsWith("artist/") == true ||
-                                                                currentRoute?.startsWith("playlist/") == true ||
-                                                                currentRoute?.startsWith("album/") == true
-
-                                                    // Check if already on Search screen
-                                                    val isOnSearch =
+                                                    // Check if already on the selected screen
+                                                    val isSelected =
                                                         currentDestination?.hierarchy?.any { it.route == screen.route } == true
 
-                                                    if (screen == Screen.Search && (isOnSearch || isOnSearchDetailScreen)) {
-                                                        // Navigate back to search if on detail screen
-                                                        if (isOnSearchDetailScreen) {
-                                                            navController.navigate(screen.route) {
-                                                                popUpTo(screen.route) {
-                                                                    inclusive = false
-                                                                }
-                                                                launchSingleTop = true
-                                                            }
-                                                        } else {
-                                                            // Already on search, trigger search reset
-                                                            searchResetTrigger++
-                                                        }
+                                                    if (screen == Screen.Search && isSelected) {
+                                                        // Already on search, trigger search reset
+                                                        searchResetTrigger++
                                                     } else {
                                                         navController.navigate(screen.route) {
                                                             popUpTo(navController.graph.findStartDestination().id) {
