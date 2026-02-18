@@ -6,8 +6,11 @@ import android.util.Log
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
 import com.example.juke.models.Track
+import com.example.juke.network.OfflineException
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
+import com.example.juke.network.isOffline
+import com.example.juke.utils.ArtistUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -277,13 +280,13 @@ class QueueManager private constructor(private val context: Context) {
     
     /**
      * Fetch recommendations based on current track and add to queue.
-     * 
-     * This is the main recommendation engine. It:
-     * 1. Gets YouTube video ID for current song
-     * 2. Fetches full radio queue from YouTube Music
-     * 3. Validates recommendations with Spotify
-     * 4. Adds top 5 validated tracks to download queue
-     * 
+     *
+     * Tries online recommendations first (YouTube Music -> Spotify validation).
+     * Falls back to offline library-based recommendations if:
+     * - Network is unavailable
+     * - API returns no results
+     * - Any exception occurs
+     *
      * @param currentTrack Track to base recommendations on
      */
     fun fetchAndQueueRecommendations(currentTrack: Track) {
@@ -293,139 +296,262 @@ class QueueManager private constructor(private val context: Context) {
                 Log.d(TAG, "Recommendation fetch already in progress, skipping")
                 return@launch
             }
-            
+
             isRecommendationFetchInProgress = true
             try {
                 Log.d(TAG, "Fetching recommendations for: ${currentTrack.title} by ${currentTrack.artist}")
-                
-                // Get YouTube video ID
-                val videoId = currentTrack.ytVideoId ?: run {
-                    val query = "${currentTrack.title} ${currentTrack.artist}"
-                    RecommenderApi.getBestVideoMatch(query)
-                }
-                
-                if (videoId == null) {
-                    Log.e(TAG, "Could not find YouTube video ID for: ${currentTrack.title}")
-                    return@launch
-                }
-                
-                Log.d(TAG, "Using YouTube video ID: $videoId")
-                
-                // Fetch full radio queue (index 1 to ~49)
-                val recommendations = RecommenderApi.fetchFullRadioQueue(videoId)
-                
-                if (recommendations.isEmpty()) {
-                    Log.e(TAG, "No recommendations found")
-                    return@launch
-                }
-                
-                Log.d(TAG, "Got ${recommendations.size} raw recommendations")
-                
-                // Construct artist context: Current track artist + Recent artists
-                // This helps the validater prioritize tracks that match the user's recent listening history
-                val contextArtists = (listOf(currentTrack.artist) + recentArtists).joinToString(", ")
-                
-                // Get user-defined recommendation count from settings (default: 5)
-                val targetCount = settingsPrefs.getInt("recommendation_count", 5)
-                Log.d(TAG, "Target recommendation count: $targetCount")
-                
-                // Validate with Spotify - fetch 2x the target to allow for filtering duplicates
-                // This ensures we can still meet the target even after removing library duplicates
-                val validatedRecs = RecommenderApi.validateAndFilterWithSpotify(
-                    recommendations,
-                    originalArtists = contextArtists,
-                    maxResults = targetCount * 2
-                )
-                
-                if (validatedRecs.isEmpty()) {
-                    Log.e(TAG, "No validated recommendations found")
-                    return@launch
-                }
-                
-                Log.d(TAG, "Got ${validatedRecs.size} validated recommendations")
-                
-                // CRITICAL: Filter out tracks already in current queue BEFORE categorization
-                // This prevents adding songs the user is already listening to
-                val currentQueueTitles = _currentQueue.value.map { it.title.lowercase() to it.artist.lowercase() }
-                
-                // Also filter out the seed track (current playing track) explicitly
-                val seedTrackPair = currentTrack.title.lowercase() to currentTrack.artist.lowercase()
-                
-                val filteredRecs = validatedRecs.filter { rec ->
-                    val trackPair = rec.title.lowercase() to rec.artist.lowercase()
-                    val key = "${rec.title.lowercase()}-${rec.artist.lowercase()}"
-                    
-                    val inQueue = currentQueueTitles.contains(trackPair)
-                    val isSeed = trackPair == seedTrackPair
-                    val isExternallyDownloading = _externalDownloads.contains(key)
-                    
-                    if (isExternallyDownloading) {
-                        Log.d(TAG, "Filtered out external download: ${rec.title}")
+
+                var onlineSucceeded = false
+
+                try {
+                    // --- ONLINE PATH ---
+                    // Get YouTube video ID
+                    val videoId = currentTrack.ytVideoId ?: run {
+                        val query = "${currentTrack.title} ${currentTrack.artist}"
+                        RecommenderApi.getBestVideoMatch(query)
                     }
-                    
-                    !inQueue && !isSeed && !isExternallyDownloading
-                }
-                
-                Log.d(TAG, "After queue filtering: ${filteredRecs.size} recommendations (removed ${validatedRecs.size - filteredRecs.size} already in queue)")
-                
-                if (filteredRecs.isEmpty()) {
-                    Log.e(TAG, "No new recommendations after filtering current queue")
-                    return@launch
-                }
-                
-                // Separate recommendations into "New" (not in library) and "Library" (already downloaded)
-                val newRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
-                val libraryRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
-                
-                for (rec in filteredRecs) {
-                    // Check if track already exists in database
-                    val candidates = trackDao.findTracksByTitleAndDuration(rec.title, rec.durationSec)
-                    val existsInLibrary = candidates.any { 
-                        com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, rec.artist) && it.localUri != null
-                    }
-                    
-                    if (existsInLibrary) {
-                        libraryRecs.add(rec)
+
+                    if (videoId == null) {
+                        Log.w(TAG, "Could not find YouTube video ID for: ${currentTrack.title}. Falling back to offline.")
                     } else {
-                        newRecs.add(rec)
+                        Log.d(TAG, "Using YouTube video ID: $videoId")
+
+                        // Fetch full radio queue (index 1 to ~49)
+                        val recommendations = RecommenderApi.fetchFullRadioQueue(videoId)
+
+                        if (recommendations.isEmpty()) {
+                            Log.w(TAG, "No online recommendations found. Falling back to offline.")
+                        } else {
+                            Log.d(TAG, "Got ${recommendations.size} raw recommendations")
+
+                            // Construct artist context: Current track artist + Recent artists
+                            val contextArtists = (listOf(currentTrack.artist) + recentArtists).joinToString(", ")
+
+                            // Get user-defined recommendation count from settings (default: 5)
+                            val targetCount = settingsPrefs.getInt("recommendation_count", 5)
+                            Log.d(TAG, "Target recommendation count: $targetCount")
+
+                            // Validate with Spotify - fetch 2x the target to allow for filtering duplicates
+                            val validatedRecs = RecommenderApi.validateAndFilterWithSpotify(
+                                recommendations,
+                                originalArtists = contextArtists,
+                                maxResults = targetCount * 2
+                            )
+
+                            if (validatedRecs.isEmpty()) {
+                                Log.w(TAG, "No validated recommendations found. Falling back to offline.")
+                            } else {
+                                Log.d(TAG, "Got ${validatedRecs.size} validated recommendations")
+
+                                // Filter out tracks already in current queue
+                                val currentQueueTitles = _currentQueue.value.map { it.title.lowercase() to it.artist.lowercase() }
+                                val seedTrackPair = currentTrack.title.lowercase() to currentTrack.artist.lowercase()
+
+                                val filteredRecs = validatedRecs.filter { rec ->
+                                    val trackPair = rec.title.lowercase() to rec.artist.lowercase()
+                                    val key = "${rec.title.lowercase()}-${rec.artist.lowercase()}"
+                                    val inQueue = currentQueueTitles.contains(trackPair)
+                                    val isSeed = trackPair == seedTrackPair
+                                    val isExternallyDownloading = _externalDownloads.contains(key)
+                                    if (isExternallyDownloading) Log.d(TAG, "Filtered out external download: ${rec.title}")
+                                    !inQueue && !isSeed && !isExternallyDownloading
+                                }
+
+                                Log.d(TAG, "After queue filtering: ${filteredRecs.size} recommendations")
+
+                                if (filteredRecs.isNotEmpty()) {
+                                    // Separate into new (not in library) and library (already downloaded)
+                                    val newRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
+                                    val libraryRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
+
+                                    for (rec in filteredRecs) {
+                                        val candidates = trackDao.findTracksByTitleAndDuration(rec.title, rec.durationSec)
+                                        val existsInLibrary = candidates.any {
+                                            ArtistUtils.areArtistsEqual(it.artist, rec.artist) && it.localUri != null
+                                        }
+                                        if (existsInLibrary) libraryRecs.add(rec) else newRecs.add(rec)
+                                    }
+
+                                    Log.d(TAG, "Categorized: ${newRecs.size} new tracks, ${libraryRecs.size} library tracks")
+
+                                    val finalRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
+                                    finalRecs.addAll(newRecs.take(targetCount))
+                                    if (finalRecs.size < targetCount) {
+                                        val remaining = targetCount - finalRecs.size
+                                        finalRecs.addAll(libraryRecs.take(remaining))
+                                    }
+
+                                    Log.d(TAG, "Final online selection: ${finalRecs.size} tracks")
+
+                                    if (finalRecs.isNotEmpty()) {
+                                        finalRecs.forEach { rec ->
+                                            pendingRecommendations.offer(rec)
+                                            Log.d(TAG, "Queued for download: ${rec.title} by ${rec.artist}")
+                                        }
+                                        processNextDownload()
+                                        onlineSucceeded = true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (onlineEx: Exception) {
+                    if (onlineEx is OfflineException || onlineEx.isOffline()) {
+                        Log.w(TAG, "Device is offline. Triggering offline fallback for recommendations.")
+                    } else {
+                        Log.e(TAG, "Online recommendation failed: ${onlineEx.message}. Falling back to offline.")
                     }
                 }
-                
-                Log.d(TAG, "Categorized: ${newRecs.size} new tracks, ${libraryRecs.size} library tracks")
-                
-                // Build final list: prioritize new tracks, fill remainder with library tracks
-                val finalRecs = mutableListOf<RecommenderApi.ValidatedRecommendation>()
-                finalRecs.addAll(newRecs.take(targetCount))
-                
-                // If we have fewer than targetCount, add library tracks to meet the target
-                if (finalRecs.size < targetCount) {
-                    val remaining = targetCount - finalRecs.size
-                    finalRecs.addAll(libraryRecs.take(remaining))
-                    Log.d(TAG, "Added ${libraryRecs.take(remaining).size} library tracks to meet target count")
+
+                // --- OFFLINE FALLBACK ---
+                if (!onlineSucceeded) {
+                    Log.d(TAG, "Triggering offline fallback for: ${currentTrack.title}")
+                    fetchOfflineRecommendations(currentTrack)
                 }
-                
-                Log.d(TAG, "Final selection: ${finalRecs.size} tracks (${newRecs.take(targetCount).size} new, ${finalRecs.size - newRecs.take(targetCount).size} library)")
-                
-                if (finalRecs.isEmpty()) {
-                    Log.e(TAG, "No recommendations to queue")
-                    return@launch
-                }
-                
-                // Add to pending queue
-                finalRecs.forEach { rec ->
-                    pendingRecommendations.offer(rec)
-                    Log.d(TAG, "Queued for download: ${rec.title} by ${rec.artist}")
-                }
-                
-                // Start downloading
-                processNextDownload()
-                
+
             } catch (e: Exception) {
-                Log.e(TAG, "Error fetching recommendations: ${e.message}", e)
+                Log.e(TAG, "Error in fetchAndQueueRecommendations: ${e.message}", e)
             } finally {
                 isRecommendationFetchInProgress = false
             }
         }
+    }
+
+    /**
+     * Offline fallback: builds a queue from the local library using a scoring algorithm.
+     *
+     * Scoring weights per track (relative to the current track):
+     * - +50: Same primary artist (name match)
+     * - +30: Shared collaborating artist (artistSpotifyIds overlap, or name appears in artist string)
+     * - +20: Same album (albumSpotifyId match)
+     * - +10: Is a favourite
+     * - +5 per 10 plays: High play count (capped at +25)
+     * - -10: Recently played in the last 24 hours
+     *
+     * Tracks already in the queue or with no local file are excluded.
+     * If no same-artist tracks score above 0, falls back to favourites / most-played.
+     *
+     * @param currentTrack The currently playing track to seed the queue from
+     */
+    private suspend fun fetchOfflineRecommendations(currentTrack: Track) {
+        try {
+            val targetCount = settingsPrefs.getInt("recommendation_count", 5)
+            val allDownloaded = trackDao.getDownloadedTracks()
+
+            if (allDownloaded.isEmpty()) {
+                Log.d(TAG, "Offline fallback: library is empty, nothing to queue")
+                return
+            }
+
+            // Tracks already in queue (by uuid)
+            val currentQueueUuids = _currentQueue.value.map { it.uuid }.toSet()
+
+            // Parse the current track's artist names for comparison
+            val currentArtistNames = parseArtistNames(currentTrack.artist)
+            val currentArtistIds = currentTrack.artistSpotifyIds?.toSet() ?: emptySet()
+            val now = System.currentTimeMillis()
+            val oneDayMs = 24 * 60 * 60 * 1000L
+
+            data class ScoredTrack(val track: Track, val score: Int)
+
+            val scored = allDownloaded
+                .filter { entity ->
+                    // Exclude current track and tracks already in queue
+                    entity.uuid != currentTrack.uuid &&
+                    !currentQueueUuids.contains(entity.uuid) &&
+                    entity.localUri != null &&
+                    File(entity.localUri).exists()
+                }
+                .map { entity ->
+                    val track = entity.toTrack()
+                    var score = 0
+
+                    val trackArtistNames = parseArtistNames(track.artist)
+                    val trackArtistIds = track.artistSpotifyIds?.toSet() ?: emptySet()
+
+                    // +50: Same primary artist (name match)
+                    if (ArtistUtils.areArtistsEqual(track.artist, currentTrack.artist)) {
+                        score += 50
+                    } else {
+                        // +30: Shared collaborating artist
+                        val sharedByName = currentArtistNames.intersect(trackArtistNames)
+                        val sharedById = if (currentArtistIds.isNotEmpty() && trackArtistIds.isNotEmpty()) {
+                            currentArtistIds.intersect(trackArtistIds)
+                        } else emptySet()
+
+                        if (sharedByName.isNotEmpty() || sharedById.isNotEmpty()) {
+                            score += 30
+                        }
+                    }
+
+                    // +20: Same album
+                    if (currentTrack.albumSpotifyId != null &&
+                        track.albumSpotifyId != null &&
+                        currentTrack.albumSpotifyId == track.albumSpotifyId) {
+                        score += 20
+                    }
+
+                    // +10: Is favourite
+                    if (track.isFavourite) score += 10
+
+                    // +5 per 10 plays (capped at +25)
+                    score += minOf(25, (track.playCount / 10) * 5)
+
+                    // -10: Recently played in last 24 hours
+                    val lastPlayedMs = track.lastPlayedAt?.toLongOrNull()
+                    if (lastPlayedMs != null && (now - lastPlayedMs) < oneDayMs) {
+                        score -= 10
+                    }
+
+                    ScoredTrack(track, score)
+                }
+                .filter { it.score > 0 }
+                .sortedByDescending { it.score }
+
+            Log.d(TAG, "Offline fallback: scored ${scored.size} candidates from ${allDownloaded.size} library tracks")
+
+            val selected = if (scored.isNotEmpty()) {
+                scored.take(targetCount).map { it.track }
+            } else {
+                // Last resort: favourites first, then most played
+                Log.d(TAG, "Offline fallback: no scored candidates, using favourites/most-played")
+                allDownloaded
+                    .filter { it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && it.localUri != null }
+                    .map { it.toTrack() }
+                    .sortedWith(compareByDescending<Track> { it.isFavourite }.thenByDescending { it.playCount })
+                    .take(targetCount)
+            }
+
+            if (selected.isEmpty()) {
+                Log.d(TAG, "Offline fallback: no tracks available to queue")
+                return
+            }
+
+            Log.d(TAG, "Offline fallback: queuing ${selected.size} tracks")
+            selected.forEach { track ->
+                addToQueue(track)
+                Log.d(TAG, "Offline queued: ${track.title} by ${track.artist}")
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in offline fallback: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Parse a combined artist string into a normalized set of individual artist names.
+     * Handles delimiters: comma, ampersand, semicolon, feat., ft.
+     */
+    private fun parseArtistNames(artist: String): Set<String> {
+        return artist.lowercase()
+            .replace(" feat. ", ",")
+            .replace(" ft. ", ",")
+            .replace(" & ", ",")
+            .replace(";", ",")
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
     }
     
     /**

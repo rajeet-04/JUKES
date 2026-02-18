@@ -15,6 +15,25 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
+import java.net.UnknownHostException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+
+/**
+ * Thrown when a network operation fails because the device is offline.
+ * Callers should catch this to show an offline indicator rather than an error.
+ */
+class OfflineException(message: String = "No internet connection") : Exception(message)
+
+/** Returns true if this exception was caused by the device being offline. */
+fun Throwable.isOffline(): Boolean {
+    var cause: Throwable? = this
+    while (cause != null) {
+        if (cause is UnknownHostException || cause is ConnectException || cause is SocketTimeoutException) return true
+        cause = cause.cause
+    }
+    return false
+}
 
 /**
  * Official Spotify Web API Service.
@@ -119,7 +138,13 @@ object SpotifyApi {
 
                 return accessToken!!
 
+            } catch (e: OfflineException) {
+                throw e // Already typed, propagate as-is
             } catch (e: Exception) {
+                if (e.isOffline()) {
+                    Log.w(TAG, "Device is offline — cannot obtain Spotify token")
+                    throw OfflineException()
+                }
                 Log.e(TAG, "Error obtaining OAuth token: ${e.message}", e)
                 throw Exception("Failed to authenticate with Spotify: ${e.message}")
             }
