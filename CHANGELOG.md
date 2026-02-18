@@ -12,15 +12,9 @@
 
 ## [1.0.8-beta] - 2026-02-18
 
-### Added
 
-- **Search Screen Redesign**: Complete visual overhaul with glassmorphism, filter chips, and improved layout.
-- **Most Played Sort**: Sort library tracks by play count.
-- **Portrait Lock**: Orientation locked to portrait on phones for consistent UX.
-
-### Fixed
-
-- **Device Orientation**: Fixed orientation consistency across devices.
+### See full release notes:
+[release-v1.0.8-beta.md](release-v1.0.8-beta.md)
 
 ---
 

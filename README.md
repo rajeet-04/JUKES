@@ -23,17 +23,17 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 ## 📦 Latest Release
 
+
 **JUKE v1.0.8-beta** is now available! 🎉
 
-### What's New in v1.0.8-beta
+Major features:
+- Search Screen Redesign (glassmorphism, filter chips)
+- Most Played Sort
+- Portrait Lock for phones
+- Purge Redundant Tracks
+- Radio Mode (infinite discovery)
 
-- 🔍 **Search Screen Redesign**: Complete visual overhaul with glassmorphism
-- 📊 **Most Played Sort**: Sort library by play count
-- 📱 **Portrait Lock**: Optimized orientation for phones
-- 🗑️ **Purge Redundant Tracks**: Clean up unused files (from v1.0.7)
-- 📻 **Radio Mode**: Infinite discovery (from v1.0.7)
-
-[📥 Download v1.0.8-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.8-beta) | [📋 Release Notes](v1.0.8-beta-RELEASE_NOTES.md)
+[📥 Download v1.0.8-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.8-beta) | [📝 Full Release Notes](release-v1.0.8-beta.md)
 
 ## ✨ Features
 
