@@ -2,8 +2,10 @@ package com.example.juke.viewmodels
 
 import android.app.Application
 import android.util.Log
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.sqlite.db.SimpleSQLiteQuery
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
@@ -27,7 +29,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import androidx.sqlite.db.SimpleSQLiteQuery
 import java.util.concurrent.atomic.AtomicInteger
 
 data class SearchUiState(
@@ -62,11 +63,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val trackDao = database.trackDao()
     private val playlistDao = database.playlistDao()
     private val queueManager = QueueManager.getInstance(application)
-    private val searchPrefs = application.getSharedPreferences("search_history", android.content.Context.MODE_PRIVATE)
+    private val searchPrefs =
+        application.getSharedPreferences("search_history", android.content.Context.MODE_PRIVATE)
 
-    private val _uiState = MutableStateFlow(SearchUiState(
-        recentSearches = loadRecentSearches()
-    ))
+    private val _uiState = MutableStateFlow(
+        SearchUiState(
+            recentSearches = loadRecentSearches()
+        )
+    )
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     private val _artistDetailState = MutableStateFlow(ArtistDetailUiState())
@@ -187,34 +191,44 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     // Search local DB immediately for instant results
                     // Dynamic query builder for partial matching (e.g. "Linkin Numb" -> matches "Linkin Park - Numb")
-                    val queryTokens = trimmedQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
-                    
+                    val queryTokens =
+                        trimmedQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
+
                     val localResults = if (queryTokens.isEmpty()) {
                         emptyList()
                     } else {
                         val queryBuilder = StringBuilder("SELECT * FROM tracks WHERE ")
                         val args = ArrayList<Any>()
-                        
+
                         queryTokens.forEachIndexed { index, token ->
                             if (index > 0) queryBuilder.append(" AND ")
                             queryBuilder.append("(LOWER(title) LIKE '%' || LOWER(?) || '%' OR LOWER(artist) LIKE '%' || LOWER(?) || '%')")
                             args.add(token)
                             args.add(token)
                         }
-                        
+
                         queryBuilder.append(" ORDER BY last_played_at DESC")
-                        trackDao.searchTracksRaw(SimpleSQLiteQuery(queryBuilder.toString(), args.toArray())).map { it.toTrack() }
+                        trackDao.searchTracksRaw(
+                            SimpleSQLiteQuery(
+                                queryBuilder.toString(),
+                                args.toArray()
+                            )
+                        ).map { it.toTrack() }
                     }
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results
                     val response = SpotifyApi.search(trimmedQuery)
                     // Filter out Spotify tracks that are already in local results (by title+artist match)
-                    val localTitles = localResults.map { it.title.lowercase() to it.artist.lowercase() }.toSet()
-                    val filteredSpotifyTracks = (response.tracks?.items ?: emptyList()).filter { st ->
-                        val key = st.name.lowercase() to st.artists.firstOrNull()?.name?.lowercase().orEmpty()
-                        key !in localTitles
-                    }
+                    val localTitles =
+                        localResults.map { it.title.lowercase() to it.artist.lowercase() }.toSet()
+                    val filteredSpotifyTracks =
+                        (response.tracks?.items ?: emptyList()).filter { st ->
+                            val key =
+                                st.name.lowercase() to st.artists.firstOrNull()?.name?.lowercase()
+                                    .orEmpty()
+                            key !in localTitles
+                        }
 
                     _uiState.value = _uiState.value.copy(
                         tracks = filteredSpotifyTracks,
@@ -251,14 +265,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         current.remove(trimmed) // remove duplicate
         current.add(0, trimmed) // add to front
         val updated = current.take(5) // keep only last 5
-        searchPrefs.edit().putString("recent_searches", updated.joinToString("|||")).apply()
+        searchPrefs.edit { putString("recent_searches", updated.joinToString("|||")) }
         _uiState.value = _uiState.value.copy(recentSearches = updated)
     }
 
     fun removeRecentSearch(query: String) {
         val current = loadRecentSearches().toMutableList()
         current.remove(query)
-        searchPrefs.edit().putString("recent_searches", current.joinToString("|||")).apply()
+        searchPrefs.edit { putString("recent_searches", current.joinToString("|||")) }
         _uiState.value = _uiState.value.copy(recentSearches = current)
     }
 
@@ -417,9 +431,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                     track.name,
                                     track.artists.joinToString(", ") { it.name }
                                 )
-                                Log.e("SearchViewModel", "Failed to download track: ${track.name}", e)
+                                Log.e(
+                                    "SearchViewModel",
+                                    "Failed to download track: ${track.name}",
+                                    e
+                                )
                                 progressCounter.incrementAndGet()
-                                _uiState.value = _uiState.value.copy(importProgress = progressCounter.get())
+                                _uiState.value =
+                                    _uiState.value.copy(importProgress = progressCounter.get())
                             }
                         }
                     }

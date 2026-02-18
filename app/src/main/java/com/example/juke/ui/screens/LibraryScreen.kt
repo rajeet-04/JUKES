@@ -82,9 +82,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.ui.components.AddToPlaylistDialog
-import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.ui.components.CompactDownloadBanner
-import com.example.juke.ui.components.DownloadingTrackItem
+import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.ui.components.EditPlaylistDialog
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.ui.components.SwipeToAddNextContainer
@@ -762,8 +761,8 @@ fun LibraryScreen(
 
                     // Compact download banner — collapses all active downloads into one slim row
                     val hasAnyDownload = musicUiState.currentDownload != null ||
-                        musicUiState.downloadQueue.isNotEmpty() ||
-                        uiState.recommendationDownloads.isNotEmpty()
+                            musicUiState.downloadQueue.isNotEmpty() ||
+                            uiState.recommendationDownloads.isNotEmpty()
                     if (hasAnyDownload) {
                         item(key = "download_banner") {
                             CompactDownloadBanner(

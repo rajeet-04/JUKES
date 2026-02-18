@@ -2,8 +2,17 @@ package com.example.juke.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -11,10 +20,17 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,15 +59,21 @@ fun HomeScreen(
     bottomPadding: Dp = 0.dp
 ) {
     val uiState by homeViewModel.uiState.collectAsState()
-    
+
     LaunchedEffect(Unit) {
         homeViewModel.loadHomeData()
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("JUKE", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "JUKE",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
                 actions = {
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -128,12 +150,14 @@ fun HomeScreen(
                                     Text("See All")
                                 }
                             }
-                            
+
                             Spacer(modifier = Modifier.height(12.dp))
-                            
-                            val pagerState = rememberPagerState(pageCount = { uiState.recentlyPlayed.size })
-                            
-                            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+                            val pagerState =
+                                rememberPagerState(pageCount = { uiState.recentlyPlayed.size })
+
+                            val lifecycleOwner =
+                                androidx.lifecycle.compose.LocalLifecycleOwner.current
                             LaunchedEffect(pagerState, uiState.recentlyPlayed, lifecycleOwner) {
                                 while (true) {
                                     kotlinx.coroutines.delay(3000)
@@ -141,15 +165,17 @@ fun HomeScreen(
                                     // 1. Not currently being dragged
                                     // 2. List is not empty
                                     // 3. Screen is RESUMED (visible and active)
-                                    val isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
-                                    
+                                    val isResumed =
+                                        lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+
                                     if (!pagerState.isScrollInProgress && uiState.recentlyPlayed.isNotEmpty() && isResumed) {
-                                        val nextPage = (pagerState.currentPage + 1) % uiState.recentlyPlayed.size
+                                        val nextPage =
+                                            (pagerState.currentPage + 1) % uiState.recentlyPlayed.size
                                         pagerState.animateScrollToPage(nextPage)
                                     }
                                 }
                             }
-                            
+
                             Column {
                                 HorizontalPager(
                                     state = pagerState,
@@ -166,9 +192,9 @@ fun HomeScreen(
                                         }
                                     )
                                 }
-                                
+
                                 Spacer(modifier = Modifier.height(12.dp))
-                                
+
                                 // Page Indicators
                                 Row(
                                     Modifier
@@ -191,12 +217,12 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                            
+
                             Spacer(modifier = Modifier.height(24.dp))
                         }
                     }
                 }
-                
+
                 // Most Played Section (Grid)
                 if (uiState.mostPlayed.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -207,7 +233,7 @@ fun HomeScreen(
                             modifier = Modifier.padding(bottom = 0.dp)
                         )
                     }
-                    
+
                     items(uiState.mostPlayed) { track ->
                         CompactTrackCard(
                             track = track,
@@ -220,12 +246,14 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    
+
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(
                             "\nFIRST PLAYS MAY TAKE A WHILE :)",
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp, top = 12.dp),
                             textAlign = TextAlign.Center,
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)

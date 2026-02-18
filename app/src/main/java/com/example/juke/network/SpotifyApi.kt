@@ -2,22 +2,42 @@ package com.example.juke.network
 
 import android.util.Base64
 import android.util.Log
-import android.util.Log.e
 import com.example.juke.BuildConfig
-import com.example.juke.models.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import kotlinx.serialization.json.Json
+import com.example.juke.models.LRCLibResult
+import com.example.juke.models.SpotdownCheckResponse
+import com.example.juke.models.SpotdownSong
+import com.example.juke.models.SpotifyAlbum
+import com.example.juke.models.SpotifyAlbumTracksResponse
+import com.example.juke.models.SpotifyAlbumsResponse
+import com.example.juke.models.SpotifyArtist
+import com.example.juke.models.SpotifyPlaylist
+import com.example.juke.models.SpotifyPlaylistItem
+import com.example.juke.models.SpotifyPlaylistTracksResponse
+import com.example.juke.models.SpotifySearchResponse
+import com.example.juke.models.SpotifySimplifiedTrack
+import com.example.juke.models.SpotifyTokenResponse
+import com.example.juke.models.SpotifyTopTracksResponse
+import com.example.juke.models.SpotifyTrack
+import io.ktor.client.call.body
+import io.ktor.client.request.forms.FormDataContent
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.Parameters
+import io.ktor.http.contentType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.math.abs
-import java.net.UnknownHostException
+import kotlinx.serialization.json.Json
 import java.net.ConnectException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import kotlin.math.abs
 
 /**
  * Thrown when a network operation fails because the device is offline.
@@ -45,23 +65,24 @@ fun Throwable.isOffline(): Boolean {
  * 4. Fetching lyrics from LRCLib
  */
 object SpotifyApi {
-    
+
     private const val TAG = "SpotifyApi"
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
     private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
-    private const val SPOTDOWN_API_KEY = "b7dced12866eeef7ada4537c3fa952135e6c9680b0b332bcad99866823b6199b"
+    private const val SPOTDOWN_API_KEY =
+        "b7dced12866eeef7ada4537c3fa952135e6c9680b0b332bcad99866823b6199b"
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
-    
+
     private var accessToken: String? = null
     private var tokenExpiryTime: Long = 0
     private val tokenMutex = Mutex()
-    
+
     // Dynamic market code (set from app preferences)
     var defaultMarket: String = "US"
         private set
-    
+
     fun setDefaultMarket(marketCode: String) {
         defaultMarket = marketCode.uppercase().take(2)
         Log.d(TAG, "Default market set to: $defaultMarket")
@@ -83,27 +104,27 @@ object SpotifyApi {
             if (accessToken != null && System.currentTimeMillis() < tokenExpiryTime - 300000) {
                 return accessToken!!
             }
-            
+
             Log.d(TAG, "Requesting new Spotify OAuth token")
-            
+
             val clientId = BuildConfig.SPOTIFY_CLIENT_ID
             val clientSecret = BuildConfig.SPOTIFY_CLIENT_SECRET
-            
+
             if (clientId.isEmpty() || clientSecret.isEmpty()) {
                 throw Exception("Spotify credentials not configured. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to local.properties")
             }
-            
+
             // Encode credentials in Base64
             val credentials = "$clientId:$clientSecret"
             val encodedCredentials = Base64.encodeToString(
                 credentials.toByteArray(),
                 Base64.NO_WRAP
             )
-            
+
             try {
                 Log.d(TAG, "Client ID: ${clientId.take(10)}...")
                 Log.d(TAG, "Credentials length: ${encodedCredentials.length}")
-                
+
                 val response: HttpResponse = ApiClient.httpClient.post(SPOTIFY_ACCOUNTS_URL) {
                     header("Authorization", "Basic $encodedCredentials")
                     // Use form-encoded body for token request
@@ -114,7 +135,7 @@ object SpotifyApi {
 
                 val statusCode = response.status.value
                 val raw = response.bodyAsText()
-                
+
                 Log.d(TAG, "Spotify token response status: $statusCode")
                 Log.d(TAG, "Spotify token raw response (first 1000 chars): ${raw.take(1000)}")
 
@@ -128,13 +149,22 @@ object SpotifyApi {
                 } catch (serEx: Exception) {
                     Log.e(TAG, "Failed to parse token response: ${serEx.message}")
                     Log.e(TAG, "Full response body: $raw")
-                    throw Exception("Invalid token response format. Status: $statusCode, Body: ${raw.take(200)}")
+                    throw Exception(
+                        "Invalid token response format. Status: $statusCode, Body: ${
+                            raw.take(
+                                200
+                            )
+                        }"
+                    )
                 }
 
                 accessToken = tokenResponse.accessToken
                 tokenExpiryTime = System.currentTimeMillis() + (tokenResponse.expiresIn * 1000L)
 
-                Log.d(TAG, "Successfully obtained access token (expires in ${tokenResponse.expiresIn}s)")
+                Log.d(
+                    TAG,
+                    "Successfully obtained access token (expires in ${tokenResponse.expiresIn}s)"
+                )
 
                 return accessToken!!
 
@@ -150,7 +180,7 @@ object SpotifyApi {
             }
         }
     }
-    
+
     /**
      * Search Spotify for tracks, artists, playlists, and albums.
      * 
@@ -165,10 +195,10 @@ object SpotifyApi {
         market: String = defaultMarket
     ): SpotifySearchResponse {
         Log.d(TAG, "Searching Spotify for: $query (types: ${types.joinToString(",")})")
-        
+
         try {
             val token = getAccessToken()
-            
+
             val response: HttpResponse = ApiClient.httpClient.get("$SPOTIFY_API_BASE_URL/search") {
                 header("Authorization", "Bearer $token")
                 parameter("q", query)
@@ -176,16 +206,18 @@ object SpotifyApi {
                 parameter("market", market)
                 parameter("limit", 10)
             }
-            
+
             val searchResponse: SpotifySearchResponse = response.body()
-            
-            Log.d(TAG, "Found ${searchResponse.tracks?.items?.size ?: 0} tracks, " +
-                      "${searchResponse.artists?.items?.size ?: 0} artists, " +
-                      "${searchResponse.playlists?.items?.filterNotNull()?.size ?: 0} playlists, " +
-                      "${searchResponse.albums?.items?.size ?: 0} albums")
-            
+
+            Log.d(
+                TAG, "Found ${searchResponse.tracks?.items?.size ?: 0} tracks, " +
+                        "${searchResponse.artists?.items?.size ?: 0} artists, " +
+                        "${searchResponse.playlists?.items?.filterNotNull()?.size ?: 0} playlists, " +
+                        "${searchResponse.albums?.items?.size ?: 0} albums"
+            )
+
             return searchResponse
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error searching Spotify: ${e.message}", e)
             throw e
@@ -205,11 +237,11 @@ object SpotifyApi {
         limit: Int = 50
     ): SpotifyAlbumsResponse {
         Log.d(TAG, "Fetching albums for artist: $artistId")
-        
+
         try {
             val token = getAccessToken()
             val actualLimit = limit.coerceIn(1, 50)
-            
+
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/artists/$artistId/albums"
             ) {
@@ -217,22 +249,22 @@ object SpotifyApi {
                 parameter("market", market)
                 parameter("limit", actualLimit)
             }
-            
+
             val statusCode = response.status.value
             if (statusCode != 200) {
                 val raw = response.bodyAsText()
                 Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
                 throw Exception("Spotify returned status $statusCode: ${raw.take(200)}")
             }
-            
+
             return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching artist albums: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Get artist's top tracks.
      * 
@@ -244,19 +276,19 @@ object SpotifyApi {
         market: String = defaultMarket
     ): SpotifyTopTracksResponse {
         Log.d(TAG, "Fetching top tracks for artist: $artistId")
-        
+
         try {
             val token = getAccessToken()
-            
+
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/artists/$artistId/top-tracks"
             ) {
                 header("Authorization", "Bearer $token")
                 parameter("market", market)
             }
-            
+
             return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching artist top tracks: ${e.message}", e)
             throw e
@@ -276,11 +308,11 @@ object SpotifyApi {
         limit: Int = 50
     ): SpotifyAlbumTracksResponse {
         Log.d(TAG, "Fetching album tracks: $albumId")
-        
+
         try {
             val token = getAccessToken()
             val actualLimit = limit.coerceIn(1, 50)
-            
+
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/albums/$albumId/tracks"
             ) {
@@ -288,22 +320,22 @@ object SpotifyApi {
                 parameter("market", market)
                 parameter("limit", actualLimit)
             }
-            
+
             val statusCode = response.status.value
             if (statusCode != 200) {
                 val raw = response.bodyAsText()
                 Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
                 throw Exception("Spotify returned status $statusCode: ${raw.take(200)}")
             }
-            
+
             return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching album tracks: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Get a single track by ID.
      * 
@@ -315,25 +347,25 @@ object SpotifyApi {
         market: String = defaultMarket
     ): SpotifyTrack {
         Log.d(TAG, "Fetching track: $trackId")
-        
+
         try {
             val token = getAccessToken()
-            
+
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/tracks/$trackId"
             ) {
                 header("Authorization", "Bearer $token")
                 parameter("market", market)
             }
-            
+
             return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching track: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Get a single artist by ID.
      * 
@@ -343,24 +375,24 @@ object SpotifyApi {
         artistId: String
     ): SpotifyArtist {
         Log.d(TAG, "Fetching artist: $artistId")
-        
+
         try {
             val token = getAccessToken()
-            
+
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/artists/$artistId"
             ) {
                 header("Authorization", "Bearer $token")
             }
-            
+
             return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching artist: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Get a single playlist by ID.
      * 
@@ -372,32 +404,32 @@ object SpotifyApi {
         market: String = defaultMarket
     ): SpotifyPlaylist {
         Log.d(TAG, "Fetching playlist: $playlistId")
-        
+
         try {
             val token = getAccessToken()
-            
+
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/playlists/$playlistId"
             ) {
                 header("Authorization", "Bearer $token")
                 parameter("market", market)
             }
-            
+
             val statusCode = response.status.value
             if (statusCode != 200) {
                 val raw = response.bodyAsText()
                 Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
                 throw Exception("The playlist is either private or does not exist.")
             }
-            
+
             return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching playlist: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Get a single album by ID.
      * 
@@ -409,25 +441,25 @@ object SpotifyApi {
         market: String = defaultMarket
     ): SpotifyAlbum {
         Log.d(TAG, "Fetching album: $albumId")
-        
+
         try {
             val token = getAccessToken()
-            
+
             val response: HttpResponse = ApiClient.httpClient.get(
                 "$SPOTIFY_API_BASE_URL/albums/$albumId"
             ) {
                 header("Authorization", "Bearer $token")
                 parameter("market", market)
             }
-            
+
             return response.body()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching album: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Get playlist tracks with pagination support.
      * Fetches all tracks from the playlist by handling pagination automatically.
@@ -466,13 +498,13 @@ object SpotifyApi {
                 }
 
                 val pageResponse: SpotifyPlaylistTracksResponse = response.body()
-                
+
                 // Filter out local tracks and tracks with missing data
                 val validItems = pageResponse.items.filter { item ->
                     val track = item.track
                     track != null && !track.isLocal && track.id != null && track.externalUrls.spotify != null
                 }
-                
+
                 allItems.addAll(validItems)
 
                 // Check if there are more pages
@@ -490,7 +522,10 @@ object SpotifyApi {
                 }
 
                 offset += limit
-                Log.d(TAG, "Fetched ${allItems.size}/${pageResponse.total} tracks for playlist $playlistId")
+                Log.d(
+                    TAG,
+                    "Fetched ${allItems.size}/${pageResponse.total} tracks for playlist $playlistId"
+                )
             }
 
         } catch (e: Exception) {
@@ -498,7 +533,7 @@ object SpotifyApi {
             throw e
         }
     }
-    
+
     /**
      * Search for songs on Spotify using official Web API.
      * 
@@ -506,13 +541,16 @@ object SpotifyApi {
      * @return List of Spotify tracks with metadata
      * @throws Exception if search fails
      */
-    @Deprecated("Use search() instead", ReplaceWith("search(query, listOf(\"track\")).tracks?.items ?: emptyList()"))
+    @Deprecated(
+        "Use search() instead",
+        ReplaceWith("search(query, listOf(\"track\")).tracks?.items ?: emptyList()")
+    )
     suspend fun searchSongsOld(query: String): List<SpotifyTrack> {
         Log.d(TAG, "Searching Spotify for: $query")
-        
+
         try {
             val token = getAccessToken()
-            
+
             val response: HttpResponse = ApiClient.httpClient.get("$SPOTIFY_API_BASE_URL/search") {
                 header("Authorization", "Bearer $token")
                 parameter("q", query)
@@ -520,20 +558,20 @@ object SpotifyApi {
                 parameter("market", defaultMarket)
                 parameter("limit", 20)
             }
-            
+
             val searchResponse: SpotifySearchResponse = response.body()
             val tracks = searchResponse.tracks?.items ?: emptyList()
-            
+
             Log.d(TAG, "Found ${tracks.size} tracks")
-            
+
             return tracks
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error searching Spotify: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Check if a Spotify song is cached on Spotdown for faster download.
      * 
@@ -546,20 +584,28 @@ object SpotifyApi {
                 parameter("url", spotifyUrl)
                 header("x-api-key", SPOTDOWN_API_KEY)
             }
-            
+
             try {
                 response.body()
             } catch (e: Exception) {
                 Log.e(TAG, "Error parsing checkDirectDownload response: ${e.message}")
                 // If parsing fails (e.g. error message structure), assume not cached but log it
-                SpotdownCheckResponse(cached = false, success = false, message = "Parsing error: ${e.message}")
+                SpotdownCheckResponse(
+                    cached = false,
+                    success = false,
+                    message = "Parsing error: ${e.message}"
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error checking direct download: ${e.message}", e)
-            SpotdownCheckResponse(cached = false, success = false, message = "Network error: ${e.message}")
+            SpotdownCheckResponse(
+                cached = false,
+                success = false,
+                message = "Network error: ${e.message}"
+            )
         }
     }
-    
+
     /**
      * Download an MP3 file from Spotdown using Spotify URL.
      * 
@@ -579,54 +625,60 @@ object SpotifyApi {
     ): ByteArray {
         val maxRetries = 3
         val retryDelays = listOf(2000L, 4000L, 8000L) // 2s, 4s, 8s
-        
+
         return try {
             Log.d(TAG, "Making download request for URL: $spotifyUrl (attempt ${retryAttempt + 1})")
-            
+
             val response = ApiClient.httpClient.post("$SPOTDOWN_BASE_URL/download") {
                 contentType(ContentType.Application.Json)
                 header("x-api-key", SPOTDOWN_API_KEY)
                 setBody(mapOf("url" to spotifyUrl))
             }
-            
+
             val audioData: ByteArray = response.body()
             Log.d(TAG, "Download response data size: ${audioData.size} bytes")
-            
+
             // Validate MP3 file
             if (audioData.size < 3) {
                 throw Exception("Downloaded file is too small")
             }
-            
-            val isID3 = audioData[0] == 0x49.toByte() && 
-                       audioData[1] == 0x44.toByte() && 
-                       audioData[2] == 0x33.toByte() // "ID3"
-            
-            val isMP3Frame = audioData[0] == 0xFF.toByte() && 
-                            (audioData[1].toInt() and 0xE0) == 0xE0
-            
-            Log.d(TAG, "First 3 bytes: ${audioData.take(3).joinToString(" ") { "0x%02X".format(it) }}")
+
+            val isID3 = audioData[0] == 0x49.toByte() &&
+                    audioData[1] == 0x44.toByte() &&
+                    audioData[2] == 0x33.toByte() // "ID3"
+
+            val isMP3Frame = audioData[0] == 0xFF.toByte() &&
+                    (audioData[1].toInt() and 0xE0) == 0xE0
+
+            Log.d(
+                TAG,
+                "First 3 bytes: ${audioData.take(3).joinToString(" ") { "0x%02X".format(it) }}"
+            )
             Log.d(TAG, "Is ID3 tag: $isID3")
             Log.d(TAG, "Is MP3 frame: $isMP3Frame")
-            
+
             if (!isID3 && !isMP3Frame) {
                 val textResponse = audioData.take(500).toByteArray().decodeToString()
                 Log.e(TAG, "Received non-MP3 response: $textResponse")
                 throw Exception("Downloaded file is not a valid MP3")
             }
-            
+
             audioData
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error downloading song: ${e.message}", e)
-            
+
             // Retry on 500 errors
             if (retryAttempt < maxRetries) {
                 val delay = retryDelays[retryAttempt]
-                Log.d(TAG, "[Download Retry] Error, retrying in ${delay}ms (attempt ${retryAttempt + 1}/$maxRetries)...")
+                Log.d(
+                    TAG,
+                    "[Download Retry] Error, retrying in ${delay}ms (attempt ${retryAttempt + 1}/$maxRetries)..."
+                )
                 delay(delay)
                 return downloadSong(spotifyUrl, retryAttempt + 1)
             }
-            
+
             throw e
         }
     }
@@ -646,7 +698,7 @@ object SpotifyApi {
      */
     suspend fun getSpotmateStreamUrl(spotifyUrl: String): String {
         Log.d(TAG, "Fetching Spotmate stream URL for: $spotifyUrl")
-        
+
         try {
             // 1. GET request to fetch cookies and CSRF token
             Log.d(TAG, "Spotmate Initial GET: $SPOTMATE_BASE_URL/en1")
@@ -655,61 +707,77 @@ object SpotifyApi {
             val body = initialResponse.bodyAsText()
             Log.d(TAG, "Spotmate Initial Response ($initialStatus): ${body.take(500)}")
             val setCookieHeaders = initialResponse.headers.getAll("Set-Cookie") ?: emptyList()
-            
+
             // 2. Extract Cookies
             var xsrfToken = ""
             var spotSession = ""
             var siteTotalId = ""
-            
+
             for (cookie in setCookieHeaders) {
                 if (cookie.contains("XSRF-TOKEN=")) {
                     xsrfToken = cookie.substringAfter("XSRF-TOKEN=").substringBefore(";")
                 }
                 if (cookie.contains("spotmateonline_session=")) {
-                    spotSession = cookie.substringAfter("spotmateonline_session=").substringBefore(";")
+                    spotSession =
+                        cookie.substringAfter("spotmateonline_session=").substringBefore(";")
                 }
                 if (cookie.contains("SITE_TOTAL_ID=")) {
                     siteTotalId = cookie.substringAfter("SITE_TOTAL_ID=").substringBefore(";")
                 }
             }
-            
+
             // 3. Extract CSRF from Meta Tag
             val csrfPattern = Regex("<meta name=\"csrf-token\" content=\"([^\"]+)\"")
             val xCsrfToken = csrfPattern.find(body)?.groupValues?.get(1) ?: ""
-            Log.d(TAG, "Spotmate Extracted: XSRF-TOKEN=${xsrfToken.take(10)}..., Session=${spotSession.take(10)}..., MetaCSRF=${xCsrfToken.take(10)}...")
-            
+            Log.d(
+                TAG,
+                "Spotmate Extracted: XSRF-TOKEN=${xsrfToken.take(10)}..., Session=${
+                    spotSession.take(10)
+                }..., MetaCSRF=${xCsrfToken.take(10)}..."
+            )
+
             // 4. POST request to convert using JSON body
             Log.d(TAG, "Spotmate POST /convert for: $spotifyUrl")
-            val postResponse: HttpResponse = ApiClient.httpClient.post("$SPOTMATE_BASE_URL/convert") {
-                header("Origin", SPOTMATE_BASE_URL)
-                header("Referer", "$SPOTMATE_BASE_URL/en1")
-                header("Sec-Fetch-Site", "same-site")
-                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
-                header("X-CSRF-TOKEN", xCsrfToken)
-                header("Cookie", "XSRF-TOKEN=$xsrfToken; spotmateonline_session=$spotSession; SITE_TOTAL_ID=$siteTotalId;")
-                contentType(ContentType.Application.Json)
-                
-                setBody(mapOf("urls" to spotifyUrl))
-            }
-            
+            val postResponse: HttpResponse =
+                ApiClient.httpClient.post("$SPOTMATE_BASE_URL/convert") {
+                    header("Origin", SPOTMATE_BASE_URL)
+                    header("Referer", "$SPOTMATE_BASE_URL/en1")
+                    header("Sec-Fetch-Site", "same-site")
+                    header(
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+                    )
+                    header("X-CSRF-TOKEN", xCsrfToken)
+                    header(
+                        "Cookie",
+                        "XSRF-TOKEN=$xsrfToken; spotmateonline_session=$spotSession; SITE_TOTAL_ID=$siteTotalId;"
+                    )
+                    contentType(ContentType.Application.Json)
+
+                    setBody(mapOf("urls" to spotifyUrl))
+                }
+
             val postStatus = postResponse.status.value
             val postBody = postResponse.bodyAsText()
             Log.d(TAG, "Spotmate Convert Response ($postStatus): ${postBody.take(1000)}")
-            
+
             // 5. Extract URL from JSON
             // Handle potentially escaped forward slashes and surrounding quotes/spaces
             val urlPattern = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"")
             val downloadUrlMatch = urlPattern.find(postBody)
-            
+
             if (downloadUrlMatch != null) {
                 // Remove escaped slashes if present (e.g. \/ -> /)
                 return downloadUrlMatch.groupValues[1].replace("\\/", "/")
             } else {
-                Log.e(TAG, "Failed to extract URL from Spotmate response. Body length: ${postBody.length}")
+                Log.e(
+                    TAG,
+                    "Failed to extract URL from Spotmate response. Body length: ${postBody.length}"
+                )
                 Log.e(TAG, "Response Body Quote: ${postBody.take(1000)}")
                 throw Exception("Failed to extract URL from Spotmate response")
             }
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error getting Spotmate URL: ${e.message}", e)
             throw e
@@ -724,27 +792,27 @@ object SpotifyApi {
      */
     suspend fun downloadSongFromSpotmate(spotifyUrl: String): ByteArray {
         Log.d(TAG, "Attempting fallback download from Spotmate for: $spotifyUrl")
-        
+
         try {
             val downloadUrl = getSpotmateStreamUrl(spotifyUrl)
             Log.d(TAG, "Extracted Spotmate download URL: $downloadUrl")
-            
+
             // Download the file
             val response: HttpResponse = ApiClient.httpClient.get(downloadUrl)
             val audioData: ByteArray = response.body()
-            
+
             if (audioData.size < 100_000) {
-                 throw Exception("Spotmate download too small")
+                throw Exception("Spotmate download too small")
             }
-            
+
             return audioData
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error downloading from Spotmate: ${e.message}", e)
             throw e
         }
     }
-    
+
     /**
      * Search for lyrics on LRCLib using specific query parameters.
      * 
@@ -767,42 +835,49 @@ object SpotifyApi {
         return try {
             // 1. Clean Title to remove (From ...) or (feat ...) metadata
             val cleanedTitle = cleanSongTitle(title)
-            Log.d(TAG, "LRCLib Search: $LRCLIB_BASE_URL?track=$cleanedTitle&artist=$artist (Original: $title)")
-            
+            Log.d(
+                TAG,
+                "LRCLib Search: $LRCLIB_BASE_URL?track=$cleanedTitle&artist=$artist (Original: $title)"
+            )
+
             val response = ApiClient.httpClient.get(LRCLIB_BASE_URL) {
-                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
+                header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+                )
                 parameter("track", cleanedTitle)
                 parameter("artist", artist)
                 if (album.isNotBlank()) {
                     parameter("album", album)
                 }
             }
-            
+
             val statusCode = response.status.value
             val raw = response.bodyAsText()
             Log.d(TAG, "LRCLib Response ($statusCode): ${raw.take(1000)}")
-            
+
             val results: List<LRCLibResult> = try {
                 json.decodeFromString(raw)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to decode LRCLib response: ${e.message}")
                 emptyList()
             }
-            
+
             // Find the best matching result based on validation score AND duration proximity AND synced lyrics availability
             var bestMatch = if (results.isNotEmpty()) {
                 results
-                    .map { result -> 
+                    .map { result ->
                         val score = validateLyricsMatch(result, title, artist, duration)
-                        val durationDiff = if (duration != null) abs(result.duration - duration) else Double.MAX_VALUE
-                        val hasSynced = !result.syncedLyrics.isNullOrBlank()
+                        val durationDiff =
+                            if (duration != null) abs(result.duration - duration) else Double.MAX_VALUE
+                        !result.syncedLyrics.isNullOrBlank()
                         Triple(result, score, durationDiff)
                     }
                     .filter { it.second > 0 } // Only consider results with some match
                     .sortedWith(
                         compareByDescending<Triple<LRCLibResult, Int, Double>> { it.second } // 1. Highest Score
-                        .thenByDescending { it.first.syncedLyrics?.isNotBlank() == true }    // 2. Has Synced Lyrics
-                        .thenBy { it.third } // 3. Lowest Duration Difference
+                            .thenByDescending { it.first.syncedLyrics?.isNotBlank() == true }    // 2. Has Synced Lyrics
+                            .thenBy { it.third } // 3. Lowest Duration Difference
                     )
                     .firstOrNull()
                     ?.first
@@ -816,18 +891,24 @@ object SpotifyApi {
                     .filter { it.isNotEmpty() && !it.equals(artist, ignoreCase = true) }
 
                 if (individualArtists.isNotEmpty()) {
-                    Log.d(TAG, "Primary lyrics search failed. Attempting fallback for artists: $individualArtists")
-                    
+                    Log.d(
+                        TAG,
+                        "Primary lyrics search failed. Attempting fallback for artists: $individualArtists"
+                    )
+
                     for (singleArtist in individualArtists) {
                         try {
                             val fallbackResponse = ApiClient.httpClient.get(LRCLIB_BASE_URL) {
-                                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
+                                header(
+                                    "User-Agent",
+                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+                                )
                                 parameter("track", cleanedTitle)
                                 parameter("artist", singleArtist)
                             }
-                            
+
                             val fallbackResults: List<LRCLibResult> = fallbackResponse.body()
-                            
+
                             // Strict Validation for Fallback
                             // Duration must be within 5% tolerance
                             // Find ALL valid candidates, then pick based on criteria
@@ -835,21 +916,24 @@ object SpotifyApi {
                                 .filter { result ->
                                     val resultTitle = result.trackName.lowercase().trim()
                                     val normalizedTitle = title.lowercase().trim()
-                                    val titleMatch = resultTitle.contains(normalizedTitle) || normalizedTitle.contains(resultTitle)
-                                    
+                                    val titleMatch =
+                                        resultTitle.contains(normalizedTitle) || normalizedTitle.contains(
+                                            resultTitle
+                                        )
+
                                     val durationMatch = if (duration != null && duration > 0) {
                                         val tolerance = duration * 0.05 // 5% tolerance
                                         val diff = abs(result.duration - duration)
                                         diff <= tolerance
                                     } else {
-                                        true 
+                                        true
                                     }
-    
+
                                     titleMatch && durationMatch
                                 }
                                 .sortedWith(
                                     compareByDescending<LRCLibResult> { !it.syncedLyrics.isNullOrBlank() } // 1. Has Synced Lyrics
-                                    .thenBy { if (duration != null) abs(it.duration - duration) else 0.0 } // 2. Closest Duration
+                                        .thenBy { if (duration != null) abs(it.duration - duration) else 0.0 } // 2. Closest Duration
                                 )
                                 .firstOrNull()
 
@@ -859,14 +943,17 @@ object SpotifyApi {
                                 break // Stop if we found a good match
                             }
                         } catch (e: Exception) {
-                            Log.w(TAG, "Fallback search failed for artist '$singleArtist': ${e.message}")
+                            Log.w(
+                                TAG,
+                                "Fallback search failed for artist '$singleArtist': ${e.message}"
+                            )
                         }
                     }
                 }
             }
-            
+
             bestMatch
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error searching lyrics: ${e.message}", e)
             null
@@ -890,23 +977,23 @@ object SpotifyApi {
         expectedDuration: Int?
     ): Int {
         var score = 0
-        
+
         // Normalize strings for comparison (lowercase, trim)
         val normalizedTitle = expectedTitle.lowercase().trim()
         val normalizedArtist = expectedArtist.lowercase().trim()
         val resultTitle = result.trackName.lowercase().trim()
         val resultArtist = result.artistName.lowercase().trim()
-        
+
         // Artist match (1 point)
         if (resultArtist.contains(normalizedArtist) || normalizedArtist.contains(resultArtist)) {
             score += 1
         }
-        
+
         // Title match (1 point)
         if (resultTitle.contains(normalizedTitle) || normalizedTitle.contains(resultTitle)) {
             score += 1
         }
-        
+
         // Duration match (1 point) - within 15 seconds tolerance
         if (expectedDuration != null) {
             val durationDiff = abs(result.duration - expectedDuration)
@@ -917,11 +1004,13 @@ object SpotifyApi {
             // If no duration provided, give partial credit
             score += 1
         }
-        
-        Log.d(TAG, "Lyrics validation - Title: '$normalizedTitle' vs '$resultTitle', " +
-                   "Artist: '$normalizedArtist' vs '$resultArtist', " +
-                   "Duration: $expectedDuration vs ${result.duration}, Score: $score")
-        
+
+        Log.d(
+            TAG, "Lyrics validation - Title: '$normalizedTitle' vs '$resultTitle', " +
+                    "Artist: '$normalizedArtist' vs '$resultArtist', " +
+                    "Duration: $expectedDuration vs ${result.duration}, Score: $score"
+        )
+
         return score
     }
 
@@ -955,10 +1044,10 @@ object SpotifyApi {
         // .*? matches any character non-greedily
         // \) matches closing parenthesis
         val regex = Regex("""\s*\((?i)(?:from|feat\.?|ft\.?|with|live|remaster).*?\)""")
-        
+
         return regex.replace(title, "").trim()
     }
-    
+
     /**
      * Convert SpotifyTrack to SpotdownSong for compatibility.
      * 
@@ -971,13 +1060,13 @@ object SpotifyApi {
         val minutes = durationSec / 60
         val seconds = durationSec % 60
         val durationStr = "%d:%02d".format(minutes, seconds)
-        
+
         // Get highest quality thumbnail (first image is 640x640)
         val thumbnail = track.album.images.firstOrNull()?.url ?: ""
-        
+
         // Get artist names
         val artistNames = track.artists.joinToString(", ") { it.name }
-        
+
         return SpotdownSong(
             title = track.name,
             artist = artistNames,
@@ -991,7 +1080,7 @@ object SpotifyApi {
             artistSpotifyIds = track.artists.mapNotNull { it.id }
         )
     }
-    
+
     /**
      * Convert SpotifySimplifiedTrack to SpotdownSong for album tracks.
      * 
@@ -1005,13 +1094,13 @@ object SpotifyApi {
         val minutes = durationSec / 60
         val seconds = durationSec % 60
         val durationStr = "%d:%02d".format(minutes, seconds)
-        
+
         // Use album thumbnail
         val thumbnail = album.images.firstOrNull()?.url ?: ""
-        
+
         // Get artist names
         val artistNames = track.artists.joinToString(", ") { it.name }
-        
+
         return SpotdownSong(
             title = track.name,
             artist = artistNames,
