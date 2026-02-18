@@ -740,10 +740,13 @@ object SpotifyApi {
         duration: Int? = null
     ): LRCLibResult? {
         return try {
-            Log.d(TAG, "LRCLib Search: $LRCLIB_BASE_URL?track=$title&artist=$artist")
+            // 1. Clean Title to remove (From ...) or (feat ...) metadata
+            val cleanedTitle = cleanSongTitle(title)
+            Log.d(TAG, "LRCLib Search: $LRCLIB_BASE_URL?track=$cleanedTitle&artist=$artist (Original: $title)")
+            
             val response = ApiClient.httpClient.get(LRCLIB_BASE_URL) {
                 header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
-                parameter("track", title)
+                parameter("track", cleanedTitle)
                 parameter("artist", artist)
                 if (album.isNotBlank()) {
                     parameter("album", album)
@@ -794,7 +797,7 @@ object SpotifyApi {
                         try {
                             val fallbackResponse = ApiClient.httpClient.get(LRCLIB_BASE_URL) {
                                 header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
-                                parameter("track", title)
+                                parameter("track", cleanedTitle)
                                 parameter("artist", singleArtist)
                             }
                             
@@ -911,6 +914,24 @@ object SpotifyApi {
             return minutes * 60 + seconds
         }
         return 0
+    }
+
+    /**
+     * Cleans song title by removing metadata in parentheses like (From ...), (feat ...), etc.
+     */
+    private fun cleanSongTitle(title: String): String {
+        // Regex to match content in parentheses starting with specific keywords
+        // Matches: (From ...), (Feat ...), (Ft ...), (With ...), (Live ...), (Remaster ...)
+        // Case insensitive (?i)
+        // \s* matches optional leading whitespace
+        // \( matches opening parenthesis
+        // (?i) makes the group case-insensitive
+        // (?:...) is a non-capturing group for the keywords
+        // .*? matches any character non-greedily
+        // \) matches closing parenthesis
+        val regex = Regex("""\s*\((?i)(?:from|feat\.?|ft\.?|with|live|remaster).*?\)""")
+        
+        return regex.replace(title, "").trim()
     }
     
     /**

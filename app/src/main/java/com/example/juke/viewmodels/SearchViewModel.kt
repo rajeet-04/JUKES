@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import androidx.sqlite.db.SimpleSQLiteQuery
 import java.util.concurrent.atomic.AtomicInteger
 
 data class SearchUiState(
@@ -185,7 +186,25 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 } else {
                     // Search local DB immediately for instant results
-                    val localResults = trackDao.searchTracks(trimmedQuery).map { it.toTrack() }
+                    // Dynamic query builder for partial matching (e.g. "Linkin Numb" -> matches "Linkin Park - Numb")
+                    val queryTokens = trimmedQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
+                    
+                    val localResults = if (queryTokens.isEmpty()) {
+                        emptyList()
+                    } else {
+                        val queryBuilder = StringBuilder("SELECT * FROM tracks WHERE ")
+                        val args = ArrayList<Any>()
+                        
+                        queryTokens.forEachIndexed { index, token ->
+                            if (index > 0) queryBuilder.append(" AND ")
+                            queryBuilder.append("(LOWER(title) LIKE '%' || LOWER(?) || '%' OR LOWER(artist) LIKE '%' || LOWER(?) || '%')")
+                            args.add(token)
+                            args.add(token)
+                        }
+                        
+                        queryBuilder.append(" ORDER BY last_played_at DESC")
+                        trackDao.searchTracksRaw(SimpleSQLiteQuery(queryBuilder.toString(), args.toArray())).map { it.toTrack() }
+                    }
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results

@@ -15,6 +15,8 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteQuery
+import androidx.room.RawQuery
 import com.example.juke.models.Track
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
@@ -384,6 +386,9 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY last_played_at DESC")
     fun searchTracksFlow(query: String): Flow<List<TrackEntity>>
+
+    @RawQuery
+    suspend fun searchTracksRaw(query: SupportSQLiteQuery): List<TrackEntity>
 
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int

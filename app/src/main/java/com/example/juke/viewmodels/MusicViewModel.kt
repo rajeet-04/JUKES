@@ -24,10 +24,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.io.File
+import androidx.compose.ui.graphics.Color
+import androidx.palette.graphics.Palette
+import coil.ImageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import com.example.juke.ui.theme.ExtractedColors
+
 
 enum class DownloadStatus {
     QUEUED,
@@ -56,7 +65,9 @@ data class MusicUiState(
     val downloadQueue: List<DownloadItem> = emptyList(),
     val currentDownload: DownloadItem? = null,
     val isQueueOperationInProgress: Boolean = false,
-    val isShuffleEnabled: Boolean = false
+    val isShuffleEnabled: Boolean = false,
+    val repeatMode: Int = androidx.media3.common.Player.REPEAT_MODE_OFF,
+    val extractedColors: ExtractedColors? = null
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -77,6 +88,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _isSkipSilenceEnabled.value = enabled
         audioPrefs.edit().putBoolean("skip_silence_enabled", enabled).apply()
     }
+
+    // Stream Mode State
+    private val _isStreamMode = MutableStateFlow(queueManager.isStreamMode)
+    val isStreamMode: StateFlow<Boolean> = _isStreamMode.asStateFlow()
+
+    fun toggleStreamMode(enabled: Boolean) {
+        queueManager.isStreamMode = enabled
+        _isStreamMode.value = enabled
+    }
+
+
 
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
@@ -122,6 +144,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // Observe repeat mode changes
+        viewModelScope.launch {
+            playbackManager.repeatModeFlow.collect { mode ->
+                _uiState.update { it.copy(repeatMode = mode) }
+            }
+        }
+
+
+
         // Observe current track changes from PlaybackManager
         viewModelScope.launch {
             playbackManager.currentTrackIdFlow.collect { trackId ->
@@ -132,6 +163,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // Observe current track changes to extract colors
+        viewModelScope.launch {
+            _uiState.map { it.currentTrack?.thumbnailUri }
+                .distinctUntilChanged()
+                .collect { thumbnailUri ->
+                    extractColors(thumbnailUri)
+                }
+        }
+
+
         
         // Synch UI queue with PlaybackManager source of truth
         viewModelScope.launch {
@@ -268,6 +310,78 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun extractColors(thumbnailUri: String?) {
+        if (thumbnailUri == null) {
+            _uiState.update { it.copy(extractedColors = null) }
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val loader = ImageLoader(getApplication())
+                val request = ImageRequest.Builder(getApplication())
+                    .data(thumbnailUri)
+                    .allowHardware(false) // Palette needs software bitmap
+                    .build()
+
+                val result = (loader.execute(request) as? SuccessResult)?.drawable
+                val bitmap = (result as? android.graphics.drawable.BitmapDrawable)?.bitmap
+
+                if (bitmap != null) {
+                    val palette = Palette.from(bitmap).generate()
+                    // Robust color extraction with fallbacks
+                    val vibrant = palette.vibrantSwatch
+                    val lightVibrant = palette.lightVibrantSwatch
+                    val darkVibrant = palette.darkVibrantSwatch
+                    val dominant = palette.dominantSwatch
+                    val muted = palette.mutedSwatch
+
+                    // Primary color priority: Vibrant -> Light Vibrant -> Dark Vibrant -> Dominant -> Muted -> Default Purple
+                    val primaryInt = vibrant?.rgb
+                        ?: lightVibrant?.rgb
+                        ?: darkVibrant?.rgb
+                        ?: dominant?.rgb
+                        ?: muted?.rgb
+                        ?: 0xFF6650a4.toInt()
+
+                    // Secondary color priority: Dark Vibrant -> Muted -> Dark Muted -> Dominant -> Default
+                    val secondaryInt = darkVibrant?.rgb
+                        ?: muted?.rgb
+                        ?: palette.darkMutedSwatch?.rgb
+                        ?: dominant?.rgb
+                        ?: 0xFF625b71.toInt()
+
+                    // Tertiary color priority: Light Vibrant -> Light Muted -> Dominant -> Default
+                    val tertiaryInt = lightVibrant?.rgb
+                        ?: palette.lightMutedSwatch?.rgb
+                        ?: dominant?.rgb
+                        ?: 0xFF7D5260.toInt()
+
+                    val extracted = ExtractedColors(
+                        primary = Color(primaryInt),
+                        secondary = Color(secondaryInt),
+                        tertiary = Color(tertiaryInt),
+                        background = Color.Black,
+                        surface = Color.Black,
+                        onPrimary = Color(vibrant?.bodyTextColor ?: android.graphics.Color.WHITE),
+                        onSecondary = Color.White,
+                        onTertiary = Color.White,
+                        onBackground = Color.White,
+                        onSurface = Color.White
+                    )
+                    _uiState.update { it.copy(extractedColors = extracted) }
+                } else {
+                    _uiState.update { it.copy(extractedColors = null) }
+                }
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to extract colors", e)
+                _uiState.update { it.copy(extractedColors = null) }
+            }
+        }
+    }
+
+
+
     fun playTrack(track: Track) {
         viewModelScope.launch {
             // Set up the queue with the current track
@@ -289,6 +403,30 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // and starts fetching fresh recommendations for the new track
             Log.d("MusicViewModel", "Playing track: ${track.title}, initializing recommendations")
             queueManager.initializeQueue(listOf(track))
+        }
+    }
+
+    fun startRadio() {
+        val current = _uiState.value.currentTrack ?: return
+        viewModelScope.launch {
+            Log.d("MusicViewModel", "Starting radio for: ${current.title}")
+
+            // 1. Reset PlaybackManager queue to just this song
+            // We use the current position to avoid restarting the song
+            val currentPos = playbackManager.getCurrentPosition()
+            playbackManager.setQueue(listOf(current), 0, currentPos)
+
+            // 2. Clear QueueManager and re-initialize with just this song
+            // This triggers the recommendation fetch
+            queueManager.initializeQueue(listOf(current))
+
+            // 3. Update UI state immediately
+            _uiState.update {
+                it.copy(
+                    queue = listOf(current),
+                    queueIndex = 0
+                )
+            }
         }
     }
 
@@ -367,6 +505,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playbackManager.toggleShuffle()
         // rely on playbackManager.isShuffleEnabledFlow to update UI via collector
     }
+
+    fun toggleRepeat() {
+        playbackManager.toggleRepeatMode()
+    }
+
+
 
     /**
      * Insert a track so it plays immediately after the current track.
@@ -1447,6 +1591,73 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     "Error setting queue from simplified tracks: ${e.message}",
                     e
                 )
+            }
+        }
+    }
+
+
+    suspend fun getPurgeableTracks(): List<Track> {
+        return withContext(Dispatchers.IO) {
+            val calendar = java.util.Calendar.getInstance()
+
+            // 14 days ago for last played
+            calendar.add(java.util.Calendar.DAY_OF_YEAR, -14)
+            val lastPlayedThresholdDate = calendar.time
+            val lastPlayedThreshold = java.text.SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                java.util.Locale.US
+            ).format(lastPlayedThresholdDate)
+
+            // Reset and go back 30 days for downloads
+            calendar.time = java.util.Date()
+            calendar.add(java.util.Calendar.DAY_OF_YEAR, -30)
+            val downloadedThreshold = calendar.timeInMillis
+
+            val candidates = trackDao.getPurgeableTracks(lastPlayedThreshold, downloadedThreshold)
+
+            // Map to Track model
+            // Note: Broken files (ghost tracks) are not explicitly searched for here to avoid
+            // scanning the entire library file system, but they will be included if they match the SQL criteria.
+            candidates.map { it.toTrack() }
+        }
+    }
+
+    fun purgeTracks(tracks: List<Track>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            musicService.deleteTracksAndFiles(tracks)
+        }
+    }
+
+    fun promoteTrackToDownload(track: Track) {
+        if (!track.isStream) return
+
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isLoading = true) }
+                val updatedTrack = withContext(Dispatchers.IO) {
+                    musicService.promoteStreamToDownload(track)
+                }
+
+// Update UI with the new downloaded track
+                _uiState.update { state ->
+                    val newQueue = state.queue.map {
+                        if (it.uuid == track.uuid) updatedTrack else it
+                    }
+                    state.copy(
+                        currentTrack = if (state.currentTrack?.uuid == track.uuid) updatedTrack else state.currentTrack,
+                        queue = newQueue,
+                        isLoading = false
+                    )
+                }
+                Log.d("MusicViewModel", "Promoted track to download: ${track.title}")
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to promote track: ${e.message}", e)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = "Download failed: ${e.message}"
+                    )
+                }
             }
         }
     }
