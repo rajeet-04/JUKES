@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
@@ -308,6 +309,20 @@ fun PlayerScreen(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Download Button (Only for Streamed Tracks)
+                        if (currentTrack.isStream) {
+                            IconButton(
+                                onClick = { musicViewModel.promoteTrackToDownload(currentTrack) },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Default.Download,
+                                    contentDescription = "Download Track",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = { showAddToPlaylistDialog = currentTrack },
                             modifier = Modifier.size(48.dp)

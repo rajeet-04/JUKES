@@ -12,10 +12,15 @@ import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.QueueManager
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicInteger
 
 data class PlaylistDetailUiState(
     val playlist: SpotifyPlaylist? = null,
@@ -94,46 +99,55 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                 val tracks = _uiState.value.tracks
                 _uiState.value = _uiState.value.copy(importTotal = tracks.size)
 
-                // Download each track and add to playlist
-                val playlistTracks = mutableListOf<PlaylistTrackEntity>()
-                tracks.forEachIndexed { index, track ->
-                    try {
-                        // Add to download tracking
-                        queueManager.addDownloadTracking(
-                            track.name,
-                            track.artists.joinToString(", ") { it.name },
-                            "playlist"
-                        )
+                // Download tracks in parallel — max 6 concurrent (3 per API)
+                // Each track is inserted into the playlist DB immediately on download,
+                // so the playlist updates in real-time and survives app closure.
+                val semaphore = Semaphore(6)
+                val progressCounter = AtomicInteger(0)
+                val successCount = AtomicInteger(0)
+                tracks.mapIndexed { index, track ->
+                    async {
+                        semaphore.withPermit {
+                            try {
+                                queueManager.addDownloadTracking(
+                                    track.name,
+                                    track.artists.joinToString(", ") { it.name },
+                                    "playlist"
+                                )
 
-                        val downloadedTrack = onTrackDownloaded(track)
+                                val downloadedTrack = onTrackDownloaded(track)
 
-                        // Remove from download tracking
-                        queueManager.removeDownloadTracking(
-                            track.name,
-                            track.artists.joinToString(", ") { it.name }
-                        )
+                                queueManager.removeDownloadTracking(
+                                    track.name,
+                                    track.artists.joinToString(", ") { it.name }
+                                )
 
-                        // Add to playlist tracks
-                        val playlistTrack = PlaylistTrackEntity(
-                            playlistId = playlist.id,
-                            trackUuid = downloadedTrack.uuid,
-                            position = index
-                        )
-                        playlistDao.insertPlaylistTrack(playlistTrack)
-                        playlistTracks.add(playlistTrack)
-                        _uiState.value = _uiState.value.copy(importProgress = index + 1)
-                    } catch (e: Exception) {
-                        // Remove from download tracking on error
-                        queueManager.removeDownloadTracking(
-                            track.name,
-                            track.artists.joinToString(", ") { it.name }
-                        )
-                        Log.e("PlaylistDetailViewModel", "Failed to download track: ${track.name}", e)
+                                // Insert immediately so the playlist reflects this track right away
+                                val playlistTrack = PlaylistTrackEntity(
+                                    playlistId = playlist.id,
+                                    trackUuid = downloadedTrack.uuid,
+                                    position = index
+                                )
+                                playlistDao.insertPlaylistTrack(playlistTrack)
+                                successCount.incrementAndGet()
+
+                                val progress = progressCounter.incrementAndGet()
+                                _uiState.value = _uiState.value.copy(importProgress = progress)
+                            } catch (e: Exception) {
+                                queueManager.removeDownloadTracking(
+                                    track.name,
+                                    track.artists.joinToString(", ") { it.name }
+                                )
+                                Log.e("PlaylistDetailViewModel", "Failed to download track: ${track.name}", e)
+                                progressCounter.incrementAndGet()
+                                _uiState.value = _uiState.value.copy(importProgress = progressCounter.get())
+                            }
+                        }
                     }
-                }
+                }.awaitAll()
 
-                // Update playlist track count
-                playlistDao.updatePlaylistTrackCount(playlist.id, playlistTracks.size)
+                // Update playlist track count with however many succeeded
+                playlistDao.updatePlaylistTrackCount(playlist.id, successCount.get())
 
                 _uiState.value = _uiState.value.copy(
                     isImportingPlaylist = false,

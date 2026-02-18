@@ -17,8 +17,10 @@ coil = "2.7.0"
 navigation = "2.8.5"
 gson = "2.10.1"
 foundationLayout = "1.10.0"
+palette = "1.0.0"
 
 [libraries]
+androidx-palette = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 androidx-compose-material = { module = "androidx.compose.material:material" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

@@ -83,6 +83,7 @@ import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.ui.components.AddToPlaylistDialog
 import com.example.juke.ui.components.CreatePlaylistDialog
+import com.example.juke.ui.components.CompactDownloadBanner
 import com.example.juke.ui.components.DownloadingTrackItem
 import com.example.juke.ui.components.EditPlaylistDialog
 import com.example.juke.ui.components.LibraryTrackItem
@@ -759,74 +760,19 @@ fun LibraryScreen(
                         }
                     }
 
-                    // Show current download
-                    musicUiState.currentDownload?.let { download ->
-                        item(key = "current_${download.id}") {
-                            DownloadingTrackItem(
-                                downloadItem = download,
-                                onRetry = {
-                                    musicViewModel.retryFailedDownload(download)
-                                }
+                    // Compact download banner — collapses all active downloads into one slim row
+                    val hasAnyDownload = musicUiState.currentDownload != null ||
+                        musicUiState.downloadQueue.isNotEmpty() ||
+                        uiState.recommendationDownloads.isNotEmpty()
+                    if (hasAnyDownload) {
+                        item(key = "download_banner") {
+                            CompactDownloadBanner(
+                                currentDownload = musicUiState.currentDownload,
+                                downloadQueue = musicUiState.downloadQueue,
+                                recommendationDownloads = uiState.recommendationDownloads,
+                                onCancelDownload = { id -> musicViewModel.cancelDownload(id) },
+                                onRetryDownload = { item -> musicViewModel.retryFailedDownload(item) }
                             )
-                        }
-                    }
-
-                    // Show download queue
-                    items(
-                        items = musicUiState.downloadQueue,
-                        key = { it.id }
-                    ) { download ->
-                        DownloadingTrackItem(
-                            downloadItem = download,
-                            onCancel = {
-                                musicViewModel.cancelDownload(download.id)
-                            },
-                            onRetry = {
-                                musicViewModel.retryFailedDownload(download)
-                            }
-                        )
-                    }
-
-                    // Show QueueManager recommendation downloads
-                    itemsIndexed(
-                        items = uiState.recommendationDownloads,
-                        key = { index, downloadInfo -> "rec_${index}_${downloadInfo.title}_${downloadInfo.artist}_${downloadInfo.source}" }
-                    ) { index, downloadInfo ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(40.dp),
-                                    strokeWidth = 3.dp
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = downloadInfo.title,
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
-                                    Text(
-                                        text = downloadInfo.artist,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        text = when (downloadInfo.source) {
-                                            "recommendation" -> "Downloading recommendation..."
-                                            "playlist" -> "Importing from playlist..."
-                                            else -> "Downloading..."
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
                         }
                     }
 
@@ -977,7 +923,8 @@ fun LibraryScreen(
                     SortOption.RECENTLY_ADDED to "Recently Added",
                     SortOption.TITLE to "Title",
                     SortOption.ARTIST to "Artist",
-                    SortOption.LAST_PLAYED to "Last Played"
+                    SortOption.LAST_PLAYED to "Last Played",
+                    SortOption.MOST_PLAYED to "Most Played"
                 )
 
                 sortOptions.forEach { (option, label) ->

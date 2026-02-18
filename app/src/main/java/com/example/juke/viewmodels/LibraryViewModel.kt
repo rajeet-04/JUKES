@@ -21,7 +21,8 @@ enum class SortOption {
     RECENTLY_ADDED,
     TITLE,
     ARTIST,
-    LAST_PLAYED
+    LAST_PLAYED,
+    MOST_PLAYED
 }
 
 data class LibraryUiState(
@@ -280,6 +281,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             SortOption.TITLE -> tracks.sortedBy { it.title.lowercase() }
             SortOption.ARTIST -> tracks.sortedBy { it.artist.lowercase() }
             SortOption.LAST_PLAYED -> tracks.sortedByDescending { it.lastPlayedAt }
+            SortOption.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
         }
     }
 

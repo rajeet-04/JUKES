@@ -5,6 +5,7 @@ import android.media.MediaMetadataRetriever
 import android.util.Log
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toEntity
+import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
@@ -228,19 +229,20 @@ class MusicService(private val context: Context) {
                 uuid = uuid,
                 title = song.title,
                 artist = song.artist,
-                thumbnailUri = thumbnailUri,
+                thumbnailUri = thumbnailUri ?: existingTrack?.thumbnailUri, // Keep existing thumb if download fails
                 durationSec = durationSec,
                 localUri = audioFile.absolutePath,
-                ytVideoId = ytVideoId,
-                syncedLyrics = lyricsResult?.syncedLyrics,
-                plainLyrics = lyricsResult?.plainLyrics,
-                isFavourite = false,
-                playCount = 0,
-                lastPlayedAt = null,
+                ytVideoId = ytVideoId ?: existingTrack?.ytVideoId, // Keep existing YT ID if verify fails? (RecommenderApi might return null?)
+                syncedLyrics = lyricsResult?.syncedLyrics ?: existingTrack?.syncedLyrics,
+                plainLyrics = lyricsResult?.plainLyrics ?: existingTrack?.plainLyrics,
+                isFavourite = existingTrack?.isFavourite ?: false,
+                playCount = existingTrack?.playCount ?: 0,
+                lastPlayedAt = existingTrack?.lastPlayedAt,
                 downloadedAt = System.currentTimeMillis(),
                 spotifyId = song.spotifyId,
                 albumSpotifyId = song.albumSpotifyId,
-                artistSpotifyIds = song.artistSpotifyIds
+                artistSpotifyIds = song.artistSpotifyIds,
+                isStream = false
             )
 
             trackDao.insertTrack(track.toEntity())
@@ -258,6 +260,83 @@ class MusicService(private val context: Context) {
     }
 
 
+    suspend fun streamTrack(song: SpotdownSong): Track {
+        val durationSec = SpotifyApi.parseDuration(song.duration)
+        
+        // Check if track already exists
+        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+        val existing = candidates.find {
+             com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
+        }
+        
+        // If it's already downloaded, return it
+        if (existing != null && !existing.isStream && existing.localUri != null && !existing.localUri.startsWith("http")) {
+            return existing.toTrack()
+        }
+        
+        // If it's already a stream, return it
+        if (existing != null && existing.isStream) {
+             return existing.toTrack()
+        }
+
+        val uuid = generateUUID()
+        
+        // Resolve stream URL
+        val streamUrl = try {
+            SpotifyApi.getSpotmateStreamUrl(song.url)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resolve stream URL", e)
+             throw e
+        }
+
+        val lyricsResult = SpotifyApi.searchLyrics(song.title, song.artist, song.album, durationSec)
+        val ytVideoId = RecommenderApi.getBestVideoMatch("${song.title} ${song.artist}")
+        
+        val track = Track(
+            uuid = uuid,
+            title = song.title,
+            artist = song.artist,
+            thumbnailUri = song.thumbnail, 
+            durationSec = durationSec,
+            localUri = streamUrl, 
+            ytVideoId = ytVideoId,
+            syncedLyrics = lyricsResult?.syncedLyrics,
+            plainLyrics = lyricsResult?.plainLyrics,
+            isFavourite = false,
+            isStream = true, 
+            spotifyId = song.spotifyId,
+            albumSpotifyId = song.albumSpotifyId,
+            artistSpotifyIds = song.artistSpotifyIds
+        )
+
+        trackDao.insertTrack(track.toEntity())
+        return track
+    }
+
+    suspend fun promoteStreamToDownload(track: Track): Track {
+        if (!track.isStream) return track 
+
+        Log.d(TAG, "Promoting track to download: ${track.title}")
+        
+        val spotifyUrl = if (track.spotifyId != null) "https://open.spotify.com/track/${track.spotifyId}" else null
+        if (spotifyUrl == null) throw Exception("Cannot download: Missing Spotify info")
+
+        // Construct SpotdownSong
+         val song = SpotdownSong(
+            title = track.title,
+            artist = track.artist,
+            thumbnail = track.thumbnailUri ?: "", 
+            url = spotifyUrl, 
+            duration = "${track.durationSec / 60}:${"%02d".format(track.durationSec % 60)}",
+            spotifyId = track.spotifyId,
+            albumSpotifyId = track.albumSpotifyId,
+            artistSpotifyIds = track.artistSpotifyIds
+        )
+        
+        // Download
+        return smartDownloadAndIndex(song)
+    }
+
     suspend fun deleteTrackAndFiles(track: Track) {
         try {
             // Get playlists that contain this track before deleting
@@ -265,7 +344,9 @@ class MusicService(private val context: Context) {
                 database.playlistDao().getPlaylistsForTrack(track.uuid).map { it.id }
 
             track.localUri?.let { uri ->
-                File(uri).delete()
+                if (!uri.startsWith("http")) {
+                    File(uri).delete()
+                }
             }
 
             track.thumbnailUri?.let { uri ->
@@ -303,7 +384,9 @@ class MusicService(private val context: Context) {
             // Delete files for all tracks
             tracks.forEach { track ->
                 track.localUri?.let { uri ->
-                    File(uri).delete()
+                    if (!uri.startsWith("http")) {
+                        File(uri).delete()
+                    }
                 }
                 track.thumbnailUri?.let { uri ->
                     File(uri).delete()

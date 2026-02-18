@@ -56,8 +56,7 @@ data class MusicUiState(
     val downloadQueue: List<DownloadItem> = emptyList(),
     val currentDownload: DownloadItem? = null,
     val isQueueOperationInProgress: Boolean = false,
-    val isShuffleEnabled: Boolean = false,
-    val repeatMode: Int = androidx.media3.common.Player.REPEAT_MODE_OFF
+    val isShuffleEnabled: Boolean = false
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -120,13 +119,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playbackManager.isShuffleEnabledFlow.collect { shuffleEnabled ->
                 _uiState.update { it.copy(isShuffleEnabled = shuffleEnabled) }
-            }
-        }
-
-        // Observe repeat mode changes
-        viewModelScope.launch {
-            playbackManager.repeatModeFlow.collect { mode ->
-                _uiState.update { it.copy(repeatMode = mode) }
             }
         }
 
@@ -205,12 +197,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         )
 
                         // Check if we need more recommendations (queue getting low)
-                        // Use PlaybackManager's smart count which handles Shuffle correctly
-                        val remainingTracks = playbackManager.getRemainingTracksCount()
+                        val remainingTracks = currentQueue.size - index - 1
                         if (remainingTracks <= 2) {
                             Log.d(
                                 "MusicViewModel",
-                                "Queue low (remaining: $remainingTracks), fetching recommendations for: ${track.title}"
+                                "Queue low, fetching recommendations for: ${track.title}"
                             )
                             queueManager.fetchAndQueueRecommendations(track)
                         }
@@ -301,30 +292,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startRadio() {
-        val current = _uiState.value.currentTrack ?: return
-        viewModelScope.launch {
-            Log.d("MusicViewModel", "Starting radio for: ${current.title}")
-            
-            // 1. Reset PlaybackManager queue to just this song
-            // We use the current position to avoid restarting the song
-            val currentPos = playbackManager.getCurrentPosition()
-            playbackManager.setQueue(listOf(current), 0, currentPos)
-            
-            // 2. Clear QueueManager and re-initialize with just this song
-            // This triggers the recommendation fetch
-            queueManager.initializeQueue(listOf(current))
-            
-            // 3. Update UI state immediately
-            _uiState.update { 
-                it.copy(
-                    queue = listOf(current),
-                    queueIndex = 0
-                )
-            }
-        }
-    }
-
     fun playTrackFromQueue(track: Track) {
         viewModelScope.launch {
             val currentState = _uiState.value
@@ -399,10 +366,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleShuffle() {
         playbackManager.toggleShuffle()
         // rely on playbackManager.isShuffleEnabledFlow to update UI via collector
-    }
-
-    fun toggleRepeat() {
-        playbackManager.toggleRepeatMode()
     }
 
     /**
@@ -1485,37 +1448,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     e
                 )
             }
-        }
-    }
-    suspend fun getPurgeableTracks(): List<Track> {
-        return withContext(Dispatchers.IO) {
-            val calendar = java.util.Calendar.getInstance()
-
-            // 14 days ago for last played
-            calendar.add(java.util.Calendar.DAY_OF_YEAR, -14)
-            val lastPlayedThresholdDate = calendar.time
-            val lastPlayedThreshold = java.text.SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                java.util.Locale.US
-            ).format(lastPlayedThresholdDate)
-
-            // Reset and go back 30 days for downloads
-            calendar.time = java.util.Date()
-            calendar.add(java.util.Calendar.DAY_OF_YEAR, -30)
-            val downloadedThreshold = calendar.timeInMillis
-
-            val candidates = trackDao.getPurgeableTracks(lastPlayedThreshold, downloadedThreshold)
-
-            // Map to Track model
-            // Note: Broken files (ghost tracks) are not explicitly searched for here to avoid
-            // scanning the entire library file system, but they will be included if they match the SQL criteria.
-             candidates.map { it.toTrack() }
-        }
-    }
-
-    fun purgeTracks(tracks: List<Track>) {
-        viewModelScope.launch(Dispatchers.IO) {
-            musicService.deleteTracksAndFiles(tracks)
         }
     }
 }

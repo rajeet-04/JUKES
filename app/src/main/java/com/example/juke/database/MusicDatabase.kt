@@ -138,6 +138,16 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+/**
+ * Migration from version 6 to 7
+ * Adds is_stream column to tracks table
+ */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN is_stream INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 class Converters {
     @TypeConverter
     fun fromStringList(value: List<String>?): String? {
@@ -155,7 +165,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -179,7 +189,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_2_3,
                         MIGRATION_3_4,
                         MIGRATION_4_5,
-                        MIGRATION_5_6
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
                     )
                     .fallbackToDestructiveMigration()
                     .build()
@@ -242,7 +253,10 @@ data class TrackEntity(
     val albumSpotifyId: String? = null,
 
     @ColumnInfo(name = "artist_spotify_ids")
-    val artistSpotifyIds: List<String>? = null
+    val artistSpotifyIds: List<String>? = null,
+
+    @ColumnInfo(name = "is_stream", defaultValue = "0")
+    val isStream: Boolean = false
 )
 
 /**
@@ -265,7 +279,8 @@ fun TrackEntity.toTrack(): Track {
         downloadedAt = downloadedAt,
         spotifyId = spotifyId,
         albumSpotifyId = albumSpotifyId,
-        artistSpotifyIds = artistSpotifyIds
+        artistSpotifyIds = artistSpotifyIds,
+        isStream = isStream
     )
 }
 
@@ -289,7 +304,8 @@ fun Track.toEntity(): TrackEntity {
         downloadedAt = downloadedAt,
         spotifyId = spotifyId,
         albumSpotifyId = albumSpotifyId,
-        artistSpotifyIds = artistSpotifyIds
+        artistSpotifyIds = artistSpotifyIds,
+        isStream = isStream
     )
 }
 
@@ -308,7 +324,8 @@ interface TrackDao {
     @Query("SELECT * FROM tracks ORDER BY last_played_at DESC")
     suspend fun getAllTracks(): List<TrackEntity>
 
-    @Query("SELECT * FROM tracks ORDER BY last_played_at DESC")
+    // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks ORDER BY last_played_at DESC")
     fun getAllTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
@@ -320,13 +337,15 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     suspend fun getFavourites(): List<TrackEntity>
 
-    @Query("SELECT * FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
+    // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     fun getFavouritesFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
     suspend fun getDownloadedTracks(): List<TrackEntity>
 
-    @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
+    // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
     fun getDownloadedTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("UPDATE tracks SET is_favourite = :isFavourite WHERE uuid = :uuid")

@@ -22,7 +22,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Public
@@ -59,7 +58,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassCard
-import com.example.juke.ui.components.VerticalEqualizerSlider
 import com.example.juke.viewmodels.MusicViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,8 +67,6 @@ fun AudioSettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToPurge: () -> Unit
 ) {
-    val isEqualizerEnabled by musicViewModel.isEqualizerEnabled.collectAsState()
-    val equalizerBands by musicViewModel.equalizerBands.collectAsState()
     val isBoosterEnabled by musicViewModel.isBoosterEnabled.collectAsState()
     val boosterLevel by musicViewModel.boosterLevel.collectAsState()
     val isNormalizationEnabled by musicViewModel.isNormalizationEnabled.collectAsState()
@@ -110,6 +106,50 @@ fun AudioSettingsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+                // Stream Mode Section
+                item {
+                    val isStreamMode by musicViewModel.isStreamMode.collectAsState()
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    Icons.Default.Public, // Using Public icon for streaming
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Column {
+                                    Text(
+                                        "Stream Mode",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        "Stream music to save storage",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = isStreamMode,
+                                onCheckedChange = { musicViewModel.toggleStreamMode(it) }
+                            )
+                        }
+                    }
+                }
+
                 // Volume Normalization
                 item {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -197,114 +237,6 @@ fun AudioSettingsScreen(
                     }
                 }
 
-                // Equalizer Section
-                item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.Equalizer,
-                                        null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
-                                    Text(
-                                        "Equalizer",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Switch(
-                                    checked = isEqualizerEnabled,
-                                    onCheckedChange = { musicViewModel.toggleEqualizer(it) }
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            if (isEqualizerEnabled) {
-                                val frequencies = listOf(
-                                    "31",
-                                    "62",
-                                    "125",
-                                    "250",
-                                    "500",
-                                    "1K",
-                                    "2K",
-                                    "4K",
-                                    "8K",
-                                    "16K"
-                                )
-                                val range = musicViewModel.getEqualizerLevelRange()
-                                val minLevel = range.first.toFloat()
-                                val maxLevel = range.second.toFloat()
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(200.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    equalizerBands.forEachIndexed { index, level ->
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            VerticalEqualizerSlider(
-                                                value = level.toFloat(),
-                                                onValueChange = {
-                                                    musicViewModel.setEqualizerBand(
-                                                        index,
-                                                        it.toInt()
-                                                    )
-                                                },
-                                                range = minLevel..maxLevel,
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .width(32.dp)
-                                                    .padding(vertical = 8.dp)
-                                            )
-                                            Text(
-                                                text = frequencies.getOrElse(index) { "" },
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = Color.White.copy(alpha = 0.5f),
-                                                fontSize = 10.sp
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                OutlinedButton(
-                                    onClick = { musicViewModel.resetEqualizer() },
-                                    modifier = Modifier.align(Alignment.End),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                                ) {
-                                    Text("Reset to Flat")
-                                }
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(150.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        "Enable Equalizer to adjust frequencies",
-                                        color = Color.White.copy(alpha = 0.5f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
 
                 // Volume Booster Section
                 item {

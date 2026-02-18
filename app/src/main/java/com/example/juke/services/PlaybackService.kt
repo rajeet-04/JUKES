@@ -48,8 +48,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,7 +76,21 @@ class PlaybackService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
     private lateinit var database: MusicDatabase
+    private val musicService by lazy { MusicService(applicationContext) }
+    private val queueManager by lazy { QueueManager.getInstance(applicationContext) }
     val audioEffectController: AudioEffectController by lazy { AudioEffectController(this) }
+
+    // For Stream Mode cleanup and progress tracking
+    private var previousTrackId: String? = null
+    private val progressHandler = Handler(Looper.getMainLooper())
+    private val progressRunnable = object : Runnable {
+        override fun run() {
+            if (::player.isInitialized && player.isPlaying) {
+                queueManager.checkPreFetch(player.currentPosition, player.duration)
+                progressHandler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     // Preference listener for skip silence 
     private val audioSettingsListener =
@@ -371,8 +388,6 @@ class PlaybackService : MediaLibraryService() {
                 // shuffle order for the current item, potentially ending the queue prematurely.
 
 
-
-
                 serviceScope.launch {
                     try {
                         val now = SimpleDateFormat(
@@ -397,11 +412,47 @@ class PlaybackService : MediaLibraryService() {
                         Log.e(TAG, "Error updating custom layout: ${e.message}")
                     }
                 }
+
+                // Cleanup previous track if it was a stream
+                val oldTrackId = previousTrackId
+                previousTrackId = trackId
+
+                if (oldTrackId != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                    serviceScope.launch {
+                        try {
+                            val oldTrack = database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
+                            if (oldTrack != null && oldTrack.isStream) {
+                                // Only delete if NOT a favorite and NOT in any playlist
+                                val playlists =
+                                    database.playlistDao().getPlaylistsForTrack(oldTrack.uuid)
+                                if (!oldTrack.isFavourite && playlists.isEmpty()) {
+                                    Log.d(
+                                        TAG,
+                                        "Cleaning up finished stream track: ${oldTrack.title}"
+                                    )
+                                    musicService.deleteTrackAndFiles(oldTrack)
+                                } else {
+                                    Log.d(
+                                        TAG,
+                                        "Keeping finished stream track (Favorite: ${oldTrack.isFavourite}, Playlists: ${playlists.size})"
+                                    )
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error cleaning up stream track: ${e.message}")
+                        }
+                    }
+                }
             }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             Log.d(TAG, "Is playing: $isPlaying")
+            if (isPlaying) {
+                progressHandler.post(progressRunnable)
+            } else {
+                progressHandler.removeCallbacks(progressRunnable)
+            }
         }
     }
 
@@ -527,6 +578,15 @@ class PlaybackService : MediaLibraryService() {
             registerReceiver(callStateReceiver, filter)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register call state receiver: ${e.message}")
+        }
+        // Collect favourite changes from the shared bus and update the notification icon.
+        // This fires whether the toggle came from the notification itself OR from the player UI.
+        serviceScope.launch {
+            PlaybackManager.getInstance(applicationContext).favouriteChangedFlow.collect { (_, isFavourite) ->
+                withContext(Dispatchers.Main) {
+                    updateCustomLayout(isFavourite)
+                }
+            }
         }
     }
 
@@ -663,9 +723,10 @@ class PlaybackService : MediaLibraryService() {
                             if (track != null) {
                                 val newStatus = !track.isFavourite
                                 database.trackDao().updateTrackFavourite(track.uuid, newStatus)
-                                withContext(Dispatchers.Main) {
-                                    updateCustomLayout(newStatus)
-                                }
+                                // Emit to the shared bus so both the notification icon AND
+                                // MusicViewModel UI state are updated in real time.
+                                PlaybackManager.getInstance(applicationContext)
+                                    .emitFavouriteChanged(track.uuid, newStatus)
                                 Log.d(TAG, "Toggled favorite via notification: $newStatus")
                             }
                         } catch (e: Exception) {
@@ -860,7 +921,7 @@ class PlaybackService : MediaLibraryService() {
 class PlaybackManager private constructor(private val context: Context) {
 
     companion object {
-        @Volatile
+        @field:Volatile
         private var INSTANCE: PlaybackManager? = null
 
         fun getInstance(context: Context): PlaybackManager {
@@ -911,6 +972,16 @@ class PlaybackManager private constructor(private val context: Context) {
     // Repeat state
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatModeFlow: StateFlow<Int> = _repeatMode.asStateFlow()
+
+    // Shared bus for favourite toggle events (uuid to newIsFavourite).
+    // Both PlaybackService (notification) and MusicViewModel (player UI) emit here,
+    // and both collect here, so they stay in sync without polling the DB.
+    private val _favouriteChanged = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
+    val favouriteChangedFlow: SharedFlow<Pair<String, Boolean>> = _favouriteChanged.asSharedFlow()
+
+    fun emitFavouriteChanged(uuid: String, isFavourite: Boolean) {
+        _favouriteChanged.tryEmit(uuid to isFavourite)
+    }
 
     // Queue manager for recommendations
     private val queueManager: QueueManager by lazy { QueueManager.getInstance(context) }

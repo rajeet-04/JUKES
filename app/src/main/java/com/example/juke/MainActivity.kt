@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -126,10 +127,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         // Portrait lock for phones (shortest width < 600dp)
         // Tablets and large screens will support landscape
-         if (resources.configuration.smallestScreenWidthDp < 600) {
+        if (resources.configuration.smallestScreenWidthDp < 600) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
 
@@ -153,9 +154,13 @@ class MainActivity : ComponentActivity() {
         handlePlayerIntent(intent)
 
         setContent {
-            JUKETheme {
+            val musicViewModel: MusicViewModel = viewModel()
+            val uiState by musicViewModel.uiState.collectAsState()
+
+            JUKETheme(
+                extractedColors = uiState.extractedColors
+            ) {
                 val navController = rememberNavController()
-                val musicViewModel: MusicViewModel = viewModel()
                 val searchViewModel: SearchViewModel = viewModel()
                 val playlistDetailViewModel: PlaylistDetailViewModel = viewModel()
 
@@ -316,7 +321,7 @@ class MainActivity : ComponentActivity() {
                                                     } else {
                                                         navController.navigate(screen.route) {
                                                             popUpTo(navController.graph.findStartDestination().id) {
-                                                                saveState = false
+                                                                saveState = true
                                                             }
                                                             launchSingleTop = true
                                                             restoreState = true

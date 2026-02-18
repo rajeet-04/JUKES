@@ -59,6 +59,16 @@ class QueueManager private constructor(private val context: Context) {
         Context.MODE_PRIVATE
     )
     
+    // Stream Mode preference
+    private var _isStreamMode = settingsPrefs.getBoolean("stream_mode", false)
+    var isStreamMode: Boolean
+        get() = _isStreamMode
+        set(value) {
+            _isStreamMode = value
+            settingsPrefs.edit().putBoolean("stream_mode", value).apply()
+            Log.d(TAG, "Stream mode set to: $value")
+        }
+    
     // Coroutine scope for background tasks
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
@@ -182,8 +192,9 @@ class QueueManager private constructor(private val context: Context) {
         Log.d(TAG, "Inserted track into queue at index $safeIndex: ${track.title}")
 
         // Ensure next 2 songs are downloaded if we modified near the top
+        // Ensure next 2 songs are downloaded if we modified near the top
         if (safeIndex <= 2) {
-            ensureNext2Downloaded()
+            ensureNext2Ready()
         }
     }
     
@@ -244,7 +255,7 @@ class QueueManager private constructor(private val context: Context) {
         }
         
         // Ensure next 2 songs are downloaded
-        ensureNext2Downloaded()
+        ensureNext2Ready()
         
         return currentList.firstOrNull()
     }
@@ -467,9 +478,15 @@ class QueueManager private constructor(private val context: Context) {
                         val spotifyTrack = SpotifyApi.getTrack(trackId)
                         val song = SpotifyApi.spotifyTrackToSong(spotifyTrack)
 
-                        val track = musicService.smartDownloadAndIndex(song)
+                        val track = if (isStreamMode) {
+                            Log.d(TAG, "Stream Mode enabled, resolving stream URL for: ${rec.title}")
+                            musicService.streamTrack(song)
+                        } else {
+                            Log.d(TAG, "Stream Mode disabled, downloading: ${rec.title}")
+                            musicService.smartDownloadAndIndex(song)
+                        }
 
-                        Log.d(TAG, "Successfully downloaded: ${track.title}")
+                        Log.d(TAG, "Successfully processed (stream=$isStreamMode): ${track.title}")
                         addToQueue(track)
 
                     } catch (e: Exception) {
@@ -500,7 +517,10 @@ class QueueManager private constructor(private val context: Context) {
      * 
      * This pre-downloads upcoming tracks to ensure smooth playback.
      */
-    private fun ensureNext2Downloaded() {
+    /**
+     * Ensure the next 2 songs in queue are ready (downloaded or stream URL resolved).
+     */
+    private fun ensureNext2Ready() {
         serviceScope.launch {
             val queue = _currentQueue.value
             
@@ -508,14 +528,12 @@ class QueueManager private constructor(private val context: Context) {
             val next2 = queue.take(2)
             
             next2.forEach { track ->
+                // If localUri is null, OR it's a stream but we want download (not supported yet, user must hit download),
+                // OR it implies we need to resolve it.
+                // Actually, ensureNext2Ready handles "not loaded" tracks.
                 if (track.localUri == null) {
-                    Log.d(TAG, "Track not downloaded: ${track.title}, triggering download")
+                    Log.d(TAG, "Track not ready: ${track.title}, triggering preparation")
                     
-                    // This track needs to be downloaded
-                    // In practice, this should rarely happen because we pre-fetch
-                    // But this is a safety mechanism
-                    
-                    // Try to download it
                     try {
                         val query = "${track.title} ${track.artist}"
                         val searchResponse = SpotifyApi.search(query, listOf("track"))
@@ -525,20 +543,49 @@ class QueueManager private constructor(private val context: Context) {
                             val spotifyTrack = spotifyResults.first()
                             val song = SpotifyApi.spotifyTrackToSong(spotifyTrack)
                             
-                            musicService.smartDownloadAndIndex(song)
-                            Log.d(TAG, "Emergency downloaded: ${track.title}")
+                            if (isStreamMode) {
+                                musicService.streamTrack(song)
+                                Log.d(TAG, "Emergency resolved stream: ${track.title}")
+                            } else {
+                                musicService.smartDownloadAndIndex(song)
+                                Log.d(TAG, "Emergency downloaded: ${track.title}")
+                            }
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error emergency downloading ${track.title}: ${e.message}", e)
+                        Log.e(TAG, "Error emergency preparing ${track.title}: ${e.message}", e)
                     }
-                } else {
-                    // Verify file exists
+                } else if (isStreamMode && !track.isStream && track.localUri != null && !File(track.localUri).exists()) {
+                     // Case: DB says downloaded, but file missing. If stream mode, try to switch to stream?
+                     // Or just redownload? 
+                     // For now, let's just log missing file. logic below handles missing file check.
+                }
+                
+                // Verify file exists if not streaming
+                if (track.localUri != null && !track.isStream && !track.localUri.startsWith("http")) {
                     val file = File(track.localUri)
                     if (!file.exists()) {
                         Log.e(TAG, "File missing for ${track.title}: ${track.localUri}")
                     }
                 }
             }
+        }
+    }
+
+    private var lastPreFetchTime: Long = 0
+    
+    /**
+     * Check if we need to pre-fetch the next song.
+     * Called by PlaybackService during playback.
+     */
+    fun checkPreFetch(positionMs: Long, durationMs: Long) {
+        val now = System.currentTimeMillis()
+        if (now - lastPreFetchTime < 5000) return // Throttle checks
+        
+        val timeRemaining = durationMs - positionMs
+        if (timeRemaining > 0 && timeRemaining < 15000) { // 15 seconds
+            lastPreFetchTime = now
+            Log.d(TAG, "Pre-fetch triggered (Time remaining: ${timeRemaining}ms)")
+            ensureNext2Ready()
         }
     }
     
