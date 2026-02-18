@@ -220,7 +220,7 @@ class PlaybackService : MediaLibraryService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Fix: Check if app is in background before attempting to start foreground service
+        // Fix: Check if app is in background before attempting anything that might require foreground
         // This prevents ForegroundServiceStartNotAllowedException on Android 12+
         var isAppInForeground = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -240,57 +240,10 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        if (isAppInForeground) {
-            try {
-                val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    // Use platform MediaStyle for proper notification display
-                    android.app.Notification.Builder(this, "media_playback")
-                        .setContentTitle("Juke")
-                        .setContentText("Ready to play")
-                        .setSmallIcon(android.R.drawable.ic_media_play)
-                        .setOngoing(true)
-                        .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
-                        .apply {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                setStyle(
-                                    android.app.Notification.MediaStyle()
-                                        .setShowActionsInCompactView()
-                                )
-                            }
-                        }
-                        .build()
-                } else {
-                    android.app.Notification.Builder(this, "media_playback")
-                        .setContentTitle("Juke")
-                        .setContentText("Ready to play")
-                        .setSmallIcon(android.R.drawable.ic_media_play)
-                        .setOngoing(true)
-                        .build()
-                }
+        // We DO NOT startForeground here with a placeholder anymore.
+        // We let MediaLibraryService (Media3) handle notification and foreground promotion 
+        // when playback actually starts or a notification is explicitly requested by the session.
 
-                // Start foreground with proper service type for Android 14+
-                if (Build.VERSION.SDK_INT >= 34) { // Android 14+
-                    startForeground(
-                        1,
-                        notification,
-                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    )
-                } else {
-                    startForeground(1, notification)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to start foreground service: ${e.message}", e)
-                // Handle Android 12+ background restrictions
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    e is android.app.ForegroundServiceStartNotAllowedException
-                ) {
-                    Log.w(TAG, "Cannot start foreground service from background")
-                    return START_NOT_STICKY
-                }
-            }
-        }
-
-        // Let Media3 handle the rest (it will replace our basic notification with the proper one)
         return try {
             super.onStartCommand(intent, flags, startId)
         } catch (e: Exception) {

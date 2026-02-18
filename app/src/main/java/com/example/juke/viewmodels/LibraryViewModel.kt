@@ -128,12 +128,27 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val filteredTracks = filterTracksBySearch(tracks)
             val sortedTracks = sortTracks(filteredTracks, _uiState.value.sortOption)
 
-            _uiState.value = _uiState.value.copy(
-                tracks = sortedTracks,
-                showFavoritesOnly = false,
-                selectedPlaylist = playlist,
-                isLoading = false
-            )
+            // Self-healing: Check if track count matches
+            if (playlist != null && playlist.trackCount != tracks.size) {
+                // Update DB
+                val updatedPlaylist = playlist.copy(trackCount = tracks.size)
+                playlistDao.updatePlaylist(updatedPlaylist)
+                
+                // Update local object for UI
+                _uiState.value = _uiState.value.copy(
+                    tracks = sortedTracks,
+                    showFavoritesOnly = false,
+                    selectedPlaylist = updatedPlaylist,
+                    isLoading = false
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    tracks = sortedTracks,
+                    showFavoritesOnly = false,
+                    selectedPlaylist = playlist,
+                    isLoading = false
+                )
+            }
         }
     }
 

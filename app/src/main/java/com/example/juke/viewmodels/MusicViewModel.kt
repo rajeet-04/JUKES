@@ -151,6 +151,34 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // Observe favourite changes from PlaybackManager (e.g. from Notification or other UI parts)
+        viewModelScope.launch {
+            playbackManager.favouriteChangedFlow.collect { (uuid, isFavourite) ->
+                // Update current track if it matches
+                _uiState.update { state ->
+                    val updatedCurrentTrack = if (state.currentTrack?.uuid == uuid) {
+                        state.currentTrack.copy(isFavourite = isFavourite)
+                    } else {
+                        state.currentTrack
+                    }
+
+                    // Update the track in the queue list if present
+                    val updatedQueue = state.queue.map { track ->
+                        if (track.uuid == uuid) {
+                            track.copy(isFavourite = isFavourite)
+                        } else {
+                            track
+                        }
+                    }
+
+                    state.copy(
+                        currentTrack = updatedCurrentTrack,
+                        queue = updatedQueue
+                    )
+                }
+            }
+        }
+
 
 
         // Observe current track changes from PlaybackManager
@@ -1317,16 +1345,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleFavorite(track: Track) {
         viewModelScope.launch {
-            trackDao.updateTrackFavourite(track.uuid, !track.isFavourite)
+            val newStatus = !track.isFavourite
+            trackDao.updateTrackFavourite(track.uuid, newStatus)
+            
+            // Emit to PlaybackManager so everyone stays in sync (including ourselves via the flow above)
+            playbackManager.emitFavouriteChanged(track.uuid, newStatus)
 
-            // Update UI state if it's the current track
-            _uiState.update { state ->
-                if (state.currentTrack?.uuid == track.uuid) {
-                    state.copy(currentTrack = track.copy(isFavourite = !track.isFavourite))
-                } else {
-                    state
-                }
-            }
+            // We don't need to manually update _uiState here anymore because 
+            // the collector above will handle it for both local and remote changes.
         }
     }
 

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,17 +62,17 @@ fun ArtistDetailScreen(
 ) {
     val uiState by searchViewModel.artistDetailState.collectAsState()
     val scope = rememberCoroutineScope()
-    
+
     if (uiState.artist == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
-    
+
     val artist = uiState.artist!!
 
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -116,21 +115,22 @@ fun ArtistDetailScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         AsyncImage(
-                            model = bestImageUrl(artist.images) ?: artist.images.firstOrNull()?.url ?: "",
+                            model = bestImageUrl(artist.images) ?: artist.images.firstOrNull()?.url
+                            ?: "",
                             contentDescription = artist.name,
                             modifier = Modifier
                                 .size(200.dp)
                                 .clip(RoundedCornerShape(16.dp)),
                             contentScale = ContentScale.Crop
                         )
-                        
+
                         Spacer(modifier = Modifier.height(16.dp))
-                        
+
                         Text(
                             text = artist.name,
                             style = MaterialTheme.typography.headlineMedium
                         )
-                        
+
                         if (artist.followers != null) {
                             Text(
                                 text = "${formatNumber(artist.followers.total)} followers",
@@ -138,7 +138,7 @@ fun ArtistDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        
+
                         if (artist.genres.isNotEmpty()) {
                             Text(
                                 text = artist.genres.joinToString(" • "),
@@ -148,7 +148,7 @@ fun ArtistDetailScreen(
                         }
                     }
                 }
-                
+
                 // Top Tracks Section
                 if (uiState.topTracks.isNotEmpty()) {
                     item {
@@ -157,7 +157,7 @@ fun ArtistDetailScreen(
                             style = MaterialTheme.typography.titleLarge
                         )
                     }
-                    
+
                     val topTracksSubset = uiState.topTracks.take(10)
                     items(topTracksSubset) { track ->
                         SwipeToAddNextContainer(
@@ -182,7 +182,7 @@ fun ArtistDetailScreen(
                         }
                     }
                 }
-                
+
                 // Albums Section (2x2 grid)
                 if (uiState.albums.isNotEmpty()) {
                     item {
@@ -199,8 +199,9 @@ fun ArtistDetailScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             for (album in row) {
-                                Box(modifier = Modifier
-                                    .weight(1f)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
                                 ) {
                                     AlbumItem(
                                         album = album,
@@ -242,15 +243,16 @@ private fun TrackItem(
                 shape = RoundedCornerShape(8.dp)
             ) {
                 AsyncImage(
-                    model = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url ?: "",
+                    model = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url
+                    ?: "",
                     contentDescription = track.name,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             }
-            
+
             Spacer(modifier = Modifier.width(16.dp))
-            
+
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -263,7 +265,7 @@ private fun TrackItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 Text(
                     text = track.artists.joinToString(", ") { it.name },
                     style = MaterialTheme.typography.bodyMedium,
@@ -271,7 +273,7 @@ private fun TrackItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 Text(
                     text = track.album.name,
                     style = MaterialTheme.typography.bodySmall,
@@ -280,9 +282,9 @@ private fun TrackItem(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            
+
             Spacer(modifier = Modifier.width(12.dp))
-            
+
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant
@@ -327,9 +329,10 @@ private fun AlbumItem(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = album.name,
@@ -341,7 +344,13 @@ private fun AlbumItem(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "${album.albumType?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() } ?: "Album"} • ${album.releaseDate?.take(4) ?: ""} • ${album.totalTracks ?: 0} tracks",
+                    text = "${
+                        album.albumType?.replaceFirstChar {
+                            if (it.isLowerCase()) it.titlecase(
+                                java.util.Locale.getDefault()
+                            ) else it.toString()
+                        } ?: "Album"
+                    } • ${album.releaseDate?.take(4) ?: ""} • ${album.totalTracks ?: 0} tracks",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

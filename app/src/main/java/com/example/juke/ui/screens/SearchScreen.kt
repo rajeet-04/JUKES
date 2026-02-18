@@ -471,10 +471,17 @@ private fun SearchResultsList(
         if ((selectedFilter == "All" || selectedFilter == "Tracks") && uiState.localTracks.isNotEmpty()) {
             item { SectionHeader("In Your Library") }
             items(uiState.localTracks, key = { it.uuid }) { track ->
-                LocalTrackItem(
-                    track = track,
-                    onClick = { musicViewModel.setQueue(listOf(track), 0) }
-                )
+                SwipeToAddNextContainer(
+                    onAddNext = {
+                        musicViewModel.addNext(track)
+                    }
+                ) {
+                    LocalTrackItem(
+                        track = track,
+                        onClick = { musicViewModel.setQueue(listOf(track), 0) },
+                        showAccentBar = false
+                    )
+                }
             }
             item { Spacer(Modifier.height(8.dp)) }
         }
@@ -674,22 +681,26 @@ private fun PremiumTrackItem(
 @Composable
 private fun LocalTrackItem(
     track: Track,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    showAccentBar: Boolean = true
 ) {
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background)
                 .clickable(onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Primary-coloured left accent bar
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(64.dp)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
-            )
+            if (showAccentBar) {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .height(64.dp)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                )
+            }
 
             Row(
                 modifier = Modifier
