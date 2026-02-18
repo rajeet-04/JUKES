@@ -116,7 +116,7 @@ dependencies {
     implementation(libs.gson)
 
     // PostHog
-    implementation("com.posthog:posthog-android:3.+")
+    implementation("com.posthog:posthog-android:3.32.+")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
