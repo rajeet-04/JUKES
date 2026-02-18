@@ -101,13 +101,15 @@ class QueueManager private constructor(private val context: Context) {
      * 
      * @param track The track being downloaded
      */
-    fun notifyDownloadStarted(track: Track) {
+    fun notifyDownloadStarted(track: Track, addToUi: Boolean = true) {
         val key = "${track.title.lowercase()}-${track.artist.lowercase()}"
         _externalDownloads.add(key)
         Log.d(TAG, "Notified of external download: ${track.title} (Key: $key)")
         
-        // Also add to download tracking for UI
-        addDownloadTracking(track.title, track.artist, "manual")
+        // Also add to download tracking for UI if requested
+        if (addToUi) {
+            addDownloadTracking(track.title, track.artist, "manual")
+        }
         
         // Auto-remove after 5 minutes to prevent permanent blocking in case of failure
         serviceScope.launch {

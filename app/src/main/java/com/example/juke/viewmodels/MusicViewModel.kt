@@ -698,6 +698,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("MusicViewModel", "Failed to queue Spotify track next: ${e.message}", e)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             } finally {
+                queueManager.removeDownloadTracking(spotdownSong.title, spotdownSong.artist)
                 pendingQueueOperations.remove(key)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             }
@@ -802,7 +803,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     // Notify QueueManager so it doesn't try to recommend/download this
                     // The track is already saved to database with streaming URL
                     // No need to trigger download queue since track will be properly managed
-                    queueManager.notifyDownloadStarted(tempTrack)
+                    queueManager.notifyDownloadStarted(tempTrack, addToUi = false)
 
                     // 4. Update with lyrics when available
                     val lyrics = lyricsDeferred.await()
@@ -915,6 +916,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to queue simplified track next: ${e.message}", e)
             } finally {
+                queueManager.removeDownloadTracking(spotdownSong.title, spotdownSong.artist)
                 pendingQueueOperations.remove(key)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             }
