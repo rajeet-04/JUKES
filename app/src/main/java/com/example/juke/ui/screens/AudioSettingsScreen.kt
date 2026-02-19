@@ -503,7 +503,7 @@ fun AudioSettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            "Made with ❤️ by RASH",
+                            "Made with ❤️ by MEEK",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.5f)
                         )
