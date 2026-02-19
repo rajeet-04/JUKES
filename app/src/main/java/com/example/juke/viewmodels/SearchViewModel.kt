@@ -382,7 +382,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     description = playlist.description,
                     thumbnailUri = playlist.images.firstOrNull()?.url,
                     spotifyId = playlist.id,
-                    trackCount = playlist.tracks.total
+                    trackCount = playlist.tracks?.total ?: 0
                 )
                 playlistDao.insertPlaylist(playlistEntity)
 

@@ -39,6 +39,7 @@ import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
 import com.example.juke.models.Track
+import com.example.juke.network.SpotifyApi
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -893,6 +894,7 @@ class PlaybackManager private constructor(private val context: Context) {
     val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val musicService: MusicService by lazy { MusicService(context) }
 
     // Flow to emit current track UUID changes
     private val _currentTrackId = MutableStateFlow<String?>(null)
@@ -1052,6 +1054,72 @@ class PlaybackManager private constructor(private val context: Context) {
                                             Log.d(TAG, "No next track available, stopping playback")
                                         }
                                     }
+
+                                } else if (
+                                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+                                    (causeMessage.contains("403") || errorMessage.contains("403"))
+                                ) {
+                                    // Stream URL expired — re-fetch a fresh one and resume
+                                    val trackId = controller?.currentMediaItem?.mediaId ?: return
+                                    Log.w(TAG, "Stream URL expired (403) for track $trackId, refreshing...")
+
+                                    scope.launch {
+                                        try {
+                                            val trackEntity = database.trackDao().getTrackByUuid(trackId)
+                                            val track = trackEntity?.toTrack()
+                                            if (track == null || !track.isStream || track.spotifyId == null) {
+                                                Log.w(TAG, "Cannot refresh: track not found, not a stream, or missing spotifyId")
+                                                return@launch
+                                            }
+
+                                            val spotifyUrl = "https://open.spotify.com/track/${track.spotifyId}"
+                                            val freshUrl = SpotifyApi.getSpotmateStreamUrl(spotifyUrl)
+                                            Log.d(TAG, "Got fresh stream URL for ${track.title}")
+
+                                            // Persist the refreshed URL
+                                            database.trackDao().updateTrackStreamUrl(track.uuid, freshUrl)
+                                            val refreshedTrack = track.copy(localUri = freshUrl)
+
+                                            // Swap the media item in the queue and resume (must be on main thread)
+                                            withContext(Dispatchers.Main) {
+                                                replaceTrackInQueue(track.uuid, refreshedTrack)
+                                                controller?.prepare()
+                                                controller?.play()
+                                            }
+
+                                            // If this track belongs to a playlist, promote it to a
+                                            // local download in the background so it's offline-ready
+                                            val playlists = database.playlistDao().getPlaylistsForTrack(track.uuid)
+                                            if (playlists.isNotEmpty()) {
+                                                Log.d(TAG, "Track is in ${playlists.size} playlist(s) — scheduling background download")
+                                                scope.launch {
+                                                    try {
+                                                        val downloadedTrack = musicService.promoteStreamToDownload(refreshedTrack)
+                                                        withContext(Dispatchers.Main) {
+                                                            replaceTrackInQueue(track.uuid, downloadedTrack)
+                                                        }
+                                                        Log.d(TAG, "Promoted stream to download: ${downloadedTrack.title}")
+                                                    } catch (e: Exception) {
+                                                        Log.e(TAG, "Background download after stream refresh failed: ${e.message}")
+                                                    }
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Failed to refresh stream URL: ${e.message}", e)
+                                            // Fall back to skipping to the next track
+                                            withContext(Dispatchers.Main) {
+                                                controller?.let { ctrl ->
+                                                    if (ctrl.hasNextMediaItem()) {
+                                                        ctrl.seekToNext()
+                                                        ctrl.prepare()
+                                                        ctrl.play()
+                                                    } else {
+                                                        ctrl.stop()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1106,8 +1174,9 @@ class PlaybackManager private constructor(private val context: Context) {
                         }
 
                         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                            _isShuffleEnabled.value = shuffleModeEnabled
-                            Log.d(TAG, "Shuffle mode changed: $shuffleModeEnabled")
+                            // ExoPlayer's native shuffle is never intentionally enabled.
+                            // Shuffle is handled by pre-shuffling the track list before setQueue.
+                            Log.d(TAG, "Shuffle mode changed (internal): $shuffleModeEnabled")
                         }
 
                         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -1335,12 +1404,12 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun toggleShuffle() {
-        controller?.let {
-            it.shuffleModeEnabled = !it.shuffleModeEnabled
-            _isShuffleEnabled.value = it.shuffleModeEnabled
-            Log.d(TAG, "Shuffle toggled: ${it.shuffleModeEnabled}")
-            Log.d(TAG, "Shuffle toggled: ${it.shuffleModeEnabled}")
-        }
+        val newState = !_isShuffleEnabled.value
+        _isShuffleEnabled.value = newState
+        // Do NOT set ExoPlayer's shuffleModeEnabled — the app uses pre-shuffled track lists.
+        // Enabling ExoPlayer's shuffle causes it to reorder items internally, which can
+        // place the current track at the last shuffle position and block COMMAND_SEEK_TO_NEXT.
+        Log.d(TAG, "Shuffle toggled: $newState")
     }
 
     fun toggleRepeatMode() {
@@ -1377,43 +1446,15 @@ class PlaybackManager private constructor(private val context: Context) {
 
     /**
      * Correctly calculates remaining tracks in the current playback functionality.
-     * Handles Shuffle mode correctly by traversing the timeline in shuffle order.
+     * Returns how many tracks remain after the current one in the queue.
+     * ExoPlayer's native shuffle is always disabled (pre-shuffled lists are used instead),
+     * so remaining tracks = total − current − 1.
      */
     fun getRemainingTracksCount(): Int {
         val ctrl = controller ?: return 0
-
-        // If shuffle is OFF, it's simple math
-        if (!ctrl.shuffleModeEnabled) {
-            val current = ctrl.currentMediaItemIndex
-            val total = ctrl.mediaItemCount
-            return if (current in 0 until total) total - current - 1 else 0
-        }
-
-        // If shuffle is ON, we must walk the timeline to see how many "next" items exist
-        // before we hit the end (C.INDEX_UNSET).
-        val timeline = ctrl.currentTimeline
-        if (timeline.isEmpty) return 0
-
-        var count = 0
-        var currentIndex = ctrl.currentMediaItemIndex
-
-        // We only really care if it's less than a threshold (e.g. 5), so limit the loop
-        val checkLimit = 5
-
-        // Use REPEAT_MODE_OFF to detect the true "end" of the shuffle queue
-        // even if the player is currently in Repeat All.
-        val repeatMode = Player.REPEAT_MODE_OFF
-
-        for (i in 0 until checkLimit) {
-            val nextIndex = timeline.getNextWindowIndex(currentIndex, repeatMode, true)
-            if (nextIndex == C.INDEX_UNSET || nextIndex == currentIndex) {
-                break
-            }
-            currentIndex = nextIndex
-            count++
-        }
-
-        return count
+        val current = ctrl.currentMediaItemIndex
+        val total = ctrl.mediaItemCount
+        return if (current in 0 until total) total - current - 1 else 0
     }
 
     /**

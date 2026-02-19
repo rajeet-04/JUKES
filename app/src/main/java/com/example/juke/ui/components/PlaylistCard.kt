@@ -60,7 +60,7 @@ fun PlaylistCard(
                 
                 // Track Count
                 Text(
-                    text = "${playlist.tracks.total} tracks",
+                    text = "${playlist.tracks?.total ?: 0} tracks",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

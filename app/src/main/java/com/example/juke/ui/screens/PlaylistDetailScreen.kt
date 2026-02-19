@@ -138,7 +138,7 @@ fun PlaylistDetailScreen(
                         }
                         
                         Text(
-                            text = "${playlist.tracks.total} tracks",
+                            text = "${playlist.tracks?.total ?: 0} tracks",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

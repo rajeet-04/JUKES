@@ -390,7 +390,7 @@ private fun ImportPlaylistCard(
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Text(
-                        text = "${playlist.tracks.total} tracks ready to download",
+                        text = "${playlist.tracks?.total ?: 0} tracks ready to download",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )

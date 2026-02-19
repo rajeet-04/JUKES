@@ -38,7 +38,7 @@ data class SpotifyTrack(
     val href: String? = null,
     val id: String? = null,
     val name: String,
-    val popularity: Int,
+    val popularity: Int = 0,
     @SerialName("preview_url")
     val previewUrl: String? = null,
     val uri: String,
@@ -127,7 +127,7 @@ data class SpotifyPlaylist(
     val public: Boolean? = null,
     @SerialName("snapshot_id")
     val snapshotId: String,
-    val tracks: SpotifyPlaylistTracks,
+    val tracks: SpotifyPlaylistTracks? = null,
     val uri: String
 )
 

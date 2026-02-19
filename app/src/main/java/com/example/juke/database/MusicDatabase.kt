@@ -350,6 +350,9 @@ interface TrackDao {
     @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
     fun getDownloadedTracksFlow(): Flow<List<TrackEntity>>
 
+    @Query("UPDATE tracks SET local_uri = :streamUrl WHERE uuid = :uuid")
+    suspend fun updateTrackStreamUrl(uuid: String, streamUrl: String)
+
     @Query("UPDATE tracks SET is_favourite = :isFavourite WHERE uuid = :uuid")
     suspend fun updateTrackFavourite(uuid: String, isFavourite: Boolean)
 

@@ -603,8 +603,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     } else {
                         // Fallback: reset full queue to keep UI and player in sync.
-                        // keepShuffleMode=true preserves the user's current shuffle state.
-                        playbackManager.setQueue(currentQueue, currentState.queueIndex, currentPosition, keepShuffleMode = true)
+                        // keepShuffleMode=false: ExoPlayer's native shuffle is always off;
+                        // shuffle ordering is handled by pre-shuffling before calling setQueue.
+                        playbackManager.setQueue(currentQueue, currentState.queueIndex, currentPosition, keepShuffleMode = false)
                     }
 
                     _uiState.update {
@@ -666,8 +667,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 
                 // Use setQueue with explicit position maintenance to prevent restarts or random jumps.
-                // keepShuffleMode=true preserves the user's current shuffle state during queue updates.
-                playbackManager.setQueue(currentQueue, newIndex, currentPosition, keepShuffleMode = true)
+                // keepShuffleMode=false: ExoPlayer's native shuffle is always off;
+                // shuffle ordering is handled by pre-shuffling before calling setQueue.
+                playbackManager.setQueue(currentQueue, newIndex, currentPosition, keepShuffleMode = false)
                 
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to add to queue batch: ${e.message}", e)
