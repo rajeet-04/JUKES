@@ -1,29 +1,54 @@
 package com.example.juke.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
-import com.example.juke.models.SpotifyArtist
-import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.SpotifyImage
+import com.example.juke.models.SpotifyTrack
 import com.example.juke.ui.components.SwipeToAddNextContainer
-import com.example.juke.viewmodels.SearchViewModel
 import com.example.juke.viewmodels.MusicViewModel
+import com.example.juke.viewmodels.SearchViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,21 +57,22 @@ fun ArtistDetailScreen(
     searchViewModel: SearchViewModel = viewModel(),
     musicViewModel: MusicViewModel = viewModel(),
     onNavigateBack: () -> Unit,
-    onNavigateToAlbum: (SpotifyAlbum) -> Unit = {}
+    onNavigateToAlbum: (SpotifyAlbum) -> Unit = {},
+    bottomPadding: Dp = 0.dp
 ) {
     val uiState by searchViewModel.artistDetailState.collectAsState()
     val scope = rememberCoroutineScope()
-    
+
     if (uiState.artist == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
-    
+
     val artist = uiState.artist!!
 
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -57,7 +83,8 @@ fun ArtistDetailScreen(
                     }
                 }
             )
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         if (uiState.isLoading) {
             Box(
@@ -73,7 +100,12 @@ fun ArtistDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    top = 16.dp,
+                    end = 20.dp,
+                    bottom = 16.dp + bottomPadding
+                ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Artist Header
@@ -83,21 +115,22 @@ fun ArtistDetailScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         AsyncImage(
-                            model = bestImageUrl(artist.images) ?: artist.images.firstOrNull()?.url ?: "",
+                            model = bestImageUrl(artist.images) ?: artist.images.firstOrNull()?.url
+                            ?: "",
                             contentDescription = artist.name,
                             modifier = Modifier
                                 .size(200.dp)
-                                .clip(CircleShape),
+                                .clip(RoundedCornerShape(16.dp)),
                             contentScale = ContentScale.Crop
                         )
-                        
+
                         Spacer(modifier = Modifier.height(16.dp))
-                        
+
                         Text(
                             text = artist.name,
                             style = MaterialTheme.typography.headlineMedium
                         )
-                        
+
                         if (artist.followers != null) {
                             Text(
                                 text = "${formatNumber(artist.followers.total)} followers",
@@ -105,7 +138,7 @@ fun ArtistDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        
+
                         if (artist.genres.isNotEmpty()) {
                             Text(
                                 text = artist.genres.joinToString(" • "),
@@ -115,7 +148,7 @@ fun ArtistDetailScreen(
                         }
                     }
                 }
-                
+
                 // Top Tracks Section
                 if (uiState.topTracks.isNotEmpty()) {
                     item {
@@ -124,8 +157,9 @@ fun ArtistDetailScreen(
                             style = MaterialTheme.typography.titleLarge
                         )
                     }
-                    
-                    items(uiState.topTracks.take(10)) { track ->
+
+                    val topTracksSubset = uiState.topTracks.take(10)
+                    items(topTracksSubset) { track ->
                         SwipeToAddNextContainer(
                             onAddNext = {
                                 scope.launch {
@@ -137,8 +171,10 @@ fun ArtistDetailScreen(
                                 track = track,
                                 onClick = {
                                     scope.launch {
-                                        musicViewModel.downloadAndPlay(
-                                            com.example.juke.network.SpotifyApi.spotifyTrackToSong(track)
+                                        // Queue this track and all tracks below it
+                                        musicViewModel.setQueueFromSpotifyTracks(
+                                            topTracksSubset,
+                                            topTracksSubset.indexOf(track)
                                         )
                                     }
                                 }
@@ -146,7 +182,7 @@ fun ArtistDetailScreen(
                         }
                     }
                 }
-                
+
                 // Albums Section (2x2 grid)
                 if (uiState.albums.isNotEmpty()) {
                     item {
@@ -163,8 +199,9 @@ fun ArtistDetailScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             for (album in row) {
-                                Box(modifier = Modifier
-                                    .weight(1f)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
                                 ) {
                                     AlbumItem(
                                         album = album,
@@ -191,31 +228,44 @@ private fun TrackItem(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        onClick = onClick
+        onClick = onClick,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AsyncImage(
-                model = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url ?: "",
-                contentDescription = track.name,
-                modifier = Modifier.size(60.dp),
-                contentScale = ContentScale.Crop
-            )
-            
-            Spacer(modifier = Modifier.width(12.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
+            Card(
+                modifier = Modifier.size(72.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                AsyncImage(
+                    model = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url
+                    ?: "",
+                    contentDescription = track.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     text = track.name,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 Text(
                     text = track.artists.joinToString(", ") { it.name },
                     style = MaterialTheme.typography.bodyMedium,
@@ -223,21 +273,29 @@ private fun TrackItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 Text(
                     text = track.album.name,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            
-            Text(
-                text = formatDuration(track.durationMs),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Text(
+                    text = formatDuration(track.durationMs),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
         }
     }
 }
@@ -251,7 +309,9 @@ private fun AlbumItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        onClick = onClick
+        onClick = onClick,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(
             modifier = Modifier
@@ -262,15 +322,17 @@ private fun AlbumItem(
                 contentDescription = album.name,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f),
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
                 contentScale = ContentScale.Crop
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = album.name,
@@ -282,7 +344,13 @@ private fun AlbumItem(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "${album.albumType.replaceFirstChar { it.uppercase() }} • ${album.releaseDate.take(4)} • ${album.totalTracks} tracks",
+                    text = "${
+                        album.albumType?.replaceFirstChar {
+                            if (it.isLowerCase()) it.titlecase(
+                                java.util.Locale.getDefault()
+                            ) else it.toString()
+                        } ?: "Album"
+                    } • ${album.releaseDate?.take(4) ?: ""} • ${album.totalTracks ?: 0} tracks",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

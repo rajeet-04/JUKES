@@ -9,11 +9,16 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
     primary = Purple80,
     secondary = PurpleGrey80,
-    tertiary = Pink80
+    tertiary = Pink80,
+    background = Color.Black,
+    surface = Color.Black,
+    onBackground = Color.White,
+    onSurface = Color.White
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -37,12 +42,33 @@ fun JUKETheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
+    extractedColors: ExtractedColors? = null,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
+        extractedColors != null -> {
+            darkColorScheme(
+                primary = extractedColors.primary,
+                secondary = extractedColors.secondary,
+                tertiary = extractedColors.tertiary,
+                background = extractedColors.background,
+                surface = extractedColors.surface,
+                onPrimary = extractedColors.onPrimary,
+                onSecondary = extractedColors.onSecondary,
+                onTertiary = extractedColors.onTertiary,
+                onBackground = extractedColors.onBackground,
+                onSurface = extractedColors.onSurface
+            )
+        }
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val baseScheme = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            baseScheme.copy(
+                background = Color.Black,
+                surface = Color.Black,
+                onBackground = Color.White,
+                onSurface = Color.White
+            )
         }
 
         darkTheme -> DarkColorScheme

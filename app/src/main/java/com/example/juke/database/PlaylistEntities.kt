@@ -92,6 +92,9 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: PlaylistEntity)
     
+    @Update
+    suspend fun updatePlaylist(playlist: PlaylistEntity)
+    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTrack(playlistTrack: PlaylistTrackEntity)
     
@@ -138,4 +141,11 @@ interface PlaylistDao {
     
     @Query("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun getPlaylistTrackCount(playlistId: String): Int
+
+    @Query("""
+        SELECT p.* FROM playlists p
+        INNER JOIN playlist_tracks pt ON p.id = pt.playlist_id
+        WHERE pt.track_uuid = :trackUuid
+    """)
+    suspend fun getPlaylistsForTrack(trackUuid: String): List<PlaylistEntity>
 }

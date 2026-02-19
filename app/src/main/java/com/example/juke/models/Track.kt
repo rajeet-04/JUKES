@@ -18,7 +18,12 @@ data class Track(
     val plainLyrics: String? = null,
     val isFavourite: Boolean = false,
     val playCount: Int = 0,
-    val lastPlayedAt: String? = null
+    val lastPlayedAt: String? = null,
+    val downloadedAt: Long? = null,
+    val spotifyId: String? = null,
+    val albumSpotifyId: String? = null,
+    val artistSpotifyIds: List<String>? = null,
+    val isStream: Boolean = false
 )
 
 /**
@@ -32,7 +37,20 @@ data class SpotdownSong(
     val thumbnail: String,
     val url: String,
     val duration: String,
-    val cached: Boolean = false
+    val cached: Boolean = false,
+    val spotifyId: String? = null,
+    val albumSpotifyId: String? = null,
+    val artistSpotifyIds: List<String>? = null
+)
+
+/**
+ * Spotdown check download response.
+ */
+@Serializable
+data class SpotdownCheckResponse(
+    val cached: Boolean = false,
+    val success: Boolean = true,
+    val message: String? = null
 )
 
 /**

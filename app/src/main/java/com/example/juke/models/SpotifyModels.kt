@@ -11,7 +11,8 @@ import kotlinx.serialization.Serializable
 data class SpotifySearchResponse(
     val tracks: SpotifyTracksResponse? = null,
     val artists: SpotifyArtistsResponse? = null,
-    val playlists: SpotifyPlaylistsResponse? = null
+    val playlists: SpotifyPlaylistsResponse? = null,
+    val albums: SpotifyAlbumsResponse? = null
 )
 
 @Serializable
@@ -34,13 +35,15 @@ data class SpotifyTrack(
     val explicit: Boolean,
     @SerialName("external_urls")
     val externalUrls: SpotifyExternalUrls,
-    val href: String,
-    val id: String,
+    val href: String? = null,
+    val id: String? = null,
     val name: String,
-    val popularity: Int,
+    val popularity: Int = 0,
     @SerialName("preview_url")
     val previewUrl: String? = null,
-    val uri: String
+    val uri: String,
+    @SerialName("is_local")
+    val isLocal: Boolean = false
 )
 
 @Serializable
@@ -51,8 +54,8 @@ data class SpotifySimplifiedTrack(
     val explicit: Boolean,
     @SerialName("external_urls")
     val externalUrls: SpotifyExternalUrls,
-    val href: String,
-    val id: String,
+    val href: String? = null,
+    val id: String? = null,
     val name: String,
     @SerialName("preview_url")
     val previewUrl: String? = null,
@@ -64,29 +67,29 @@ data class SpotifySimplifiedTrack(
 @Serializable
 data class SpotifyAlbum(
     @SerialName("album_type")
-    val albumType: String,
+    val albumType: String? = null,
     val artists: List<SpotifyArtist>,
     @SerialName("external_urls")
     val externalUrls: SpotifyExternalUrls,
-    val href: String,
-    val id: String,
+    val href: String? = null,
+    val id: String? = null,
     val images: List<SpotifyImage>,
     val name: String,
     @SerialName("release_date")
-    val releaseDate: String,
+    val releaseDate: String? = null,
     @SerialName("total_tracks")
-    val totalTracks: Int,
-    val uri: String
+    val totalTracks: Int? = null,
+    val uri: String? = null
 )
 
 @Serializable
 data class SpotifyArtist(
     @SerialName("external_urls")
     val externalUrls: SpotifyExternalUrls,
-    val href: String,
-    val id: String,
+    val href: String? = null,
+    val id: String? = null,
     val name: String,
-    val uri: String,
+    val uri: String? = null,
     val images: List<SpotifyImage> = emptyList(),
     val genres: List<String> = emptyList(),
     val popularity: Int = 0,
@@ -124,7 +127,7 @@ data class SpotifyPlaylist(
     val public: Boolean? = null,
     @SerialName("snapshot_id")
     val snapshotId: String,
-    val tracks: SpotifyPlaylistTracks,
+    val tracks: SpotifyPlaylistTracks? = null,
     val uri: String
 )
 
@@ -210,7 +213,7 @@ data class SpotifyImage(
 
 @Serializable
 data class SpotifyExternalUrls(
-    val spotify: String
+    val spotify: String? = null
 )
 
 @Serializable
