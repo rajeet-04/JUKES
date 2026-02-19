@@ -83,11 +83,16 @@ class PlaybackService : MediaLibraryService() {
 
     // For Stream Mode cleanup and progress tracking
     private var previousTrackId: String? = null
+    // Track which songs have reached 50% during this playback session
+    private val tracksPlayCountedThisSession = mutableSetOf<String>()
+    private var currentPlayingTrackId: String? = null
     private val progressHandler = Handler(Looper.getMainLooper())
     private val progressRunnable = object : Runnable {
         override fun run() {
             if (::player.isInitialized && player.isPlaying) {
                 queueManager.checkPreFetch(player.currentPosition, player.duration)
+                // Check if current track has reached 50% of total duration
+                this@PlaybackService.checkPlayCountThreshold()
                 progressHandler.postDelayed(this, 1000)
             }
         }
@@ -328,32 +333,16 @@ class PlaybackService : MediaLibraryService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             // Prevent infinite loops from metadata updates
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                // Clear the set of counted tracks when queue changes to ensure fresh counting
+                tracksPlayCountedThisSession.clear()
                 return
             }
 
             mediaItem?.let {
                 val trackId = it.mediaId
+                currentPlayingTrackId = trackId
                 Log.d(TAG, "Media item transition: $trackId, reason: $reason")
-
-
-                // [REMOVED] Redundant metadata update block that was breaking Shuffle order
-                // The MediaItems are already validated when added to the queue via PlaybackManager.
-                // Calling replaceMediaItem here triggers a timeline change, which resets the
-                // shuffle order for the current item, potentially ending the queue prematurely.
-
-
-                serviceScope.launch {
-                    try {
-                        val now = SimpleDateFormat(
-                            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                            Locale.US
-                        ).format(Date())
-
-                        database.trackDao().incrementPlayCount(trackId, now)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error updating play count: ${e.message}", e)
-                    }
-                }
+                // Note: Play count is now incremented only when track reaches 50% via checkPlayCountThreshold()
 
                 // Update custom layout (Notification Button)
                 serviceScope.launch {
@@ -633,6 +622,36 @@ class PlaybackService : MediaLibraryService() {
             .build()
 
         mediaSession?.setCustomLayout(listOf(favoriteButton))
+    }
+
+    /**
+     * Check if the current track has reached 50% of its duration and increment play count if so.
+     * Each track is only counted once per playback session.
+     */
+    private fun checkPlayCountThreshold() {
+        val trackId = currentPlayingTrackId ?: return
+        // Skip if already counted in this session
+        if (trackId in tracksPlayCountedThisSession) return
+
+        val duration = player.duration
+        val position = player.currentPosition
+
+        // Check if duration is known and position exceeds 50%
+        if (duration > 0 && position > 0 && position >= duration / 2) {
+            tracksPlayCountedThisSession.add(trackId)
+            serviceScope.launch {
+                try {
+                    val now = SimpleDateFormat(
+                        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                        Locale.US
+                    ).format(Date())
+                    database.trackDao().incrementPlayCount(trackId, now)
+                    Log.d(TAG, "Play count incremented at 50% threshold for track: $trackId")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error incrementing play count at 50% threshold: ${e.message}", e)
+                }
+            }
+        }
     }
 
     /**
