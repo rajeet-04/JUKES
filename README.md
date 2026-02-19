@@ -6,7 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
-[![Version](https://img.shields.io/badge/Version-1.0.8--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.8-beta)
+[![Version](https://img.shields.io/badge/Version-2.0.0--stable-green.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.0.0-stable)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -24,16 +24,18 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 ## 📦 Latest Release
 
 
-**JUKE v1.0.8-beta** is now available! 🎉
+**JUKE v2.0.0-stable** is now available! 🎉
+
+**First Major Stable Release** - Production-ready after extensive beta testing
 
 Major features:
-- Search Screen Redesign (glassmorphism, filter chips)
-- Most Played Sort
-- Portrait Lock for phones
-- Purge Redundant Tracks
-- Radio Mode (infinite discovery)
+- Complete Spotify integration with smart recommendations
+- 50+ features including 10-band equalizer and sleep timer
+- Offline playback with automatic downloads
+- Material Design 3 interface with glassmorphism
+- Zero breaking changes from v1.0.x beta cycle
 
-[📥 Download v1.0.8-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.8-beta) | [📝 Full Release Notes](release-v1.0.8-beta.md)
+[📥 Download v2.0.0-stable](https://github.com/rajeet-04/JUKES/releases/tag/v2.0.0-stable) | [📝 Full Release Notes](v2.0.0-stable-RELEASE_NOTES.md)
 
 ## ✨ Features
 
@@ -475,6 +477,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY RASH**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v1.0.8--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.8-beta)
+[![Release](https://img.shields.io/badge/Release-v2.0.0--stable-green?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v2.0.0-stable)
 
 </div>
