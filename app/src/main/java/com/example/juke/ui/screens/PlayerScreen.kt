@@ -1,5 +1,6 @@
 package com.example.juke.ui.screens
 
+import android.annotation.SuppressLint
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -119,6 +120,7 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
     return lines.sortedBy { it.timeMs }
 }
 
+@SuppressLint("ConfigurationScreenWidthHeight")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
@@ -244,7 +246,7 @@ fun PlayerScreen(
                 val isCompact = screenH < 640.dp
                 val spacerSm = if (isCompact) 8.dp else if (screenH < 800.dp) 16.dp else 24.dp
                 val spacerMd = if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
-                val spacerLg = if (isCompact) 16.dp else if (screenH < 800.dp) 32.dp else 48.dp
+                if (isCompact) 16.dp else if (screenH < 800.dp) 32.dp else 48.dp
                 val actionIconSize = if (isCompact) 18.dp else 24.dp
                 val actionBtnSize = if (isCompact) 36.dp else 48.dp
                 val ctrlPlaySize = if (isCompact) 60.dp else if (isTablet) 88.dp else 72.dp
@@ -339,7 +341,7 @@ fun PlayerScreen(
                                     modifier = Modifier.size(actionBtnSize)
                                 ) {
                                     Icon(
-                                        imageVector = androidx.compose.material.icons.Icons.Default.Download,
+                                        imageVector = Icons.Default.Download,
                                         contentDescription = "Download",
                                         tint = Color.White,
                                         modifier = Modifier.size(actionIconSize)
