@@ -20,3 +20,4 @@ app/release/
 .kotlin
 LINKEDIN_*.md
 ANALYTICS*.md
+spotdown-kv-worker/wrangler.json

@@ -70,8 +70,29 @@ object SpotifyApi {
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
     private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
-    private const val SPOTDOWN_API_KEY =
-        "b7dced12866eeef7ada4537c3fa952135e6c9680b0b332bcad99866823b6199b"
+    
+    // Dynamic Spotdown API key, fetched from Cloudflare KV Worker
+    private var spotdownApiKey: String? = null
+    
+    // Deployed worker URL
+    private const val SPOTDOWN_WORKER_URL = "https://spotdown-api-worker.meek.workers.dev/api"
+    
+    private suspend fun getSpotdownApiKey(): String {
+        return spotdownApiKey ?: try {
+            val response: HttpResponse = ApiClient.httpClient.get(SPOTDOWN_WORKER_URL)
+            // Assuming the worker returns { "value": "the-api-key" } based on the example
+            @kotlinx.serialization.Serializable
+            data class WorkerResponse(val value: String?)
+            
+            val workerResponse: WorkerResponse = json.decodeFromString(response.bodyAsText())
+            val key = workerResponse.value ?: throw Exception("API key missing from response")
+            spotdownApiKey = key
+            key
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching Spotdown API Key from worker: ${e.message}", e)
+            throw Exception("Failed to get Spotdown API Key")
+        }
+    }
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
 
@@ -580,9 +601,14 @@ object SpotifyApi {
      */
     suspend fun checkDirectDownload(spotifyUrl: String): SpotdownCheckResponse {
         return try {
+            val apiKey = getSpotdownApiKey()
             val response = ApiClient.httpClient.get("$SPOTDOWN_BASE_URL/check-direct-download") {
                 parameter("url", spotifyUrl)
-                header("x-api-key", SPOTDOWN_API_KEY)
+                header("x-api-key", apiKey)
+                header("referer", "https://spotdown.org/")
+                header("sec-fetch-site", "same-site")
+                header("sec-fetch-mode", "cors")
+                header("sec-fetch-dest", "empty")
             }
 
             try {
@@ -629,9 +655,11 @@ object SpotifyApi {
         return try {
             Log.d(TAG, "Making download request for URL: $spotifyUrl (attempt ${retryAttempt + 1})")
 
+            val apiKey = getSpotdownApiKey()
             val response = ApiClient.httpClient.post("$SPOTDOWN_BASE_URL/download") {
                 contentType(ContentType.Application.Json)
-                header("x-api-key", SPOTDOWN_API_KEY)
+                header("x-api-key", apiKey)
+                header("Referer", "https://spotdown.org/")
                 setBody(mapOf("url" to spotifyUrl))
             }
 
