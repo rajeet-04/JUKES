@@ -1,18 +1,16 @@
 package com.example.juke.ui.screens
 
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,17 +18,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -61,28 +57,28 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.juke.database.PlaylistEntity
 import com.example.juke.models.Track
+import com.example.juke.ui.components.AddToPlaylistDialog
+import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
 import com.example.juke.ui.components.player.QueueBottomSheetContent
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.juke.database.PlaylistEntity
-import com.example.juke.ui.components.AddToPlaylistDialog
-import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
-import kotlinx.coroutines.launch
-import androidx.compose.material.icons.filled.AddCircle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // Re-export LyricLine for compatibility if needed elsewhere, 
 // though it should ideally be in a model file.
@@ -255,9 +251,12 @@ fun PlayerScreen(
                 val ctrlBtnSize = if (isCompact) 44.dp else if (isTablet) 72.dp else 56.dp
                 val ctrlIconSize = if (isCompact) 28.dp else if (isTablet) 56.dp else 40.dp
                 val ctrlSmallIconSize = if (isCompact) 18.dp else if (isTablet) 32.dp else 24.dp
-                val artworkFraction = if (isCompact) 0.38f else if (screenH < 800.dp) 0.42f else 0.45f
-                val titleStyle = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
-                val subtitleStyle = if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium
+                val artworkFraction =
+                    if (isCompact) 0.38f else if (screenH < 800.dp) 0.42f else 0.45f
+                val titleStyle =
+                    if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
+                val subtitleStyle =
+                    if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium
                 val bottomPadding = if (isCompact) 16.dp else 40.dp
 
                 Column(
@@ -425,8 +424,17 @@ fun PlayerScreen(
                                     }
                                     .padding(if (isCompact) 8.dp else 12.dp)
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.List, "Queue", tint = Color.White, modifier = Modifier.size(actionIconSize))
-                                Text("Queue", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                Icon(
+                                    Icons.AutoMirrored.Filled.List,
+                                    "Queue",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(actionIconSize)
+                                )
+                                Text(
+                                    "Queue",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White
+                                )
                             }
 
                             Column(
@@ -439,8 +447,17 @@ fun PlayerScreen(
                                     }
                                     .padding(if (isCompact) 8.dp else 12.dp)
                             ) {
-                                Icon(Icons.Filled.Radio, "Radio", tint = Color.White, modifier = Modifier.size(actionIconSize))
-                                Text("Radio", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                Icon(
+                                    Icons.Filled.Radio,
+                                    "Radio",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(actionIconSize)
+                                )
+                                Text(
+                                    "Radio",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White
+                                )
                             }
 
                             if (currentTrack.spotifyId != null) {
@@ -454,8 +471,17 @@ fun PlayerScreen(
                                         }
                                         .padding(if (isCompact) 8.dp else 12.dp)
                                 ) {
-                                    Icon(Icons.Filled.Share, "Share", tint = Color.White, modifier = Modifier.size(actionIconSize))
-                                    Text("Share", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                    Icon(
+                                        Icons.Filled.Share,
+                                        "Share",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(actionIconSize)
+                                    )
+                                    Text(
+                                        "Share",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White
+                                    )
                                 }
                             }
                         }
