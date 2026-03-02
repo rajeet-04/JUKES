@@ -171,7 +171,7 @@ private fun HomeHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "JUKE",
                 style = MaterialTheme.typography.headlineLarge,

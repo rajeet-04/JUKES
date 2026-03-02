@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -235,227 +237,226 @@ fun PlayerScreen(
                     )
             )
 
-            // Content
-            Column(
+            // Content — fully responsive, adapts to screen height
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
-                    .padding(horizontal = 24.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Header
-                PlayerHeader(
-                    onDismiss = onDismiss,
-                    onShowSleepTimer = { showSleepTimerDialog = true },
-                    onNavigateToAlbum = {
-                        if (currentTrack.albumSpotifyId != null) onNavigateToAlbum(
-                            currentTrack.albumSpotifyId
-                        )
-                    },
-                    onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
-                    showMenuOption = true,
-                    isAlbumAvailable = currentTrack.albumSpotifyId != null
-                )
+                val screenH = maxHeight
+                // Scale breakpoints: tight (<640dp), normal (640-800dp), large (>800dp)
+                val isCompact = screenH < 640.dp
+                val spacerSm = if (isCompact) 8.dp else if (screenH < 800.dp) 16.dp else 24.dp
+                val spacerMd = if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
+                val spacerLg = if (isCompact) 16.dp else if (screenH < 800.dp) 32.dp else 48.dp
+                val actionIconSize = if (isCompact) 18.dp else 24.dp
+                val actionBtnSize = if (isCompact) 36.dp else 48.dp
+                val ctrlPlaySize = if (isCompact) 60.dp else if (isTablet) 88.dp else 72.dp
+                val ctrlBtnSize = if (isCompact) 44.dp else if (isTablet) 72.dp else 56.dp
+                val ctrlIconSize = if (isCompact) 28.dp else if (isTablet) 56.dp else 40.dp
+                val ctrlSmallIconSize = if (isCompact) 18.dp else if (isTablet) 32.dp else 24.dp
+                val artworkFraction = if (isCompact) 0.38f else if (screenH < 800.dp) 0.42f else 0.45f
+                val titleStyle = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
+                val subtitleStyle = if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium
+                val bottomPadding = if (isCompact) 16.dp else 40.dp
 
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // Artwork
-                PlayerArtwork(
-                    currentTrack = currentTrack,
-                    currentPosition = uiState.position,
-                    showLyrics = showLyrics,
-                    musicViewModel = musicViewModel,
-                    isTablet = isTablet,
-                    onToggleLyrics = { showLyrics = !showLyrics },
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-
-                Spacer(modifier = Modifier.height(48.dp))
-
-                // Track Info & Favorite
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentTrack.title,
-                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            maxLines = 1,
-                            modifier = Modifier.basicMarquee()
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = currentTrack.artist,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            modifier = Modifier
-                                .basicMarquee()
-                                .clickable {
-                                    val ids = currentTrack.artistSpotifyIds
-                                    if (!ids.isNullOrEmpty()) {
-                                        if (ids.size == 1) onNavigateToArtist(ids[0])
-                                        else showArtistSelectionSheet = true
-                                    }
-                                }
+                    // Header
+                    PlayerHeader(
+                        onDismiss = onDismiss,
+                        onShowSleepTimer = { showSleepTimerDialog = true },
+                        onNavigateToAlbum = {
+                            if (currentTrack.albumSpotifyId != null) onNavigateToAlbum(
+                                currentTrack.albumSpotifyId
+                            )
+                        },
+                        onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
+                        showMenuOption = true,
+                        isAlbumAvailable = currentTrack.albumSpotifyId != null
+                    )
+
+                    Spacer(modifier = Modifier.height(spacerSm))
+
+                    // Artwork — fills a portion of screen height
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(screenH * artworkFraction),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PlayerArtwork(
+                            currentTrack = currentTrack,
+                            currentPosition = uiState.position,
+                            showLyrics = showLyrics,
+                            musicViewModel = musicViewModel,
+                            isTablet = isTablet,
+                            onToggleLyrics = { showLyrics = !showLyrics }
                         )
                     }
 
-                    // Favorite Button (Right side)
+                    Spacer(modifier = Modifier.height(spacerMd))
+
+                    // Track Info & Action icons
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Download Button (Only for Streamed Tracks)
-                        if (currentTrack.isStream) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = currentTrack.title,
+                                style = titleStyle.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White,
+                                maxLines = 1,
+                                modifier = Modifier.basicMarquee()
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = currentTrack.artist,
+                                style = subtitleStyle,
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .basicMarquee()
+                                    .clickable {
+                                        val ids = currentTrack.artistSpotifyIds
+                                        if (!ids.isNullOrEmpty()) {
+                                            if (ids.size == 1) onNavigateToArtist(ids[0])
+                                            else showArtistSelectionSheet = true
+                                        }
+                                    }
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (currentTrack.isStream) {
+                                IconButton(
+                                    onClick = { musicViewModel.promoteTrackToDownload(currentTrack) },
+                                    modifier = Modifier.size(actionBtnSize)
+                                ) {
+                                    Icon(
+                                        imageVector = androidx.compose.material.icons.Icons.Default.Download,
+                                        contentDescription = "Download",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(actionIconSize)
+                                    )
+                                }
+                            }
                             IconButton(
-                                onClick = { musicViewModel.promoteTrackToDownload(currentTrack) },
-                                modifier = Modifier.size(48.dp)
+                                onClick = { showAddToPlaylistDialog = currentTrack },
+                                modifier = Modifier.size(actionBtnSize)
                             ) {
                                 Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Default.Download,
-                                    contentDescription = "Download Track",
+                                    imageVector = Icons.Default.AddCircle,
+                                    contentDescription = "Add to Playlist",
                                     tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(actionIconSize)
+                                )
+                            }
+                            IconButton(
+                                onClick = { musicViewModel.toggleFavorite(currentTrack) },
+                                modifier = Modifier.size(actionBtnSize)
+                            ) {
+                                Icon(
+                                    imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = if (currentTrack.isFavourite) "Unfavorite" else "Favorite",
+                                    tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else Color.White,
+                                    modifier = Modifier.size(actionIconSize)
                                 )
                             }
                         }
-                        IconButton(
-                            onClick = { showAddToPlaylistDialog = currentTrack },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AddCircle,
-                                contentDescription = "Add to Playlist",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { musicViewModel.toggleFavorite(currentTrack) },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                contentDescription = if (currentTrack.isFavourite) "Remove from favorites" else "Add to favorites",
-                                tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(spacerSm))
 
-                // Progress
-                PlayerProgress(
-                    currentPosition = uiState.position,
-                    uiState = uiState,
-                    musicViewModel = musicViewModel
-                )
+                    // Progress
+                    PlayerProgress(
+                        currentPosition = uiState.position,
+                        uiState = uiState,
+                        musicViewModel = musicViewModel
+                    )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(spacerSm))
 
-                // Controls
-                PlayerControls(
-                    uiState = uiState,
-                    musicViewModel = musicViewModel,
-                    isLarge = isTablet
-                )
+                    // Controls
+                    PlayerControls(
+                        uiState = uiState,
+                        musicViewModel = musicViewModel,
+                        isLarge = isTablet,
+                        playButtonSize = ctrlPlaySize,
+                        buttonSize = ctrlBtnSize,
+                        iconSize = ctrlIconSize,
+                        smallIconSize = ctrlSmallIconSize
+                    )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(spacerSm))
 
-                // Bottom Action Row (Queue & Share)
-                // Wrap in Box to capture swipe gestures
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 48.dp)
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                if (dragAmount.y < -50) { // Swipe up
-                                    showQueue = true
+                    // Bottom Action Row (Queue, Radio, Share)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = bottomPadding)
+                            .pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    if (dragAmount.y < -50) showQueue = true
                                 }
                             }
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .clickable {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    showQueue = true
-                                }
-                                .padding(12.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.List,
-                                contentDescription = "Queue",
-                                tint = Color.White
-                            )
-                            Text(
-                                "Queue",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White
-                            )
-                        }
+                            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .clickable {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    musicViewModel.startRadio()
-                                }
-                                .padding(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Radio,
-                                contentDescription = "Start Radio",
-                                tint = Color.White
-                            )
-                            Text(
-                                "Radio",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White
-                            )
-                        }
-
-                        if (currentTrack.spotifyId != null) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .clip(androidx.compose.foundation.shape.CircleShape)
                                     .clickable {
                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                        onShareTrack(currentTrack.spotifyId)
+                                        showQueue = true
                                     }
-                                    .padding(12.dp)
+                                    .padding(if (isCompact) 8.dp else 12.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Share,
-                                    contentDescription = "Share",
-                                    tint = Color.White
-                                )
-                                Text(
-                                    "Share",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
-                                )
+                                Icon(Icons.AutoMirrored.Filled.List, "Queue", tint = Color.White, modifier = Modifier.size(actionIconSize))
+                                Text("Queue", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .clickable {
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        musicViewModel.startRadio()
+                                    }
+                                    .padding(if (isCompact) 8.dp else 12.dp)
+                            ) {
+                                Icon(Icons.Filled.Radio, "Radio", tint = Color.White, modifier = Modifier.size(actionIconSize))
+                                Text("Radio", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+
+                            if (currentTrack.spotifyId != null) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .clickable {
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                            onShareTrack(currentTrack.spotifyId)
+                                        }
+                                        .padding(if (isCompact) 8.dp else 12.dp)
+                                ) {
+                                    Icon(Icons.Filled.Share, "Share", tint = Color.White, modifier = Modifier.size(actionIconSize))
+                                    Text("Share", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                }
                             }
                         }
                     }

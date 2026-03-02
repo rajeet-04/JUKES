@@ -4,8 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,15 +35,11 @@ fun PlayerArtwork(
     onToggleLyrics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-     val artworkModifier = if (isTablet) {
-        modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-    } else {
-        modifier
-            .fillMaxWidth(0.9f) // Slightly smaller than full width for better aesthetics
-            .aspectRatio(1f)
-    }
+    // Use fillMaxHeight so the artwork is bounded by the parent Box's height constraint,
+    // then use aspectRatio(1f) to ensure it stays square. This prevents overflow on small screens.
+    val artworkModifier = modifier
+        .fillMaxHeight(if (isTablet) 1f else 0.94f)
+        .aspectRatio(1f)
 
     Box(
         modifier = artworkModifier
@@ -74,20 +70,20 @@ fun PlayerArtwork(
                 Icon(
                     imageVector = Icons.Filled.PlayArrow,
                     contentDescription = null,
-                    modifier = Modifier.size(120.dp),
+                    modifier = Modifier.size(80.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
         if (showLyrics) {
-             if (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null) {
+            if (currentTrack.syncedLyrics != null || currentTrack.plainLyrics != null) {
                 LyricsOverlay(
                     currentTrack = currentTrack,
                     currentPosition = currentPosition,
                     musicViewModel = musicViewModel,
                     isTablet = isTablet,
-                    isLandscape = false, // Artwork view usually implies portrait context or non-fullscreen lyrics
+                    isLandscape = false,
                     onDismiss = onToggleLyrics
                 )
             } else {

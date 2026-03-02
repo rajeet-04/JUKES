@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.juke.R
 import androidx.compose.material.icons.Icons
@@ -23,13 +24,18 @@ fun PlayerControls(
     uiState: MusicUiState,
     musicViewModel: MusicViewModel,
     isLarge: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Optional override: lets parent scale all control sizes
+    playButtonSize: Dp? = null,
+    buttonSize: Dp? = null,
+    iconSize: Dp? = null,
+    smallIconSize: Dp? = null
 ) {
     val haptic = LocalHapticFeedback.current
-    val buttonSize = if (isLarge) 72.dp else 64.dp
-    val playButtonSize = if (isLarge) 88.dp else 80.dp
-    val iconSize = if (isLarge) 56.dp else 48.dp
-    val playIconSize = if (isLarge) 56.dp else 48.dp
+    val resolvedPlayButtonSize = playButtonSize ?: if (isLarge) 88.dp else 72.dp
+    val resolvedButtonSize = buttonSize ?: if (isLarge) 72.dp else 56.dp
+    val resolvedIconSize = iconSize ?: if (isLarge) 56.dp else 40.dp
+    val resolvedSmallIconSize = smallIconSize ?: if (isLarge) 32.dp else 24.dp
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -39,36 +45,36 @@ fun PlayerControls(
         // Shuffle Button
         IconButton(
             onClick = { musicViewModel.toggleShuffle() },
-            modifier = Modifier.size(48.dp)
+            modifier = Modifier.size(resolvedButtonSize)
         ) {
             Icon(
                 imageVector = Icons.Default.Shuffle,
                 contentDescription = "Shuffle",
                 tint = if (uiState.isShuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(resolvedSmallIconSize)
             )
         }
         IconButton(
-            onClick = { 
+            onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                musicViewModel.skipToPrevious() 
+                musicViewModel.skipToPrevious()
             },
-            modifier = Modifier.size(buttonSize)
+            modifier = Modifier.size(resolvedButtonSize)
         ) {
             Icon(
                 painter = painterResource(R.drawable.prev_svgrepo_com),
                 contentDescription = "Previous",
-                modifier = Modifier.size(iconSize),
+                modifier = Modifier.size(resolvedIconSize),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         }
 
         FilledIconButton(
-            onClick = { 
+            onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                musicViewModel.togglePlayPause() 
+                musicViewModel.togglePlayPause()
             },
-            modifier = Modifier.size(playButtonSize),
+            modifier = Modifier.size(resolvedPlayButtonSize),
             colors = IconButtonDefaults.filledIconButtonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
@@ -77,21 +83,21 @@ fun PlayerControls(
             Icon(
                 painter = painterResource(if (uiState.isPlaying) R.drawable.baseline_pause_24 else R.drawable.baseline_play_24),
                 contentDescription = if (uiState.isPlaying) "Pause" else "Play",
-                modifier = Modifier.size(playIconSize)
+                modifier = Modifier.size(resolvedIconSize)
             )
         }
 
         IconButton(
-            onClick = { 
+            onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                musicViewModel.skipToNext() 
+                musicViewModel.skipToNext()
             },
-            modifier = Modifier.size(buttonSize)
+            modifier = Modifier.size(resolvedButtonSize)
         ) {
             Icon(
                 painter = painterResource(R.drawable.next_svgrepo_com),
                 contentDescription = "Next",
-                modifier = Modifier.size(iconSize),
+                modifier = Modifier.size(resolvedIconSize),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         }
@@ -99,19 +105,19 @@ fun PlayerControls(
         // Repeat Button
         IconButton(
             onClick = { musicViewModel.toggleRepeat() },
-            modifier = Modifier.size(48.dp)
+            modifier = Modifier.size(resolvedButtonSize)
         ) {
             val (icon, tint) = when (uiState.repeatMode) {
                 Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne to MaterialTheme.colorScheme.primary
                 Player.REPEAT_MODE_ALL -> Icons.Default.Repeat to MaterialTheme.colorScheme.primary
                 else -> Icons.Default.Repeat to MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             }
-            
+
             Icon(
                 imageVector = icon,
                 contentDescription = "Repeat",
                 tint = tint,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(resolvedSmallIconSize)
             )
         }
     }

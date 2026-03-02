@@ -2,18 +2,50 @@
 
 ## Changelog
 
+## [2.1.0-beta] - 2026-03-02
+
+### Added
+
+- **Secure API Key via Cloudflare KV**: Spotdown API key is no longer bundled in the APK. Fetched at runtime from a Cloudflare Worker backed by KV storage. Key can be rotated without an app update.
+- **Referer Header for Spotdown**: All Spotdown download/check requests now include `Referer: https://spotdown.org/` as required by the API.
+- **Automatic Download Fallback**: Spotdown ↔ Spotmate auto-fallback on any error or duration mismatch exceeding 10%. Silent, no user action required.
+- **Emergency Update Dialogs**: Update checker now distinguishes emergency (`hotfix`/`critical`/`emergency` tags) from normal updates — red themed, non-dismissible for emergencies.
+- **Scrollable Update Changelog**: Release notes inside the update dialog are now fully scrollable.
+- **Fully Responsive Player Screen**: `BoxWithConstraints` used to scale all player elements (artwork, icons, spacers, typography) based on 3 device height breakpoints — compact, normal, and large/tablet.
+- **HomeScreen Settings Button Fix**: `Modifier.weight(1f)` on greeting column prevents the settings button from being pushed off-screen by long greetings.
+
+### Fixed
+
+- Spotdown API 403 due to missing Referer and API key headers
+- Download silently failing when Spotdown rejected request
+- Duration mismatch not triggering download source fallback
+- Update dialog text unreadable on dynamic dark/light themes
+- Emergency updates dismissible (should be forced)
+- Player album art overflowing into controls on small-screen phones
+- Lyrics close button displaced due to wrong `statusBarsPadding` in clipped lyrics frame
+- Player controls using fixed sizes regardless of device screen size
+
+### See full release notes
+
+[v2.1.0-beta-RELEASE_NOTES.md](v2.1.0-beta-RELEASE_NOTES.md)
+
+---
+
 ## [2.0.0-stable] - 2026-02-20
 
 ### Overview
+
 **First Major Stable Release** - JUKE v2.0.0-stable consolidates all features from v1.0.0 through v1.0.8-beta into a production-ready, battle-tested music streaming application.
 
 ### Status: Production Ready
+
 - ✅ Proven stability through 8 beta releases
 - ✅ Zero breaking changes from v1.0.x
 - ✅ Seamless upgrade path for all users
 - ✅ Complete feature parity with v1.0.8-beta
 
 ### Key Achievements
+
 - **50+ Features**: Comprehensive music streaming platform
 - **4 API Integrations**: Spotify, YouTube Music, Spotdown, LRCLib
 - **Zero Crashes**: < 0.1% crash rate from beta testing
@@ -25,8 +57,8 @@
 
 ## [1.0.8-beta] - 2026-02-18
 
+### See full release notes
 
-### See full release notes:
 [release-v1.0.8-beta.md](release-v1.0.8-beta.md)
 
 ---

@@ -140,14 +140,13 @@ fun LyricsOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
-                .statusBarsPadding(),
+                .padding(12.dp),
             contentAlignment = Alignment.TopEnd
         ) {
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(36.dp)
                     .background(Color.White.copy(alpha = 0.1f), CircleShape)
             ) {
                 Icon(

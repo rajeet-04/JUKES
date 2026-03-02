@@ -138,15 +138,32 @@ class MusicService(private val context: Context) {
                 )
             }
 
-            val audioData = SpotifyApi.downloadSong(song.url)
-            Log.d(TAG, "Downloaded audio buffer, size: ${audioData.size} bytes")
-
-            if (audioData.isEmpty()) {
-                throw Exception("Downloaded file is empty")
+            var audioData: ByteArray? = null
+            var usedSpotmateFirst = false
+            
+            suspend fun tryDownload(useSpotmate: Boolean): ByteArray {
+                val data = if (useSpotmate) {
+                    SpotifyApi.downloadSongFromSpotmate(song.url)
+                } else {
+                    SpotifyApi.downloadSong(song.url)
+                }
+                if (data.isEmpty()) {
+                    throw Exception("Downloaded file is empty")
+                }
+                if (data.size < 100_000) {
+                    throw Exception("Downloaded file is too small to be a valid MP3")
+                }
+                return data
             }
 
-            if (audioData.size < 100_000) {
-                throw Exception("Downloaded file is too small to be a valid MP3")
+            try {
+                audioData = tryDownload(false)
+                Log.d(TAG, "Downloaded audio buffer from primary source, size: ${audioData.size} bytes")
+            } catch (e: Exception) {
+                Log.e(TAG, "Primary download (Spotdown) failed: ${e.message}. Falling back to Spotmate.")
+                usedSpotmateFirst = true
+                audioData = tryDownload(true)
+                Log.d(TAG, "Downloaded audio buffer from fallback source, size: ${audioData.size} bytes")
             }
 
             audioFile.writeBytes(audioData)
@@ -170,21 +187,18 @@ class MusicService(private val context: Context) {
                 )
 
                 if (kotlin.math.abs(fileDurationSec - durationSec) > 5) {
+                    val alternativeName = if (usedSpotmateFirst) "Spotdown" else "Spotmate"
                     Log.w(
                         TAG,
-                        "Duration mismatch! Expected ${durationSec}s, got ${fileDurationSec}s. Retrying with Spotmate..."
+                        "Duration mismatch! Expected ${durationSec}s, got ${fileDurationSec}s. Retrying with alternative provider: $alternativeName..."
                     )
 
                     try {
-                        val fallbackAudioData = SpotifyApi.downloadSongFromSpotmate(song.url)
-                        if (fallbackAudioData.isNotEmpty() && fallbackAudioData.size > 100_000) {
-                            audioFile.writeBytes(fallbackAudioData)
-                            Log.d(TAG, "Fallback download successful. Overwrote file.")
-                        } else {
-                            Log.e(TAG, "Fallback download returned invalid data")
-                        }
+                        val fallbackAudioData = tryDownload(!usedSpotmateFirst)
+                        audioFile.writeBytes(fallbackAudioData)
+                        Log.d(TAG, "Fallback download successful. Overwrote file.")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Fallback download failed: ${e.message}")
+                        Log.e(TAG, "Alternative fallback download failed: ${e.message}")
                         // Keep original file if fallback fails? Or throw? 
                         // User said "server keeps song cached so wrong song is sent over and over".
                         // If fallback fails, we probably still have the wrong song.

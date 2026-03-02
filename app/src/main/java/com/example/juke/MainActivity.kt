@@ -19,28 +19,36 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -185,47 +193,121 @@ class MainActivity : ComponentActivity() {
 
                 if (updateAvailable != null) {
                     val release = updateAvailable!!
+
+                    // Determine if the update is an emergency update (e.g., contains "emergency" or "hotfix" in tags or body)
+                    val isEmergency = release.tagName.contains("emergency", ignoreCase = true) ||
+                            release.tagName.contains("hotfix", ignoreCase = true) ||
+                            (release.body?.contains("emergency", ignoreCase = true) == true) ||
+                            (release.body?.contains("critical", ignoreCase = true) == true) ||
+                            (release.body?.contains("hotfix", ignoreCase = true) == true)
+
                     AlertDialog(
-                        onDismissRequest = { updateAvailable = null },
-                        title = { Text(text = "Update Available") },
-                        text = {
-                            Column {
-                                Text(
-                                    text = "A new version (${release.tagName}) is available!",
-                                    style = MaterialTheme.typography.bodyLarge
+                        onDismissRequest = {
+                            // Only allow dismiss if not emergency
+                            if (!isEmergency) {
+                                updateAvailable = null
+                            }
+                        },
+                        title = {
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (isEmergency) Icons.Filled.Warning else Icons.Filled.SystemUpdate,
+                                    contentDescription = "Update Icon",
+                                    tint = if (isEmergency) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(end = 8.dp)
                                 )
-                                if (release.isPrerelease) {
+                                Text(
+                                    text = if (isEmergency) "Critical Update Required" else "Update Available",
+                                    color = if (isEmergency) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                            }
+                        },
+                        text = {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    // Make the content scrollable
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = "Version ${release.tagName} is now available.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+
+                                if (isEmergency) {
                                     Text(
-                                        text = "This is a pre-release version.",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary
+                                        text = "This update contains critical bug fixes (e.g., song download fix). Please update immediately to continue using the app smoothly.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier
+                                            .padding(bottom = 8.dp)
+                                            .background(
+                                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                                                shape = RoundedCornerShape(
+                                                    8.dp
+                                                )
+                                            )
+                                            .padding(8.dp)
                                     )
                                 }
-                                if (!release.body.isNullOrBlank()) {
+
+                                if (release.isPrerelease) {
                                     Text(
-                                        text = "\n${release.body}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 4,
-                                        modifier = Modifier.padding(top = 8.dp)
+                                        text = "Note: This is a pre-release (beta) version.",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(bottom = 8.dp)
                                     )
+                                }
+
+                                if (!release.body.isNullOrBlank()) {
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(
+                                            8.dp
+                                        )
+                                    ) {
+                                        Text(
+                                            text = release.body.trim(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.padding(12.dp)
+                                        )
+                                    }
                                 }
                             }
                         },
                         confirmButton = {
-                            TextButton(
+                            Button(
                                 onClick = {
                                     uriHandler.openUri(release.htmlUrl)
-                                    updateAvailable = null
-                                }
+                                    if (!isEmergency) {
+                                        updateAvailable = null
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isEmergency) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
                             ) {
-                                Text("Download")
+                                Text("Download Update")
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = { updateAvailable = null }) {
-                                Text("Later")
+                            if (!isEmergency) {
+                                TextButton(onClick = { updateAvailable = null }) {
+                                    Text("Maybe Later")
+                                }
                             }
-                        }
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 // --- END UPDATE CHECK LOGIC ---

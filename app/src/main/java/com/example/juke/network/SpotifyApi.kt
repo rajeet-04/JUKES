@@ -74,8 +74,8 @@ object SpotifyApi {
     // Dynamic Spotdown API key, fetched from Cloudflare KV Worker
     private var spotdownApiKey: String? = null
     
-    // Deployed worker URL
-    private const val SPOTDOWN_WORKER_URL = "https://spotdown-api-worker.meek.workers.dev/api"
+    // Deployed worker URL from BuildConfig
+    private val SPOTDOWN_WORKER_URL = BuildConfig.SPOTDOWN_WORKER_URL
     
     private suspend fun getSpotdownApiKey(): String {
         return spotdownApiKey ?: try {

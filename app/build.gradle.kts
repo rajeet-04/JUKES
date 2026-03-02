@@ -17,8 +17,8 @@ android {
         applicationId = "com.example.juke"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "2.0.0-stable"
+        versionCode = 11
+        versionName = "2.1.0-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -38,6 +38,11 @@ android {
             "String",
             "SPOTIFY_CLIENT_SECRET",
             "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "SPOTDOWN_WORKER_URL",
+            "\"${properties.getProperty("SPOTDOWN_WORKER_URL", "")}\""
         )
     }
 
@@ -103,6 +108,7 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.compose.foundation.layout)
+    implementation(libs.androidx.material3)
     ksp(libs.androidx.room.compiler)
 
     // Media3
