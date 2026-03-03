@@ -20,6 +20,8 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,25 +39,39 @@ fun SwipeToAddNextContainer(
 ) {
     val haptic = LocalHapticFeedback.current
 
-    // Increased threshold to reduce sensitivity (requires 65% swipe to trigger)
-    // This ensures users must swipe deliberately to trigger delete/add-next actions
+    // Guard flag: ensures the action fires only ONCE per swipe gesture.
+    // confirmValueChange can be called multiple times during a single drag
+    // (every time the item crosses the threshold), which caused rapid-fire
+    // duplicate insertions. Resetting on Settled prevents cross-gesture leakage.
+    val actionFired = remember { mutableStateOf(false) }
+
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { distance -> distance * 0.65f },
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onAddNext()
-                    false // Reset after triggering action
+                    if (!actionFired.value) {
+                        actionFired.value = true
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onAddNext()
+                    }
+                    false // Reset swipe position after action
                 }
 
                 SwipeToDismissBoxValue.EndToStart -> {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onDelete?.invoke()
-                    false // Reset after triggering action
+                    if (!actionFired.value) {
+                        actionFired.value = true
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDelete?.invoke()
+                    }
+                    false // Reset swipe position after action
                 }
 
-                else -> false
+                SwipeToDismissBoxValue.Settled -> {
+                    // Swipe returned to neutral — allow the next swipe to fire
+                    actionFired.value = false
+                    false
+                }
             }
         }
     )
