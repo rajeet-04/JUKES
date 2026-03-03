@@ -1078,7 +1078,6 @@ class PlaybackManager private constructor(private val context: Context) {
                                     error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
                                     (causeMessage.contains("403") || errorMessage.contains("403"))
                                 ) {
-                                    // Stream URL expired — re-fetch a fresh one and resume
                                     val trackId = controller?.currentMediaItem?.mediaId ?: return
                                     Log.w(TAG, "Stream URL expired (403) for track $trackId, refreshing...")
 
@@ -1086,8 +1085,109 @@ class PlaybackManager private constructor(private val context: Context) {
                                         try {
                                             val trackEntity = database.trackDao().getTrackByUuid(trackId)
                                             val track = trackEntity?.toTrack()
-                                            if (track == null || !track.isStream || track.spotifyId == null) {
-                                                Log.w(TAG, "Cannot refresh: track not found, not a stream, or missing spotifyId")
+
+                                            if (track == null) {
+                                                Log.w(TAG, "Cannot handle 403: track $trackId not found in DB — skipping")
+                                                withContext(Dispatchers.Main) {
+                                                    controller?.let { ctrl ->
+                                                        if (ctrl.hasNextMediaItem()) {
+                                                            ctrl.seekToNext()
+                                                            ctrl.prepare()
+                                                            ctrl.play()
+                                                        } else ctrl.stop()
+                                                    }
+                                                }
+                                                return@launch
+                                            }
+
+                                            if (!track.isStream) {
+                                                // ──────────────────────────────────────────────────────────
+                                                // NON-STREAM track: the file was supposed to be local/
+                                                // downloaded but it 403'd (file missing or remote URL
+                                                // expired). Re-fetch from Spotify if online, else skip.
+                                                // ──────────────────────────────────────────────────────────
+                                                Log.w(TAG, "Non-stream track '${track.title}' got 403 (file missing?). " +
+                                                        "spotifyId=${track.spotifyId}")
+
+                                                val isOffline = run {
+                                                    val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                                                        as android.net.ConnectivityManager
+                                                    val network = cm.activeNetwork
+                                                    val caps = if (network != null) cm.getNetworkCapabilities(network) else null
+                                                    caps == null || !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                                                }
+                                                if (isOffline) {
+                                                    // Offline — can't re-download, skip gracefully
+                                                    Log.w(TAG, "Device offline — skipping '${track.title}'")
+                                                    withContext(Dispatchers.Main) {
+                                                        controller?.let { ctrl ->
+                                                            if (ctrl.hasNextMediaItem()) {
+                                                                ctrl.seekToNext()
+                                                                ctrl.prepare()
+                                                                ctrl.play()
+                                                            } else ctrl.stop()
+                                                        }
+                                                    }
+                                                    return@launch
+                                                }
+
+                                                if (track.spotifyId == null) {
+                                                    Log.w(TAG, "No spotifyId for '${track.title}' — skipping")
+                                                    withContext(Dispatchers.Main) {
+                                                        controller?.let { ctrl ->
+                                                            if (ctrl.hasNextMediaItem()) {
+                                                                ctrl.seekToNext()
+                                                                ctrl.prepare()
+                                                                ctrl.play()
+                                                            } else ctrl.stop()
+                                                        }
+                                                    }
+                                                    return@launch
+                                                }
+
+                                                try {
+                                                    Log.d(TAG, "Re-downloading '${track.title}' (spotifyId=${track.spotifyId})")
+                                                    val song = SpotifyApi.spotifyTrackToSong(
+                                                        SpotifyApi.getTrack(track.spotifyId)
+                                                    )
+                                                    val redownloadedTrack = musicService.smartDownloadAndIndex(song)
+                                                    Log.d(TAG, "Re-downloaded '${track.title}' successfully")
+
+                                                    withContext(Dispatchers.Main) {
+                                                        replaceTrackInQueue(track.uuid, redownloadedTrack)
+                                                        controller?.prepare()
+                                                        controller?.play()
+                                                    }
+                                                } catch (downloadEx: Exception) {
+                                                    Log.e(TAG, "Re-download failed for '${track.title}': ${downloadEx.message}")
+                                                    withContext(Dispatchers.Main) {
+                                                        controller?.let { ctrl ->
+                                                            if (ctrl.hasNextMediaItem()) {
+                                                                ctrl.seekToNext()
+                                                                ctrl.prepare()
+                                                                ctrl.play()
+                                                            } else ctrl.stop()
+                                                        }
+                                                    }
+                                                }
+                                                return@launch
+                                            }
+
+                                            // ──────────────────────────────────────────────────────────
+                                            // STREAM track: refresh the expired URL, then optionally
+                                            // promote to a local download if it belongs to a playlist.
+                                            // ──────────────────────────────────────────────────────────
+                                            if (track.spotifyId == null) {
+                                                Log.w(TAG, "Cannot refresh stream: missing spotifyId for '${track.title}' — skipping")
+                                                withContext(Dispatchers.Main) {
+                                                    controller?.let { ctrl ->
+                                                        if (ctrl.hasNextMediaItem()) {
+                                                            ctrl.seekToNext()
+                                                            ctrl.prepare()
+                                                            ctrl.play()
+                                                        } else ctrl.stop()
+                                                    }
+                                                }
                                                 return@launch
                                             }
 
@@ -1124,7 +1224,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 }
                                             }
                                         } catch (e: Exception) {
-                                            Log.e(TAG, "Failed to refresh stream URL: ${e.message}", e)
+                                            Log.e(TAG, "Failed to handle 403 for track $trackId: ${e.message}", e)
                                             // Fall back to skipping to the next track
                                             withContext(Dispatchers.Main) {
                                                 controller?.let { ctrl ->
