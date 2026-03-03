@@ -6,7 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
-[![Version](https://img.shields.io/badge/Version-2.0.0--stable-green.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.0.0-stable)
+[![Version](https://img.shields.io/badge/Version-2.1.1--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.1.1-beta)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -23,19 +23,16 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 ## 📦 Latest Release
 
+**JUKE v2.1.1-beta** is now available! 🩹
 
-**JUKE v2.0.0-stable** is now available! 🎉
+**Patch Release** — Fixes two playback reliability bugs from v2.1.0-beta
 
-**First Major Stable Release** - Production-ready after extensive beta testing
+What's fixed:
 
-Major features:
-- Complete Spotify integration with smart recommendations
-- 50+ features including 10-band equalizer and sleep timer
-- Offline playback with automatic downloads
-- Material Design 3 interface with glassmorphism
-- Zero breaking changes from v1.0.x beta cycle
+- Swipe-to-add-next no longer inserts the same song multiple times per gesture
+- Player no longer pauses/freezes on 403 errors — non-stream tracks now re-download automatically if online, or skip gracefully if offline
 
-[📥 Download v2.0.0-stable](https://github.com/rajeet-04/JUKES/releases/tag/v2.0.0-stable) | [📝 Full Release Notes](v2.0.0-stable-RELEASE_NOTES.md)
+[📥 Download v2.1.1-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.1.1-beta) | [📝 Full Release Notes](v2.1.1-beta-RELEASE_NOTES.md)
 
 ## ✨ Features
 
@@ -477,6 +474,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY RASH**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v2.0.0--stable-green?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v2.0.0-stable)
+[![Release](https://img.shields.io/badge/Release-v2.1.1--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v2.1.1-beta)
 
 </div>
