@@ -22,9 +22,15 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
@@ -73,6 +79,35 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         private const val CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID =
             "CUSTOM_COMMAND_TOGGLE_FAVORITE"
+    }
+
+    /**
+     * Singleton that owns the ExoPlayer stream cache for the process lifetime.
+     * Using a 256 MB LRU disk cache so that audio streamed over HTTP is served
+     * from disk on backward-seek instead of re-fetching from the network.
+     */
+    @UnstableApi
+    private object StreamCacheManager {
+        private const val MAX_CACHE_BYTES = 256L * 1024 * 1024 // 256 MB
+        @Volatile private var cache: SimpleCache? = null
+
+        fun getCache(context: Context): SimpleCache {
+            return cache ?: synchronized(this) {
+                cache ?: run {
+                    val cacheDir = java.io.File(context.cacheDir, "stream_cache")
+                    val evictor = LeastRecentlyUsedCacheEvictor(MAX_CACHE_BYTES)
+                    val databaseProvider = androidx.media3.database.StandaloneDatabaseProvider(context)
+                    SimpleCache(cacheDir, evictor, databaseProvider).also { cache = it }
+                }
+            }
+        }
+
+        fun release() {
+            synchronized(this) {
+                cache?.release()
+                cache = null
+            }
+        }
     }
 
     private var mediaSession: MediaLibrarySession? = null
@@ -435,7 +470,25 @@ class PlaybackService : MediaLibraryService() {
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
             .setEnableDecoderFallback(true)
 
+        // Build a CacheDataSource.Factory so that streams are cached to disk during
+        // playback and served locally on seek-back, avoiding redundant HTTP requests.
+        // Use DefaultDataSource as the upstream so it correctly handles BOTH local file
+        // paths (file://, /data/...) AND remote HTTP(S) URLs — CacheDataSource will only
+        // delegate to this upstream for cache misses.
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
+            .setAllowCrossProtocolRedirects(true)
+        val upstreamDataSourceFactory = DefaultDataSource.Factory(applicationContext, httpDataSourceFactory)
+        val cacheDataSourceFactory = CacheDataSource.Factory()
+            .setCache(StreamCacheManager.getCache(applicationContext))
+            .setUpstreamDataSourceFactory(upstreamDataSourceFactory)
+            // Cache errors are non-fatal — fall through to the network
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
+
         player = ExoPlayer.Builder(this, renderersFactory)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(audioAttributes, false) // Keep FALSE to allow manual call control
             .setHandleAudioBecomingNoisy(true)
             .build()
@@ -606,6 +659,9 @@ class PlaybackService : MediaLibraryService() {
         } catch (e: Exception) {
             // Ignore if not registered
         }
+
+        // Release the stream cache
+        StreamCacheManager.release()
 
         super.onDestroy()
         Log.d(TAG, "PlaybackService destroyed")
