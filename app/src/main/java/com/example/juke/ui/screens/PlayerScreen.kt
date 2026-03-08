@@ -78,6 +78,7 @@ import com.example.juke.ui.components.player.PlayerProgress
 import com.example.juke.ui.components.player.QueueBottomSheetContent
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
+import com.example.juke.utils.BlacklistManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -140,6 +141,7 @@ fun PlayerScreen(
     var showLyrics by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showArtistSelectionSheet by remember { mutableStateOf(false) }
+    var showBlacklistPicker by remember { mutableStateOf(false) }
     val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
@@ -278,7 +280,9 @@ fun PlayerScreen(
                         },
                         onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
                         showMenuOption = true,
-                        isAlbumAvailable = currentTrack.albumSpotifyId != null
+                        isAlbumAvailable = currentTrack.albumSpotifyId != null,
+                        currentArtist = currentTrack.artist,
+                        onShowBlacklistPicker = { showBlacklistPicker = true }
                     )
 
                     Spacer(modifier = Modifier.height(spacerSm))
@@ -586,6 +590,14 @@ fun PlayerScreen(
             }
         )
     }
+
+    // Blacklist Artist Picker Dialog
+    if (showBlacklistPicker && currentTrack != null) {
+        BlacklistPickerDialog(
+            artistString = currentTrack.artist,
+            onDismiss = { showBlacklistPicker = false }
+        )
+    }
 }
 
 @Composable
@@ -595,8 +607,11 @@ fun PlayerHeader(
     onNavigateToAlbum: () -> Unit,
     onRefreshLyrics: () -> Unit,
     showMenuOption: Boolean,
-    isAlbumAvailable: Boolean
+    isAlbumAvailable: Boolean,
+    currentArtist: String = "",
+    onShowBlacklistPicker: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -656,6 +671,19 @@ fun PlayerHeader(
                             onRefreshLyrics()
                         }
                     )
+                    // Artist Blacklist option
+                    if (currentArtist.isNotBlank()) {
+                        val hasBlacklisted = remember(currentArtist) {
+                            BlacklistManager.containsBlacklistedArtist(context, currentArtist)
+                        }
+                        DropdownMenuItem(
+                            text = { Text(if (hasBlacklisted) "Manage Blocked Artists" else "Block Artist") },
+                            onClick = {
+                                showMenu = false
+                                onShowBlacklistPicker()
+                            }
+                        )
+                    }
                 }
             }
         } else {
@@ -777,6 +805,96 @@ fun SleepTimerDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(if (currentTimerRemaining != null) "Close" else "Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun BlacklistPickerDialog(
+    artistString: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+
+    // Parse individual artist names
+    val artists = remember(artistString) {
+        artistString
+            .replace(" feat. ", ", ")
+            .replace(" ft. ", ", ")
+            .replace(" & ", ", ")
+            .replace(" and ", ", ")
+            .replace(";", ",")
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+
+    // Track blocked state per artist
+    var blockedMap by remember(artistString) {
+        mutableStateOf(
+            artists.associateWith { name ->
+                BlacklistManager.containsBlacklistedArtist(context, name)
+            }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Block Artists") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Blocked artists won't appear in recommendations.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                artists.forEach { name ->
+                    val isBlocked = blockedMap[name] == true
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (isBlocked) {
+                                    BlacklistManager.removeArtist(context, name)
+                                } else {
+                                    BlacklistManager.addArtist(context, name)
+                                }
+                                blockedMap = blockedMap.toMutableMap().apply {
+                                    put(name, !isBlocked)
+                                }
+                            }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        androidx.compose.material3.Switch(
+                            checked = isBlocked,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    BlacklistManager.addArtist(context, name)
+                                } else {
+                                    BlacklistManager.removeArtist(context, name)
+                                }
+                                blockedMap = blockedMap.toMutableMap().apply {
+                                    put(name, checked)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
             }
         }
     )

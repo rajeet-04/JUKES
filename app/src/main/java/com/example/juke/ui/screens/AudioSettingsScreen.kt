@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.HourglassEmpty
@@ -56,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassCard
+import com.example.juke.utils.BlacklistManager
 import com.example.juke.viewmodels.MusicViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -444,6 +447,85 @@ fun AudioSettingsScreen(
                                 showDialog = false
                             }
                         )
+                    }
+                }
+
+                // Blocked Artists Section
+                item {
+                    val context = LocalContext.current
+                    var blacklistedArtists by remember {
+                        mutableStateOf(BlacklistManager.getBlacklistedArtists(context).sorted())
+                    }
+
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Block,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Column {
+                                    Text(
+                                        "Blocked Artists",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        "Songs from these artists won't be recommended",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (blacklistedArtists.isEmpty()) {
+                                Text(
+                                    "No blocked artists",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.4f),
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            } else {
+                                blacklistedArtists.forEach { artist ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = artist.replaceFirstChar { it.uppercase() },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = Color.White,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                BlacklistManager.removeArtist(context, artist)
+                                                blacklistedArtists = BlacklistManager.getBlacklistedArtists(context).sorted()
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Unblock $artist",
+                                                tint = Color.White.copy(alpha = 0.7f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

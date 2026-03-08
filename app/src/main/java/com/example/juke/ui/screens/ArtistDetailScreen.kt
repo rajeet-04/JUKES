@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,7 +34,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +52,7 @@ import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyImage
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.ui.components.SwipeToAddNextContainer
+import com.example.juke.utils.BlacklistManager
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import kotlinx.coroutines.launch
@@ -62,6 +68,7 @@ fun ArtistDetailScreen(
 ) {
     val uiState by searchViewModel.artistDetailState.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     if (uiState.artist == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -80,6 +87,29 @@ fun ArtistDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    val isBlacklisted = remember(artist.name) {
+                        BlacklistManager.containsBlacklistedArtist(context, artist.name)
+                    }
+                    var blacklisted by remember(artist.name) { mutableStateOf(isBlacklisted) }
+                    IconButton(onClick = {
+                        if (blacklisted) {
+                            BlacklistManager.removeArtist(context, artist.name)
+                        } else {
+                            BlacklistManager.addArtist(context, artist.name)
+                        }
+                        blacklisted = !blacklisted
+                    }) {
+                        Icon(
+                            imageVector = if (blacklisted)
+                                Icons.Filled.Block
+                            else
+                                Icons.Outlined.Block,
+                            contentDescription = if (blacklisted) "Unblock Artist" else "Block Artist",
+                            tint = if (blacklisted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             )

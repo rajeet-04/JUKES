@@ -11,6 +11,7 @@ import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
 import com.example.juke.network.isOffline
 import com.example.juke.utils.ArtistUtils
+import com.example.juke.utils.BlacklistManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -317,7 +318,22 @@ class QueueManager private constructor(private val context: Context) {
                         Log.d(TAG, "Using YouTube video ID: $videoId")
 
                         // Fetch full radio queue (index 1 to ~49)
-                        val recommendations = RecommenderApi.fetchFullRadioQueue(videoId)
+                        val rawRecommendations = RecommenderApi.fetchFullRadioQueue(videoId)
+
+                        // ── Artist Blacklist Filter ───────────────────────────
+                        val blacklist = BlacklistManager.getBlacklistedArtists(context)
+                        val recommendations = if (blacklist.isNotEmpty()) {
+                            rawRecommendations.filter { rec ->
+                                val blocked = BlacklistManager.containsBlacklistedArtist(context, rec.artist, blacklist)
+                                        || BlacklistManager.titleContainsBlacklistedArtist(context, rec.title, blacklist)
+                                if (blocked) Log.d(TAG, "\uD83D\uDEAB Blacklist filtered: ${rec.title} by ${rec.artist}")
+                                !blocked
+                            }
+                        } else rawRecommendations
+                        if (blacklist.isNotEmpty()) {
+                            Log.d(TAG, "Blacklist: removed ${rawRecommendations.size - recommendations.size} of ${rawRecommendations.size} recommendations")
+                        }
+                        // ─────────────────────────────────────────────────────
 
                         if (recommendations.isEmpty()) {
                             Log.w(TAG, "No online recommendations found. Falling back to offline.")
@@ -454,13 +470,19 @@ class QueueManager private constructor(private val context: Context) {
 
             data class ScoredTrack(val track: Track, val score: Int)
 
+            // ── Artist Blacklist Filter (offline) ────────────────
+            val blacklist = BlacklistManager.getBlacklistedArtists(context)
+            // ─────────────────────────────────────────────────────
+
             val scored = allDownloaded
                 .filter { entity ->
                     // Exclude current track and tracks already in queue
                     entity.uuid != currentTrack.uuid &&
                     !currentQueueUuids.contains(entity.uuid) &&
                     entity.localUri != null &&
-                    File(entity.localUri).exists()
+                    File(entity.localUri).exists() &&
+                    // Blacklist check
+                    !BlacklistManager.containsBlacklistedArtist(context, entity.artist, blacklist)
                 }
                 .map { entity ->
                     val track = entity.toTrack()
@@ -516,7 +538,9 @@ class QueueManager private constructor(private val context: Context) {
                 // Last resort: favourites first, then most played
                 Log.d(TAG, "Offline fallback: no scored candidates, using favourites/most-played")
                 allDownloaded
-                    .filter { it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && it.localUri != null }
+                    .filter { it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && it.localUri != null
+                        && !BlacklistManager.containsBlacklistedArtist(context, it.artist, blacklist)
+                    }
                     .map { it.toTrack() }
                     .sortedWith(compareByDescending<Track> { it.isFavourite }.thenByDescending { it.playCount })
                     .take(targetCount)
