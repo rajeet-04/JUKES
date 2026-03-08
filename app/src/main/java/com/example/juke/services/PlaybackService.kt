@@ -546,9 +546,11 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        var requireForeground = startInForegroundRequired
+        
         // On Android 12+ (API 31), starting a foreground service from the background is restricted
         // and throws ForegroundServiceStartNotAllowedException.
-        if (startInForegroundRequired && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (requireForeground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 // Check if the app is effectively in the background
                 val currentState =
@@ -559,14 +561,14 @@ class PlaybackService : MediaLibraryService() {
                 if (!isAppInForeground) {
                     Log.w(
                         TAG,
-                        "App is in background, skipping notification update to avoid ForegroundServiceStartNotAllowedException"
+                        "App is in background, setting startInForegroundRequired to false to avoid ForegroundServiceStartNotAllowedException"
                     )
-                    // CRITICAL: Do NOT call super.onUpdateNotification. 
-                    // Media3's default implementation will try to start the service in foreground even if we pass false,
-                    // or it uses startForegroundService which crashes.
-                    // By returning here, we suppress the crash at the cost of not updating the notification 
-                    // until the app is foregrounded again.
-                    return
+                    // CRITICAL: Do NOT return here. 
+                    // By setting requireForeground to false, Media3's default implementation
+                    // will simply update the notification using NotificationManager.notify()
+                    // instead of trying to promote the service to foreground, avoiding crashes
+                    // while still updating the UI appropriately!
+                    requireForeground = false
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to check app lifecycle state: ${e.message}")
@@ -574,7 +576,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         try {
-            super.onUpdateNotification(session, startInForegroundRequired)
+            super.onUpdateNotification(session, requireForeground)
         } catch (e: Exception) {
             // Catch synchronous failures as a fallback
             Log.w(TAG, "Failed to update notification/start foreground: ${e.message}")
@@ -1528,6 +1530,30 @@ class PlaybackManager private constructor(private val context: Context) {
         // Do NOT set ExoPlayer's shuffleModeEnabled — the app uses pre-shuffled track lists.
         // Enabling ExoPlayer's shuffle causes it to reorder items internally, which can
         // place the current track at the last shuffle position and block COMMAND_SEEK_TO_NEXT.
+        
+        controller?.let { ctrl ->
+            if (newState) {
+                val totalItems = ctrl.mediaItemCount
+                val currentIndex = ctrl.currentMediaItemIndex
+                if (currentIndex in 0 until totalItems - 1) {
+                    val remainingItems = mutableListOf<androidx.media3.common.MediaItem>()
+                    for (i in currentIndex + 1 until totalItems) {
+                        remainingItems.add(ctrl.getMediaItemAt(i))
+                    }
+                    remainingItems.shuffle()
+                    
+                    for (i in totalItems - 1 downTo currentIndex + 1) {
+                        ctrl.removeMediaItem(i)
+                    }
+                    ctrl.addMediaItems(currentIndex + 1, remainingItems)
+                    
+                    scope.launch {
+                        saveQueueStructure()
+                    }
+                }
+            }
+        }
+        
         Log.d(TAG, "Shuffle toggled: $newState")
     }
 
