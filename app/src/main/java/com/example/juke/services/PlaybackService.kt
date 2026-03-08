@@ -1,5 +1,6 @@
 package com.example.juke.services
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -83,6 +84,7 @@ class PlaybackService : MediaLibraryService() {
 
     // For Stream Mode cleanup and progress tracking
     private var previousTrackId: String? = null
+
     // Track which songs have reached 50% during this playback session
     private val tracksPlayCountedThisSession = mutableSetOf<String>()
     private var currentPlayingTrackId: String? = null
@@ -547,7 +549,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         var requireForeground = startInForegroundRequired
-        
+
         // On Android 12+ (API 31), starting a foreground service from the background is restricted
         // and throws ForegroundServiceStartNotAllowedException.
         if (requireForeground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -896,6 +898,7 @@ class PlaybackService : MediaLibraryService() {
 class PlaybackManager private constructor(private val context: Context) {
 
     companion object {
+        @SuppressLint("StaticFieldLeak")
         @field:Volatile
         private var INSTANCE: PlaybackManager? = null
 
@@ -952,7 +955,8 @@ class PlaybackManager private constructor(private val context: Context) {
     // Shared bus for favourite toggle events (uuid to newIsFavourite).
     // Both PlaybackService (notification) and MusicViewModel (player UI) emit here,
     // and both collect here, so they stay in sync without polling the DB.
-    private val _favouriteChanged = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
+    private val _favouriteChanged =
+        MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
     val favouriteChangedFlow: SharedFlow<Pair<String, Boolean>> = _favouriteChanged.asSharedFlow()
 
     fun emitFavouriteChanged(uuid: String, isFavourite: Boolean) {
@@ -1081,15 +1085,22 @@ class PlaybackManager private constructor(private val context: Context) {
                                     (causeMessage.contains("403") || errorMessage.contains("403"))
                                 ) {
                                     val trackId = controller?.currentMediaItem?.mediaId ?: return
-                                    Log.w(TAG, "Stream URL expired (403) for track $trackId, refreshing...")
+                                    Log.w(
+                                        TAG,
+                                        "Stream URL expired (403) for track $trackId, refreshing..."
+                                    )
 
                                     scope.launch {
                                         try {
-                                            val trackEntity = database.trackDao().getTrackByUuid(trackId)
+                                            val trackEntity =
+                                                database.trackDao().getTrackByUuid(trackId)
                                             val track = trackEntity?.toTrack()
 
                                             if (track == null) {
-                                                Log.w(TAG, "Cannot handle 403: track $trackId not found in DB — skipping")
+                                                Log.w(
+                                                    TAG,
+                                                    "Cannot handle 403: track $trackId not found in DB — skipping"
+                                                )
                                                 withContext(Dispatchers.Main) {
                                                     controller?.let { ctrl ->
                                                         if (ctrl.hasNextMediaItem()) {
@@ -1108,19 +1119,29 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 // downloaded but it 403'd (file missing or remote URL
                                                 // expired). Re-fetch from Spotify if online, else skip.
                                                 // ──────────────────────────────────────────────────────────
-                                                Log.w(TAG, "Non-stream track '${track.title}' got 403 (file missing?). " +
-                                                        "spotifyId=${track.spotifyId}")
+                                                Log.w(
+                                                    TAG,
+                                                    "Non-stream track '${track.title}' got 403 (file missing?). " +
+                                                            "spotifyId=${track.spotifyId}"
+                                                )
 
                                                 val isOffline = run {
-                                                    val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
-                                                        as android.net.ConnectivityManager
+                                                    val cm =
+                                                        context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                                                                as android.net.ConnectivityManager
                                                     val network = cm.activeNetwork
-                                                    val caps = if (network != null) cm.getNetworkCapabilities(network) else null
+                                                    val caps =
+                                                        if (network != null) cm.getNetworkCapabilities(
+                                                            network
+                                                        ) else null
                                                     caps == null || !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
                                                 }
                                                 if (isOffline) {
                                                     // Offline — can't re-download, skip gracefully
-                                                    Log.w(TAG, "Device offline — skipping '${track.title}'")
+                                                    Log.w(
+                                                        TAG,
+                                                        "Device offline — skipping '${track.title}'"
+                                                    )
                                                     withContext(Dispatchers.Main) {
                                                         controller?.let { ctrl ->
                                                             if (ctrl.hasNextMediaItem()) {
@@ -1134,7 +1155,10 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 }
 
                                                 if (track.spotifyId == null) {
-                                                    Log.w(TAG, "No spotifyId for '${track.title}' — skipping")
+                                                    Log.w(
+                                                        TAG,
+                                                        "No spotifyId for '${track.title}' — skipping"
+                                                    )
                                                     withContext(Dispatchers.Main) {
                                                         controller?.let { ctrl ->
                                                             if (ctrl.hasNextMediaItem()) {
@@ -1148,20 +1172,33 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 }
 
                                                 try {
-                                                    Log.d(TAG, "Re-downloading '${track.title}' (spotifyId=${track.spotifyId})")
+                                                    Log.d(
+                                                        TAG,
+                                                        "Re-downloading '${track.title}' (spotifyId=${track.spotifyId})"
+                                                    )
                                                     val song = SpotifyApi.spotifyTrackToSong(
                                                         SpotifyApi.getTrack(track.spotifyId)
                                                     )
-                                                    val redownloadedTrack = musicService.smartDownloadAndIndex(song)
-                                                    Log.d(TAG, "Re-downloaded '${track.title}' successfully")
+                                                    val redownloadedTrack =
+                                                        musicService.smartDownloadAndIndex(song)
+                                                    Log.d(
+                                                        TAG,
+                                                        "Re-downloaded '${track.title}' successfully"
+                                                    )
 
                                                     withContext(Dispatchers.Main) {
-                                                        replaceTrackInQueue(track.uuid, redownloadedTrack)
+                                                        replaceTrackInQueue(
+                                                            track.uuid,
+                                                            redownloadedTrack
+                                                        )
                                                         controller?.prepare()
                                                         controller?.play()
                                                     }
                                                 } catch (downloadEx: Exception) {
-                                                    Log.e(TAG, "Re-download failed for '${track.title}': ${downloadEx.message}")
+                                                    Log.e(
+                                                        TAG,
+                                                        "Re-download failed for '${track.title}': ${downloadEx.message}"
+                                                    )
                                                     withContext(Dispatchers.Main) {
                                                         controller?.let { ctrl ->
                                                             if (ctrl.hasNextMediaItem()) {
@@ -1180,7 +1217,10 @@ class PlaybackManager private constructor(private val context: Context) {
                                             // promote to a local download if it belongs to a playlist.
                                             // ──────────────────────────────────────────────────────────
                                             if (track.spotifyId == null) {
-                                                Log.w(TAG, "Cannot refresh stream: missing spotifyId for '${track.title}' — skipping")
+                                                Log.w(
+                                                    TAG,
+                                                    "Cannot refresh stream: missing spotifyId for '${track.title}' — skipping"
+                                                )
                                                 withContext(Dispatchers.Main) {
                                                     controller?.let { ctrl ->
                                                         if (ctrl.hasNextMediaItem()) {
@@ -1193,12 +1233,15 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 return@launch
                                             }
 
-                                            val spotifyUrl = "https://open.spotify.com/track/${track.spotifyId}"
-                                            val freshUrl = SpotifyApi.getSpotmateStreamUrl(spotifyUrl)
+                                            val spotifyUrl =
+                                                "https://open.spotify.com/track/${track.spotifyId}"
+                                            val freshUrl =
+                                                SpotifyApi.getSpotmateStreamUrl(spotifyUrl)
                                             Log.d(TAG, "Got fresh stream URL for ${track.title}")
 
                                             // Persist the refreshed URL
-                                            database.trackDao().updateTrackStreamUrl(track.uuid, freshUrl)
+                                            database.trackDao()
+                                                .updateTrackStreamUrl(track.uuid, freshUrl)
                                             val refreshedTrack = track.copy(localUri = freshUrl)
 
                                             // Swap the media item in the queue and resume (must be on main thread)
@@ -1210,23 +1253,43 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                             // If this track belongs to a playlist, promote it to a
                                             // local download in the background so it's offline-ready
-                                            val playlists = database.playlistDao().getPlaylistsForTrack(track.uuid)
+                                            val playlists = database.playlistDao()
+                                                .getPlaylistsForTrack(track.uuid)
                                             if (playlists.isNotEmpty()) {
-                                                Log.d(TAG, "Track is in ${playlists.size} playlist(s) — scheduling background download")
+                                                Log.d(
+                                                    TAG,
+                                                    "Track is in ${playlists.size} playlist(s) — scheduling background download"
+                                                )
                                                 scope.launch {
                                                     try {
-                                                        val downloadedTrack = musicService.promoteStreamToDownload(refreshedTrack)
+                                                        val downloadedTrack =
+                                                            musicService.promoteStreamToDownload(
+                                                                refreshedTrack
+                                                            )
                                                         withContext(Dispatchers.Main) {
-                                                            replaceTrackInQueue(track.uuid, downloadedTrack)
+                                                            replaceTrackInQueue(
+                                                                track.uuid,
+                                                                downloadedTrack
+                                                            )
                                                         }
-                                                        Log.d(TAG, "Promoted stream to download: ${downloadedTrack.title}")
+                                                        Log.d(
+                                                            TAG,
+                                                            "Promoted stream to download: ${downloadedTrack.title}"
+                                                        )
                                                     } catch (e: Exception) {
-                                                        Log.e(TAG, "Background download after stream refresh failed: ${e.message}")
+                                                        Log.e(
+                                                            TAG,
+                                                            "Background download after stream refresh failed: ${e.message}"
+                                                        )
                                                     }
                                                 }
                                             }
                                         } catch (e: Exception) {
-                                            Log.e(TAG, "Failed to handle 403 for track $trackId: ${e.message}", e)
+                                            Log.e(
+                                                TAG,
+                                                "Failed to handle 403 for track $trackId: ${e.message}",
+                                                e
+                                            )
                                             // Fall back to skipping to the next track
                                             withContext(Dispatchers.Main) {
                                                 controller?.let { ctrl ->
@@ -1530,30 +1593,30 @@ class PlaybackManager private constructor(private val context: Context) {
         // Do NOT set ExoPlayer's shuffleModeEnabled — the app uses pre-shuffled track lists.
         // Enabling ExoPlayer's shuffle causes it to reorder items internally, which can
         // place the current track at the last shuffle position and block COMMAND_SEEK_TO_NEXT.
-        
+
         controller?.let { ctrl ->
             if (newState) {
                 val totalItems = ctrl.mediaItemCount
                 val currentIndex = ctrl.currentMediaItemIndex
                 if (currentIndex in 0 until totalItems - 1) {
-                    val remainingItems = mutableListOf<androidx.media3.common.MediaItem>()
+                    val remainingItems = mutableListOf<MediaItem>()
                     for (i in currentIndex + 1 until totalItems) {
                         remainingItems.add(ctrl.getMediaItemAt(i))
                     }
                     remainingItems.shuffle()
-                    
+
                     for (i in totalItems - 1 downTo currentIndex + 1) {
                         ctrl.removeMediaItem(i)
                     }
                     ctrl.addMediaItems(currentIndex + 1, remainingItems)
-                    
+
                     scope.launch {
                         saveQueueStructure()
                     }
                 }
             }
         }
-        
+
         Log.d(TAG, "Shuffle toggled: $newState")
     }
 
