@@ -547,30 +547,28 @@ class PlaybackService : MediaLibraryService() {
         super.onTaskRemoved(rootIntent)
     }
 
+    @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
-        var requireForeground = startInForegroundRequired
-
-        // On Android 12+ (API 31), starting a foreground service from the background is restricted
-        // and throws ForegroundServiceStartNotAllowedException.
-        if (requireForeground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        // On Android 12+ (API 31), starting a foreground service from the background is
+        // restricted and throws ForegroundServiceStartNotAllowedException.
+        //
+        // Media3's default onUpdateNotification() → MediaNotificationManager.startForeground()
+        // calls BOTH ContextCompat.startForegroundService() AND Service.startForeground() —
+        // even when startInForegroundRequired=false. Both are fatal when in the background.
+        //
+        // Strategy: return early (skip super) when app is in background.
+        // The existing notification remains visible; it will be refreshed when the user
+        // brings the app back to the foreground and normal playback resumes.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && startInForegroundRequired) {
             try {
-                // Check if the app is effectively in the background
                 val currentState =
                     androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
                 val isAppInForeground =
                     currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
 
                 if (!isAppInForeground) {
-                    Log.w(
-                        TAG,
-                        "App is in background, setting startInForegroundRequired to false to avoid ForegroundServiceStartNotAllowedException"
-                    )
-                    // CRITICAL: Do NOT return here. 
-                    // By setting requireForeground to false, Media3's default implementation
-                    // will simply update the notification using NotificationManager.notify()
-                    // instead of trying to promote the service to foreground, avoiding crashes
-                    // while still updating the UI appropriately!
-                    requireForeground = false
+                    Log.w(TAG, "App is in background — skipping onUpdateNotification to prevent ForegroundServiceStartNotAllowedException")
+                    return
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to check app lifecycle state: ${e.message}")
@@ -578,10 +576,15 @@ class PlaybackService : MediaLibraryService() {
         }
 
         try {
-            super.onUpdateNotification(session, requireForeground)
+            super.onUpdateNotification(session, startInForegroundRequired)
         } catch (e: Exception) {
-            // Catch synchronous failures as a fallback
-            Log.w(TAG, "Failed to update notification/start foreground: ${e.message}")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e is android.app.ForegroundServiceStartNotAllowedException
+            ) {
+                Log.w(TAG, "Caught ForegroundServiceStartNotAllowedException in onUpdateNotification — suppressing")
+            } else {
+                Log.w(TAG, "Failed to update notification: ${e.message}")
+            }
         }
     }
 
@@ -606,6 +609,39 @@ class PlaybackService : MediaLibraryService() {
 
         super.onDestroy()
         Log.d(TAG, "PlaybackService destroyed")
+    }
+
+    override fun startForegroundService(service: Intent?): android.content.ComponentName? {
+        return try {
+            super.startForegroundService(service)
+        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e is android.app.ForegroundServiceStartNotAllowedException
+            ) {
+                Log.e(TAG, "Caught ForegroundServiceStartNotAllowedException in startForegroundService", e)
+                null
+            } else {
+                throw e
+            }
+        }
+    }
+
+    override fun startService(service: Intent?): android.content.ComponentName? {
+        return try {
+            super.startService(service)
+        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e is android.app.ForegroundServiceStartNotAllowedException
+            ) {
+                Log.e(TAG, "Caught ForegroundServiceStartNotAllowedException in startService", e)
+                null
+            } else if (e is IllegalStateException && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Log.e(TAG, "Caught IllegalStateException in startService (background app)", e)
+                null
+            } else {
+                throw e
+            }
+        }
     }
 
     /**
