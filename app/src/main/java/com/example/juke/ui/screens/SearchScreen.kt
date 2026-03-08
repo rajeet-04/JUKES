@@ -470,7 +470,7 @@ private fun SearchResultsList(
         // ── In Your Library ──────────────────────────────────────────────
         if ((selectedFilter == "All" || selectedFilter == "Tracks") && uiState.localTracks.isNotEmpty()) {
             item { SectionHeader("In Your Library") }
-            items(uiState.localTracks, key = { it.uuid }) { track ->
+            items(uiState.localTracks.distinctBy { it.uuid }, key = { it.uuid }) { track ->
                 SwipeToAddNextContainer(
                     onAddNext = {
                         musicViewModel.addNext(track)
@@ -489,7 +489,7 @@ private fun SearchResultsList(
         // ── Songs ────────────────────────────────────────────────────────
         if ((selectedFilter == "All" || selectedFilter == "Tracks") && uiState.tracks.isNotEmpty()) {
             item { SectionHeader("Songs") }
-            items(uiState.tracks, key = { it.id ?: it.uri }) { track ->
+            items(uiState.tracks.distinctBy { it.id ?: it.uri }, key = { it.id ?: it.uri }) { track ->
                 SwipeToAddNextContainer(
                     onAddNext = {
                         scope.launch {
@@ -527,7 +527,7 @@ private fun SearchResultsList(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(uiState.artists, key = { it.id ?: it.uri ?: it.name }) { artist ->
+                    items(uiState.artists.distinctBy { it.id ?: it.uri ?: it.name }, key = { it.id ?: it.uri ?: it.name }) { artist ->
                         ArtistCard(artist = artist, onClick = { onNavigateToArtist(artist) })
                     }
                 }
@@ -543,7 +543,7 @@ private fun SearchResultsList(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    items(uiState.playlists, key = { it.id }) { playlist ->
+                    items(uiState.playlists.distinctBy { it.id }, key = { it.id }) { playlist ->
                         PlaylistCard(
                             playlist = playlist,
                             onClick = { onNavigateToPlaylist(playlist) }
@@ -562,7 +562,7 @@ private fun SearchResultsList(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    items(uiState.albums, key = { it.id ?: it.uri ?: it.name }) { album ->
+                    items(uiState.albums.distinctBy { it.id ?: it.uri ?: it.name }, key = { it.id ?: it.uri ?: it.name }) { album ->
                         AlbumCard(album = album, onClick = { onNavigateToAlbum(album) })
                     }
                 }
