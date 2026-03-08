@@ -1689,6 +1689,40 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     /**
+     * Clears all tracks from the queue except the currently playing one,
+     * without interrupting playback.
+     */
+    fun keepOnlyCurrentTrack() {
+        controller?.let { ctrl ->
+            val currentIndex = ctrl.currentMediaItemIndex
+            val totalItems = ctrl.mediaItemCount
+            
+            if (totalItems <= 1 || currentIndex < 0) return
+            
+            // Remove items after current track
+            for (i in totalItems - 1 downTo currentIndex + 1) {
+                ctrl.removeMediaItem(i)
+            }
+            
+            // Remove items before current track
+            for (i in currentIndex - 1 downTo 0) {
+                ctrl.removeMediaItem(i)
+            }
+            
+            Log.d(TAG, "Kept only current track at original index $currentIndex")
+
+            // Update local state flows to reflect the new state immediately
+            if (_currentQueueIndex.value != 0) {
+                _currentQueueIndex.value = 0
+            }
+            
+            scope.launch {
+                saveQueueStructure()
+            }
+        }
+    }
+
+    /**
      * Correctly calculates remaining tracks in the current playback functionality.
      * Returns how many tracks remain after the current one in the queue.
      * ExoPlayer's native shuffle is always disabled (pre-shuffled lists are used instead),

@@ -439,10 +439,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             Log.d("MusicViewModel", "Starting radio for: ${current.title}")
 
-            // 1. Reset PlaybackManager queue to just this song
-            // We use the current position to avoid restarting the song
-            val currentPos = playbackManager.getCurrentPosition()
-            playbackManager.setQueue(listOf(current), 0, currentPos)
+            // 1. Remove all other tracks from playback queue to avoid interrupting current song
+            playbackManager.keepOnlyCurrentTrack()
 
             // 2. Clear QueueManager and re-initialize with just this song
             // This triggers the recommendation fetch

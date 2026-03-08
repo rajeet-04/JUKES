@@ -44,6 +44,7 @@ data class DownloadInfo(
  * 4. Automatic downloads when queue is low (<=2 songs)
  * 5. Background processing and caching
  */
+
 class QueueManager private constructor(private val context: Context) {
 
     companion object {
@@ -793,7 +794,7 @@ class QueueManager private constructor(private val context: Context) {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error emergency preparing ${track.title}: ${e.message}", e)
                     }
-                } else if (isStreamMode && !track.isStream && track.localUri != null && !File(track.localUri).exists()) {
+                } else if (isStreamMode && !track.isStream && !File(track.localUri).exists()) {
                     // Case: DB says downloaded, but file missing. If stream mode, try to switch to stream?
                     // Or just redownload?
                     // For now, let's just log missing file. logic below handles missing file check.
@@ -821,7 +822,7 @@ class QueueManager private constructor(private val context: Context) {
         if (now - lastPreFetchTime < 5000) return // Throttle checks
 
         val timeRemaining = durationMs - positionMs
-        if (timeRemaining > 0 && timeRemaining < 15000) { // 15 seconds
+        if (timeRemaining in 1..<15000) { // 15 seconds
             lastPreFetchTime = now
             Log.d(TAG, "Pre-fetch triggered (Time remaining: ${timeRemaining}ms)")
             ensureNext2Ready()
