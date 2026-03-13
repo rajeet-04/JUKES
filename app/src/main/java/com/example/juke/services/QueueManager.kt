@@ -552,6 +552,11 @@ class QueueManager private constructor(private val context: Context) {
                                 context,
                                 entity.artist,
                                 blacklist
+                            ) &&
+                            !BlacklistManager.titleContainsBlacklistedArtist(
+                                context,
+                                entity.title,
+                                blacklist
                             )
                 }
                 .map { entity ->
@@ -614,7 +619,7 @@ class QueueManager private constructor(private val context: Context) {
                 Log.d(TAG, "Offline fallback: no scored candidates, using favourites/most-played")
                 allDownloaded
                     .filter {
-                        it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && it.localUri != null
+                        it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && isLocalFilePlayable(it.localUri)
                                 && !BlacklistManager.containsBlacklistedArtist(
                             context,
                             it.artist,
@@ -639,6 +644,20 @@ class QueueManager private constructor(private val context: Context) {
 
         } catch (e: Exception) {
             Log.e(TAG, "Error in offline fallback: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Returns true if a localUri points to a file that exists, is readable, and has content.
+     */
+    private fun isLocalFilePlayable(uri: String?): Boolean {
+        if (uri == null) return false
+        return try {
+            val file = File(uri)
+            file.exists() && file.canRead() && file.length() > 0
+        } catch (e: Exception) {
+            Log.e(TAG, "isLocalFilePlayable failed for uri=$uri", e)
+            false
         }
     }
 

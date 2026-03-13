@@ -2,6 +2,19 @@
 
 ## Changelog
 
+## [2.1.1-beta] - 2026-03-03
+
+### Fixed
+
+- Swipe-to-Add-Next firing multiple times per gesture
+- Player pausing/freezing on 403 HTTP error
+
+### See full release notes
+
+[v2.1.1-beta-RELEASE_NOTES.md](v2.1.1-beta-RELEASE_NOTES.md)
+
+---
+
 ## [2.1.0-beta] - 2026-03-02
 
 ### Added

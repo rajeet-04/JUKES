@@ -47,12 +47,12 @@ fun LyricsOverlay(
     currentPosition: Long,
     musicViewModel: MusicViewModel,
     isTablet: Boolean,
-    isLandscape: Boolean,
     onDismiss: () -> Unit
 ) {
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val syncedLyrics = currentTrack.syncedLyrics
+    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
 
     // Calculate padding to center active line in the image
     val verticalPadding = if (isTablet && isLandscape) {
@@ -140,6 +140,7 @@ fun LyricsOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(12.dp),
             contentAlignment = Alignment.TopEnd
         ) {

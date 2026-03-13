@@ -65,9 +65,8 @@ object BlacklistManager {
     /**
      * Returns `true` if *any* of the given [artists] appears in the blacklist.
      *
-     * Each artist name is parsed from the comma / "and" / "feat." separated
-     * string and compared against every blacklisted entry using substring
-     * matching (aggressive).
+     * Performs a case-insensitive substring check on the full [artists] string —
+     * no splitting or parsing is done.
      */
     fun containsBlacklistedArtist(
         context: Context,

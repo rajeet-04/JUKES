@@ -248,7 +248,6 @@ fun PlayerScreen(
                 val isCompact = screenH < 640.dp
                 val spacerSm = if (isCompact) 8.dp else if (screenH < 800.dp) 16.dp else 24.dp
                 val spacerMd = if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
-                if (isCompact) 16.dp else if (screenH < 800.dp) 32.dp else 48.dp
                 val actionIconSize = if (isCompact) 18.dp else 24.dp
                 val actionBtnSize = if (isCompact) 36.dp else 48.dp
                 val ctrlPlaySize = if (isCompact) 60.dp else if (isTablet) 88.dp else 72.dp
@@ -673,7 +672,7 @@ fun PlayerHeader(
                     )
                     // Artist Blacklist option
                     if (currentArtist.isNotBlank()) {
-                        val hasBlacklisted = remember(currentArtist) {
+                        val hasBlacklisted = remember(currentArtist, showMenu) {
                             BlacklistManager.containsBlacklistedArtist(context, currentArtist)
                         }
                         DropdownMenuItem(
@@ -856,16 +855,6 @@ fun BlacklistPickerDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                if (isBlocked) {
-                                    BlacklistManager.removeArtist(context, name)
-                                } else {
-                                    BlacklistManager.addArtist(context, name)
-                                }
-                                blockedMap = blockedMap.toMutableMap().apply {
-                                    put(name, !isBlocked)
-                                }
-                            }
                             .padding(vertical = 10.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically

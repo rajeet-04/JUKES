@@ -83,7 +83,6 @@ fun PlayerArtwork(
                     currentPosition = currentPosition,
                     musicViewModel = musicViewModel,
                     isTablet = isTablet,
-                    isLandscape = false,
                     onDismiss = onToggleLyrics
                 )
             } else {

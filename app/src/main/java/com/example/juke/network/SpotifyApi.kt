@@ -73,24 +73,43 @@ object SpotifyApi {
     
     // Dynamic Spotdown API key, fetched from Cloudflare KV Worker
     private var spotdownApiKey: String? = null
-    
+    private var spotdownApiKeyExpiry: Long = 0L
+    private val spotdownMutex = Mutex()
+
     // Deployed worker URL from BuildConfig
     private val SPOTDOWN_WORKER_URL = BuildConfig.SPOTDOWN_WORKER_URL
-    
+
+    suspend fun clearSpotdownApiKey() {
+        spotdownMutex.withLock {
+            spotdownApiKey = null
+            spotdownApiKeyExpiry = 0L
+        }
+    }
+
     private suspend fun getSpotdownApiKey(): String {
-        return spotdownApiKey ?: try {
-            val response: HttpResponse = ApiClient.httpClient.get(SPOTDOWN_WORKER_URL)
-            // Assuming the worker returns { "value": "the-api-key" } based on the example
-            @kotlinx.serialization.Serializable
-            data class WorkerResponse(val value: String?)
-            
-            val workerResponse: WorkerResponse = json.decodeFromString(response.bodyAsText())
-            val key = workerResponse.value ?: throw Exception("API key missing from response")
-            spotdownApiKey = key
-            key
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching Spotdown API Key from worker: ${e.message}", e)
-            throw Exception("Failed to get Spotdown API Key")
+        if (SPOTDOWN_WORKER_URL.isBlank()) {
+            throw IllegalStateException("SPOTDOWN_WORKER_URL is not configured. Check local.properties and build config.")
+        }
+        val now = System.currentTimeMillis()
+        spotdownApiKey?.takeIf { spotdownApiKeyExpiry > now }?.let { return it }
+        return spotdownMutex.withLock {
+            val cached = spotdownApiKey?.takeIf { spotdownApiKeyExpiry > now }
+            if (cached != null) return@withLock cached
+            try {
+                val response: HttpResponse = ApiClient.httpClient.get(SPOTDOWN_WORKER_URL)
+                // Assuming the worker returns { "value": "the-api-key" } based on the example
+                @kotlinx.serialization.Serializable
+                data class WorkerResponse(val value: String?)
+
+                val workerResponse: WorkerResponse = json.decodeFromString(response.bodyAsText())
+                val key = workerResponse.value ?: throw Exception("API key missing from response")
+                spotdownApiKey = key
+                spotdownApiKeyExpiry = System.currentTimeMillis() + 3_600_000L // 1 hour TTL
+                key
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching Spotdown API Key from worker: ${e.message}", e)
+                throw Exception("Failed to get Spotdown API Key", e)
+            }
         }
     }
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"

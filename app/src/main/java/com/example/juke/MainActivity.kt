@@ -241,7 +241,7 @@ class MainActivity : ComponentActivity() {
 
                                 if (isEmergency) {
                                     Text(
-                                        text = "This update contains critical bug fixes (e.g., song download fix). Please update immediately to continue using the app smoothly.",
+                                        text = "This update contains critical bug fixes. Please update immediately to continue using the app smoothly.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.error,
                                         modifier = Modifier
@@ -285,9 +285,14 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {
                             Button(
                                 onClick = {
-                                    uriHandler.openUri(release.htmlUrl)
-                                    if (!isEmergency) {
+                                    try {
+                                        uriHandler.openUri(release.htmlUrl)
                                         updateAvailable = null
+                                        if (isEmergency) {
+                                            (context as? android.app.Activity)?.finishAffinity()
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("MainActivity", "Failed to open update URL", e)
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(

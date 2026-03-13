@@ -692,7 +692,7 @@ private fun LocalTrackItem(
                 .clickable(onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Primary-coloured left accent bar
+            // Primary-colored left accent bar
             if (showAccentBar) {
                 Box(
                     modifier = Modifier

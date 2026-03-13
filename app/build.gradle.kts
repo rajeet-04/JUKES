@@ -39,10 +39,11 @@ android {
             "SPOTIFY_CLIENT_SECRET",
             "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
         )
+        val spotdownWorkerUrl = properties.getProperty("SPOTDOWN_WORKER_URL", "")
         buildConfigField(
             "String",
             "SPOTDOWN_WORKER_URL",
-            "\"${properties.getProperty("SPOTDOWN_WORKER_URL", "")}\""
+            "\"$spotdownWorkerUrl\""
         )
     }
 
@@ -108,7 +109,6 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.compose.foundation.layout)
-    implementation(libs.androidx.material3)
     ksp(libs.androidx.room.compiler)
 
     // Media3
