@@ -91,7 +91,7 @@ data class LyricLine(
 )
 
 // Helper moved to top level or util file, keeping here for now to avoid breaking changes if used elsewhere
-fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
+fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine> {
     val lines = mutableListOf<LyricLine>()
     val regex = """\[(\d{2}):(\d{2})\.(\d{1,3})]\s*(.*)""".toRegex()
 
@@ -113,8 +113,9 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
             }
 
             val timeMs = (minutes * 60 * 1000) + (seconds * 1000) + millisFromFrac
+            val adjustedTimeMs = (timeMs + offsetMs).coerceAtLeast(0L)
             if (text.isNotBlank()) {
-                lines.add(LyricLine(timeMs, text))
+                lines.add(LyricLine(adjustedTimeMs, text))
             }
         }
     }

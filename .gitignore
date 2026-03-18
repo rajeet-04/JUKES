@@ -21,3 +21,5 @@ app/release/
 LINKEDIN_*.md
 ANALYTICS*.md
 spotdown-kv-worker/wrangler.json
+
+diff.txt

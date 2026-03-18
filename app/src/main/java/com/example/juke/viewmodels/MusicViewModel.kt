@@ -107,6 +107,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val pendingQueueOperations =
         java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
+    fun saveLyricsOffset(track: Track, offsetMs: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            trackDao.updateLyricsOffset(track.uuid, offsetMs)
+
+            _uiState.update { state ->
+                val updatedCurrentTrack = if (state.currentTrack?.uuid == track.uuid) {
+                    state.currentTrack.copy(lyricsOffsetMs = offsetMs)
+                } else {
+                    state.currentTrack
+                }
+
+                val updatedQueue = state.queue.map { queuedTrack ->
+                    if (queuedTrack.uuid == track.uuid) {
+                        queuedTrack.copy(lyricsOffsetMs = offsetMs)
+                    } else {
+                        queuedTrack
+                    }
+                }
+
+                state.copy(
+                    currentTrack = updatedCurrentTrack,
+                    queue = updatedQueue
+                )
+            }
+        }
+    }
+
     init {
         playbackManager.initialize()
 

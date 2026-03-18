@@ -23,7 +23,8 @@ data class Track(
     val spotifyId: String? = null,
     val albumSpotifyId: String? = null,
     val artistSpotifyIds: List<String>? = null,
-    val isStream: Boolean = false
+    val isStream: Boolean = false,
+    val lyricsOffsetMs: Long = 0L
 )
 
 /**

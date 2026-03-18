@@ -150,6 +150,16 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/**
+ * Migration from version 7 to 8
+ * Adds lyrics_offset_ms column to tracks table
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN lyrics_offset_ms INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 class Converters {
     @TypeConverter
     fun fromStringList(value: List<String>?): String? {
@@ -167,7 +177,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -192,7 +202,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
                     )
                     .fallbackToDestructiveMigration()
                     .build()
@@ -258,7 +269,10 @@ data class TrackEntity(
     val artistSpotifyIds: List<String>? = null,
 
     @ColumnInfo(name = "is_stream", defaultValue = "0")
-    val isStream: Boolean = false
+    val isStream: Boolean = false,
+
+    @ColumnInfo(name = "lyrics_offset_ms", defaultValue = "0")
+    val lyricsOffsetMs: Long = 0L
 )
 
 /**
@@ -282,7 +296,8 @@ fun TrackEntity.toTrack(): Track {
         spotifyId = spotifyId,
         albumSpotifyId = albumSpotifyId,
         artistSpotifyIds = artistSpotifyIds,
-        isStream = isStream
+        isStream = isStream,
+        lyricsOffsetMs = lyricsOffsetMs
     )
 }
 
@@ -307,7 +322,8 @@ fun Track.toEntity(): TrackEntity {
         spotifyId = spotifyId,
         albumSpotifyId = albumSpotifyId,
         artistSpotifyIds = artistSpotifyIds,
-        isStream = isStream
+        isStream = isStream,
+        lyricsOffsetMs = lyricsOffsetMs
     )
 }
 
@@ -327,7 +343,7 @@ interface TrackDao {
     suspend fun getAllTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks ORDER BY last_played_at DESC")
     fun getAllTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
@@ -340,15 +356,18 @@ interface TrackDao {
     suspend fun getFavourites(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     fun getFavouritesFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
     suspend fun getDownloadedTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
     fun getDownloadedTracksFlow(): Flow<List<TrackEntity>>
+
+    @Query("UPDATE tracks SET lyrics_offset_ms = :offsetMs WHERE uuid = :uuid")
+    suspend fun updateLyricsOffset(uuid: String, offsetMs: Long)
 
     @Query("UPDATE tracks SET local_uri = :streamUrl WHERE uuid = :uuid")
     suspend fun updateTrackStreamUrl(uuid: String, streamUrl: String)
