@@ -25,6 +25,13 @@ object LyricsRomanizer {
     private val lineCache = ConcurrentHashMap<String, String>()
     private val requestLimiter = Semaphore(6)
 
+    // Checks if text has characters outside Latin blocks (e.g., Devanagari, Hangul)
+    private fun needsRomanization(text: String): Boolean {
+        return text.any { ch ->
+            ch.code > 0x02AF && Character.isLetter(ch.code)
+        }
+    }
+
     suspend fun getRomanization(
         text: String,
         sourceLanguage: String = DEFAULT_SOURCE_LANGUAGE
@@ -85,6 +92,9 @@ object LyricsRomanizer {
                 val trimmedLine = line.trim()
                 if (trimmedLine.isEmpty()) {
                     ""
+                } else if (!needsRomanization(trimmedLine)) {
+                    // It's already in English/Latin, keep it exactly as is!
+                    trimmedLine
                 } else {
                     getRomanization(trimmedLine, sourceLanguage) ?: trimmedLine
                 }
@@ -114,14 +124,23 @@ object LyricsRomanizer {
                     val lyricText = match.groupValues[2].trim()
                     if (lyricText.isEmpty()) {
                         prefix
+                    } else if (!needsRomanization(lyricText)) {
+                        // Skip English/Latin lyrics, preserving casing and punctuation
+                        prefix + lyricText
                     } else {
                         val romanized = getRomanization(lyricText, sourceLanguage) ?: lyricText
                         prefix + romanized
                     }
                 } else {
                     val trimmedLine = line.trim()
-                    if (trimmedLine.isEmpty()) "" else (getRomanization(trimmedLine, sourceLanguage)
-                        ?: trimmedLine)
+                    if (trimmedLine.isEmpty()) {
+                        ""
+                    } else if (!needsRomanization(trimmedLine)) {
+                        // Skip English/Latin lines completely
+                        trimmedLine
+                    } else {
+                        getRomanization(trimmedLine, sourceLanguage) ?: trimmedLine
+                    }
                 }
             }
         }

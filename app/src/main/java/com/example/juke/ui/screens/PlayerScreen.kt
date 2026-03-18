@@ -144,7 +144,7 @@ fun PlayerScreen(
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showArtistSelectionSheet by remember { mutableStateOf(false) }
     var showBlacklistPicker by remember { mutableStateOf(false) }
-    var romanizeLyrics by remember { mutableStateOf(false) }
+    val romanizeLyrics by musicViewModel.isRomanizedLyricsEnabled.collectAsState()
     val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
@@ -303,7 +303,7 @@ fun PlayerScreen(
                             )
                         },
                         onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
-                        onToggleRomanizedLyrics = { romanizeLyrics = !romanizeLyrics },
+                        onToggleRomanizedLyrics = { musicViewModel.toggleRomanizedLyrics() },
                         isRomanizedLyricsEnabled = romanizeLyrics,
                         showMenuOption = true,
                         isAlbumAvailable = currentTrack.albumSpotifyId != null,
