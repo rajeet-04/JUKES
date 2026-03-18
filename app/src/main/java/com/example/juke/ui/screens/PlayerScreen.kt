@@ -179,16 +179,27 @@ fun PlayerScreen(
         return
     }
 
-    val displayTrack = remember(currentTrack, romanizeLyrics) {
+    var romanizedTrack by remember(currentTrack.uuid, romanizeLyrics) { mutableStateOf<Track?>(null) }
+
+    LaunchedEffect(currentTrack, romanizeLyrics) {
         if (!romanizeLyrics) {
-            currentTrack
-        } else {
-            currentTrack.copy(
-                syncedLyrics = currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) },
-                plainLyrics = currentTrack.plainLyrics?.let { LyricsRomanizer.romanizeText(it) }
-            )
+            romanizedTrack = null
+            return@LaunchedEffect
         }
+
+        val romanizedSynced = currentTrack.syncedLyrics?.let {
+            LyricsRomanizer.romanizeSyncedLyrics(it)
+        }
+        val romanizedPlain = currentTrack.plainLyrics?.let {
+            LyricsRomanizer.romanizeText(it)
+        }
+        romanizedTrack = currentTrack.copy(
+            syncedLyrics = romanizedSynced,
+            plainLyrics = romanizedPlain
+        )
     }
+
+    val displayTrack = if (romanizeLyrics) romanizedTrack ?: currentTrack else currentTrack
 
     // Modal Sheet for Player
     ModalBottomSheet(
