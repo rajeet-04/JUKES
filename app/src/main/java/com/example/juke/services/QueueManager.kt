@@ -208,10 +208,9 @@ class QueueManager private constructor(private val context: Context) {
         _currentQueue.value = currentList
         Log.d(TAG, "Inserted track into queue at index $safeIndex: ${track.title}")
 
-        // Ensure next 2 songs are downloaded if we modified near the top
-        // Ensure next 2 songs are downloaded if we modified near the top
-        if (safeIndex <= 2) {
-            ensureNext2Ready()
+        // Ensure next 3 songs are downloaded/validated if we modified near the top
+        if (safeIndex <= 3) {
+            ensureUpcomingTracksReady() // <-- Updated from ensureNext2Ready()
         }
     }
 
@@ -271,8 +270,8 @@ class QueueManager private constructor(private val context: Context) {
             currentTrack?.let { fetchAndQueueRecommendations(it) }
         }
 
-        // Ensure next 2 songs are downloaded
-        ensureNext2Ready()
+        // Ensure next 3 songs are downloaded/validated
+        ensureUpcomingTracksReady() // <-- Updated from ensureNext2Ready()
 
         return currentList.firstOrNull()
     }
@@ -777,53 +776,101 @@ class QueueManager private constructor(private val context: Context) {
      * This pre-downloads upcoming tracks to ensure smooth playback.
      */
     /**
-     * Ensure the next 2 songs in queue are ready (downloaded or stream URL resolved).
+     * Ensure the upcoming 3 songs in queue are ready (downloaded or valid stream URL).
+     * Validates local file existence and stream URL expiry.
+     * Removes tracks if offline and unavailable to prevent playback stoppage.
      */
-    private fun ensureNext2Ready() {
+    private fun ensureUpcomingTracksReady() {
         serviceScope.launch {
             val queue = _currentQueue.value
+            val upcoming = queue.take(3) // Pre-check the next 3 tracks
 
-            // Get next 2 tracks
-            val next2 = queue.take(2)
+            val isOffline = run {
+                val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                val network = cm.activeNetwork
+                val caps = cm.getNetworkCapabilities(network)
+                caps == null || !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }
 
-            next2.forEach { track ->
-                // If localUri is null, OR it's a stream, but we want download (not supported yet, user must hit download),
-                // OR it implies we need to resolve it.
-                // Actually, ensureNext2Ready handles "not loaded" tracks.
+            upcoming.forEach { track ->
+                var needsRefresh = false
+
                 if (track.localUri == null) {
-                    Log.d(TAG, "Track not ready: ${track.title}, triggering preparation")
-
+                    needsRefresh = true
+                } else if (!track.localUri.startsWith("http") && !track.localUri.startsWith("content://")) {
+                    // Local file validation
+                    val file = File(track.localUri)
+                    if (!file.exists() || file.length() <= 0) {
+                        Log.e(TAG, "File missing or empty for ${track.title}: ${track.localUri}")
+                        needsRefresh = true
+                    }
+                } else if (track.localUri.startsWith("http")) {
+                    // Stream URL validation
+                    val url = track.localUri
                     try {
-                        val query = "${track.title} ${track.artist}"
-                        val searchResponse = SpotifyApi.search(query, listOf("track"))
-                        val spotifyResults = searchResponse.tracks?.items ?: emptyList()
-
-                        if (spotifyResults.isNotEmpty()) {
-                            val spotifyTrack = spotifyResults.first()
-                            val song = SpotifyApi.spotifyTrackToSong(spotifyTrack)
-
-                            if (isStreamMode) {
-                                musicService.streamTrack(song)
-                                Log.d(TAG, "Emergency resolved stream: ${track.title}")
-                            } else {
-                                musicService.smartDownloadAndIndex(song)
-                                Log.d(TAG, "Emergency downloaded: ${track.title}")
+                        val expiresMatch = "expires=(\\d+)".toRegex().find(url)
+                        if (expiresMatch != null) {
+                            val expiryTimeSec = expiresMatch.groupValues[1].toLong()
+                            val currentTimeSec = System.currentTimeMillis() / 1000
+                            // Refresh if expiring within 15 minutes (900 seconds) or already expired
+                            if (expiryTimeSec - currentTimeSec < 900) {
+                                Log.d(TAG, "Stream URL for ${track.title} is expiring soon, scheduling refresh.")
+                                needsRefresh = true
                             }
+                        } else if (url.contains("googleusercontent.com/spotify.com")) {
+                            // Dummy URL that hasn't been resolved to a real spotmate stream URL yet
+                            needsRefresh = true
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error emergency preparing ${track.title}: ${e.message}", e)
+                        Log.w(TAG, "Error checking stream expiry for ${track.title}: ${e.message}")
                     }
-                } else if (isStreamMode && !track.isStream && !File(track.localUri).exists()) {
-                    // Case: DB says downloaded, but file missing. If stream mode, try to switch to stream?
-                    // Or just redownload?
-                    // For now, let's just log missing file. logic below handles missing file check.
                 }
 
-                // Verify file exists if not streaming
-                if (track.localUri != null && !track.isStream && !track.localUri.startsWith("http")) {
-                    val file = File(track.localUri)
-                    if (!file.exists()) {
-                        Log.e(TAG, "File missing for ${track.title}: ${track.localUri}")
+                if (needsRefresh) {
+                    if (isOffline) {
+                        // Offline and missing file or needing refresh -> remove from queue to prevent playback stoppage
+                        Log.w(TAG, "Device is offline and track ${track.title} is unavailable. Removing from queue.")
+                        removeFromQueue(track.uuid)
+                        PlaybackManager.getInstance(context).removeDeletedTrackFromQueue(track.uuid)
+                    } else {
+                        // Online -> Prepare/Refresh
+                        Log.d(TAG, "Track not ready/expired: ${track.title}, triggering preparation/refresh")
+                        try {
+                            val song = if (track.spotifyId != null) {
+                                SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId))
+                            } else {
+                                val query = "${track.title} ${track.artist}"
+                                val searchResponse = SpotifyApi.search(query, listOf("track"))
+                                val spotifyResults = searchResponse.tracks?.items ?: emptyList()
+                                if (spotifyResults.isNotEmpty()) {
+                                    SpotifyApi.spotifyTrackToSong(spotifyResults.first())
+                                } else null
+                            }
+
+                            song?.let { s ->
+                                val updatedTrack = if (isStreamMode || track.isStream) {
+                                    musicService.streamTrack(s)
+                                } else {
+                                    musicService.smartDownloadAndIndex(s)
+                                }
+                                
+                                // Update it in the PlaybackManager's queue silently
+                                PlaybackManager.getInstance(context).replaceTrackInQueue(track.uuid, updatedTrack)
+                                
+                                // Update in our local queue representation
+                                val currentList = _currentQueue.value.toMutableList()
+                                val qIndex = currentList.indexOfFirst { it.uuid == track.uuid }
+                                if (qIndex != -1) {
+                                    currentList[qIndex] = updatedTrack
+                                    _currentQueue.value = currentList
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error emergency preparing ${track.title}: ${e.message}", e)
+                            // Remove from queue if recovery completely fails to avoid blocking playback
+                            removeFromQueue(track.uuid)
+                            PlaybackManager.getInstance(context).removeDeletedTrackFromQueue(track.uuid)
+                        }
                     }
                 }
             }
@@ -844,7 +891,7 @@ class QueueManager private constructor(private val context: Context) {
         if (timeRemaining in 1..<15000) { // 15 seconds
             lastPreFetchTime = now
             Log.d(TAG, "Pre-fetch triggered (Time remaining: ${timeRemaining}ms)")
-            ensureNext2Ready()
+            ensureUpcomingTracksReady() // <-- Updated from ensureNext2Ready()
         }
     }
 
