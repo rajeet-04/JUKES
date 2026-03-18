@@ -148,4 +148,17 @@ interface PlaylistDao {
         WHERE pt.track_uuid = :trackUuid
     """)
     suspend fun getPlaylistsForTrack(trackUuid: String): List<PlaylistEntity>
+
+    /**
+     * Delete all playlist_tracks entries for a track - must be called before deleting a track
+     * to avoid FK constraint errors. This is more reliable than relying on CASCADE.
+     */
+    @Query("DELETE FROM playlist_tracks WHERE track_uuid = :trackUuid")
+    suspend fun deletePlaylistTracksForTrack(trackUuid: String)
+
+    /**
+     * Delete all playlist_tracks entries for multiple tracks - must be called before bulk deleting tracks.
+     */
+    @Query("DELETE FROM playlist_tracks WHERE track_uuid IN (:trackUuids)")
+    suspend fun deletePlaylistTracksForTracks(trackUuids: List<String>)
 }

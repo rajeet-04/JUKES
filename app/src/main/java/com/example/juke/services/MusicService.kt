@@ -353,7 +353,12 @@ class MusicService(private val context: Context) {
 
     suspend fun deleteTrackAndFiles(track: Track) {
         try {
-            // Get playlists that contain this track before deleting
+            // CRITICAL: Delete playlist_tracks entries FIRST to avoid FK constraint errors
+            // This is more reliable than relying on ON DELETE CASCADE
+            database.playlistDao().deletePlaylistTracksForTrack(track.uuid)
+            Log.d(TAG, "Deleted playlist_tracks for track: ${track.uuid}")
+
+            // Get playlists that contain this track before deleting (for updating counts)
             val playlistsToUpdate =
                 database.playlistDao().getPlaylistsForTrack(track.uuid).map { it.id }
 
@@ -395,6 +400,11 @@ class MusicService(private val context: Context) {
         if (tracks.isEmpty()) return
 
         try {
+            // CRITICAL: Delete playlist_tracks entries FIRST to avoid FK constraint errors
+            val trackUuids = tracks.map { it.uuid }
+            database.playlistDao().deletePlaylistTracksForTracks(trackUuids)
+            Log.d(TAG, "Deleted playlist_tracks for ${tracks.size} tracks")
+
             // Delete files for all tracks
             tracks.forEach { track ->
                 track.localUri?.let { uri ->
@@ -407,8 +417,7 @@ class MusicService(private val context: Context) {
                 }
             }
 
-            // Collect all UUIDs and Playlist IDs involved
-            val trackUuids = tracks.map { it.uuid }
+            // Collect all Playlist IDs involved
             val playlistDao = database.playlistDao()
 
             // Get all unique playlist IDs that contain ANY of these tracks
@@ -447,5 +456,63 @@ class MusicService(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error in bulk delete: ${e.message}", e)
         }
+    }
+
+    /**
+     * Clean up old cache files that are no longer referenced in database.
+     * Call this periodically (e.g., on app startup) to keep cache under control.
+     * 
+     * @param maxAgeDays Files older than this many days will be deleted (default 30)
+     * @return Pair of (filesDeleted, bytesFreed)
+     */
+    suspend fun cleanupOrphanedCacheFiles(maxAgeDays: Int = 7): Pair<Int, Long> {
+        val musicDir = File(context.filesDir, "music")
+        if (!musicDir.exists()) {
+            Log.d(TAG, "Music directory doesn't exist, nothing to clean")
+            return Pair(0, 0L)
+        }
+
+        val allTracks = trackDao.getAllTracks()
+        val validUris = allTracks.mapNotNull { it.localUri }.toSet()
+        val validThumbnails = allTracks.mapNotNull { it.thumbnailUri }.toSet()
+
+        val cutoffTime = System.currentTimeMillis() - (maxAgeDays * 24 * 60 * 60 * 1000L)
+        var filesDeleted = 0
+        var bytesFreed = 0L
+
+        musicDir.listFiles()?.forEach { file ->
+            val absolutePath = file.absolutePath
+            
+            // Check if this file is referenced in database
+            val isOrphaned = !validUris.contains(absolutePath) && 
+                            !validThumbnails.contains(absolutePath)
+            
+            // Also check file age for extra safety
+            val isOld = file.lastModified() < cutoffTime
+            
+            if (isOrphaned || isOld) {
+                val size = file.length()
+                if (file.delete()) {
+                    filesDeleted++
+                    bytesFreed += size
+                    Log.d(TAG, "Deleted orphaned/old cache file: ${file.name} (${size} bytes)")
+                } else {
+                    Log.w(TAG, "Failed to delete cache file: ${file.name}")
+                }
+            }
+        }
+
+        Log.d(TAG, "Cache cleanup complete: $filesDeleted files deleted, ${bytesFreed / 1024 / 1024}MB freed")
+        return Pair(filesDeleted, bytesFreed)
+    }
+
+    /**
+     * Get current cache size in bytes.
+     */
+    fun getCacheSizeBytes(): Long {
+        val musicDir = File(context.filesDir, "music")
+        if (!musicDir.exists()) return 0L
+        
+        return musicDir.listFiles()?.sumOf { it.length() } ?: 0L
     }
 }
