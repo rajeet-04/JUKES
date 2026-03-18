@@ -6,7 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
-[![Version](https://img.shields.io/badge/Version-2.1.1--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.1.1-beta)
+[![Version](https://img.shields.io/badge/Version-2.2.0--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.2.0-beta)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -23,16 +23,17 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 ## 📦 Latest Release
 
-**JUKE v2.1.1-beta** is now available! 🩹
+**JUKE v2.2.0-beta** is now available! 🚀
 
-**Patch Release** — Fixes two playback reliability bugs from v2.1.0-beta
+**Minor Release** — Introduces stream caching and artist blacklist functionality
 
-What's fixed:
+What's new:
 
-- Swipe-to-add-next no longer inserts the same song multiple times per gesture
-- Player no longer pauses/freezes on 403 errors — non-stream tracks now re-download automatically if online, or skip gracefully if offline
+- Stream playback caching for instant seeking back in tracks
+- Artist blacklist UI to exclude unwanted artists from recommendations
+- Bug fixes for radio mode, foreground service crashes, and shuffle logic
 
-[📥 Download v2.1.1-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.1.1-beta) | [📝 Full Release Notes](v2.1.1-beta-RELEASE_NOTES.md)
+[📥 Download v2.2.0-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.2.0-beta) | [📝 Full Release Notes](v2.2.0-beta-RELEASE_NOTES.md)
 
 ## ✨ Features
 
@@ -98,6 +99,7 @@ What's fixed:
 ## 📸 Screenshots
 
 <!-- Add screenshots here when available -->
+
 ```
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
 │    Home Screen      │  │   Search Results    │  │   Library View      │
@@ -136,7 +138,6 @@ What's fixed:
 2. **Download from Releases** (Recommended for end users)
 
    **Latest Release: [v1.0.8-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.8-beta)**
-
    - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
    - Install the APK on your Android device
    - Grant necessary permissions when prompted
@@ -317,7 +318,7 @@ android {
     compileSdk = 36
     minSdk = 26
     targetSdk = 35
-    
+
     buildFeatures {
         compose = true
         buildConfig = true

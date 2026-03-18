@@ -1490,6 +1490,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         android.content.Context.MODE_PRIVATE
     )
 
+    // Add Romanized Lyrics persistent state here:
+    private val _isRomanizedLyricsEnabled = MutableStateFlow(
+        settingsPrefs.getBoolean("romanized_lyrics_enabled", false)
+    )
+    val isRomanizedLyricsEnabled: StateFlow<Boolean> = _isRomanizedLyricsEnabled.asStateFlow()
+
+    fun toggleRomanizedLyrics() {
+        val enabled = !_isRomanizedLyricsEnabled.value
+        _isRomanizedLyricsEnabled.value = enabled
+        settingsPrefs.edit { putBoolean("romanized_lyrics_enabled", enabled) }
+    }
+
     private val _recommendationCount =
         MutableStateFlow(settingsPrefs.getInt("recommendation_count", 5))
     val recommendationCount: StateFlow<Int> = _recommendationCount.asStateFlow()

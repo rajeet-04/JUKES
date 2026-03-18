@@ -1680,36 +1680,33 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun toggleShuffle() {
-        val newState = !_isShuffleEnabled.value
-        _isShuffleEnabled.value = newState
-        // Do NOT set ExoPlayer's shuffleModeEnabled — the app uses pre-shuffled track lists.
-        // Enabling ExoPlayer's shuffle causes it to reorder items internally, which can
-        // place the current track at the last shuffle position and block COMMAND_SEEK_TO_NEXT.
-
+        val wasEnabled = _isShuffleEnabled.value
+        if (!wasEnabled) {
+            _isShuffleEnabled.value = true
+        }
+        // Always shuffle the remaining items when shuffle is active
         controller?.let { ctrl ->
-            if (newState) {
-                val totalItems = ctrl.mediaItemCount
-                val currentIndex = ctrl.currentMediaItemIndex
-                if (currentIndex in 0 until totalItems - 1) {
-                    val remainingItems = mutableListOf<MediaItem>()
-                    for (i in currentIndex + 1 until totalItems) {
-                        remainingItems.add(ctrl.getMediaItemAt(i))
-                    }
-                    remainingItems.shuffle()
+            val totalItems = ctrl.mediaItemCount
+            val currentIndex = ctrl.currentMediaItemIndex
+            if (currentIndex in 0 until totalItems - 1) {
+                val remainingItems = mutableListOf<MediaItem>()
+                for (i in currentIndex + 1 until totalItems) {
+                    remainingItems.add(ctrl.getMediaItemAt(i))
+                }
+                remainingItems.shuffle()
 
-                    for (i in totalItems - 1 downTo currentIndex + 1) {
-                        ctrl.removeMediaItem(i)
-                    }
-                    ctrl.addMediaItems(currentIndex + 1, remainingItems)
+                for (i in totalItems - 1 downTo currentIndex + 1) {
+                    ctrl.removeMediaItem(i)
+                }
+                ctrl.addMediaItems(currentIndex + 1, remainingItems)
 
-                    scope.launch {
-                        saveQueueStructure()
-                    }
+                scope.launch {
+                    saveQueueStructure()
                 }
             }
         }
 
-        Log.d(TAG, "Shuffle toggled: $newState")
+        Log.d(TAG, "Shuffle ${if (wasEnabled) "reshuffled" else "enabled"}")
     }
 
     fun toggleRepeatMode() {
