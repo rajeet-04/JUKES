@@ -76,6 +76,7 @@ import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
 import com.example.juke.ui.components.player.QueueBottomSheetContent
+import com.example.juke.utils.LyricsRomanizer
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.utils.BlacklistManager
@@ -142,6 +143,7 @@ fun PlayerScreen(
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showArtistSelectionSheet by remember { mutableStateOf(false) }
     var showBlacklistPicker by remember { mutableStateOf(false) }
+    var romanizeLyrics by remember { mutableStateOf(false) }
     val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
@@ -175,6 +177,17 @@ fun PlayerScreen(
             Text("No track playing")
         }
         return
+    }
+
+    val displayTrack = remember(currentTrack, romanizeLyrics) {
+        if (!romanizeLyrics) {
+            currentTrack
+        } else {
+            currentTrack.copy(
+                syncedLyrics = currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) },
+                plainLyrics = currentTrack.plainLyrics?.let { LyricsRomanizer.romanizeText(it) }
+            )
+        }
     }
 
     // Modal Sheet for Player
@@ -278,6 +291,8 @@ fun PlayerScreen(
                             )
                         },
                         onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
+                        onToggleRomanizedLyrics = { romanizeLyrics = !romanizeLyrics },
+                        isRomanizedLyricsEnabled = romanizeLyrics,
                         showMenuOption = true,
                         isAlbumAvailable = currentTrack.albumSpotifyId != null,
                         currentArtist = currentTrack.artist,
@@ -294,7 +309,7 @@ fun PlayerScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         PlayerArtwork(
-                            currentTrack = currentTrack,
+                            currentTrack = displayTrack,
                             currentPosition = uiState.position,
                             showLyrics = showLyrics,
                             musicViewModel = musicViewModel,
@@ -605,6 +620,8 @@ fun PlayerHeader(
     onShowSleepTimer: () -> Unit,
     onNavigateToAlbum: () -> Unit,
     onRefreshLyrics: () -> Unit,
+    onToggleRomanizedLyrics: () -> Unit,
+    isRomanizedLyricsEnabled: Boolean,
     showMenuOption: Boolean,
     isAlbumAvailable: Boolean,
     currentArtist: String = "",
@@ -668,6 +685,21 @@ fun PlayerHeader(
                         onClick = {
                             showMenu = false
                             onRefreshLyrics()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (isRomanizedLyricsEnabled) {
+                                    "Romanized Lyrics: On"
+                                } else {
+                                    "Romanized Lyrics: Off"
+                                }
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleRomanizedLyrics()
                         }
                     )
                     // Artist Blacklist option
