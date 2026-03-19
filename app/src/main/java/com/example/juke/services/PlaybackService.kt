@@ -27,6 +27,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -83,11 +84,10 @@ class PlaybackService : MediaLibraryService() {
 
     /**
      * Singleton that owns the ExoPlayer stream cache for the process lifetime.
-     * Using a 256 MB LRU disk cache so that audio streamed over HTTP is served
-     * from disk on backward-seek instead of re-fetching from the network.
+     * Removed 'private' so PlaybackManager can trigger explicit cleanup rules.
      */
     @UnstableApi
-    private object StreamCacheManager {
+    object StreamCacheManager { // <-- Removed 'private' modifier
         private const val MAX_CACHE_BYTES = 256L * 1024 * 1024 // 256 MB
         @Volatile private var cache: SimpleCache? = null
 
@@ -99,6 +99,25 @@ class PlaybackService : MediaLibraryService() {
                     val databaseProvider = androidx.media3.database.StandaloneDatabaseProvider(context)
                     SimpleCache(cacheDir, evictor, databaseProvider).also { cache = it }
                 }
+            }
+        }
+
+        // Add this to clear everything (e.g. queue replacement)
+        fun clearAllCache() {
+            synchronized(this) {
+                cache?.let { c ->
+                    c.keys.toList().forEach { key ->
+                        c.removeResource(key)
+                    }
+                }
+            }
+        }
+
+        // Add this to clear specific tracks
+        fun removeTrackCache(uri: String?) {
+            if (uri == null) return
+            synchronized(this) {
+                cache?.removeResource(uri)
             }
         }
 
@@ -402,6 +421,10 @@ class PlaybackService : MediaLibraryService() {
                         try {
                             val oldTrack = database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
                             if (oldTrack != null && oldTrack.isStream) {
+                                // Rule: Clear cache as soon as the playing is done naturally
+                                StreamCacheManager.removeTrackCache(oldTrack.localUri)
+                                Log.d(TAG, "Cleared cache for finished track: ${oldTrack.title}")
+
                                 // Only delete if NOT a favorite and NOT in any playlist
                                 val playlists =
                                     database.playlistDao().getPlaylistsForTrack(oldTrack.uuid)
@@ -487,10 +510,25 @@ class PlaybackService : MediaLibraryService() {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
 
+        // Add this custom LoadControl to force full-song buffering
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                50_000, // minBufferMs (Start buffering up to 50s immediately)
+                600_000, // maxBufferMs (Buffer up to 10 minutes ahead - effectively the whole song)
+                1_500, // bufferForPlaybackMs
+                2_000 // bufferForPlaybackAfterRebufferMs
+            )
+            .setBackBuffer(
+                600_000, // backBufferDurationMs: Keep up to 10 mins of PLAYED media in memory
+                true     // retainBackBufferFromKeyframe: Keep intact for smooth seeking
+            )
+            .build()
+
         player = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(audioAttributes, false) // Keep FALSE to allow manual call control
             .setHandleAudioBecomingNoisy(true)
+            .setLoadControl(loadControl) // <-- Apply the LoadControl here
             .build()
 
         // Initialize Skip Silence from Preferences
@@ -1545,6 +1583,9 @@ class PlaybackManager private constructor(private val context: Context) {
         keepShuffleMode: Boolean = false
     ) {
         initialize()
+        
+        // Clear all disk cache when a brand new queue/song is played
+        PlaybackService.StreamCacheManager.clearAllCache()
 
         val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
 
@@ -1754,11 +1795,15 @@ class PlaybackManager private constructor(private val context: Context) {
             
             // Remove items after current track
             for (i in totalItems - 1 downTo currentIndex + 1) {
+                // Clear disk cache for explicit queue clear (e.g. Radio mode)
+                PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(i).localConfiguration?.uri?.toString())
                 ctrl.removeMediaItem(i)
             }
             
             // Remove items before current track
             for (i in currentIndex - 1 downTo 0) {
+                // Clear disk cache for explicit queue clear
+                PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(i).localConfiguration?.uri?.toString())
                 ctrl.removeMediaItem(i)
             }
             
@@ -1799,6 +1844,9 @@ class PlaybackManager private constructor(private val context: Context) {
             val index = (0 until ctrl.mediaItemCount).firstOrNull { i ->
                 ctrl.getMediaItemAt(i).mediaId == mediaId
             } ?: return false
+
+            // Clear cache when song is explicitly swiped/removed from queue
+            PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(index).localConfiguration?.uri?.toString())
 
             // Use playlist API to avoid full re-prepare and reduce playback hiccup
             ctrl.removeMediaItem(index)
@@ -1891,6 +1939,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
             // Remove from queue (remove in reverse order to maintain indices)
             indicesToRemove.sortedDescending().forEach { index ->
+                PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(index).localConfiguration?.uri?.toString())
                 ctrl.removeMediaItem(index)
                 Log.d(TAG, "Removed deleted track from queue at index $index")
             }
