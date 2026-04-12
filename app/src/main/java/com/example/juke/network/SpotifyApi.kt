@@ -70,7 +70,7 @@ object SpotifyApi {
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
     private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
-    
+
     // Dynamic Spotdown API key, fetched from Cloudflare KV Worker
     private var spotdownApiKey: String? = null
     private var spotdownApiKeyExpiry: Long = 0L
@@ -97,6 +97,7 @@ object SpotifyApi {
             if (cached != null) return@withLock cached
             try {
                 val response: HttpResponse = ApiClient.httpClient.get(SPOTDOWN_WORKER_URL)
+
                 // Assuming the worker returns { "value": "the-api-key" } based on the example
                 @kotlinx.serialization.Serializable
                 data class WorkerResponse(val value: String?)
@@ -112,6 +113,7 @@ object SpotifyApi {
             }
         }
     }
+
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
 
@@ -623,7 +625,7 @@ object SpotifyApi {
             val apiKey = getSpotdownApiKey()
             val response = ApiClient.httpClient.get("$SPOTDOWN_BASE_URL/check-direct-download") {
                 parameter("url", spotifyUrl)
-                header("x-api-key", apiKey)
+                header("x-session-token", apiKey)
                 header("referer", "https://spotdown.org/")
                 header("sec-fetch-site", "same-site")
                 header("sec-fetch-mode", "cors")
@@ -707,13 +709,20 @@ object SpotifyApi {
             if (!isID3 && !isMP3Frame) {
                 val textResponse = audioData.take(500).toByteArray().decodeToString()
                 Log.e(TAG, "Received non-MP3 response: $textResponse")
-                throw Exception("Downloaded file is not a valid MP3")
+                throw Exception("Spotdown returned non-audio payload: $textResponse")
             }
 
             audioData
 
         } catch (e: Exception) {
             Log.e(TAG, "Error downloading song: ${e.message}", e)
+
+            val isSessionTokenError =
+                e.message?.contains("Session token required", ignoreCase = true) == true
+            if (isSessionTokenError) {
+                // Deterministic provider-side auth failure: let caller fallback immediately.
+                throw e
+            }
 
             // Retry on 500 errors
             if (retryAttempt < maxRetries) {

@@ -1,15 +1,15 @@
 package com.example.juke
 
 import android.app.Application
+import com.example.juke.analytics.AnalyticsManager
 import com.posthog.android.PostHogAndroid
 import com.posthog.android.PostHogAndroidConfig
-import com.example.juke.analytics.AnalyticsManager
 
 class JukeApplication : Application() {
 
     companion object {
         // const val POSTHOG_API_KEY = "YOUR_POSTHOG_API_KEY"
-        const val POSTHOG_API_KEY="phc_8eQnEp9lKyfrHmUj87mxzXZrWyPDumI423B7SaLViwc"
+        const val POSTHOG_API_KEY = "phc_8eQnEp9lKyfrHmUj87mxzXZrWyPDumI423B7SaLViwc"
         const val POSTHOG_HOST = "https://us.i.posthog.com"
     }
 

@@ -1,7 +1,13 @@
 package com.example.juke.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -50,9 +56,9 @@ fun ArtistCard(
                     .clip(CircleShape),
                 contentScale = ContentScale.Crop
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             // Artist Name
             Text(
                 text = artist.name,
@@ -60,7 +66,7 @@ fun ArtistCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            
+
             // Followers
             if (artist.followers != null) {
                 Text(

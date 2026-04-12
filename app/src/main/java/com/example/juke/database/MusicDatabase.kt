@@ -9,6 +9,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
@@ -16,7 +17,6 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteQuery
-import androidx.room.RawQuery
 import com.example.juke.models.Track
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
@@ -415,7 +415,8 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT * FROM tracks 
         WHERE (
             (play_count < 5 AND last_played_at < :lastPlayedThreshold) OR 
@@ -426,6 +427,10 @@ interface TrackDao {
         AND is_favourite = 0 
         AND uuid NOT IN (SELECT track_uuid FROM playlist_tracks)
         ORDER BY downloaded_at ASC
-    """)
-    suspend fun getPurgeableTracks(lastPlayedThreshold: String, downloadedThreshold: Long): List<TrackEntity>
+    """
+    )
+    suspend fun getPurgeableTracks(
+        lastPlayedThreshold: String,
+        downloadedThreshold: Long
+    ): List<TrackEntity>
 }

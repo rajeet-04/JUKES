@@ -76,10 +76,10 @@ import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
 import com.example.juke.ui.components.player.QueueBottomSheetContent
+import com.example.juke.utils.BlacklistManager
 import com.example.juke.utils.LyricsRomanizer
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
-import com.example.juke.utils.BlacklistManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -180,7 +180,10 @@ fun PlayerScreen(
         return
     }
 
-    var romanizedTrack by remember(currentTrack.uuid, romanizeLyrics) { mutableStateOf<Track?>(null) }
+    var romanizedTrack by remember(
+        currentTrack.uuid,
+        romanizeLyrics
+    ) { mutableStateOf<Track?>(null) }
 
     LaunchedEffect(currentTrack, romanizeLyrics) {
         if (!romanizeLyrics) {

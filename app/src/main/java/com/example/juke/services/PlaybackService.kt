@@ -1095,6 +1095,8 @@ class PlaybackManager private constructor(private val context: Context) {
 
     // Queue manager for recommendations
     private val queueManager: QueueManager by lazy { QueueManager.getInstance(context) }
+    private val streamRecoveryAttempts = mutableMapOf<String, Int>()
+    private val maxStreamRecoveryAttempts = 2
 
     /**
      * Helper function to create validated MediaItem with artwork checking
@@ -1363,16 +1365,14 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 return@launch
                                             }
 
-                                            val spotifyUrl =
-                                                "https://open.spotify.com/track/${track.spotifyId}"
-                                            val freshUrl =
-                                                SpotifyApi.getSpotmateStreamUrl(spotifyUrl)
-                                            Log.d(TAG, "Got fresh stream URL for ${track.title}")
-
-                                            // Persist the refreshed URL
-                                            database.trackDao()
-                                                .updateTrackStreamUrl(track.uuid, freshUrl)
-                                            val refreshedTrack = track.copy(localUri = freshUrl)
+                                            val refreshedSong = SpotifyApi.spotifyTrackToSong(
+                                                SpotifyApi.getTrack(track.spotifyId)
+                                            )
+                                            val refreshedTrack = musicService.streamTrack(
+                                                refreshedSong,
+                                                preferredUuid = track.uuid
+                                            )
+                                            Log.d(TAG, "Rebuilt Spotdown stream file for ${track.title}")
 
                                             // Swap the media item in the queue and resume (must be on main thread)
                                             withContext(Dispatchers.Main) {
@@ -1434,6 +1434,66 @@ class PlaybackManager private constructor(private val context: Context) {
                                             }
                                         }
                                     }
+                                } else {
+                                    val trackId = controller?.currentMediaItem?.mediaId
+                                    if (trackId == null) return
+
+                                    scope.launch {
+                                        try {
+                                            val trackEntity = database.trackDao().getTrackByUuid(trackId)
+                                            val track = trackEntity?.toTrack() ?: return@launch
+
+                                            if (!track.isStream || track.spotifyId == null) {
+                                                return@launch
+                                            }
+
+                                            val attempts = (streamRecoveryAttempts[trackId] ?: 0) + 1
+                                            if (attempts > maxStreamRecoveryAttempts) {
+                                                Log.w(
+                                                    TAG,
+                                                    "Stream recovery exceeded for ${track.title}, skipping to next"
+                                                )
+                                                withContext(Dispatchers.Main) {
+                                                    controller?.let { ctrl ->
+                                                        if (ctrl.hasNextMediaItem()) {
+                                                            ctrl.seekToNext()
+                                                            ctrl.prepare()
+                                                            ctrl.play()
+                                                        } else {
+                                                            ctrl.stop()
+                                                        }
+                                                    }
+                                                }
+                                                return@launch
+                                            }
+
+                                            streamRecoveryAttempts[trackId] = attempts
+                                            Log.w(
+                                                TAG,
+                                                "Recovering stream after source error for ${track.title} (attempt $attempts/$maxStreamRecoveryAttempts)"
+                                            )
+
+                                            val refreshedSong = SpotifyApi.spotifyTrackToSong(
+                                                SpotifyApi.getTrack(track.spotifyId)
+                                            )
+                                            val refreshedTrack = musicService.streamTrack(
+                                                refreshedSong,
+                                                preferredUuid = track.uuid
+                                            )
+
+                                            withContext(Dispatchers.Main) {
+                                                replaceTrackInQueue(track.uuid, refreshedTrack)
+                                                controller?.prepare()
+                                                controller?.play()
+                                            }
+                                        } catch (recoveryEx: Exception) {
+                                            Log.e(
+                                                TAG,
+                                                "Generic stream recovery failed: ${recoveryEx.message}",
+                                                recoveryEx
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1442,6 +1502,7 @@ class PlaybackManager private constructor(private val context: Context) {
                             mediaItem?.let { item ->
                                 val trackId = item.mediaId
                                 _currentTrackId.value = trackId
+                                streamRecoveryAttempts.remove(trackId)
 
                                 // Update the queue index immediately
                                 val currentIndex = controller?.currentMediaItemIndex ?: 0

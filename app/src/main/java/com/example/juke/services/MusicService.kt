@@ -16,6 +16,7 @@ import io.ktor.client.request.get
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
 
 /**
  * Music Service for downloading and indexing tracks.
@@ -66,6 +67,104 @@ class MusicService(private val context: Context) {
         throw lastError ?: Exception("Operation failed")
     }
 
+    private suspend fun resolveSpotdownStreamToLocalFile(
+        song: SpotdownSong,
+        stableUuid: String
+    ): String {
+        if (!song.url.startsWith("https://open.spotify.com/track/")) {
+            throw Exception("Invalid Spotify URL format")
+        }
+
+        // Keep stream files in app-internal files dir so they survive cache eviction.
+        val streamDir = File(context.filesDir, "stream_files")
+        if (!streamDir.exists()) streamDir.mkdirs()
+
+        val finalFile = File(streamDir, "${stableUuid}_stream.mp3")
+        val tempFile = File(streamDir, "${stableUuid}_stream.tmp")
+
+        val audioData = try {
+            SpotifyApi.downloadSong(song.url)
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "Spotdown stream fetch failed (${e.message}). Falling back to Spotmate for stream warmup."
+            )
+            SpotifyApi.downloadSongFromSpotmate(song.url)
+        }
+
+        if (audioData.isEmpty() || audioData.size < 100_000) {
+            throw Exception("Spotdown stream payload is too small")
+        }
+
+        tempFile.writeBytes(audioData)
+        if (finalFile.exists()) {
+            finalFile.delete()
+        }
+
+        val moved = tempFile.renameTo(finalFile)
+        if (!moved) {
+            finalFile.writeBytes(audioData)
+            tempFile.delete()
+        }
+
+        if (!finalFile.exists() || finalFile.length() <= 0L) {
+            throw Exception("Failed to persist Spotdown stream file")
+        }
+
+        return finalFile.absolutePath
+    }
+
+    private fun isValidMp3Header(file: File): Boolean {
+        if (!file.exists() || file.length() < 3L) return false
+        return try {
+            file.inputStream().use { input ->
+                val header = ByteArray(3)
+                val bytesRead = input.read(header)
+                if (bytesRead < 3) return@use false
+
+                val isID3 = header[0] == 0x49.toByte() &&
+                        header[1] == 0x44.toByte() &&
+                        header[2] == 0x33.toByte()
+
+                val isMP3Frame = header[0] == 0xFF.toByte() &&
+                        (header[1].toInt() and 0xE0) == 0xE0
+
+                isID3 || isMP3Frame
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isHealthyExistingStreamFile(filePath: String, expectedDurationSec: Int): Boolean {
+        val streamFile = File(filePath)
+        if (!streamFile.exists() || streamFile.length() < 100_000L) {
+            return false
+        }
+
+        if (!isValidMp3Header(streamFile)) {
+            return false
+        }
+
+        return try {
+            val mmr = MediaMetadataRetriever()
+            mmr.setDataSource(streamFile.absolutePath)
+            val durationMs = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            mmr.release()
+            val durationSec = (durationMs?.toLongOrNull() ?: 0L) / 1000L
+
+            if (durationSec <= 0L) {
+                false
+            } else {
+                // Wide tolerance because some MP3s expose imperfect Xing durations.
+                val tolerance = maxOf(20, expectedDurationSec / 2)
+                abs(durationSec.toInt() - expectedDurationSec) <= tolerance || durationSec > 20L
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun smartDownloadAndIndex(
         song: SpotdownSong
     ): Track {
@@ -80,12 +179,14 @@ class MusicService(private val context: Context) {
         // If track exists with a remote/streaming URL, we'll update it with the downloaded file
         // Otherwise if it has a local file, just return it
         if (existingTrack != null && existingTrack.localUri != null) {
-            // Check if it's a streaming URL (http/https) - needs replacing
-            val isStreamingUrl = existingTrack.localUri.startsWith("http", ignoreCase = true)
-            
-            if (!isStreamingUrl) {
+            val isRemoteUri = existingTrack.localUri.startsWith("http", ignoreCase = true)
+
+            if (!isRemoteUri && !existingTrack.isStream) {
                 // Already has a local file, return it
-                Log.d(TAG, "Track already exists in database with local file: ${song.title} by ${song.artist}")
+                Log.d(
+                    TAG,
+                    "Track already exists in database with local file: ${song.title} by ${song.artist}"
+                )
                 return Track(
                     uuid = existingTrack.uuid,
                     title = existingTrack.title,
@@ -104,9 +205,18 @@ class MusicService(private val context: Context) {
                     albumSpotifyId = existingTrack.albumSpotifyId,
                     artistSpotifyIds = existingTrack.artistSpotifyIds
                 )
+            } else if (existingTrack.isStream) {
+                // Existing stream entry: promote to a permanent local download
+                Log.d(
+                    TAG,
+                    "Found stream track in database, promoting to full download: ${song.title}"
+                )
             } else {
-                // Has streaming URL, we'll download and update this same record
-                Log.d(TAG, "Found streaming track in database, will update with downloaded file: ${song.title}")
+                // Has remote URL, we'll download and update this same record
+                Log.d(
+                    TAG,
+                    "Found streaming track in database, will update with downloaded file: ${song.title}"
+                )
             }
         }
 
@@ -127,7 +237,10 @@ class MusicService(private val context: Context) {
             val cacheResponse = SpotifyApi.checkDirectDownload(song.url)
             val isCached = cacheResponse.cached
 
-            Log.d(TAG, "Cache status: ${if (isCached) "CACHED" else "NOT CACHED"} (Success: ${cacheResponse.success}, Msg: ${cacheResponse.message})")
+            Log.d(
+                TAG,
+                "Cache status: ${if (isCached) "CACHED" else "NOT CACHED"} (Success: ${cacheResponse.success}, Msg: ${cacheResponse.message})"
+            )
 
             if (isCached) {
                 Log.d(TAG, "Song is cached, downloading immediately: ${song.title}")
@@ -140,7 +253,7 @@ class MusicService(private val context: Context) {
 
             var audioData: ByteArray? = null
             var usedSpotmateFirst = false
-            
+
             suspend fun tryDownload(useSpotmate: Boolean): ByteArray {
                 val data = if (useSpotmate) {
                     SpotifyApi.downloadSongFromSpotmate(song.url)
@@ -158,12 +271,21 @@ class MusicService(private val context: Context) {
 
             try {
                 audioData = tryDownload(false)
-                Log.d(TAG, "Downloaded audio buffer from primary source, size: ${audioData.size} bytes")
+                Log.d(
+                    TAG,
+                    "Downloaded audio buffer from primary source, size: ${audioData.size} bytes"
+                )
             } catch (e: Exception) {
-                Log.e(TAG, "Primary download (Spotdown) failed: ${e.message}. Falling back to Spotmate.")
+                Log.e(
+                    TAG,
+                    "Primary download (Spotdown) failed: ${e.message}. Falling back to Spotmate."
+                )
                 usedSpotmateFirst = true
                 audioData = tryDownload(true)
-                Log.d(TAG, "Downloaded audio buffer from fallback source, size: ${audioData.size} bytes")
+                Log.d(
+                    TAG,
+                    "Downloaded audio buffer from fallback source, size: ${audioData.size} bytes"
+                )
             }
 
             audioFile.writeBytes(audioData)
@@ -243,10 +365,12 @@ class MusicService(private val context: Context) {
                 uuid = uuid,
                 title = song.title,
                 artist = song.artist,
-                thumbnailUri = thumbnailUri ?: existingTrack?.thumbnailUri, // Keep existing thumb if download fails
+                thumbnailUri = thumbnailUri
+                    ?: existingTrack?.thumbnailUri, // Keep existing thumb if download fails
                 durationSec = durationSec,
                 localUri = audioFile.absolutePath,
-                ytVideoId = ytVideoId ?: existingTrack?.ytVideoId, // Keep existing YT ID if verify fails? (RecommenderApi might return null?)
+                ytVideoId = ytVideoId
+                    ?: existingTrack?.ytVideoId, // Keep existing YT ID if verify fails? (RecommenderApi might return null?)
                 syncedLyrics = lyricsResult?.syncedLyrics ?: existingTrack?.syncedLyrics,
                 plainLyrics = lyricsResult?.plainLyrics ?: existingTrack?.plainLyrics,
                 isFavourite = existingTrack?.isFavourite ?: false,
@@ -274,53 +398,70 @@ class MusicService(private val context: Context) {
     }
 
 
-    suspend fun streamTrack(song: SpotdownSong): Track {
+    suspend fun streamTrack(song: SpotdownSong, preferredUuid: String? = null): Track {
         val durationSec = SpotifyApi.parseDuration(song.duration)
-        
+
+        val existingByUuid = preferredUuid?.let { trackDao.getTrackByUuid(it) }
+
         // Check if track already exists
         val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-        val existing = candidates.find {
-             com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
-        }
-        
-        // If it's already downloaded, return it
-        if (existing != null && !existing.isStream && existing.localUri != null && !existing.localUri.startsWith("http")) {
-            return existing.toTrack()
-        }
-        
-        // If it's already a stream, return it
-        if (existing != null && existing.isStream) {
-             return existing.toTrack()
+        val existing = existingByUuid ?: candidates.find {
+            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
         }
 
-        val uuid = generateUUID()
-        
-        // Resolve stream URL
-        val streamUrl = try {
-            SpotifyApi.getSpotmateStreamUrl(song.url)
+        // If it's already downloaded, return it
+        if (existing != null && !existing.isStream && existing.localUri != null && !existing.localUri.startsWith(
+                "http"
+            )
+        ) {
+            return existing.toTrack()
+        }
+
+        // Reuse existing local stream file only if it passes sanity checks.
+        if (existing != null && existing.isStream && !existing.localUri.isNullOrBlank() && !existing.localUri.startsWith(
+                "http"
+            )
+        ) {
+            if (isHealthyExistingStreamFile(existing.localUri, durationSec)) {
+                return existing.toTrack()
+            } else {
+                Log.w(TAG, "Existing stream file for '${existing.title}' is unhealthy, rebuilding")
+                File(existing.localUri).delete()
+            }
+        }
+
+        val uuid = preferredUuid ?: existing?.uuid ?: generateUUID()
+
+        // Resolve stream to local Spotdown-backed file to avoid unstable remote rebuffering.
+        val localStreamPath = try {
+            resolveSpotdownStreamToLocalFile(song, uuid)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to resolve stream URL", e)
-             throw e
+            Log.e(TAG, "Failed to prepare Spotdown stream file", e)
+            throw e
         }
 
         val lyricsResult = SpotifyApi.searchLyrics(song.title, song.artist, song.album, durationSec)
         val ytVideoId = RecommenderApi.getBestVideoMatch("${song.title} ${song.artist}")
-        
+
         val track = Track(
             uuid = uuid,
             title = song.title,
             artist = song.artist,
-            thumbnailUri = song.thumbnail, 
+            thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else existing?.thumbnailUri,
             durationSec = durationSec,
-            localUri = streamUrl, 
-            ytVideoId = ytVideoId,
-            syncedLyrics = lyricsResult?.syncedLyrics,
-            plainLyrics = lyricsResult?.plainLyrics,
-            isFavourite = false,
-            isStream = true, 
-            spotifyId = song.spotifyId,
-            albumSpotifyId = song.albumSpotifyId,
-            artistSpotifyIds = song.artistSpotifyIds
+            localUri = localStreamPath,
+            ytVideoId = ytVideoId ?: existing?.ytVideoId,
+            syncedLyrics = lyricsResult?.syncedLyrics ?: existing?.syncedLyrics,
+            plainLyrics = lyricsResult?.plainLyrics ?: existing?.plainLyrics,
+            isFavourite = existing?.isFavourite ?: false,
+            playCount = existing?.playCount ?: 0,
+            lastPlayedAt = existing?.lastPlayedAt,
+            downloadedAt = existing?.downloadedAt ?: System.currentTimeMillis(),
+            spotifyId = song.spotifyId ?: existing?.spotifyId,
+            albumSpotifyId = song.albumSpotifyId ?: existing?.albumSpotifyId,
+            artistSpotifyIds = song.artistSpotifyIds ?: existing?.artistSpotifyIds,
+            isStream = true,
+            lyricsOffsetMs = existing?.lyricsOffsetMs ?: 0L
         )
 
         trackDao.insertTrack(track.toEntity())
@@ -328,25 +469,26 @@ class MusicService(private val context: Context) {
     }
 
     suspend fun promoteStreamToDownload(track: Track): Track {
-        if (!track.isStream) return track 
+        if (!track.isStream) return track
 
         Log.d(TAG, "Promoting track to download: ${track.title}")
-        
-        val spotifyUrl = if (track.spotifyId != null) "https://open.spotify.com/track/${track.spotifyId}" else null
+
+        val spotifyUrl =
+            if (track.spotifyId != null) "https://open.spotify.com/track/${track.spotifyId}" else null
         if (spotifyUrl == null) throw Exception("Cannot download: Missing Spotify info")
 
         // Construct SpotdownSong
-         val song = SpotdownSong(
+        val song = SpotdownSong(
             title = track.title,
             artist = track.artist,
-            thumbnail = track.thumbnailUri ?: "", 
-            url = spotifyUrl, 
+            thumbnail = track.thumbnailUri ?: "",
+            url = spotifyUrl,
             duration = "${track.durationSec / 60}:${"%02d".format(track.durationSec % 60)}",
             spotifyId = track.spotifyId,
             albumSpotifyId = track.albumSpotifyId,
             artistSpotifyIds = track.artistSpotifyIds
         )
-        
+
         // Download
         return smartDownloadAndIndex(song)
     }
@@ -482,14 +624,14 @@ class MusicService(private val context: Context) {
 
         musicDir.listFiles()?.forEach { file ->
             val absolutePath = file.absolutePath
-            
+
             // Check if this file is referenced in database
-            val isOrphaned = !validUris.contains(absolutePath) && 
-                            !validThumbnails.contains(absolutePath)
-            
+            val isOrphaned = !validUris.contains(absolutePath) &&
+                    !validThumbnails.contains(absolutePath)
+
             // Also check file age for extra safety
             val isOld = file.lastModified() < cutoffTime
-            
+
             if (isOrphaned || isOld) {
                 val size = file.length()
                 if (file.delete()) {
@@ -502,7 +644,10 @@ class MusicService(private val context: Context) {
             }
         }
 
-        Log.d(TAG, "Cache cleanup complete: $filesDeleted files deleted, ${bytesFreed / 1024 / 1024}MB freed")
+        Log.d(
+            TAG,
+            "Cache cleanup complete: $filesDeleted files deleted, ${bytesFreed / 1024 / 1024}MB freed"
+        )
         return Pair(filesDeleted, bytesFreed)
     }
 
@@ -512,7 +657,7 @@ class MusicService(private val context: Context) {
     fun getCacheSizeBytes(): Long {
         val musicDir = File(context.filesDir, "music")
         if (!musicDir.exists()) return 0L
-        
+
         return musicDir.listFiles()?.sumOf { it.length() } ?: 0L
     }
 }

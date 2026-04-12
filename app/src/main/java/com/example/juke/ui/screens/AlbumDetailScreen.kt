@@ -1,13 +1,37 @@
 package com.example.juke.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,8 +42,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.models.SpotifyAlbum
+import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
@@ -35,16 +59,16 @@ fun AlbumDetailScreen(
 ) {
     val uiState by albumDetailViewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
-    
+
     if (uiState.album == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
-    
+
     val album = uiState.album!!
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -94,48 +118,52 @@ fun AlbumDetailScreen(
                                 .clip(RoundedCornerShape(12.dp)),
                             contentScale = ContentScale.Crop
                         )
-                        
+
                         Spacer(modifier = Modifier.height(16.dp))
-                        
+
                         Text(
                             text = album.name,
                             style = MaterialTheme.typography.headlineMedium
                         )
-                        
+
                         Text(
                             text = album.artists.joinToString(", ") { it.name },
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        
+
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.padding(top = 8.dp)
                         ) {
                             Text(
-                                text = album.albumType?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() } ?: "Album",
+                                text = album.albumType?.replaceFirstChar {
+                                    if (it.isLowerCase()) it.titlecase(
+                                        java.util.Locale.getDefault()
+                                    ) else it.toString()
+                                } ?: "Album",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            
+
                             Text(
                                 text = "•",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            
+
                             Text(
                                 text = album.releaseDate?.take(4) ?: "",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            
+
                             Text(
                                 text = "•",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            
+
                             Text(
                                 text = "${album.totalTracks ?: 0} tracks",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -144,7 +172,7 @@ fun AlbumDetailScreen(
                         }
                     }
                 }
-                
+
                 // Tracks Section
                 if (uiState.tracks.isNotEmpty()) {
                     item {
@@ -153,7 +181,7 @@ fun AlbumDetailScreen(
                             style = MaterialTheme.typography.titleLarge
                         )
                     }
-                    
+
                     items(uiState.tracks) { track ->
                         SwipeToAddNextContainer(
                             onAddNext = {

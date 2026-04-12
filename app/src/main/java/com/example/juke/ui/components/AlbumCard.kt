@@ -1,7 +1,12 @@
 package com.example.juke.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -44,7 +49,7 @@ fun AlbumCard(
                     .height(140.dp),
                 contentScale = ContentScale.Crop
             )
-            
+
             Column(
                 modifier = Modifier.padding(12.dp)
             ) {
@@ -55,9 +60,9 @@ fun AlbumCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 Spacer(modifier = Modifier.height(4.dp))
-                
+
                 // Artist Name and Track Count
                 Text(
                     text = "${album.artists.firstOrNull()?.name ?: "Unknown Artist"} • ${album.totalTracks} tracks",

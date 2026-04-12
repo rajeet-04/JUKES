@@ -1,6 +1,19 @@
 package com.example.juke.database
 
-import androidx.room.*
+import androidx.room.ColumnInfo
+import androidx.room.Dao
+import androidx.room.Embedded
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.Insert
+import androidx.room.Junction
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.Relation
+import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -10,22 +23,22 @@ import kotlinx.coroutines.flow.Flow
 data class PlaylistEntity(
     @PrimaryKey
     val id: String,
-    
+
     @ColumnInfo(name = "name")
     val name: String,
-    
+
     @ColumnInfo(name = "description")
     val description: String? = null,
-    
+
     @ColumnInfo(name = "thumbnail_uri")
     val thumbnailUri: String? = null,
-    
+
     @ColumnInfo(name = "spotify_id")
     val spotifyId: String? = null,
-    
+
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis(),
-    
+
     @ColumnInfo(name = "track_count")
     val trackCount: Int = 0
 )
@@ -55,13 +68,13 @@ data class PlaylistEntity(
 data class PlaylistTrackEntity(
     @ColumnInfo(name = "playlist_id")
     val playlistId: String,
-    
+
     @ColumnInfo(name = "track_uuid")
     val trackUuid: String,
-    
+
     @ColumnInfo(name = "position")
     val position: Int,
-    
+
     @ColumnInfo(name = "added_at")
     val addedAt: Long = System.currentTimeMillis()
 )
@@ -88,65 +101,71 @@ data class PlaylistWithTracks(
  */
 @Dao
 interface PlaylistDao {
-    
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: PlaylistEntity)
-    
+
     @Update
     suspend fun updatePlaylist(playlist: PlaylistEntity)
-    
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTrack(playlistTrack: PlaylistTrackEntity)
-    
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTracks(playlistTracks: List<PlaylistTrackEntity>)
-    
+
     @Query("SELECT * FROM playlists ORDER BY created_at DESC")
     fun getAllPlaylists(): Flow<List<PlaylistEntity>>
-    
+
     @Query("SELECT * FROM playlists WHERE id = :playlistId")
     suspend fun getPlaylist(playlistId: String): PlaylistEntity?
-    
+
     @Transaction
     @Query("SELECT * FROM playlists WHERE id = :playlistId")
     suspend fun getPlaylistWithTracks(playlistId: String): PlaylistWithTracks?
-    
-    @Query("""
+
+    @Query(
+        """
         SELECT t.* FROM tracks t
         INNER JOIN playlist_tracks pt ON t.uuid = pt.track_uuid
         WHERE pt.playlist_id = :playlistId
         ORDER BY pt.position ASC
-    """)
+    """
+    )
     suspend fun getPlaylistTracks(playlistId: String): List<TrackEntity>
-    
-    @Query("""
+
+    @Query(
+        """
         SELECT t.* FROM tracks t
         INNER JOIN playlist_tracks pt ON t.uuid = pt.track_uuid
         WHERE pt.playlist_id = :playlistId
         ORDER BY pt.position ASC
-    """)
+    """
+    )
     fun getPlaylistTracksFlow(playlistId: String): Flow<List<TrackEntity>>
-    
+
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: String)
-    
+
     @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun deletePlaylistTracks(playlistId: String)
-    
+
     @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId AND track_uuid = :trackUuid")
     suspend fun removeTrackFromPlaylist(playlistId: String, trackUuid: String)
-    
+
     @Query("UPDATE playlists SET track_count = :count WHERE id = :playlistId")
     suspend fun updatePlaylistTrackCount(playlistId: String, count: Int)
-    
+
     @Query("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun getPlaylistTrackCount(playlistId: String): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT p.* FROM playlists p
         INNER JOIN playlist_tracks pt ON p.id = pt.playlist_id
         WHERE pt.track_uuid = :trackUuid
-    """)
+    """
+    )
     suspend fun getPlaylistsForTrack(trackUuid: String): List<PlaylistEntity>
 
     /**
