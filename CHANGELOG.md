@@ -1,6 +1,26 @@
 # JUKES - Release Notes
 
 ## Changelog
+ 
+## [2.3.0-beta] - 2026-04-12
+ 
+### Added
+ 
+- **LRU Streaming Cache**: Implemented a 15-file LRU disk cache for streaming playback. Temporary stream files are automatically evicted as the limit is reached, optimizing storage usage.
+- **Dual Download Sources**: Integrated "Gamepvz" as a secondary download source alongside "Spotmate". Includes load-balanced source selection and automatic fallback on errors or duration mismatches.
+- **Stream/DB Decoupling**: Streaming tracks are no longer persisted to the database by default, keeping the user's library clean and focused on permanent downloads.
+ 
+### Fixed
+ 
+- **Lyrics Auto-Scroll**: Fixed a bug where synced lyrics wouldn't scroll to the active line when toggled on during paused playback.
+- **Library Bloat**: Updated library queries to filter out streaming tracks, ensuring an organized view across the app.
+- **Startup Cleanup**: Added a background process to purge legacy stale stream entries from the persistent database.
+ 
+### See full release notes
+ 
+[v2.3.0-beta-RELEASE_NOTES.md](v2.3.0-beta-RELEASE_NOTES.md)
+ 
+---
 
 ## [2.2.0-beta] - 2026-03-18
 
