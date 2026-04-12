@@ -2,16 +2,20 @@ package com.example.juke.services
 
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
@@ -89,14 +93,17 @@ class PlaybackService : MediaLibraryService() {
     @UnstableApi
     object StreamCacheManager { // <-- Removed 'private' modifier
         private const val MAX_CACHE_BYTES = 256L * 1024 * 1024 // 256 MB
-        @Volatile private var cache: SimpleCache? = null
+
+        @Volatile
+        private var cache: SimpleCache? = null
 
         fun getCache(context: Context): SimpleCache {
             return cache ?: synchronized(this) {
                 cache ?: run {
                     val cacheDir = java.io.File(context.cacheDir, "stream_cache")
                     val evictor = LeastRecentlyUsedCacheEvictor(MAX_CACHE_BYTES)
-                    val databaseProvider = androidx.media3.database.StandaloneDatabaseProvider(context)
+                    val databaseProvider =
+                        androidx.media3.database.StandaloneDatabaseProvider(context)
                     SimpleCache(cacheDir, evictor, databaseProvider).also { cache = it }
                 }
             }
@@ -168,19 +175,19 @@ class PlaybackService : MediaLibraryService() {
 
     private var wasPlayingBeforeCall = false
     private var wasPlayingBeforeFocusLoss = false
-    private lateinit var audioManager: android.media.AudioManager
+    private lateinit var audioManager: AudioManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private var resumeRunnable: Runnable? = null
 
     // 1. Define the Receiver
     private val callStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
-                val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
+            if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
+                val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
                 Log.d(TAG, "Phone state changed: $state")
 
                 when (state) {
-                    android.telephony.TelephonyManager.EXTRA_STATE_RINGING -> {
+                    TelephonyManager.EXTRA_STATE_RINGING -> {
                         // Call coming in: Pause and save state
                         if (player.isPlaying) {
                             wasPlayingBeforeCall = true
@@ -189,7 +196,7 @@ class PlaybackService : MediaLibraryService() {
                         }
                     }
 
-                    android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                    TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                         // Call active (or outgoing call started)
                         // If user makes an outgoing call while music is playing, pause and save state
                         if (player.isPlaying) {
@@ -199,7 +206,7 @@ class PlaybackService : MediaLibraryService() {
                         }
                     }
 
-                    android.telephony.TelephonyManager.EXTRA_STATE_IDLE -> {
+                    TelephonyManager.EXTRA_STATE_IDLE -> {
                         // Call ended: Auto resume if we were playing before
                         // IMPORTANT: Post the resume with a delay to allow the app to come to foreground
                         // This prevents ForegroundServiceStartNotAllowedException when Media3 tries to update the notification
@@ -228,9 +235,9 @@ class PlaybackService : MediaLibraryService() {
 
     // Audio focus listener to handle other apps playing audio
     private val audioFocusChangeListener =
-        android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
+        AudioManager.OnAudioFocusChangeListener { focusChange ->
             when (focusChange) {
-                android.media.AudioManager.AUDIOFOCUS_LOSS -> {
+                AudioManager.AUDIOFOCUS_LOSS -> {
                     // Permanent loss (another app took focus permanently)
                     if (player.isPlaying) {
                         player.pause()
@@ -239,7 +246,7 @@ class PlaybackService : MediaLibraryService() {
                     wasPlayingBeforeFocusLoss = false
                 }
 
-                android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                     // Temporary loss (notification, alarm, etc.)
                     if (player.isPlaying) {
                         wasPlayingBeforeFocusLoss = true
@@ -248,7 +255,7 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
 
-                android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                     // Can duck (lower volume) - we'll just pause for simplicity
                     if (player.isPlaying) {
                         wasPlayingBeforeFocusLoss = true
@@ -257,7 +264,7 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
 
-                android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                AudioManager.AUDIOFOCUS_GAIN -> {
                     // Regained focus - resume if we were playing before
                     // Post with a small delay to avoid conflicts with call state handling
                     if (wasPlayingBeforeFocusLoss && !wasPlayingBeforeCall) {
@@ -412,6 +419,32 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
 
+                // Delayed metadata re-push to fix notification artwork lag.
+                // Media3's DefaultMediaNotificationProvider fetches artwork asynchronously
+                // from the MediaItem's artworkUri at the moment of transition. If the
+                // thumbnail file isn't ready yet (e.g., stream track with HTTP thumb,
+                // or thumb was still downloading), the notification shows blank/stale art.
+                // Re-pushing the same metadata 3 seconds later forces a redraw with the
+                // correct thumbnail once it's available.
+                serviceScope.launch {
+                    try {
+                        kotlinx.coroutines.delay(3_000L)
+                        // Only refresh if this track is still playing (user hasn't skipped)
+                        if (currentPlayingTrackId != trackId) return@launch
+                        val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
+                            ?: return@launch
+                        val index = (0 until player.mediaItemCount).firstOrNull { i ->
+                            player.getMediaItemAt(i).mediaId == trackId
+                        } ?: return@launch
+                        val refreshedItem = createValidatedMediaItem(track) ?: return@launch
+                        // replaceMediaItem triggers onTimelineChanged → notification redraw
+                        player.replaceMediaItem(index, refreshedItem)
+                        Log.d(TAG, "Refreshed notification metadata for: ${track.title}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Delayed metadata refresh failed: ${e.message}")
+                    }
+                }
+
                 // Cleanup previous track if it was a stream
                 val oldTrackId = previousTrackId
                 previousTrackId = trackId
@@ -421,11 +454,18 @@ class PlaybackService : MediaLibraryService() {
                         try {
                             val oldTrack = database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
                             if (oldTrack != null && oldTrack.isStream) {
-                                // Rule: Clear cache as soon as the playing is done naturally
+                                // Wait 3 seconds before cleaning up the finished stream file.
+                                // ExoPlayer's CacheDataSource may still be draining its read
+                                // handle on the old file (closing buffers) at transition time.
+                                // Deleting the file immediately causes a "premature stream end"
+                                // error that can pause the incoming track's first buffer fill.
+                                kotlinx.coroutines.delay(3_000L)
+
+                                // Rule: Clear ExoPlayer's overlay cache entry for this URI
                                 StreamCacheManager.removeTrackCache(oldTrack.localUri)
                                 Log.d(TAG, "Cleared cache for finished track: ${oldTrack.title}")
 
-                                // Only delete if NOT a favorite and NOT in any playlist
+                                // Only delete the local file if NOT a favorite and NOT in any playlist
                                 val playlists =
                                     database.playlistDao().getPlaylistsForTrack(oldTrack.uuid)
                                 if (!oldTrack.isFavourite && playlists.isEmpty()) {
@@ -469,12 +509,12 @@ class PlaybackService : MediaLibraryService() {
             val channel = NotificationChannel(
                 "media_playback",
                 "Media Playback",
-                android.app.NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Media playback controls"
                 setShowBadge(false)
             }
-            getSystemService(android.app.NotificationManager::class.java)
+            getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
         }
 
@@ -487,40 +527,46 @@ class PlaybackService : MediaLibraryService() {
         setMediaNotificationProvider(notificationProvider)
 
         database = MusicDatabase.getDatabase(applicationContext)
-        audioManager = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
             .setEnableDecoderFallback(true)
 
-        // Build a CacheDataSource.Factory so that streams are cached to disk during
-        // playback and served locally on seek-back, avoiding redundant HTTP requests.
-        // Use DefaultDataSource as the upstream so it correctly handles BOTH local file
-        // paths (file://, /data/...) AND remote HTTP(S) URLs — CacheDataSource will only
-        // delegate to this upstream for cache misses.
+        // Build a CacheDataSource.Factory for HTTP streams only.
+        // IMPORTANT: Local file URIs (stream files already on disk) must NOT be routed
+        // through ExoPlayer's cache layer — doing so causes stale cache hits after the
+        // stream file is rewritten on a 403 refresh, which manifests as playback pausing
+        // or reading corrupted/old data. FLAG_IGNORE_CACHE_FOR_UNRECOGNIZED_CONTENT_TYPE
+        // combined with FLAG_IGNORE_CACHE_ON_ERROR ensures we fall-through cleanly.
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
             .setAllowCrossProtocolRedirects(true)
-        val upstreamDataSourceFactory = DefaultDataSource.Factory(applicationContext, httpDataSourceFactory)
+        val upstreamDataSourceFactory =
+            DefaultDataSource.Factory(applicationContext, httpDataSourceFactory)
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(StreamCacheManager.getCache(applicationContext))
             .setUpstreamDataSourceFactory(upstreamDataSourceFactory)
-            // Cache errors are non-fatal — fall through to the network
+            // Cache errors are non-fatal — fall through to the network.
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
 
-        // Add this custom LoadControl to force full-song buffering
+        // Balanced LoadControl: 30s min buffer / 120s max buffer.
+        // The previous 600s max was causing ExoPlayer to stall — it attempted to buffer
+        // 10 minutes ahead but couldn't fill it from a local file fast enough, causing
+        // the player to enter STATE_BUFFERING and appear to "pause" with no content.
+        // For local file playback 30–120s is more than sufficient and stays responsive.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                50_000, // minBufferMs (Start buffering up to 50s immediately)
-                600_000, // maxBufferMs (Buffer up to 10 minutes ahead - effectively the whole song)
-                1_500, // bufferForPlaybackMs
-                2_000 // bufferForPlaybackAfterRebufferMs
+                30_000,  // minBufferMs
+                120_000, // maxBufferMs (2 minutes ahead — enough without stalling)
+                1_500,   // bufferForPlaybackMs
+                3_000    // bufferForPlaybackAfterRebufferMs
             )
             .setBackBuffer(
-                600_000, // backBufferDurationMs: Keep up to 10 mins of PLAYED media in memory
-                true     // retainBackBufferFromKeyframe: Keep intact for smooth seeking
+                30_000, // backBufferDurationMs: 30s back-buffer for smooth seeking
+                true    // retainBackBufferFromKeyframe
             )
             .build()
 
@@ -542,7 +588,7 @@ class PlaybackService : MediaLibraryService() {
                 if (isPlaying) {
                     val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         audioManager.requestAudioFocus(
-                            android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+                            AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                                 .setAudioAttributes(
                                     android.media.AudioAttributes.Builder()
                                         .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
@@ -556,12 +602,12 @@ class PlaybackService : MediaLibraryService() {
                         @Suppress("DEPRECATION")
                         audioManager.requestAudioFocus(
                             audioFocusChangeListener,
-                            android.media.AudioManager.STREAM_MUSIC,
-                            android.media.AudioManager.AUDIOFOCUS_GAIN
+                            AudioManager.STREAM_MUSIC,
+                            AudioManager.AUDIOFOCUS_GAIN
                         )
                     }
 
-                    if (result != android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                         Log.w(TAG, "Audio focus not granted")
                     }
                 }
@@ -610,7 +656,7 @@ class PlaybackService : MediaLibraryService() {
 
         // 2. Register the Receiver safely
         try {
-            val filter = IntentFilter(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+            val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
             registerReceiver(callStateReceiver, filter)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register call state receiver: ${e.message}")
@@ -658,7 +704,10 @@ class PlaybackService : MediaLibraryService() {
                     currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
 
                 if (!isAppInForeground) {
-                    Log.w(TAG, "App is in background — skipping onUpdateNotification to prevent ForegroundServiceStartNotAllowedException")
+                    Log.w(
+                        TAG,
+                        "App is in background — skipping onUpdateNotification to prevent ForegroundServiceStartNotAllowedException"
+                    )
                     return
                 }
             } catch (e: Exception) {
@@ -672,7 +721,10 @@ class PlaybackService : MediaLibraryService() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 e is android.app.ForegroundServiceStartNotAllowedException
             ) {
-                Log.w(TAG, "Caught ForegroundServiceStartNotAllowedException in onUpdateNotification — suppressing")
+                Log.w(
+                    TAG,
+                    "Caught ForegroundServiceStartNotAllowedException in onUpdateNotification — suppressing"
+                )
             } else {
                 Log.w(TAG, "Failed to update notification: ${e.message}")
             }
@@ -705,14 +757,18 @@ class PlaybackService : MediaLibraryService() {
         Log.d(TAG, "PlaybackService destroyed")
     }
 
-    override fun startForegroundService(service: Intent?): android.content.ComponentName? {
+    override fun startForegroundService(service: Intent?): ComponentName? {
         return try {
             super.startForegroundService(service)
         } catch (e: Exception) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 e is android.app.ForegroundServiceStartNotAllowedException
             ) {
-                Log.e(TAG, "Caught ForegroundServiceStartNotAllowedException in startForegroundService", e)
+                Log.e(
+                    TAG,
+                    "Caught ForegroundServiceStartNotAllowedException in startForegroundService",
+                    e
+                )
                 null
             } else {
                 throw e
@@ -720,7 +776,7 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    override fun startService(service: Intent?): android.content.ComponentName? {
+    override fun startService(service: Intent?): ComponentName? {
         return try {
             super.startService(service)
         } catch (e: Exception) {
@@ -1372,7 +1428,10 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 refreshedSong,
                                                 preferredUuid = track.uuid
                                             )
-                                            Log.d(TAG, "Rebuilt Spotdown stream file for ${track.title}")
+                                            Log.d(
+                                                TAG,
+                                                "Rebuilt Spotmate stream file for ${track.title}"
+                                            )
 
                                             // Swap the media item in the queue and resume (must be on main thread)
                                             withContext(Dispatchers.Main) {
@@ -1440,14 +1499,16 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                     scope.launch {
                                         try {
-                                            val trackEntity = database.trackDao().getTrackByUuid(trackId)
+                                            val trackEntity =
+                                                database.trackDao().getTrackByUuid(trackId)
                                             val track = trackEntity?.toTrack() ?: return@launch
 
                                             if (!track.isStream || track.spotifyId == null) {
                                                 return@launch
                                             }
 
-                                            val attempts = (streamRecoveryAttempts[trackId] ?: 0) + 1
+                                            val attempts =
+                                                (streamRecoveryAttempts[trackId] ?: 0) + 1
                                             if (attempts > maxStreamRecoveryAttempts) {
                                                 Log.w(
                                                     TAG,
@@ -1637,6 +1698,7 @@ class PlaybackManager private constructor(private val context: Context) {
         Log.d(TAG, "Playing track: ${track.title}")
     }
 
+    @OptIn(UnstableApi::class)
     fun setQueue(
         tracks: List<Track>,
         startIndex: Int = 0,
@@ -1644,7 +1706,7 @@ class PlaybackManager private constructor(private val context: Context) {
         keepShuffleMode: Boolean = false
     ) {
         initialize()
-        
+
         // Clear all disk cache when a brand new queue/song is played
         PlaybackService.StreamCacheManager.clearAllCache()
 
@@ -1847,34 +1909,35 @@ class PlaybackManager private constructor(private val context: Context) {
      * Clears all tracks from the queue except the currently playing one,
      * without interrupting playback.
      */
+    @OptIn(UnstableApi::class)
     fun keepOnlyCurrentTrack() {
         controller?.let { ctrl ->
             val currentIndex = ctrl.currentMediaItemIndex
             val totalItems = ctrl.mediaItemCount
-            
+
             if (totalItems <= 1 || currentIndex < 0) return
-            
+
             // Remove items after current track
             for (i in totalItems - 1 downTo currentIndex + 1) {
                 // Clear disk cache for explicit queue clear (e.g. Radio mode)
                 PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(i).localConfiguration?.uri?.toString())
                 ctrl.removeMediaItem(i)
             }
-            
+
             // Remove items before current track
             for (i in currentIndex - 1 downTo 0) {
                 // Clear disk cache for explicit queue clear
                 PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(i).localConfiguration?.uri?.toString())
                 ctrl.removeMediaItem(i)
             }
-            
+
             Log.d(TAG, "Kept only current track at original index $currentIndex")
 
             // Update local state flows to reflect the new state immediately
             if (_currentQueueIndex.value != 0) {
                 _currentQueueIndex.value = 0
             }
-            
+
             scope.launch {
                 saveQueueStructure()
             }
@@ -1900,6 +1963,7 @@ class PlaybackManager private constructor(private val context: Context) {
      * @param mediaId The media ID of the track to remove
      * @return true if the track was removed, false otherwise
      */
+    @OptIn(UnstableApi::class)
     fun removeFromQueue(mediaId: String): Boolean {
         controller?.let { ctrl ->
             val index = (0 until ctrl.mediaItemCount).firstOrNull { i ->
@@ -1981,6 +2045,7 @@ class PlaybackManager private constructor(private val context: Context) {
      *
      * @param trackUuid UUID of the deleted track
      */
+    @OptIn(UnstableApi::class)
     fun removeDeletedTrackFromQueue(trackUuid: String) {
         controller?.let { ctrl ->
             // Find all instances of this track in the queue

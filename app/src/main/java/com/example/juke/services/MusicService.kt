@@ -14,6 +14,7 @@ import com.example.juke.network.SpotifyApi
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.UUID
 import kotlin.math.abs
@@ -67,7 +68,7 @@ class MusicService(private val context: Context) {
         throw lastError ?: Exception("Operation failed")
     }
 
-    private suspend fun resolveSpotdownStreamToLocalFile(
+    private suspend fun resolveStreamToLocalFile(
         song: SpotdownSong,
         stableUuid: String
     ): String {
@@ -83,17 +84,16 @@ class MusicService(private val context: Context) {
         val tempFile = File(streamDir, "${stableUuid}_stream.tmp")
 
         val audioData = try {
-            SpotifyApi.downloadSong(song.url)
+            withTimeout(90_000L) {
+                SpotifyApi.downloadSongFromSpotmate(song.url)
+            }
         } catch (e: Exception) {
-            Log.w(
-                TAG,
-                "Spotdown stream fetch failed (${e.message}). Falling back to Spotmate for stream warmup."
-            )
-            SpotifyApi.downloadSongFromSpotmate(song.url)
+            Log.e(TAG, "Spotmate stream fetch failed: ${e.message}")
+            throw Exception("Stream unavailable: ${e.message}")
         }
 
         if (audioData.isEmpty() || audioData.size < 100_000) {
-            throw Exception("Spotdown stream payload is too small")
+            throw Exception("Stream payload is too small")
         }
 
         tempFile.writeBytes(audioData)
@@ -108,7 +108,7 @@ class MusicService(private val context: Context) {
         }
 
         if (!finalFile.exists() || finalFile.length() <= 0L) {
-            throw Exception("Failed to persist Spotdown stream file")
+            throw Exception("Failed to persist stream file")
         }
 
         return finalFile.absolutePath
@@ -156,9 +156,13 @@ class MusicService(private val context: Context) {
             if (durationSec <= 0L) {
                 false
             } else {
-                // Wide tolerance because some MP3s expose imperfect Xing durations.
-                val tolerance = maxOf(20, expectedDurationSec / 2)
-                abs(durationSec.toInt() - expectedDurationSec) <= tolerance || durationSec > 20L
+                // Accept if duration is within 30 seconds of expected. This is generous
+                // enough for VBR MP3s with imperfect Xing headers, but strict enough to
+                // reject truncated or wrong-track files.
+                // REMOVED: "|| durationSec > 20L" — that short-circuit was accepting any
+                // file over 20s as healthy, including wrong/truncated streams.
+                val tolerance = maxOf(30, expectedDurationSec / 5)
+                abs(durationSec.toInt() - expectedDurationSec) <= tolerance
             }
         } catch (_: Exception) {
             false
@@ -233,62 +237,15 @@ class MusicService(private val context: Context) {
                 throw Exception("Invalid Spotify URL format")
             }
 
-            Log.d(TAG, "Checking if song is cached: ${song.title}")
-            val cacheResponse = SpotifyApi.checkDirectDownload(song.url)
-            val isCached = cacheResponse.cached
-
-            Log.d(
-                TAG,
-                "Cache status: ${if (isCached) "CACHED" else "NOT CACHED"} (Success: ${cacheResponse.success}, Msg: ${cacheResponse.message})"
-            )
-
-            if (isCached) {
-                Log.d(TAG, "Song is cached, downloading immediately: ${song.title}")
-            } else {
-                Log.d(
-                    TAG,
-                    "Song not cached, requesting download (may take 30-50 seconds): ${song.title}"
-                )
+            Log.d(TAG, "Downloading from Spotmate: ${song.title}")
+            val audioData = withTimeout(90_000L) {
+                SpotifyApi.downloadSongFromSpotmate(song.url)
             }
-
-            var audioData: ByteArray? = null
-            var usedSpotmateFirst = false
-
-            suspend fun tryDownload(useSpotmate: Boolean): ByteArray {
-                val data = if (useSpotmate) {
-                    SpotifyApi.downloadSongFromSpotmate(song.url)
-                } else {
-                    SpotifyApi.downloadSong(song.url)
-                }
-                if (data.isEmpty()) {
-                    throw Exception("Downloaded file is empty")
-                }
-                if (data.size < 100_000) {
-                    throw Exception("Downloaded file is too small to be a valid MP3")
-                }
-                return data
+            if (audioData.isEmpty() || audioData.size < 100_000) {
+                throw Exception("Downloaded file is too small to be a valid MP3")
             }
-
-            try {
-                audioData = tryDownload(false)
-                Log.d(
-                    TAG,
-                    "Downloaded audio buffer from primary source, size: ${audioData.size} bytes"
-                )
-            } catch (e: Exception) {
-                Log.e(
-                    TAG,
-                    "Primary download (Spotdown) failed: ${e.message}. Falling back to Spotmate."
-                )
-                usedSpotmateFirst = true
-                audioData = tryDownload(true)
-                Log.d(
-                    TAG,
-                    "Downloaded audio buffer from fallback source, size: ${audioData.size} bytes"
-                )
-            }
-
             audioFile.writeBytes(audioData)
+            Log.d(TAG, "Downloaded audio buffer, size: ${audioData.size} bytes")
             Log.d(TAG, "Wrote file to: ${audioFile.absolutePath}")
 
             if (!audioFile.exists() || audioFile.length() == 0L) {
@@ -309,23 +266,11 @@ class MusicService(private val context: Context) {
                 )
 
                 if (kotlin.math.abs(fileDurationSec - durationSec) > 5) {
-                    val alternativeName = if (usedSpotmateFirst) "Spotdown" else "Spotmate"
                     Log.w(
                         TAG,
-                        "Duration mismatch! Expected ${durationSec}s, got ${fileDurationSec}s. Retrying with alternative provider: $alternativeName..."
+                        "Duration mismatch! Expected ${durationSec}s, got ${fileDurationSec}s for ${song.title}"
                     )
-
-                    try {
-                        val fallbackAudioData = tryDownload(!usedSpotmateFirst)
-                        audioFile.writeBytes(fallbackAudioData)
-                        Log.d(TAG, "Fallback download successful. Overwrote file.")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Alternative fallback download failed: ${e.message}")
-                        // Keep original file if fallback fails? Or throw? 
-                        // User said "server keeps song cached so wrong song is sent over and over".
-                        // If fallback fails, we probably still have the wrong song.
-                        // But maybe better than nothing? proceeding with warning.
-                    }
+                    // Duration mismatch is logged but we keep the file as Spotmate is the sole source
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error verifying duration: ${e.message}")
@@ -433,10 +378,10 @@ class MusicService(private val context: Context) {
         val uuid = preferredUuid ?: existing?.uuid ?: generateUUID()
 
         // Resolve stream to local Spotdown-backed file to avoid unstable remote rebuffering.
-        val localStreamPath = try {
-            resolveSpotdownStreamToLocalFile(song, uuid)
+        val localFilePath = try {
+            resolveStreamToLocalFile(song, uuid)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to prepare Spotdown stream file", e)
+            Log.e(TAG, "Failed to prepare stream file", e)
             throw e
         }
 
@@ -449,7 +394,7 @@ class MusicService(private val context: Context) {
             artist = song.artist,
             thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else existing?.thumbnailUri,
             durationSec = durationSec,
-            localUri = localStreamPath,
+            localUri = localFilePath,
             ytVideoId = ytVideoId ?: existing?.ytVideoId,
             syncedLyrics = lyricsResult?.syncedLyrics ?: existing?.syncedLyrics,
             plainLyrics = lyricsResult?.plainLyrics ?: existing?.plainLyrics,
@@ -629,17 +574,21 @@ class MusicService(private val context: Context) {
             val isOrphaned = !validUris.contains(absolutePath) &&
                     !validThumbnails.contains(absolutePath)
 
-            // Also check file age for extra safety
+            // Only delete files that are NOT in the database AND are old.
+            // BUG FIX: The previous logic deleted ANY file older than maxAgeDays,
+            // including DB-referenced stream files for favourite tracks. Now we only
+            // use age as a secondary guard for truly orphaned files (e.g. from a
+            // crash mid-write). DB-referenced files are lifetime-managed explicitly.
             val isOld = file.lastModified() < cutoffTime
 
-            if (isOrphaned || isOld) {
+            if (isOrphaned && isOld) {
                 val size = file.length()
                 if (file.delete()) {
                     filesDeleted++
                     bytesFreed += size
-                    Log.d(TAG, "Deleted orphaned/old cache file: ${file.name} (${size} bytes)")
+                    Log.d(TAG, "Deleted orphaned cache file: ${file.name} (${size} bytes, ${maxAgeDays}d+ old)")
                 } else {
-                    Log.w(TAG, "Failed to delete cache file: ${file.name}")
+                    Log.w(TAG, "Failed to delete orphaned cache file: ${file.name}")
                 }
             }
         }

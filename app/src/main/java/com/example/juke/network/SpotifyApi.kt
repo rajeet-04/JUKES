@@ -4,7 +4,6 @@ import android.util.Base64
 import android.util.Log
 import com.example.juke.BuildConfig
 import com.example.juke.models.LRCLibResult
-import com.example.juke.models.SpotdownCheckResponse
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyAlbumTracksResponse
@@ -57,11 +56,11 @@ fun Throwable.isOffline(): Boolean {
 
 /**
  * Official Spotify Web API Service.
- * 
+ *
  * This service handles:
  * 1. OAuth authentication with Client Credentials flow
  * 2. Searching for songs on Spotify (US market)
- * 3. Downloading MP3 files from Spotdown (fallback)
+ * 3. Downloading MP3 files from Spotmate
  * 4. Fetching lyrics from LRCLib
  */
 object SpotifyApi {
@@ -69,50 +68,6 @@ object SpotifyApi {
     private const val TAG = "SpotifyApi"
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
-    private const val SPOTDOWN_BASE_URL = "https://spotdown.org/api"
-
-    // Dynamic Spotdown API key, fetched from Cloudflare KV Worker
-    private var spotdownApiKey: String? = null
-    private var spotdownApiKeyExpiry: Long = 0L
-    private val spotdownMutex = Mutex()
-
-    // Deployed worker URL from BuildConfig
-    private val SPOTDOWN_WORKER_URL = BuildConfig.SPOTDOWN_WORKER_URL
-
-    suspend fun clearSpotdownApiKey() {
-        spotdownMutex.withLock {
-            spotdownApiKey = null
-            spotdownApiKeyExpiry = 0L
-        }
-    }
-
-    private suspend fun getSpotdownApiKey(): String {
-        if (SPOTDOWN_WORKER_URL.isBlank()) {
-            throw IllegalStateException("SPOTDOWN_WORKER_URL is not configured. Check local.properties and build config.")
-        }
-        val now = System.currentTimeMillis()
-        spotdownApiKey?.takeIf { spotdownApiKeyExpiry > now }?.let { return it }
-        return spotdownMutex.withLock {
-            val cached = spotdownApiKey?.takeIf { spotdownApiKeyExpiry > now }
-            if (cached != null) return@withLock cached
-            try {
-                val response: HttpResponse = ApiClient.httpClient.get(SPOTDOWN_WORKER_URL)
-
-                // Assuming the worker returns { "value": "the-api-key" } based on the example
-                @kotlinx.serialization.Serializable
-                data class WorkerResponse(val value: String?)
-
-                val workerResponse: WorkerResponse = json.decodeFromString(response.bodyAsText())
-                val key = workerResponse.value ?: throw Exception("API key missing from response")
-                spotdownApiKey = key
-                spotdownApiKeyExpiry = System.currentTimeMillis() + 3_600_000L // 1 hour TTL
-                key
-            } catch (e: Exception) {
-                Log.e(TAG, "Error fetching Spotdown API Key from worker: ${e.message}", e)
-                throw Exception("Failed to get Spotdown API Key", e)
-            }
-        }
-    }
 
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
@@ -614,137 +569,7 @@ object SpotifyApi {
         }
     }
 
-    /**
-     * Check if a Spotify song is cached on Spotdown for faster download.
-     * 
-     * @param spotifyUrl Spotify track URL (e.g., https://open.spotify.com/track/...)
-     * @return SpotdownCheckResponse with cached boolean and status
-     */
-    suspend fun checkDirectDownload(spotifyUrl: String): SpotdownCheckResponse {
-        return try {
-            val apiKey = getSpotdownApiKey()
-            val response = ApiClient.httpClient.get("$SPOTDOWN_BASE_URL/check-direct-download") {
-                parameter("url", spotifyUrl)
-                header("x-session-token", apiKey)
-                header("referer", "https://spotdown.org/")
-                header("sec-fetch-site", "same-site")
-                header("sec-fetch-mode", "cors")
-                header("sec-fetch-dest", "empty")
-            }
 
-            try {
-                response.body()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error parsing checkDirectDownload response: ${e.message}")
-                // If parsing fails (e.g. error message structure), assume not cached but log it
-                SpotdownCheckResponse(
-                    cached = false,
-                    success = false,
-                    message = "Parsing error: ${e.message}"
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking direct download: ${e.message}", e)
-            SpotdownCheckResponse(
-                cached = false,
-                success = false,
-                message = "Network error: ${e.message}"
-            )
-        }
-    }
-
-    /**
-     * Download an MP3 file from Spotdown using Spotify URL.
-     * 
-     * This method includes:
-     * - Retry logic with exponential backoff (up to 3 retries)
-     * - MP3 file validation (checks for ID3 tags or MP3 frame sync)
-     * - 2-minute timeout
-     * 
-     * @param spotifyUrl Spotify track URL (e.g., https://open.spotify.com/track/...)
-     * @param retryAttempt Current retry attempt (internal use)
-     * @return ByteArray of MP3 file data
-     * @throws Exception if download fails after all retries
-     */
-    suspend fun downloadSong(
-        spotifyUrl: String,
-        retryAttempt: Int = 0
-    ): ByteArray {
-        val maxRetries = 3
-        val retryDelays = listOf(2000L, 4000L, 8000L) // 2s, 4s, 8s
-
-        return try {
-            Log.d(TAG, "Making download request for URL: $spotifyUrl (attempt ${retryAttempt + 1})")
-
-            val apiKey = getSpotdownApiKey()
-            val response = ApiClient.httpClient.post("$SPOTDOWN_BASE_URL/download") {
-                contentType(ContentType.Application.Json)
-                header("x-api-key", apiKey)
-                header("Referer", "https://spotdown.org/")
-                setBody(mapOf("url" to spotifyUrl))
-            }
-
-            val audioData: ByteArray = response.body()
-            Log.d(TAG, "Download response data size: ${audioData.size} bytes")
-
-            // Validate MP3 file
-            if (audioData.size < 3) {
-                throw Exception("Downloaded file is too small")
-            }
-
-            val isID3 = audioData[0] == 0x49.toByte() &&
-                    audioData[1] == 0x44.toByte() &&
-                    audioData[2] == 0x33.toByte() // "ID3"
-
-            val isMP3Frame = audioData[0] == 0xFF.toByte() &&
-                    (audioData[1].toInt() and 0xE0) == 0xE0
-
-            Log.d(
-                TAG,
-                "First 3 bytes: ${audioData.take(3).joinToString(" ") { "0x%02X".format(it) }}"
-            )
-            Log.d(TAG, "Is ID3 tag: $isID3")
-            Log.d(TAG, "Is MP3 frame: $isMP3Frame")
-
-            if (!isID3 && !isMP3Frame) {
-                val textResponse = audioData.take(500).toByteArray().decodeToString()
-                Log.e(TAG, "Received non-MP3 response: $textResponse")
-                throw Exception("Spotdown returned non-audio payload: $textResponse")
-            }
-
-            audioData
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error downloading song: ${e.message}", e)
-
-            val isSessionTokenError =
-                e.message?.contains("Session token required", ignoreCase = true) == true
-            if (isSessionTokenError) {
-                // Deterministic provider-side auth failure: let caller fallback immediately.
-                throw e
-            }
-
-            // Retry on 500 errors
-            if (retryAttempt < maxRetries) {
-                val delay = retryDelays[retryAttempt]
-                Log.d(
-                    TAG,
-                    "[Download Retry] Error, retrying in ${delay}ms (attempt ${retryAttempt + 1}/$maxRetries)..."
-                )
-                delay(delay)
-                return downloadSong(spotifyUrl, retryAttempt + 1)
-            }
-
-            throw e
-        }
-    }
-
-    /**
-     * Download from Spotmate (Fallback Source).
-     *
-     * @param spotifyUrl Spotify track URL
-     * @return ByteArray of MP3 file data
-     */
     /**
      * Get the direct download/stream URL from Spotmate.
      * Useful for instant playback.

@@ -502,15 +502,16 @@ class QueueManager private constructor(private val context: Context) {
      * Offline fallback: builds a queue from the local library using a scoring algorithm.
      *
      * Scoring weights per track (relative to the current track):
-     * - +50: Same primary artist (name match)
-     * - +30: Shared collaborating artist (artistSpotifyIds overlap, or name appears in artist string)
-     * - +20: Same album (albumSpotifyId match)
+     * - +10: Same primary artist (mild preference, not dominant)
+     * - +5:  Shared collaborating artist (small nudge toward collaborative tracks)
+     * - +8:  Same album (albumSpotifyId match)
      * - +10: Is a favourite
      * - +5 per 10 plays: High play count (capped at +25)
      * - -10: Recently played in the last 24 hours
+     * - -20: Artist was recently played (last 10 tracks) — prevents same-artist flooding
      *
      * Tracks already in the queue or with no local file are excluded.
-     * If no same-artist tracks score above 0, falls back to favourites / most-played.
+     * If no tracks score above 0, falls back to favourites / most-played.
      *
      * @param currentTrack The currently playing track to seed the queue from
      */
@@ -565,11 +566,11 @@ class QueueManager private constructor(private val context: Context) {
                     val trackArtistNames = parseArtistNames(track.artist)
                     val trackArtistIds = track.artistSpotifyIds?.toSet() ?: emptySet()
 
-                    // +50: Same primary artist (name match)
+                    // +10: Same primary artist — mild preference, keeps variety intact
                     if (ArtistUtils.areArtistsEqual(track.artist, currentTrack.artist)) {
-                        score += 50
+                        score += 10
                     } else {
-                        // +30: Shared collaborating artist
+                        // +5: Shared collaborating artist (small nudge, not dominant)
                         val sharedByName = currentArtistNames.intersect(trackArtistNames)
                         val sharedById =
                             if (currentArtistIds.isNotEmpty() && trackArtistIds.isNotEmpty()) {
@@ -577,16 +578,16 @@ class QueueManager private constructor(private val context: Context) {
                             } else emptySet()
 
                         if (sharedByName.isNotEmpty() || sharedById.isNotEmpty()) {
-                            score += 30
+                            score += 5
                         }
                     }
 
-                    // +20: Same album
+                    // +8: Same album
                     if (currentTrack.albumSpotifyId != null &&
                         track.albumSpotifyId != null &&
                         currentTrack.albumSpotifyId == track.albumSpotifyId
                     ) {
-                        score += 20
+                        score += 8
                     }
 
                     // +10: Is favourite
@@ -599,6 +600,13 @@ class QueueManager private constructor(private val context: Context) {
                     val lastPlayedMs = track.lastPlayedAt?.toLongOrNull()
                     if (lastPlayedMs != null && (now - lastPlayedMs) < oneDayMs) {
                         score -= 10
+                    }
+
+                    // -20: Artist was recently heard (last 10 played tracks).
+                    // Prevents same-artist flooding when the library is small.
+                    val recentWindow = recentArtists.takeLast(10)
+                    if (recentWindow.any { ArtistUtils.areArtistsEqual(it, track.artist) }) {
+                        score -= 20
                     }
 
                     ScoredTrack(track, score)

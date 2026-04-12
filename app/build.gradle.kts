@@ -39,12 +39,6 @@ android {
             "SPOTIFY_CLIENT_SECRET",
             "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
         )
-        val spotdownWorkerUrl = properties.getProperty("SPOTDOWN_WORKER_URL", "")
-        buildConfigField(
-            "String",
-            "SPOTDOWN_WORKER_URL",
-            "\"$spotdownWorkerUrl\""
-        )
     }
 
     signingConfigs {
