@@ -452,34 +452,20 @@ class PlaybackService : MediaLibraryService() {
                 if (oldTrackId != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                     serviceScope.launch {
                         try {
-                            val oldTrack = database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
+                            // Try QueueManager's in-memory queue first (works for streams not in DB)
+                            val oldTrack = queueManager.currentQueue.value.find { it.uuid == oldTrackId }
+                                ?: database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
+
                             if (oldTrack != null && oldTrack.isStream) {
                                 // Wait 3 seconds before cleaning up the finished stream file.
                                 // ExoPlayer's CacheDataSource may still be draining its read
                                 // handle on the old file (closing buffers) at transition time.
-                                // Deleting the file immediately causes a "premature stream end"
-                                // error that can pause the incoming track's first buffer fill.
                                 kotlinx.coroutines.delay(3_000L)
 
-                                // Rule: Clear ExoPlayer's overlay cache entry for this URI
+                                // Clear ExoPlayer's overlay cache entry for this URI
                                 StreamCacheManager.removeTrackCache(oldTrack.localUri)
-                                Log.d(TAG, "Cleared cache for finished track: ${oldTrack.title}")
-
-                                // Only delete the local file if NOT a favorite and NOT in any playlist
-                                val playlists =
-                                    database.playlistDao().getPlaylistsForTrack(oldTrack.uuid)
-                                if (!oldTrack.isFavourite && playlists.isEmpty()) {
-                                    Log.d(
-                                        TAG,
-                                        "Cleaning up finished stream track: ${oldTrack.title}"
-                                    )
-                                    musicService.deleteTrackAndFiles(oldTrack)
-                                } else {
-                                    Log.d(
-                                        TAG,
-                                        "Keeping finished stream track (Favorite: ${oldTrack.isFavourite}, Playlists: ${playlists.size})"
-                                    )
-                                }
+                                Log.d(TAG, "Cleared ExoPlayer cache for finished stream: ${oldTrack.title}")
+                                // Note: Stream file deletion is handled by LRU eviction in MusicService
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error cleaning up stream track: ${e.message}")

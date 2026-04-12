@@ -144,6 +144,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             DatabaseMigrationHelper.fixDownloadTimestamps(application)
         }
 
+        // Purge stale stream entries from DB (one-time cleanup for old behavior)
+        viewModelScope.launch(Dispatchers.IO) {
+            musicService.purgeStaleStreamEntries()
+        }
+
         // Observe restored state and update UI with saved queue
         viewModelScope.launch {
             playbackManager.hasRestoredState.collect { hasState ->
@@ -828,8 +833,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
 
                     // Notify QueueManager so it doesn't try to recommend/download this
-                    // The track is already saved to database with streaming URL
-                    // No need to trigger download queue since track will be properly managed
+                    // Stream tracks are NOT saved to database — they only exist in the
+                    // playback queue and LRU disk cache until explicitly promoted to download.
                     queueManager.notifyDownloadStarted(tempTrack, addToUi = false)
 
                     Log.d("MusicViewModel", "Spotdown stream prepared and playing: ${song.title}")

@@ -65,7 +65,6 @@ fun LyricsOverlay(
         mutableFloatStateOf(currentTrack.lyricsOffsetMs.toFloat())
     }
     var showSyncControls by remember(currentTrack.uuid) { mutableStateOf(false) }
-    var currentLineIndex by remember(currentTrack.uuid) { mutableIntStateOf(0) }
 
     // Calculate padding to center active line in the image
     val verticalPadding = if (isTablet && isLandscape) {
@@ -84,21 +83,30 @@ fun LyricsOverlay(
                 parseSyncedLyrics(syncedLyrics, localOffsetMs.toLong())
             }
             val listState = rememberLazyListState()
+            var currentLineIndex by remember(currentTrack.uuid) { mutableIntStateOf(-1) }
+            var isFirstScroll by remember(currentTrack.uuid) { mutableStateOf(true) }
 
             LaunchedEffect(currentPosition, lyricLines) {
                 val newIndex = lyricLines.indexOfLast { it.timeMs <= currentPosition }
                 if (newIndex >= 0 && newIndex != currentLineIndex) {
                     currentLineIndex = newIndex
                     if (lyricLines.isNotEmpty() && !listState.isScrollInProgress) {
-                        listState.animateScrollToItem(
-                            index = newIndex,
-                            scrollOffset = 0
-                        )
+                        if (isFirstScroll) {
+                            listState.scrollToItem(index = newIndex, scrollOffset = 0)
+                            isFirstScroll = false
+                        } else {
+                            listState.animateScrollToItem(index = newIndex, scrollOffset = 0)
+                        }
                     }
                 } else if (newIndex < 0 && currentLineIndex != 0) {
                     currentLineIndex = 0
                     if (lyricLines.isNotEmpty() && !listState.isScrollInProgress) {
-                        listState.animateScrollToItem(0)
+                        if (isFirstScroll) {
+                            listState.scrollToItem(index = 0)
+                            isFirstScroll = false
+                        } else {
+                            listState.animateScrollToItem(0)
+                        }
                     }
                 }
             }

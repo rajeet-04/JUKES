@@ -339,11 +339,11 @@ interface TrackDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTracks(tracks: List<TrackEntity>)
 
-    @Query("SELECT * FROM tracks ORDER BY last_played_at DESC")
+    @Query("SELECT * FROM tracks WHERE is_stream = 0 ORDER BY last_played_at DESC")
     suspend fun getAllTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_stream = 0 ORDER BY last_played_at DESC")
     fun getAllTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
@@ -359,11 +359,11 @@ interface TrackDao {
     @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     fun getFavouritesFlow(): Flow<List<TrackEntity>>
 
-    @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
+    @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC")
     suspend fun getDownloadedTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC")
     fun getDownloadedTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("UPDATE tracks SET lyrics_offset_ms = :offsetMs WHERE uuid = :uuid")
@@ -389,6 +389,9 @@ interface TrackDao {
 
     @Query("DELETE FROM tracks")
     suspend fun deleteAllTracks()
+
+    @Query("DELETE FROM tracks WHERE is_stream = 1")
+    suspend fun deleteStreamTracks(): Int
 
     @Query("SELECT * FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT :limit")
     suspend fun getMostPlayed(limit: Int = 10): List<TrackEntity>

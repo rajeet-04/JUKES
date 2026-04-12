@@ -60,7 +60,7 @@ fun Throwable.isOffline(): Boolean {
  * This service handles:
  * 1. OAuth authentication with Client Credentials flow
  * 2. Searching for songs on Spotify (US market)
- * 3. Downloading MP3 files from Spotmate
+ * 3. Downloading MP3 files from Spotmate or Gamepvz (primary / fallback swap)
  * 4. Fetching lyrics from LRCLib
  */
 object SpotifyApi {
@@ -70,6 +70,7 @@ object SpotifyApi {
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
 
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
+    private const val GAMEPVZ_BASE_URL  = "https://gamepvz.com"
     private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
 
     private var accessToken: String? = null
@@ -693,6 +694,75 @@ object SpotifyApi {
             throw e
         }
     }
+
+    /**
+     * Download an MP3 from gamepvz.com using a Spotify track URL.
+     *
+     * Flow:
+     *   1. POST /api/download/get-url  → JSON with `originalVideoUrl` (relative path)
+     *   2. GET  /api/download/dl?url=<base64>  → raw MP3 bytes
+     *
+     * @param spotifyUrl Spotify track URL (https://open.spotify.com/track/...)
+     * @return ByteArray of MP3 file data
+     * @throws Exception if either step fails or the payload is too small
+     */
+    suspend fun downloadSongFromGamepvz(spotifyUrl: String): ByteArray {
+        Log.d(TAG, "Attempting Gamepvz download for: $spotifyUrl")
+        try {
+            // Step 1: Resolve to a download path
+            val metaResponse: HttpResponse =
+                ApiClient.httpClient.post("$GAMEPVZ_BASE_URL/api/download/get-url") {
+                    contentType(ContentType.Application.Json)
+                    header("User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                        "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
+                    header("Accept", "application/json, text/plain, */*")
+                    header("Sec-Fetch-Site", "same-origin")
+                    header("Sec-Fetch-Mode", "cors")
+                    header("Sec-Fetch-Dest", "empty")
+                    setBody(mapOf("url" to spotifyUrl))
+                }
+
+            val metaBody = metaResponse.bodyAsText()
+            Log.d(TAG, "Gamepvz meta response (${metaResponse.status.value}): ${metaBody.take(500)}")
+
+            // Parse the `originalVideoUrl` field (relative path like /api/download/dl?url=...)
+            val relativeUrl = json.decodeFromString<GamepvzMetaResponse>(metaBody).originalVideoUrl
+                ?: throw Exception("Gamepvz: originalVideoUrl missing in response")
+
+            val downloadUrl = "$GAMEPVZ_BASE_URL$relativeUrl"
+            Log.d(TAG, "Gamepvz download URL: $downloadUrl")
+
+            // Step 2: Download the MP3
+            val audioResponse: HttpResponse = ApiClient.httpClient.get(downloadUrl) {
+                header("Referer", "$GAMEPVZ_BASE_URL/")
+                header("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
+            }
+            val audioData: ByteArray = audioResponse.body()
+
+            if (audioData.size < 100_000) {
+                throw Exception("Gamepvz download too small (${audioData.size} bytes)")
+            }
+
+            Log.d(TAG, "Gamepvz download succeeded: ${audioData.size} bytes")
+            return audioData
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Gamepvz download failed: ${e.message}", e)
+            throw e
+        }
+    }
+
+    @kotlinx.serialization.Serializable
+    private data class GamepvzMetaResponse(
+        val code: Int? = null,
+        val title: String? = null,
+        val originalVideoUrl: String? = null,
+        val coverUrl: String? = null,
+        val authorName: String? = null
+    )
 
     /**
      * Search for lyrics on LRCLib using specific query parameters.

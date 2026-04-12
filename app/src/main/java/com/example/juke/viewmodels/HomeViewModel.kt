@@ -32,12 +32,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun buildGreeting(): String {
         val calendar = Calendar.getInstance()
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
-        val dayOfWeek = calendar.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, java.util.Locale.getDefault())
+        calendar.getDisplayName(
+            Calendar.DAY_OF_WEEK,
+            Calendar.LONG,
+            java.util.Locale.getDefault()
+        )
         return when {
-            hour in 5..11 -> "Rise & Shine! Happy $dayOfWeek"
-            hour in 12..16 -> "Good Afternoon! It's $dayOfWeek"
-            hour in 17..20 -> "Good Evening! Enjoy your $dayOfWeek"
-            else -> "Night Vibes! $dayOfWeek tunes"
+            hour in 5..11 -> "Rise & Shine!"
+            hour in 12..16 -> "Good Afternoon!"
+            hour in 17..20 -> "Good Evening!"
+            else -> "Night Vibes!"
         }
     }
 
