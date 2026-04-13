@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 
@@ -233,6 +234,23 @@ class QueueManager private constructor(private val context: Context) {
         if (currentList.size <= 2) {
             val currentTrack = currentList.firstOrNull()
             currentTrack?.let { fetchAndQueueRecommendations(it) }
+        }
+    }
+
+    /**
+     * Replace a track in the queue with an updated version (e.g. stream promoted to download).
+     * Keeps the same position in the queue.
+     *
+     * @param trackId UUID of the track to replace
+     * @param updatedTrack The new Track object with updated metadata/paths
+     */
+    fun replaceTrackInQueue(trackId: String, updatedTrack: Track) {
+        val currentList = _currentQueue.value.toMutableList()
+        val index = currentList.indexOfFirst { it.uuid == trackId }
+        if (index != -1) {
+            currentList[index] = updatedTrack
+            _currentQueue.value = currentList
+            Log.d(TAG, "Replaced track in queue at index $index: ${updatedTrack.title}")
         }
     }
 
@@ -862,7 +880,9 @@ class QueueManager private constructor(private val context: Context) {
                             "Device is offline and track ${track.title} is unavailable. Removing from queue."
                         )
                         removeFromQueue(track.uuid)
-                        PlaybackManager.getInstance(context).removeDeletedTrackFromQueue(track.uuid)
+                        withContext(Dispatchers.Main) {
+                            PlaybackManager.getInstance(context).removeDeletedTrackFromQueue(track.uuid)
+                        }
                     } else {
                         // Online -> Prepare/Refresh
                         Log.d(
@@ -888,9 +908,11 @@ class QueueManager private constructor(private val context: Context) {
                                     musicService.smartDownloadAndIndex(s)
                                 }
 
-                                // Update it in the PlaybackManager's queue silently
-                                PlaybackManager.getInstance(context)
-                                    .replaceTrackInQueue(track.uuid, updatedTrack)
+                                // Update it in the PlaybackManager's queue silently (must be on main thread)
+                                withContext(Dispatchers.Main) {
+                                    PlaybackManager.getInstance(context)
+                                        .replaceTrackInQueue(track.uuid, updatedTrack)
+                                }
 
                                 // Update in our local queue representation
                                 val currentList = _currentQueue.value.toMutableList()
@@ -904,8 +926,10 @@ class QueueManager private constructor(private val context: Context) {
                             Log.e(TAG, "Error emergency preparing ${track.title}: ${e.message}", e)
                             // Remove from queue if recovery completely fails to avoid blocking playback
                             removeFromQueue(track.uuid)
-                            PlaybackManager.getInstance(context)
-                                .removeDeletedTrackFromQueue(track.uuid)
+                            withContext(Dispatchers.Main) {
+                                PlaybackManager.getInstance(context)
+                                    .removeDeletedTrackFromQueue(track.uuid)
+                            }
                         }
                     }
                 }

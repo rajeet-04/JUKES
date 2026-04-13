@@ -1676,7 +1676,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     musicService.promoteStreamToDownload(track)
                 }
 
-// Update UI with the new downloaded track
+                // Replace in PlaybackManager's MediaController queue so ExoPlayer uses the new file
+                playbackManager.replaceTrackInQueue(track.uuid, updatedTrack)
+
+                // Replace in QueueManager's internal queue so pre-fetch doesn't see stale paths
+                queueManager.replaceTrackInQueue(track.uuid, updatedTrack)
+
+                // Update UI with the new downloaded track
                 _uiState.update { state ->
                     val newQueue = state.queue.map {
                         if (it.uuid == track.uuid) updatedTrack else it

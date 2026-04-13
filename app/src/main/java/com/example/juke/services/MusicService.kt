@@ -473,26 +473,106 @@ class MusicService(private val context: Context) {
     suspend fun promoteStreamToDownload(track: Track): Track {
         if (!track.isStream) return track
 
-        Log.d(TAG, "Promoting track to download: ${track.title}")
+        Log.d(TAG, "Promoting stream to permanent download: ${track.title}")
 
-        val spotifyUrl =
-            if (track.spotifyId != null) "https://open.spotify.com/track/${track.spotifyId}" else null
-        if (spotifyUrl == null) throw Exception("Cannot download: Missing Spotify info")
+        val musicDir = File(context.filesDir, "music")
+        if (!musicDir.exists()) musicDir.mkdirs()
 
-        // Construct SpotdownSong
-        val song = SpotdownSong(
+        val permanentFile = File(musicDir, "${track.uuid}.mp3")
+
+        // Try to move the existing stream file locally instead of re-fetching
+        val streamFileUsable = track.localUri?.let { uri ->
+            val streamFile = File(uri)
+            if (streamFile.exists() && streamFile.length() > 100_000 && isValidMp3Header(streamFile)) {
+                try {
+                    // Copy to music dir (copy+delete is safer than rename across dirs)
+                    streamFile.copyTo(permanentFile, overwrite = true)
+                    streamFile.delete()
+                    Log.d(TAG, "Moved stream file to permanent storage: ${permanentFile.absolutePath}")
+                    true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to move stream file locally: ${e.message}")
+                    false
+                }
+            } else {
+                Log.w(TAG, "Stream file missing or too small, will re-download")
+                false
+            }
+        } ?: false
+
+        // Fall back to full network download only if moving failed
+        if (!streamFileUsable) {
+            Log.d(TAG, "Falling back to network download for: ${track.title}")
+            val spotifyUrl =
+                if (track.spotifyId != null) "https://open.spotify.com/track/${track.spotifyId}" else null
+            if (spotifyUrl == null) throw Exception("Cannot download: Missing Spotify info")
+
+            val song = SpotdownSong(
+                title = track.title,
+                artist = track.artist,
+                thumbnail = track.thumbnailUri ?: "",
+                url = spotifyUrl,
+                duration = "${track.durationSec / 60}:${"%02d".format(track.durationSec % 60)}",
+                spotifyId = track.spotifyId,
+                albumSpotifyId = track.albumSpotifyId,
+                artistSpotifyIds = track.artistSpotifyIds
+            )
+            return smartDownloadAndIndex(song)
+        }
+
+        // Stream file moved successfully — persist thumbnail locally & update DB record
+        var localThumbnailUri = track.thumbnailUri
+        if (!localThumbnailUri.isNullOrBlank() && localThumbnailUri.startsWith("http")) {
+            try {
+                val thumbnailFile = File(musicDir, "${track.uuid}_thumb.jpg")
+                val imageBytes: ByteArray = retryWithBackoff(maxRetries = 3, operationName = "download thumbnail") {
+                    ApiClient.httpClient.get(localThumbnailUri!!).body()
+                }
+                if (imageBytes.isNotEmpty()) {
+                    thumbnailFile.writeBytes(imageBytes)
+                    localThumbnailUri = thumbnailFile.absolutePath
+                    Log.d(TAG, "Thumbnail saved locally: ${thumbnailFile.absolutePath}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Thumbnail download failed, keeping URL: ${e.message}")
+            }
+        }
+
+        // Fetch lyrics if not already present
+        var syncedLyrics = track.syncedLyrics
+        var plainLyrics = track.plainLyrics
+        if (syncedLyrics == null || plainLyrics == null) {
+            try {
+                val lyricsResult = SpotifyApi.searchLyrics(track.title, track.artist, "", track.durationSec)
+                if (syncedLyrics == null) syncedLyrics = lyricsResult?.syncedLyrics
+                if (plainLyrics == null) plainLyrics = lyricsResult?.plainLyrics
+            } catch (_: Exception) { }
+        }
+
+        val promotedTrack = Track(
+            uuid = track.uuid,
             title = track.title,
             artist = track.artist,
-            thumbnail = track.thumbnailUri ?: "",
-            url = spotifyUrl,
-            duration = "${track.durationSec / 60}:${"%02d".format(track.durationSec % 60)}",
+            thumbnailUri = localThumbnailUri,
+            durationSec = track.durationSec,
+            localUri = permanentFile.absolutePath,
+            ytVideoId = track.ytVideoId ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}"),
+            syncedLyrics = syncedLyrics,
+            plainLyrics = plainLyrics,
+            isFavourite = track.isFavourite,
+            playCount = track.playCount,
+            lastPlayedAt = track.lastPlayedAt,
+            downloadedAt = System.currentTimeMillis(),
             spotifyId = track.spotifyId,
             albumSpotifyId = track.albumSpotifyId,
-            artistSpotifyIds = track.artistSpotifyIds
+            artistSpotifyIds = track.artistSpotifyIds,
+            isStream = false,
+            lyricsOffsetMs = track.lyricsOffsetMs
         )
 
-        // Download
-        return smartDownloadAndIndex(song)
+        trackDao.insertTrack(promotedTrack.toEntity())
+        Log.d(TAG, "Stream promoted to permanent download (local move): ${track.title}")
+        return promotedTrack
     }
 
     suspend fun deleteTrackAndFiles(track: Track) {
