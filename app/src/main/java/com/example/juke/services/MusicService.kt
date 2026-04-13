@@ -462,10 +462,11 @@ class MusicService(private val context: Context) {
             lyricsOffsetMs = 0L
         )
 
-        // DO NOT insert into database — stream tracks are temporary, 
-        // only living in the playback queue and LRU disk cache.
-        // Only promoteStreamToDownload() should persist to the database.
-        Log.d(TAG, "Stream track prepared (NOT saved to DB): ${track.title}")
+        // Stream tracks are NOT inserted into DB here — the CALLER is responsible
+        // for persisting via trackDao.insertTrack() when the track should survive
+        // a restart (e.g. queue retention). promoteStreamToDownload() upgrades
+        // a stream entry to a permanent local download.
+        Log.d(TAG, "Stream track prepared (caller must persist to DB): ${track.title}")
         return track
     }
 
@@ -710,14 +711,18 @@ class MusicService(private val context: Context) {
 
     /**
      * One-time cleanup: Remove stale stream entries from the database.
-     * These were incorrectly created by the old streamTrack() implementation.
-     * Call this once on app startup to clean up legacy data.
+     * Preserves stream tracks that are part of the saved playback queue
+     * so they survive app restarts.
+     *
+     * @param preserveUuids UUIDs of tracks in the saved queue that should NOT be purged
      */
-    suspend fun purgeStaleStreamEntries(): Int {
-        val deleted = trackDao.deleteStreamTracks()
-        if (deleted > 0) {
-            Log.d(TAG, "Purged $deleted stale stream entries from database")
+    suspend fun purgeStaleStreamEntries(preserveUuids: Set<String> = emptySet()): Int {
+        val allStreams = trackDao.getStreamTracks()
+        val toDelete = allStreams.filter { it.uuid !in preserveUuids }
+        if (toDelete.isNotEmpty()) {
+            trackDao.deleteTracks(toDelete.map { it.uuid })
+            Log.d(TAG, "Purged ${toDelete.size} stale stream entries (preserved ${allStreams.size - toDelete.size} queue tracks)")
         }
-        return deleted
+        return toDelete.size
     }
 }

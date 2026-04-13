@@ -144,9 +144,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             DatabaseMigrationHelper.fixDownloadTimestamps(application)
         }
 
-        // Purge stale stream entries from DB (one-time cleanup for old behavior)
+        // Purge stale stream entries from DB, but keep stream tracks that are in the saved queue
         viewModelScope.launch(Dispatchers.IO) {
-            musicService.purgeStaleStreamEntries()
+            val prefs = application.getSharedPreferences("playback_state_prefs", android.content.Context.MODE_PRIVATE)
+            val savedIds = prefs.getString("queue_track_ids", "")
+                ?.split(",")
+                ?.filter { it.isNotBlank() }
+                ?.toSet() ?: emptySet()
+            musicService.purgeStaleStreamEntries(preserveUuids = savedIds)
         }
 
         // Observe restored state and update UI with saved queue
@@ -824,7 +829,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                 try {
                     val tempTrack = withContext(Dispatchers.IO) {
-                        musicService.streamTrack(song)
+                        musicService.streamTrack(song).also {
+                            trackDao.insertTrack(it.toEntity())
+                        }
                     }
 
                     // Play immediately
@@ -833,7 +840,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
 
                     // Notify QueueManager so it doesn't try to recommend/download this
-                    // Stream tracks are NOT saved to database — they only exist in the
+                    // Stream tracks are NOW saved to database — they exist in the
                     // playback queue and LRU disk cache until explicitly promoted to download.
                     queueManager.notifyDownloadStarted(tempTrack, addToUi = false)
 

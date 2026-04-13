@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
 import com.example.juke.database.MusicDatabase
+import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.Track
 import com.example.juke.network.OfflineException
@@ -106,6 +107,9 @@ class QueueManager private constructor(private val context: Context) {
     // External downloads tracking (downloaded outside QueueManager, e.g. Instant Play)
     // Key: "Title-Artist" to prevent adding them as recommendations
     private val _externalDownloads = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    // Tracks all generated recommendations and plays in this session
+    private val sessionHistory = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     /**
      * Notify QueueManager that a download has started externally (e.g. from Instant Play).
@@ -405,11 +409,18 @@ class QueueManager private constructor(private val context: Context) {
                                     val inQueue = currentQueueTitles.contains(trackPair)
                                     val isSeed = trackPair == seedTrackPair
                                     val isExternallyDownloading = _externalDownloads.contains(key)
+                                    val inHistory = sessionHistory.contains(key)
+
                                     if (isExternallyDownloading) Log.d(
                                         TAG,
                                         "Filtered out external download: ${rec.title}"
                                     )
-                                    !inQueue && !isSeed && !isExternallyDownloading
+                                    if (inHistory) Log.d(
+                                        TAG,
+                                        "Filtered out already played song: ${rec.title}"
+                                    )
+
+                                    !inQueue && !isSeed && !isExternallyDownloading && !inHistory
                                 }
 
                                 Log.d(
@@ -458,6 +469,7 @@ class QueueManager private constructor(private val context: Context) {
                                     if (finalRecs.isNotEmpty()) {
                                         finalRecs.forEach { rec ->
                                             pendingRecommendations.offer(rec)
+                                            sessionHistory.add("${rec.title.lowercase()}-${rec.artist.lowercase()}")
                                             Log.d(
                                                 TAG,
                                                 "Queued for download: ${rec.title} by ${rec.artist}"
@@ -626,7 +638,9 @@ class QueueManager private constructor(private val context: Context) {
                 Log.d(TAG, "Offline fallback: no scored candidates, using favourites/most-played")
                 allDownloaded
                     .filter {
-                        it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && isLocalFilePlayable(it.localUri)
+                        it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && isLocalFilePlayable(
+                            it.localUri
+                        )
                                 && !BlacklistManager.containsBlacklistedArtist(
                             context,
                             it.artist,
@@ -746,7 +760,9 @@ class QueueManager private constructor(private val context: Context) {
                                 TAG,
                                 "Stream Mode enabled, resolving stream URL for: ${rec.title}"
                             )
-                            musicService.streamTrack(song)
+                            musicService.streamTrack(song).also {
+                                trackDao.insertTrack(it.toEntity())
+                            }
                         } else {
                             Log.d(TAG, "Stream Mode disabled, downloading: ${rec.title}")
                             musicService.smartDownloadAndIndex(song)
@@ -794,7 +810,8 @@ class QueueManager private constructor(private val context: Context) {
             val upcoming = queue.take(3) // Pre-check the next 3 tracks
 
             val isOffline = run {
-                val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                val cm =
+                    context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
                 val network = cm.activeNetwork
                 val caps = cm.getNetworkCapabilities(network)
                 caps == null || !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -822,7 +839,10 @@ class QueueManager private constructor(private val context: Context) {
                             val currentTimeSec = System.currentTimeMillis() / 1000
                             // Refresh if expiring within 15 minutes (900 seconds) or already expired
                             if (expiryTimeSec - currentTimeSec < 900) {
-                                Log.d(TAG, "Stream URL for ${track.title} is expiring soon, scheduling refresh.")
+                                Log.d(
+                                    TAG,
+                                    "Stream URL for ${track.title} is expiring soon, scheduling refresh."
+                                )
                                 needsRefresh = true
                             }
                         } else if (url.contains("googleusercontent.com/spotify.com")) {
@@ -837,12 +857,18 @@ class QueueManager private constructor(private val context: Context) {
                 if (needsRefresh) {
                     if (isOffline) {
                         // Offline and missing file or needing refresh -> remove from queue to prevent playback stoppage
-                        Log.w(TAG, "Device is offline and track ${track.title} is unavailable. Removing from queue.")
+                        Log.w(
+                            TAG,
+                            "Device is offline and track ${track.title} is unavailable. Removing from queue."
+                        )
                         removeFromQueue(track.uuid)
                         PlaybackManager.getInstance(context).removeDeletedTrackFromQueue(track.uuid)
                     } else {
                         // Online -> Prepare/Refresh
-                        Log.d(TAG, "Track not ready/expired: ${track.title}, triggering preparation/refresh")
+                        Log.d(
+                            TAG,
+                            "Track not ready/expired: ${track.title}, triggering preparation/refresh"
+                        )
                         try {
                             val song = if (track.spotifyId != null) {
                                 SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId))
@@ -861,10 +887,11 @@ class QueueManager private constructor(private val context: Context) {
                                 } else {
                                     musicService.smartDownloadAndIndex(s)
                                 }
-                                
+
                                 // Update it in the PlaybackManager's queue silently
-                                PlaybackManager.getInstance(context).replaceTrackInQueue(track.uuid, updatedTrack)
-                                
+                                PlaybackManager.getInstance(context)
+                                    .replaceTrackInQueue(track.uuid, updatedTrack)
+
                                 // Update in our local queue representation
                                 val currentList = _currentQueue.value.toMutableList()
                                 val qIndex = currentList.indexOfFirst { it.uuid == track.uuid }
@@ -877,7 +904,8 @@ class QueueManager private constructor(private val context: Context) {
                             Log.e(TAG, "Error emergency preparing ${track.title}: ${e.message}", e)
                             // Remove from queue if recovery completely fails to avoid blocking playback
                             removeFromQueue(track.uuid)
-                            PlaybackManager.getInstance(context).removeDeletedTrackFromQueue(track.uuid)
+                            PlaybackManager.getInstance(context)
+                                .removeDeletedTrackFromQueue(track.uuid)
                         }
                     }
                 }

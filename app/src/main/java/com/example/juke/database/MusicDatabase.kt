@@ -390,6 +390,9 @@ interface TrackDao {
     @Query("DELETE FROM tracks")
     suspend fun deleteAllTracks()
 
+    @Query("SELECT * FROM tracks WHERE is_stream = 1")
+    suspend fun getStreamTracks(): List<TrackEntity>
+
     @Query("DELETE FROM tracks WHERE is_stream = 1")
     suspend fun deleteStreamTracks(): Int
 

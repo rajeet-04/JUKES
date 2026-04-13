@@ -49,6 +49,7 @@ import androidx.media3.session.SessionToken
 import com.example.juke.R
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
+import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
@@ -1180,6 +1181,17 @@ class PlaybackManager private constructor(private val context: Context) {
                 {
                     controller = controllerFuture?.get()
                     Log.d(TAG, "MediaController connected to PlaybackService")
+
+                    // Immediately sync UI with current background state
+                    controller?.let { ctrl ->
+                        _isPlaying.value = ctrl.isPlaying
+                        val count = ctrl.mediaItemCount
+                        val currentQueue = (0 until count).map { i -> ctrl.getMediaItemAt(i).mediaId }
+                        _queueFlow.value = currentQueue
+                        _currentQueueIndex.value = ctrl.currentMediaItemIndex
+                        _currentTrackId.value = ctrl.currentMediaItem?.mediaId
+                    }
+
                     // Add a Player.Listener on the controller's underlying player
                     playerListener = object : Player.Listener {
                         override fun onTimelineChanged(
@@ -2212,11 +2224,40 @@ class PlaybackManager private constructor(private val context: Context) {
             val savedIndex = prefs.getInt("queue_start_index", 0)
             val savedPosition = prefs.getLong("playback_position", 0L)
 
-            // Load tracks from database
+            // Load tracks from database, re-resolving stream files if needed
             val tracks = withContext(Dispatchers.IO) {
                 ids.mapNotNull { id ->
                     try {
-                        database.trackDao().getTrackByUuid(id)?.toTrack()
+                        val entity = database.trackDao().getTrackByUuid(id) ?: return@mapNotNull null
+                        var track = entity.toTrack()
+
+                        // For stream tracks whose file was evicted, re-resolve the stream
+                        if (track.isStream && track.spotifyId != null) {
+                            val fileExists = track.localUri?.let { uri ->
+                                try { java.io.File(uri).let { it.exists() && it.length() > 0 } }
+                                catch (_: Exception) { false }
+                            } ?: false
+
+                            if (!fileExists) {
+                                Log.d(TAG, "Stream file missing for '${track.title}', re-resolving...")
+                                try {
+                                    val spotifyUrl = "https://open.spotify.com/track/${track.spotifyId}"
+                                    val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId!!))
+                                    val refreshed = musicService.streamTrack(song, preferredUuid = track.uuid)
+                                    // Update DB with new localUri
+                                    database.trackDao().insertTrack(refreshed.toEntity())
+                                    track = refreshed
+                                    Log.d(TAG, "Re-resolved stream for '${track.title}'")
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to re-resolve stream for '${track.title}': ${e.message}")
+                                    // Keep the track in the queue anyway for metadata display;
+                                    // playback will trigger error recovery which re-fetches the stream
+                                    return@mapNotNull track
+                                }
+                            }
+                        }
+
+                        track
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to load track $id: ${e.message}")
                         null
@@ -2234,8 +2275,14 @@ class PlaybackManager private constructor(private val context: Context) {
                 "Restoring playback state: ${tracks.size} tracks, index=$savedIndex, position=$savedPosition"
             )
 
-            // Restore queue
+            // Restore queue — use createValidatedMediaItem but fall back to URI-less items
+            // for stream tracks that couldn't be re-resolved (they'll trigger error recovery)
             val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
+
+            if (mediaItems.isEmpty()) {
+                Log.d(TAG, "No playable media items could be created from saved queue")
+                return
+            }
 
             // MediaController methods must be called on main thread
             withContext(Dispatchers.Main) {
