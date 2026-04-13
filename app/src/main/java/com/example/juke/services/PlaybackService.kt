@@ -85,6 +85,33 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         private const val CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID =
             "CUSTOM_COMMAND_TOGGLE_FAVORITE"
+
+        /**
+         * Resolve artwork for a track into MediaMetadata.
+         * - Local files: read bytes and embed via setArtworkData (most reliable for notifications).
+         * - HTTP URLs: set as artworkUri so DataSourceBitmapLoader can fetch them.
+         */
+        internal fun applyArtwork(metadataBuilder: MediaMetadata.Builder, thumbnailUri: String?) {
+            thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
+                try {
+                    if (uriString.startsWith("http", ignoreCase = true)) {
+                        metadataBuilder.setArtworkUri(uriString.toUri())
+                    } else {
+                        val file = if (uriString.startsWith("file://") || uriString.startsWith("content://")) {
+                            java.io.File(uriString.toUri().path ?: return@let)
+                        } else {
+                            java.io.File(uriString)
+                        }
+                        if (file.exists() && file.canRead() && file.length() > 0) {
+                            val bytes = file.readBytes()
+                            metadataBuilder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Silently ignore artwork errors — notification will just show no art
+                }
+            }
+        }
     }
 
     /**
@@ -351,22 +378,7 @@ class PlaybackService : MediaLibraryService() {
             .setTitle(track.title)
             .setArtist(track.artist)
 
-        // Validate artwork URI
-        track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
-            try {
-                val uri = uriString.toUri()
-                if (!uriString.startsWith("http")) {
-                    val file = java.io.File(uri.path ?: "")
-                    if (file.exists() && file.canRead() && file.length() > 0) {
-                        metadataBuilder.setArtworkUri(uri)
-                    }
-                } else {
-                    metadataBuilder.setArtworkUri(uri)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Invalid artwork URI for ${track.title}: ${e.message}")
-            }
-        }
+        applyArtwork(metadataBuilder, track.thumbnailUri)
 
         return MediaItem.Builder()
             .setMediaId(track.uuid)
@@ -979,25 +991,7 @@ class PlaybackService : MediaLibraryService() {
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
 
-            // Validate and set artwork URI only if file exists and is accessible
-            track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
-                try {
-                    val uri = uriString.toUri()
-                    // Check if the file actually exists
-                    val file = java.io.File(uri.path ?: "")
-                    if (file.exists() && file.canRead() && file.length() > 0) {
-                        metadataBuilder.setArtworkUri(uri)
-                        Log.d(TAG, "Set artwork URI for ${track.title}: $uriString")
-                    } else {
-                        Log.w(TAG, "Artwork file not accessible for ${track.title}: $uriString")
-                    }
-                } catch (e: Exception) {
-                    Log.w(
-                        TAG,
-                        "Invalid artwork URI for track ${track.title}: $uriString - ${e.message}"
-                    )
-                }
-            }
+            applyArtwork(metadataBuilder, track.thumbnailUri)
 
             return MediaItem.Builder()
                 .setMediaId(track.uuid)
@@ -1151,18 +1145,7 @@ class PlaybackManager private constructor(private val context: Context) {
             .setTitle(track.title)
             .setArtist(track.artist)
 
-        // Validate artwork URI
-        track.thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
-            try {
-                val uri = uriString.toUri()
-                val file = java.io.File(uri.path ?: "")
-                if (file.exists() && file.canRead() && file.length() > 0) {
-                    metadataBuilder.setArtworkUri(uri)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Invalid artwork URI for ${track.title}: ${e.message}")
-            }
-        }
+        PlaybackService.applyArtwork(metadataBuilder, track.thumbnailUri)
 
         return MediaItem.Builder()
             .setMediaId(track.uuid)
