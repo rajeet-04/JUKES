@@ -96,6 +96,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _isStreamMode = MutableStateFlow(queueManager.isStreamMode)
     val isStreamMode: StateFlow<Boolean> = _isStreamMode.asStateFlow()
 
+    // Guard: tracks Spotify IDs (or "title-artist" keys) for which a stream is already in progress.
+    // Prevents double-tapping from launching duplicate stream downloads.
+    private val activeStreamRequests = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     fun toggleStreamMode(enabled: Boolean) {
         queueManager.isStreamMode = enabled
         _isStreamMode.value = enabled
@@ -802,6 +806,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Overload for SpotdownSong (used by Search/Artist/Album screens via downloadAndPlay)
      */
     fun playInstant(song: SpotdownSong) {
+        // De-duplicate: if a stream request is already live for this song, ignore the tap.
+        val requestKey = song.spotifyId?.takeIf { it.isNotBlank() }
+            ?: "${song.title.lowercase().trim()}-${song.artist.lowercase().trim()}"
+        if (!activeStreamRequests.add(requestKey)) {
+            Log.d("MusicViewModel", "playInstant ignored — already in progress for: ${song.title}")
+            return
+        }
+
         viewModelScope.launch {
             try {
                 // 1. Check if already downloaded
@@ -820,16 +832,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // 2. Not downloaded -> Stream instant via Spotdown-backed local stream file
+                // 2. Not downloaded -> Stream instant via Spotdown-backed local stream file.
+                // For the first stream triggered from search, always use Spotmate (faster response).
                 Log.d(
                     "MusicViewModel",
-                    "Track not local, starting instant stream with lyrics: ${song.title}"
+                    "Track not local, starting instant stream (Spotmate-first): ${song.title}"
                 )
                 _uiState.update { it.copy(isLoading = true) }
 
                 try {
                     val tempTrack = withContext(Dispatchers.IO) {
-                        musicService.streamTrack(song).also {
+                        musicService.streamTrack(song, forceSpotmateFirst = true).also {
                             trackDao.insertTrack(it.toEntity())
                         }
                     }
@@ -837,7 +850,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     // Play immediately
                     playTrack(tempTrack)
                     _uiState.update { it.copy(isLoading = false) }
-
 
                     // Notify QueueManager so it doesn't try to recommend/download this
                     // Stream tracks are NOW saved to database — they exist in the
@@ -862,6 +874,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Instant play failed: ${e.message}", e)
                 _uiState.update { it.copy(isLoading = false) }
+            } finally {
+                // Always release the guard so the user can retry after a failure
+                activeStreamRequests.remove(requestKey)
             }
         }
     }

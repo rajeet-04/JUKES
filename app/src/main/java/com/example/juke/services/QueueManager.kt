@@ -230,8 +230,9 @@ class QueueManager private constructor(private val context: Context) {
         _currentQueue.value = currentList
         Log.d(TAG, "Removed from queue: $trackId")
 
-        // Check if we need more recommendations
-        if (currentList.size <= 2) {
+        // Only trigger recommendations if the queue is critically low AND no fetch is already running.
+        // User-triggered removals must not re-initiate a full recommendation cycle if one is underway.
+        if (currentList.size <= 2 && !isRecommendationFetchInProgress) {
             val currentTrack = currentList.firstOrNull()
             currentTrack?.let { fetchAndQueueRecommendations(it) }
         }
@@ -778,7 +779,10 @@ class QueueManager private constructor(private val context: Context) {
                                 TAG,
                                 "Stream Mode enabled, resolving stream URL for: ${rec.title}"
                             )
-                            musicService.streamTrack(song).also {
+                            // Pin all currently queued track UUIDs so LRU never evicts files
+                            // that are about to be played while recommendation downloads run.
+                            val pinnedUuids = _currentQueue.value.map { it.uuid }.toSet()
+                            musicService.streamTrack(song, pinnedUuids = pinnedUuids).also {
                                 trackDao.insertTrack(it.toEntity())
                             }
                         } else {
@@ -902,8 +906,9 @@ class QueueManager private constructor(private val context: Context) {
                             }
 
                             song?.let { s ->
+                                val pinnedUuids = _currentQueue.value.map { it.uuid }.toSet()
                                 val updatedTrack = if (isStreamMode || track.isStream) {
-                                    musicService.streamTrack(s)
+                                    musicService.streamTrack(s, preferredUuid = track.uuid, pinnedUuids = pinnedUuids)
                                 } else {
                                     musicService.smartDownloadAndIndex(s)
                                 }

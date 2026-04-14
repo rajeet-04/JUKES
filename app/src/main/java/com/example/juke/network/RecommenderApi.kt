@@ -219,6 +219,14 @@ object RecommenderApi {
     }
 
     /**
+     * Clean title by removing content in parentheses or brackets to improve matching.
+     * e.g., "Song Name (feat. Artist)" -> "Song Name"
+     */
+    private fun cleanTitle(title: String): String {
+        return title.replace(Regex("\\s*[\\(\\[].*?[\\)\\]]"), "").trim()
+    }
+
+    /**
      * Extract all artist text from JSON runs array.
      * 
      * The YouTube Music API returns artist names in multiple runs separated by commas/and.
@@ -374,7 +382,9 @@ object RecommenderApi {
                 score += positionBonus
 
                 // Title similarity
-                val titleSimilarity = similarity(queryLower, titleLower)
+                val rawTitleSim = similarity(queryLower, titleLower)
+                val cleanTitleSim = similarity(cleanTitle(queryLower), cleanTitle(titleLower))
+                val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
                 score += titleSimilarity * 30.0
 
                 // Word match bonus
@@ -708,7 +718,9 @@ object RecommenderApi {
 
                 for (spotifyTrack in spotifyResults.take(5)) { // Check top 5 results for better matching
                     // Calculate match confidence with multiple factors
-                    val titleSimilarity = similarity(rec.title, spotifyTrack.name)
+                    val rawTitleSim = similarity(rec.title, spotifyTrack.name)
+                    val cleanTitleSim = similarity(cleanTitle(rec.title), cleanTitle(spotifyTrack.name))
+                    val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
 
                     // Parse artists individually for better matching
                     val spotifyArtists =
@@ -855,7 +867,9 @@ object RecommenderApi {
                 score += positionBonus
 
                 // Title similarity
-                val titleSimilarity = similarity(queryLower, titleLower)
+                val rawTitleSim = similarity(queryLower, titleLower)
+                val cleanTitleSim = similarity(cleanTitle(queryLower), cleanTitle(titleLower))
+                val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
                 score += titleSimilarity * 30.0
 
                 // Word match bonus

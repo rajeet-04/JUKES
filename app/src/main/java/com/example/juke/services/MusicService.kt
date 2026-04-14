@@ -70,7 +70,8 @@ class MusicService(private val context: Context) {
 
     private suspend fun resolveStreamToLocalFile(
         song: SpotdownSong,
-        stableUuid: String
+        stableUuid: String,
+        forceSpotmateFirst: Boolean = false
     ): String {
         if (!song.url.startsWith("https://open.spotify.com/track/")) {
             throw Exception("Invalid Spotify URL format")
@@ -83,9 +84,9 @@ class MusicService(private val context: Context) {
         val finalFile = File(streamDir, "${stableUuid}_stream.mp3")
         val tempFile = File(streamDir, "${stableUuid}_stream.tmp")
 
-        // Try both sources in random order so neither is always primary.
-        // If the first fails, the second is used automatically.
-        val useGamepvzFirst = (System.currentTimeMillis() % 2L) == 0L
+        // For instant search plays: Spotmate first (faster). Otherwise 50/50 random.
+        val useGamepvzFirst = if (forceSpotmateFirst) false
+            else (System.currentTimeMillis() % 2L) == 0L
         val primaryName = if (useGamepvzFirst) "Gamepvz" else "Spotmate"
         val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
 
@@ -394,7 +395,21 @@ class MusicService(private val context: Context) {
     }
 
 
-    suspend fun streamTrack(song: SpotdownSong, preferredUuid: String? = null): Track {
+    /**
+     * Stream a track to a local file and return a playable Track object.
+     *
+     * @param song Source song metadata
+     * @param preferredUuid Reuse an existing UUID (e.g. for queue re-validation)
+     * @param forceSpotmateFirst If true, Spotmate is tried first (faster for instant search plays).
+     *                           Otherwise each call randomly picks primary/fallback (50/50).
+     * @param pinnedUuids UUIDs that must NOT be evicted by LRU (e.g., the active queue's tracks).
+     */
+    suspend fun streamTrack(
+        song: SpotdownSong,
+        preferredUuid: String? = null,
+        forceSpotmateFirst: Boolean = false,
+        pinnedUuids: Set<String> = emptySet()
+    ): Track {
         val durationSec = SpotifyApi.parseDuration(song.duration)
 
         // Check if track already exists as a PERMANENT download in the database
@@ -442,14 +457,15 @@ class MusicService(private val context: Context) {
 
         // Resolve stream to local file (downloads the audio data)
         val localFilePath = try {
-            resolveStreamToLocalFile(song, uuid)
+            resolveStreamToLocalFile(song, uuid, forceSpotmateFirst)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to prepare stream file", e)
             throw e
         }
 
-        // Evict old stream files to keep cache bounded
-        evictStreamCache()
+        // Evict old stream files to keep cache bounded.
+        // Pinned UUIDs (currently queued tracks) are protected from eviction.
+        evictStreamCache(pinnedUuids = pinnedUuids)
 
         val lyricsResult = SpotifyApi.searchLyrics(song.title, song.artist, song.album, durationSec)
         val ytVideoId = RecommenderApi.getBestVideoMatch("${song.title} ${song.artist}")
@@ -774,8 +790,12 @@ class MusicService(private val context: Context) {
      * LRU eviction for the stream_files directory.
      * Keeps at most [maxFiles] stream files. When the limit is exceeded,
      * the oldest files (by lastModified) are deleted first.
+     *
+     * Files whose UUID is in [pinnedUuids] are NEVER deleted, even if over the limit.
+     * This prevents ExoPlayer ENOENT errors when a queued track's file is evicted
+     * just before playback.
      */
-    private fun evictStreamCache(maxFiles: Int = 15) {
+    fun evictStreamCache(maxFiles: Int = 30, pinnedUuids: Set<String> = emptySet()) {
         try {
             val streamDir = File(context.filesDir, "stream_files")
             if (!streamDir.exists()) return
@@ -786,9 +806,18 @@ class MusicService(private val context: Context) {
 
             if (files.size <= maxFiles) return
 
-            // Sort by lastModified ascending (oldest first)
-            val sorted = files.sortedBy { it.lastModified() }
-            val toDelete = sorted.take(files.size - maxFiles)
+            // Sort by lastModified ascending (oldest first), but never evict pinned files
+            val (pinned, evictable) = files.partition { file ->
+                val uuid = file.name.removeSuffix("_stream.mp3")
+                pinnedUuids.contains(uuid)
+            }
+
+            val sorted = evictable.sortedBy { it.lastModified() }
+            // Protect pinned files: only evict from the evictable pool
+            val overLimit = (files.size - pinned.size) - maxFiles
+            if (overLimit <= 0) return
+
+            val toDelete = sorted.take(overLimit)
 
             var bytesFreed = 0L
             toDelete.forEach { file ->
@@ -800,7 +829,8 @@ class MusicService(private val context: Context) {
             }
             Log.d(
                 TAG,
-                "Stream cache eviction: removed ${toDelete.size} files, freed ${bytesFreed / 1024 / 1024}MB"
+                "Stream cache eviction: removed ${toDelete.size} files, freed ${bytesFreed / 1024 / 1024}MB "
+                    + "(${pinned.size} pinned, ${evictable.size - toDelete.size} kept)"
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error during stream cache eviction: ${e.message}", e)
