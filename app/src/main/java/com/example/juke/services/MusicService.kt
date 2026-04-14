@@ -516,7 +516,8 @@ class MusicService(private val context: Context) {
                 try {
                     // Copy to music dir (copy+delete is safer than rename across dirs)
                     streamFile.copyTo(permanentFile, overwrite = true)
-                    streamFile.delete()
+                    // COMMENT OUT THIS LINE to prevent playback crashes:
+                    // streamFile.delete()
                     Log.d(
                         TAG,
                         "Moved stream file to permanent storage: ${permanentFile.absolutePath}"

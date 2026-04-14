@@ -1163,7 +1163,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
 
                         // Update playback manager queue with new local file path
-                        playbackManager.replaceTrackInQueue(track.uuid, track)
+                        playbackManager.replaceTrackInQueue(track.uuid, track, seamlessIfPlaying = true)
                     }
 
                     // Play if requested
@@ -1695,7 +1695,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // Replace in PlaybackManager's MediaController queue so ExoPlayer uses the new file
-                playbackManager.replaceTrackInQueue(track.uuid, updatedTrack)
+                playbackManager.replaceTrackInQueue(track.uuid, updatedTrack, seamlessIfPlaying = true)
 
                 // Replace in QueueManager's internal queue so pre-fetch doesn't see stale paths
                 queueManager.replaceTrackInQueue(track.uuid, updatedTrack)

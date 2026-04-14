@@ -1984,7 +1984,7 @@ class PlaybackManager private constructor(private val context: Context) {
      * @param newTrack The new track to replace it with
      * @return true if the track was replaced, false otherwise
      */
-    fun replaceTrackInQueue(oldMediaId: String, newTrack: Track): Boolean {
+    fun replaceTrackInQueue(oldMediaId: String, newTrack: Track, seamlessIfPlaying: Boolean = false): Boolean {
         controller?.let { ctrl ->
             val index = (0 until ctrl.mediaItemCount).firstOrNull { i ->
                 ctrl.getMediaItemAt(i).mediaId == oldMediaId
@@ -1996,19 +1996,20 @@ class PlaybackManager private constructor(private val context: Context) {
                 return false
             }
 
-            // Check if this is the currently playing track
             val isCurrentTrack = ctrl.currentMediaItemIndex == index
             val currentPosition = if (isCurrentTrack) ctrl.currentPosition else 0L
 
-            // Replace atomically instead of remove/add to prevent timeline state desync
-            // which causes the track to be duplicated at the end of the queue.
-            ctrl.replaceMediaItem(index, newMediaItem)
-
-            // If it was the current track, seek back to maintain position
-            if (isCurrentTrack) {
-                ctrl.seekTo(index, currentPosition)
-                _currentTrackId.value = newTrack.uuid
-                _currentQueueIndex.value = index
+            if (isCurrentTrack && seamlessIfPlaying) {
+                // Background download: Keep playing the temporary file to prevent stuttering.
+                Log.d(TAG, "Track $oldMediaId is playing. Skipping ExoPlayer swap for seamless audio.")
+            } else {
+                // Atomic replacement prevents the timeline "blip" that causes queue duplication
+                ctrl.replaceMediaItem(index, newMediaItem)
+                if (isCurrentTrack) {
+                    ctrl.seekTo(index, currentPosition)
+                    _currentTrackId.value = newTrack.uuid
+                    _currentQueueIndex.value = index
+                }
             }
 
             Log.d(TAG, "Replaced track $oldMediaId with ${newTrack.uuid} at index $index")
