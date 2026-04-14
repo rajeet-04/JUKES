@@ -97,14 +97,18 @@ class PlaybackService : MediaLibraryService() {
                     if (uriString.startsWith("http", ignoreCase = true)) {
                         metadataBuilder.setArtworkUri(uriString.toUri())
                     } else {
-                        val file = if (uriString.startsWith("file://") || uriString.startsWith("content://")) {
-                            java.io.File(uriString.toUri().path ?: return@let)
-                        } else {
-                            java.io.File(uriString)
-                        }
+                        val file =
+                            if (uriString.startsWith("file://") || uriString.startsWith("content://")) {
+                                java.io.File(uriString.toUri().path ?: return@let)
+                            } else {
+                                java.io.File(uriString)
+                            }
                         if (file.exists() && file.canRead() && file.length() > 0) {
                             val bytes = file.readBytes()
-                            metadataBuilder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                            metadataBuilder.setArtworkData(
+                                bytes,
+                                MediaMetadata.PICTURE_TYPE_FRONT_COVER
+                            )
                         }
                     }
                 } catch (e: Exception) {
@@ -466,8 +470,9 @@ class PlaybackService : MediaLibraryService() {
                     serviceScope.launch {
                         try {
                             // Try QueueManager's in-memory queue first (works for streams not in DB)
-                            val oldTrack = queueManager.currentQueue.value.find { it.uuid == oldTrackId }
-                                ?: database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
+                            val oldTrack =
+                                queueManager.currentQueue.value.find { it.uuid == oldTrackId }
+                                    ?: database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
 
                             if (oldTrack != null && oldTrack.isStream) {
                                 // Wait 3 seconds before cleaning up the finished stream file.
@@ -477,7 +482,10 @@ class PlaybackService : MediaLibraryService() {
 
                                 // Clear ExoPlayer's overlay cache entry for this URI
                                 StreamCacheManager.removeTrackCache(oldTrack.localUri)
-                                Log.d(TAG, "Cleared ExoPlayer cache for finished stream: ${oldTrack.title}")
+                                Log.d(
+                                    TAG,
+                                    "Cleared ExoPlayer cache for finished stream: ${oldTrack.title}"
+                                )
                                 // Note: Stream file deletion is handled by LRU eviction in MusicService
                             }
                         } catch (e: Exception) {
@@ -1169,7 +1177,8 @@ class PlaybackManager private constructor(private val context: Context) {
                     controller?.let { ctrl ->
                         _isPlaying.value = ctrl.isPlaying
                         val count = ctrl.mediaItemCount
-                        val currentQueue = (0 until count).map { i -> ctrl.getMediaItemAt(i).mediaId }
+                        val currentQueue =
+                            (0 until count).map { i -> ctrl.getMediaItemAt(i).mediaId }
                         _queueFlow.value = currentQueue
                         _currentQueueIndex.value = ctrl.currentMediaItemIndex
                         _currentTrackId.value = ctrl.currentMediaItem?.mediaId
@@ -2211,28 +2220,40 @@ class PlaybackManager private constructor(private val context: Context) {
             val tracks = withContext(Dispatchers.IO) {
                 ids.mapNotNull { id ->
                     try {
-                        val entity = database.trackDao().getTrackByUuid(id) ?: return@mapNotNull null
+                        val entity =
+                            database.trackDao().getTrackByUuid(id) ?: return@mapNotNull null
                         var track = entity.toTrack()
 
                         // For stream tracks whose file was evicted, re-resolve the stream
                         if (track.isStream && track.spotifyId != null) {
                             val fileExists = track.localUri?.let { uri ->
-                                try { java.io.File(uri).let { it.exists() && it.length() > 0 } }
-                                catch (_: Exception) { false }
+                                try {
+                                    java.io.File(uri).let { it.exists() && it.length() > 0 }
+                                } catch (_: Exception) {
+                                    false
+                                }
                             } ?: false
 
                             if (!fileExists) {
-                                Log.d(TAG, "Stream file missing for '${track.title}', re-resolving...")
+                                Log.d(
+                                    TAG,
+                                    "Stream file missing for '${track.title}', re-resolving..."
+                                )
                                 try {
-                                    val spotifyUrl = "https://open.spotify.com/track/${track.spotifyId}"
-                                    val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId!!))
-                                    val refreshed = musicService.streamTrack(song, preferredUuid = track.uuid)
+                                    "https://open.spotify.com/track/${track.spotifyId}"
+                                    val song =
+                                        SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId!!))
+                                    val refreshed =
+                                        musicService.streamTrack(song, preferredUuid = track.uuid)
                                     // Update DB with new localUri
                                     database.trackDao().insertTrack(refreshed.toEntity())
                                     track = refreshed
                                     Log.d(TAG, "Re-resolved stream for '${track.title}'")
                                 } catch (e: Exception) {
-                                    Log.w(TAG, "Failed to re-resolve stream for '${track.title}': ${e.message}")
+                                    Log.w(
+                                        TAG,
+                                        "Failed to re-resolve stream for '${track.title}': ${e.message}"
+                                    )
                                     // Keep the track in the queue anyway for metadata display;
                                     // playback will trigger error recovery which re-fetches the stream
                                     return@mapNotNull track

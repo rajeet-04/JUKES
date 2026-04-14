@@ -26,39 +26,40 @@ object RecommenderApi {
 
     private const val TAG = "RecommenderApi"
     private const val SEARCH_URL = "https://mp3juice3.ninja/api/yt-data"
-    private const val YT_MUSIC_API_URL = "https://music.youtube.com/youtubei/v1/next?prettyPrint=true"
+    private const val YT_MUSIC_API_URL =
+        "https://music.youtube.com/youtubei/v1/next?prettyPrint=true"
 
     private val gson = Gson()
 
     private val OFFICIAL_KEYWORDS = listOf(
-    "official", "official video", "official music video", "official lyric video",
-    "music video", "vevo", "official audio", "audio", "visualizer", "official visualizer",
-    "from the album", "album version", "single", "ep", "lp",
-    "remastered", "anniversary edition", "deluxe edition",
-    "radio edit", "clean", "explicit",
-    "prod by", "produced by", "ft.", "feat.", "featuring",
-    "original", "original song", "original soundtrack", "ost", "soundtrack",
-    "theme", "title track", "lead single", "debut single",
-    "official performance", "official live video", "session", "studio version"
-)
+        "official", "official video", "official music video", "official lyric video",
+        "music video", "vevo", "official audio", "audio", "visualizer", "official visualizer",
+        "from the album", "album version", "single", "ep", "lp",
+        "remastered", "anniversary edition", "deluxe edition",
+        "radio edit", "clean", "explicit",
+        "prod by", "produced by", "ft.", "feat.", "featuring",
+        "original", "original song", "original soundtrack", "ost", "soundtrack",
+        "theme", "title track", "lead single", "debut single",
+        "official performance", "official live video", "session", "studio version"
+    )
 
 
     private val SPAM_KEYWORDS = listOf(
-    "remix", "cover", "fan made", "fanmade", "ai cover", "ai version", "voice model",
-    "karaoke", "instrumental", "no vocals", "vocals removed",
-    "8d", "8d audio", "slowed", "reverb", "nightcore", "bass boosted",
-    "sped up", "speed up", "pitch shifted", "chipmunk",
-    "live", "acoustic", "tutorial", "how to", "reaction", "review",
-    "mashup", "mix", "lyrics", "lyric video", "english translation",
-    "reaction video", "reactionplus", "mashup reaction",
-    "tiktok", "shorts", "edit", "edit audio", "overlay", "transition",
-    "loop", "extended", "hour version", "1 hour", "10 hour", "24/7",
-    "background music", "study", "sleep", "relaxing", "meditation", "ambience", "ambient",
-    "stem", "stems", "multitrack", "isolation",
-    "behind the scenes", "bts", "making of", "explained", "breakdown",
-    "teaser", "trailer", "preview", "snippet",
-    "leak", "leaked", "unreleased", "demo", "rough mix", "work in progress", "wip"
-)
+        "remix", "cover", "fan made", "fanmade", "ai cover", "ai version", "voice model",
+        "karaoke", "instrumental", "no vocals", "vocals removed",
+        "8d", "8d audio", "slowed", "reverb", "nightcore", "bass boosted",
+        "sped up", "speed up", "pitch shifted", "chipmunk",
+        "live", "acoustic", "tutorial", "how to", "reaction", "review",
+        "mashup", "mix", "lyrics", "lyric video", "english translation",
+        "reaction video", "reactionplus", "mashup reaction",
+        "tiktok", "shorts", "edit", "edit audio", "overlay", "transition",
+        "loop", "extended", "hour version", "1 hour", "10 hour", "24/7",
+        "background music", "study", "sleep", "relaxing", "meditation", "ambience", "ambient",
+        "stem", "stems", "multitrack", "isolation",
+        "behind the scenes", "bts", "making of", "explained", "breakdown",
+        "teaser", "trailer", "preview", "snippet",
+        "leak", "leaked", "unreleased", "demo", "rough mix", "work in progress", "wip"
+    )
 
 
     @Serializable
@@ -145,7 +146,10 @@ object RecommenderApi {
      * @param youtubeArtists Artists from YouTube recommendation
      * @return Similarity score from 0.0 to 1.0
      */
-    private fun artistListSimilarity(spotifyArtists: List<String>, youtubeArtists: List<String>): Double {
+    private fun artistListSimilarity(
+        spotifyArtists: List<String>,
+        youtubeArtists: List<String>
+    ): Double {
         if (spotifyArtists.isEmpty() || youtubeArtists.isEmpty()) {
             return 0.0
         }
@@ -267,12 +271,14 @@ object RecommenderApi {
                     val seconds = parts[1].toIntOrNull() ?: 0
                     minutes * 60 + seconds
                 }
+
                 3 -> { // HH:MM:SS
                     val hours = parts[0].toIntOrNull() ?: 0
                     val minutes = parts[1].toIntOrNull() ?: 0
                     val seconds = parts[2].toIntOrNull() ?: 0
                     hours * 3600 + minutes * 60 + seconds
                 }
+
                 else -> null
             }
         } catch (e: Exception) {
@@ -292,7 +298,7 @@ object RecommenderApi {
         val maxDuration = maxOf(youtubeDuration, spotifyDuration)
 
         // Calculate similarity as percentage difference
-        val similarity = 1.0 - (diff.toDouble() / maxDuration.toDouble())
+        1.0 - (diff.toDouble() / maxDuration.toDouble())
 
         // Apply stricter thresholds
         return when {
@@ -336,7 +342,10 @@ object RecommenderApi {
             items.forEach { item ->
                 val officialScore = getOfficialScore(item.title)
                 if (officialScore > 0.0) {
-                    Log.d(TAG, "Official Match Found: ${item.title}, Official Score: $officialScore")
+                    Log.d(
+                        TAG,
+                        "Official Match Found: ${item.title}, Official Score: $officialScore"
+                    )
                     return item.id
                 }
             }
@@ -385,19 +394,25 @@ object RecommenderApi {
 
                 // Prefer titles that look like official music videos
                 if (titleLower.contains("official") || titleLower.contains("music video") ||
-                    titleLower.contains("prod by") || titleLower.contains("ft.")) {
+                    titleLower.contains("prod by") || titleLower.contains("ft.")
+                ) {
                     score += 10.0
                 }
 
                 // Prefer titles without extra qualifiers
-                val badIndicators = listOf("lyrics", "remix", "cover", "live", "acoustic",
-                                         "slowed", "reverb", "8d", "reaction", "tutorial")
+                val badIndicators = listOf(
+                    "lyrics", "remix", "cover", "live", "acoustic",
+                    "slowed", "reverb", "8d", "reaction", "tutorial"
+                )
                 val hasBadIndicator = badIndicators.any { titleLower.contains(it) }
                 if (!hasBadIndicator) {
                     score += 5.0
                 }
 
-                Log.d(TAG, "Item [$index] '${item.title}' - Score: ${score.toInt()}, Similarity: ${(titleSimilarity * 100).toInt()}%")
+                Log.d(
+                    TAG,
+                    "Item [$index] '${item.title}' - Score: ${score.toInt()}, Similarity: ${(titleSimilarity * 100).toInt()}%"
+                )
 
                 if (score > highestScore) {
                     highestScore = score
@@ -406,7 +421,10 @@ object RecommenderApi {
             }
 
             if (bestMatchItem != null && highestScore > 15.0) { // Minimum threshold
-                Log.d(TAG, "Best Match Selected: ${bestMatchItem?.title}, Final Score: ${highestScore.toInt()}")
+                Log.d(
+                    TAG,
+                    "Best Match Selected: ${bestMatchItem?.title}, Final Score: ${highestScore.toInt()}"
+                )
                 return bestMatchItem?.id
             }
 
@@ -656,7 +674,10 @@ object RecommenderApi {
 
                 // Log artist matching status
                 if (artistMatchCount > 0) {
-                    Log.d(TAG, "⭐ Found $artistMatchCount matching artist(s) in: ${rec.title} by ${rec.artist}")
+                    Log.d(
+                        TAG,
+                        "⭐ Found $artistMatchCount matching artist(s) in: ${rec.title} by ${rec.artist}"
+                    )
                 }
 
                 // Search Spotify
@@ -665,10 +686,13 @@ object RecommenderApi {
                     SpotifyApi.search(query, listOf("track"))
                 } catch (offlineEx: OfflineException) {
                     // Propagate offline exceptions up to caller
-                    Log.w(TAG, "Device offline while validating recommendations. Stopping validation.")
+                    Log.w(
+                        TAG,
+                        "Device offline while validating recommendations. Stopping validation."
+                    )
                     throw offlineEx
                 }
-                
+
                 val spotifyResults = searchResponse.tracks?.items ?: emptyList()
 
                 if (spotifyResults.isEmpty()) {
@@ -687,7 +711,8 @@ object RecommenderApi {
                     val titleSimilarity = similarity(rec.title, spotifyTrack.name)
 
                     // Parse artists individually for better matching
-                    val spotifyArtists = parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
+                    val spotifyArtists =
+                        parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
                     val youtubeArtists = parseArtists(rec.artist)
 
                     // Compare artists intelligently with multi-artist support
@@ -696,7 +721,8 @@ object RecommenderApi {
                     // Parse durations
                     val youtubeDurationSec = parseDurationToSeconds(rec.duration)
                     val spotifyDurationSec = spotifyTrack.durationMs / 1000
-                    val durationSimilarity = durationSimilarity(youtubeDurationSec, spotifyDurationSec)
+                    val durationSimilarity =
+                        durationSimilarity(youtubeDurationSec, spotifyDurationSec)
 
                     // Calculate text confidence with higher weight on artist matches
                     // Artist similarity gets 70% weight, title gets 30% weight
@@ -708,18 +734,30 @@ object RecommenderApi {
                     // Additional boost for excellent artist matches (prioritize artist over title)
                     if (artistSimilarity >= 0.9) {
                         overallConfidence += 0.15 // Significant boost for near-perfect artist match
-                        Log.d(TAG, "🎯 Excellent artist match! Artists: Spotify${spotifyArtists.size} vs YouTube${youtubeArtists.size}, similarity: ${(artistSimilarity * 100).toInt()}%")
+                        Log.d(
+                            TAG,
+                            "🎯 Excellent artist match! Artists: Spotify${spotifyArtists.size} vs YouTube${youtubeArtists.size}, similarity: ${(artistSimilarity * 100).toInt()}%"
+                        )
                     } else if (artistSimilarity >= 0.7) {
                         overallConfidence += 0.1 // Good boost for strong artist match
-                        Log.d(TAG, "✓ Good artist match! Artists matched, similarity: ${(artistSimilarity * 100).toInt()}%")
+                        Log.d(
+                            TAG,
+                            "✓ Good artist match! Artists matched, similarity: ${(artistSimilarity * 100).toInt()}%"
+                        )
                     } else if (artistSimilarity >= 0.5) {
                         overallConfidence += 0.05 // Moderate boost for decent artist match
                     }
 
-                    Log.d(TAG, "Comparing '${rec.title}' (${rec.duration ?: "unknown"}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs/1000}s)")
+                    Log.d(
+                        TAG,
+                        "Comparing '${rec.title}' (${rec.duration ?: "unknown"}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs / 1000}s)"
+                    )
                     Log.d(TAG, "  Spotify Artists: $spotifyArtists")
                     Log.d(TAG, "  YouTube Artists: $youtubeArtists")
-                    Log.d(TAG, "  Title: ${(titleSimilarity * 100).toInt()}%, Artist: ${(artistSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%, Overall: ${(overallConfidence * 100).toInt()}%")
+                    Log.d(
+                        TAG,
+                        "  Title: ${(titleSimilarity * 100).toInt()}%, Artist: ${(artistSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%, Overall: ${(overallConfidence * 100).toInt()}%"
+                    )
 
                     if (overallConfidence > bestConfidence) {
                         bestConfidence = overallConfidence
@@ -757,9 +795,15 @@ object RecommenderApi {
                         )
                     )
 
-                    Log.d(TAG, "✓ Validated: ${bestMatch.name} by ${bestMatch.artists.first().name} (Title: ${(bestTitleSimilarity * 100).toInt()}%, Duration: ${(bestDurationSimilarity * 100).toInt()}%, Overall: ${(bestConfidence * 100).toInt()}%)")
+                    Log.d(
+                        TAG,
+                        "✓ Validated: ${bestMatch.name} by ${bestMatch.artists.first().name} (Title: ${(bestTitleSimilarity * 100).toInt()}%, Duration: ${(bestDurationSimilarity * 100).toInt()}%, Overall: ${(bestConfidence * 100).toInt()}%)"
+                    )
                 } else {
-                    Log.d(TAG, "✗ Rejected: ${rec.title} (Best: Title ${(bestTitleSimilarity * 100).toInt()}%, Duration ${(bestDurationSimilarity * 100).toInt()}%, Overall ${(bestConfidence * 100).toInt()}%)")
+                    Log.d(
+                        TAG,
+                        "✗ Rejected: ${rec.title} (Best: Title ${(bestTitleSimilarity * 100).toInt()}%, Duration ${(bestDurationSimilarity * 100).toInt()}%, Overall ${(bestConfidence * 100).toInt()}%)"
+                    )
                 }
 
             } catch (e: Exception) {
@@ -830,13 +874,16 @@ object RecommenderApi {
 
                 // Prefer titles that look like official music videos
                 if (titleLower.contains("official") || titleLower.contains("music video") ||
-                    titleLower.contains("prod by") || titleLower.contains("ft.")) {
+                    titleLower.contains("prod by") || titleLower.contains("ft.")
+                ) {
                     score += 10.0
                 }
 
                 // Prefer titles without extra qualifiers
-                val badIndicators = listOf("lyrics", "remix", "cover", "live", "acoustic",
-                                         "slowed", "reverb", "8d", "reaction", "tutorial")
+                val badIndicators = listOf(
+                    "lyrics", "remix", "cover", "live", "acoustic",
+                    "slowed", "reverb", "8d", "reaction", "tutorial"
+                )
                 val hasBadIndicator = badIndicators.any { titleLower.contains(it) }
                 if (!hasBadIndicator) {
                     score += 5.0

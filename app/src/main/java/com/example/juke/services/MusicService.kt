@@ -86,18 +86,24 @@ class MusicService(private val context: Context) {
         // Try both sources in random order so neither is always primary.
         // If the first fails, the second is used automatically.
         val useGamepvzFirst = (System.currentTimeMillis() % 2L) == 0L
-        val primaryName  = if (useGamepvzFirst) "Gamepvz"  else "Spotmate"
-        val fallbackName = if (useGamepvzFirst) "Spotmate"  else "Gamepvz"
+        val primaryName = if (useGamepvzFirst) "Gamepvz" else "Spotmate"
+        val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
 
-        suspend fun streamPrimary()  = if (useGamepvzFirst) SpotifyApi.downloadSongFromGamepvz(song.url)
-                                       else SpotifyApi.downloadSongFromSpotmate(song.url)
-        suspend fun streamFallback() = if (useGamepvzFirst) SpotifyApi.downloadSongFromSpotmate(song.url)
-                                       else SpotifyApi.downloadSongFromGamepvz(song.url)
+        suspend fun streamPrimary() =
+            if (useGamepvzFirst) SpotifyApi.downloadSongFromGamepvz(song.url)
+            else SpotifyApi.downloadSongFromSpotmate(song.url)
+
+        suspend fun streamFallback() =
+            if (useGamepvzFirst) SpotifyApi.downloadSongFromSpotmate(song.url)
+            else SpotifyApi.downloadSongFromGamepvz(song.url)
 
         val audioData = try {
             withTimeout(90_000L) { streamPrimary() }
         } catch (e: Exception) {
-            Log.w(TAG, "$primaryName stream fetch failed (${e.message}), falling back to $fallbackName")
+            Log.w(
+                TAG,
+                "$primaryName stream fetch failed (${e.message}), falling back to $fallbackName"
+            )
             try {
                 withTimeout(90_000L) { streamFallback() }
             } catch (fallbackEx: Exception) {
@@ -253,7 +259,10 @@ class MusicService(private val context: Context) {
 
             // Try both sources in random order to balance load and provide automatic fallback.
             val useGamepvzFirst = (System.currentTimeMillis() % 2L) == 0L
-            Log.d(TAG, "Downloading '${song.title}' — primary: ${if (useGamepvzFirst) "Gamepvz" else "Spotmate"}")
+            Log.d(
+                TAG,
+                "Downloading '${song.title}' — primary: ${if (useGamepvzFirst) "Gamepvz" else "Spotmate"}"
+            )
 
             suspend fun trySource(useGamepvz: Boolean): ByteArray {
                 val data = if (useGamepvz) {
@@ -297,7 +306,7 @@ class MusicService(private val context: Context) {
                     "Downloaded file duration: ${fileDurationSec}s, Expected: ${durationSec}s"
                 )
 
-                if (kotlin.math.abs(fileDurationSec - durationSec) > 5) {
+                if (abs(fileDurationSec - durationSec) > 5) {
                     val altName = if (usedGamepvzFirst) "Spotmate" else "Gamepvz"
                     Log.w(
                         TAG,
@@ -408,7 +417,11 @@ class MusicService(private val context: Context) {
         // Check if we already have a healthy stream file on disk (from LRU cache)
         val streamDir = File(context.filesDir, "stream_files")
         val cachedFile = File(streamDir, "${uuid}_stream.mp3")
-        if (cachedFile.exists() && isHealthyExistingStreamFile(cachedFile.absolutePath, durationSec)) {
+        if (cachedFile.exists() && isHealthyExistingStreamFile(
+                cachedFile.absolutePath,
+                durationSec
+            )
+        ) {
             Log.d(TAG, "Reusing cached stream file for '${song.title}'")
             // Touch file to mark as recently used for LRU
             cachedFile.setLastModified(System.currentTimeMillis())
@@ -488,7 +501,10 @@ class MusicService(private val context: Context) {
                     // Copy to music dir (copy+delete is safer than rename across dirs)
                     streamFile.copyTo(permanentFile, overwrite = true)
                     streamFile.delete()
-                    Log.d(TAG, "Moved stream file to permanent storage: ${permanentFile.absolutePath}")
+                    Log.d(
+                        TAG,
+                        "Moved stream file to permanent storage: ${permanentFile.absolutePath}"
+                    )
                     true
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to move stream file locally: ${e.message}")
@@ -525,9 +541,10 @@ class MusicService(private val context: Context) {
         if (!localThumbnailUri.isNullOrBlank() && localThumbnailUri.startsWith("http")) {
             try {
                 val thumbnailFile = File(musicDir, "${track.uuid}_thumb.jpg")
-                val imageBytes: ByteArray = retryWithBackoff(maxRetries = 3, operationName = "download thumbnail") {
-                    ApiClient.httpClient.get(localThumbnailUri!!).body()
-                }
+                val imageBytes: ByteArray =
+                    retryWithBackoff(maxRetries = 3, operationName = "download thumbnail") {
+                        ApiClient.httpClient.get(localThumbnailUri!!).body()
+                    }
                 if (imageBytes.isNotEmpty()) {
                     thumbnailFile.writeBytes(imageBytes)
                     localThumbnailUri = thumbnailFile.absolutePath
@@ -543,10 +560,12 @@ class MusicService(private val context: Context) {
         var plainLyrics = track.plainLyrics
         if (syncedLyrics == null || plainLyrics == null) {
             try {
-                val lyricsResult = SpotifyApi.searchLyrics(track.title, track.artist, "", track.durationSec)
+                val lyricsResult =
+                    SpotifyApi.searchLyrics(track.title, track.artist, "", track.durationSec)
                 if (syncedLyrics == null) syncedLyrics = lyricsResult?.syncedLyrics
                 if (plainLyrics == null) plainLyrics = lyricsResult?.plainLyrics
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+            }
         }
 
         val promotedTrack = Track(
@@ -556,7 +575,8 @@ class MusicService(private val context: Context) {
             thumbnailUri = localThumbnailUri,
             durationSec = track.durationSec,
             localUri = permanentFile.absolutePath,
-            ytVideoId = track.ytVideoId ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}"),
+            ytVideoId = track.ytVideoId
+                ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}"),
             syncedLyrics = syncedLyrics,
             plainLyrics = plainLyrics,
             isFavourite = track.isFavourite,
@@ -723,7 +743,10 @@ class MusicService(private val context: Context) {
                 if (file.delete()) {
                     filesDeleted++
                     bytesFreed += size
-                    Log.d(TAG, "Deleted orphaned cache file: ${file.name} (${size} bytes, ${maxAgeDays}d+ old)")
+                    Log.d(
+                        TAG,
+                        "Deleted orphaned cache file: ${file.name} (${size} bytes, ${maxAgeDays}d+ old)"
+                    )
                 } else {
                     Log.w(TAG, "Failed to delete orphaned cache file: ${file.name}")
                 }
@@ -757,8 +780,9 @@ class MusicService(private val context: Context) {
             val streamDir = File(context.filesDir, "stream_files")
             if (!streamDir.exists()) return
 
-            val files = streamDir.listFiles()?.filter { it.isFile && it.name.endsWith("_stream.mp3") }
-                ?: return
+            val files =
+                streamDir.listFiles()?.filter { it.isFile && it.name.endsWith("_stream.mp3") }
+                    ?: return
 
             if (files.size <= maxFiles) return
 
@@ -774,7 +798,10 @@ class MusicService(private val context: Context) {
                     Log.d(TAG, "LRU evicted stream file: ${file.name} (${size / 1024}KB)")
                 }
             }
-            Log.d(TAG, "Stream cache eviction: removed ${toDelete.size} files, freed ${bytesFreed / 1024 / 1024}MB")
+            Log.d(
+                TAG,
+                "Stream cache eviction: removed ${toDelete.size} files, freed ${bytesFreed / 1024 / 1024}MB"
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error during stream cache eviction: ${e.message}", e)
         }
@@ -801,7 +828,10 @@ class MusicService(private val context: Context) {
         val toDelete = allStreams.filter { it.uuid !in preserveUuids }
         if (toDelete.isNotEmpty()) {
             trackDao.deleteTracks(toDelete.map { it.uuid })
-            Log.d(TAG, "Purged ${toDelete.size} stale stream entries (preserved ${allStreams.size - toDelete.size} queue tracks)")
+            Log.d(
+                TAG,
+                "Purged ${toDelete.size} stale stream entries (preserved ${allStreams.size - toDelete.size} queue tracks)"
+            )
         }
         return toDelete.size
     }

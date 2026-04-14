@@ -46,13 +46,13 @@ fun onSearchPerformed(query: String) {
 // 6. Get analytics data
 fun getAnalyticsMetrics() {
     val analytics = AnalyticsManager.getInstance()
-    
+
     val userId = analytics.getUserId()
     val totalSongs = analytics.getTotalSongsPlayed()
     val totalListeningTime = analytics.getTotalListeningTime()
-    val songsInOrder = analytics.getSongsPlayedInOrder()
+    analytics.getSongsPlayedInOrder()
     val pendingEvents = analytics.getPendingEventsCount()
-    
+
     println("User ID: $userId")
     println("Total Songs Played: $totalSongs")
     println("Total Listening Time: ${totalListeningTime / 1000 / 60} minutes")

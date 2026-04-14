@@ -12,10 +12,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,13 +71,13 @@ fun VerticalEqualizerSlider(
                     // Height (bottom) -> Min Value
                     val height = size.height.toFloat()
                     val y = change.position.y.coerceIn(0f, height)
-                    
+
                     // Invert fraction because Y=0 is top (Max value)
                     val fraction = 1f - (y / height)
-                    
+
                     val rangeSpan = range.endInclusive - range.start
                     val newValue = (range.start + (fraction * rangeSpan)).coerceIn(range)
-                    
+
                     if (newValue != value) {
                         // haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) // Too frequent?
                     }
@@ -93,7 +89,7 @@ fun VerticalEqualizerSlider(
             val trackWidth = 4.dp.toPx()
             val thumbHeight = 16.dp.toPx()
             val cornerRadius = trackWidth / 2
-            
+
             // Draw Track
             drawRoundRect(
                 color = trackColor,
@@ -101,12 +97,12 @@ fun VerticalEqualizerSlider(
                 size = Size(trackWidth, size.height),
                 cornerRadius = CornerRadius(cornerRadius)
             )
-            
+
             // Calculate active height (from bottom up)
             // Map value to 0..1 fraction
             val fraction = (value - range.start) / (range.endInclusive - range.start)
             val fillHeight = size.height * fraction
-            
+
             // Draw Active Track (Fill)
             drawRoundRect(
                 color = thumbColor.copy(alpha = 0.5f),
@@ -114,7 +110,7 @@ fun VerticalEqualizerSlider(
                 size = Size(trackWidth, fillHeight),
                 cornerRadius = CornerRadius(cornerRadius)
             )
-            
+
             // Draw Thumb
             val thumbY = size.height - (size.height * fraction) - (thumbHeight / 2)
             drawRoundRect(
@@ -134,21 +130,20 @@ fun CircularBooster(
     modifier: Modifier = Modifier,
     maxBoost: Float = 100f
 ) {
-    var angle by remember { mutableFloatStateOf(0f) }
     val haptic = LocalHapticFeedback.current
-    
+
     // Map value (0..maxBoost) to angle (135..405 degrees)
     // 0 -> 135 deg (Bottom Left)
     // max -> 405 deg (Bottom Right)
     val startAngle = 135f
     val sweepAngle = 270f
-    
+
     Box(
         modifier = modifier
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = {
-                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     },
                     onDragEnd = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -171,8 +166,8 @@ fun CircularBooster(
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val strokeWidth = 12.dp.toPx()
-            val radius = (size.minDimension - strokeWidth) / 2
-            
+            (size.minDimension - strokeWidth) / 2
+
             // Background Arc
             drawArc(
                 color = Color.White.copy(alpha = 0.1f),
@@ -181,18 +176,18 @@ fun CircularBooster(
                 useCenter = false,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
-            
+
             // Active Arc
             val fraction = value / maxBoost
             val activeSweep = sweepAngle * fraction
-            
+
             // Color interpolation: Green -> Yellow -> Red
             val activeColor = when {
                 fraction < 0.5f -> Color.Green
                 fraction < 0.8f -> Color.Yellow
                 else -> Color.Red
             }
-            
+
             drawArc(
                 color = activeColor,
                 startAngle = startAngle,
@@ -201,7 +196,7 @@ fun CircularBooster(
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
         }
-        
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "${value.toInt()}%",
