@@ -57,6 +57,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.viewmodels.MusicViewModel
@@ -82,6 +88,10 @@ private fun Modifier.fadingEdges(
         drawRect(brush = gradient, blendMode = BlendMode.DstIn)
     }
 
+/**
+ * Applies a radial alpha mask so blur falls off smoothly toward edges
+ * instead of ending with a hard rectangular transition.
+ */
 @Composable
 fun LyricsOverlay(
     currentTrack: Track,
@@ -104,22 +114,40 @@ fun LyricsOverlay(
         (overlayHeightPx / 2).toDp()
     }
 
-    // Glassmorphism background
+    // Premium full-bleed frosted background
     Box(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { overlayHeightPx = it.height }
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xCC0D0D0D),
-                        Color(0xE6101015),
-                        Color(0xE6101015),
-                        Color(0xCC0D0D0D)
+    ) {
+        if (!currentTrack.thumbnailUri.isNullOrBlank()) {
+            val blurDp = if (isTablet) 92.dp else 72.dp
+            AsyncImage(
+                model = currentTrack.thumbnailUri,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(1.2f)
+                    .blur(blurDp, edgeTreatment = BlurredEdgeTreatment.Unbounded),
+                contentScale = ContentScale.Crop
+            )
+        }
+
+        // Lighter scrim for readability while preserving premium glass look
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.18f),
+                            Color.Black.copy(alpha = 0.28f),
+                            Color.Black.copy(alpha = 0.40f)
+                        )
                     )
                 )
-            )
-    ) {
+        )
+
         if (syncedLyrics != null) {
             val lyricLines = remember(syncedLyrics, localOffsetMs) {
                 parseSyncedLyrics(syncedLyrics, localOffsetMs.toLong())
@@ -335,11 +363,12 @@ fun LyricsOverlay(
                         IconButton(
                             onClick = { showSyncControls = !showSyncControls },
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .background(
-                                    Color.White.copy(alpha = 0.12f),
+                                    Color.White.copy(alpha = 0.08f),
                                     CircleShape
                                 )
+                                .border(1.dp, Color.White.copy(alpha = 0.04f), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Tune,
@@ -353,11 +382,12 @@ fun LyricsOverlay(
                 IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(40.dp)
                         .background(
-                            Color.White.copy(alpha = 0.12f),
+                            Color.White.copy(alpha = 0.08f),
                             CircleShape
                         )
+                        .border(1.dp, Color.White.copy(alpha = 0.04f), CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,

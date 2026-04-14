@@ -530,10 +530,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
             Log.d("MusicViewModel", "Playing track from queue: ${track.title} at index $trackIndex")
 
-            // Sync QueueManager to the new position
+            // Sync QueueManager to the new position while preserving session history
             val remainingTracks = queue.drop(trackIndex)
+            val historyTracks = queue.take(trackIndex)
             if (remainingTracks.isNotEmpty()) {
-                queueManager.initializeQueue(remainingTracks)
+                queueManager.updateHistory(historyTracks)
+                queueManager.initializeQueue(remainingTracks, isRadioMode = false, preserveHistory = true)
             }
         }
     }
@@ -558,11 +560,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         "MusicViewModel",
                         "Queue size ${tracks.size}, initializing recommendations for: ${it.title}"
                     )
-                    // Pass only tracks from startIndex onwards to QueueManager
-                    // QueueManager treats index 0 as current track
+                    // Initialize recommendations with correct history for ensemble context
                     val remainingTracks = tracks.drop(startIndex)
+                    val historyTracks = tracks.take(startIndex)
                     if (remainingTracks.isNotEmpty()) {
-                        queueManager.initializeQueue(remainingTracks)
+                        queueManager.updateHistory(historyTracks)
+                        queueManager.initializeQueue(remainingTracks, isRadioMode = false, preserveHistory = true)
                     }
                 }
             }

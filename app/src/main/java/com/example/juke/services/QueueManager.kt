@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 
@@ -95,6 +98,9 @@ class QueueManager private constructor(private val context: Context) {
     // Expose pending recommendations count for UI
     fun getPendingDownloadsCount(): Int = pendingRecommendations.size + downloadJobs.size
 
+    private var firstPlayedTrack: Track? = null
+    private val playedTracksHistory = java.util.LinkedList<Track>()
+
     // Pending recommendations to download
     private val pendingRecommendations =
         ConcurrentLinkedQueue<RecommenderApi.ValidatedRecommendation>()
@@ -147,7 +153,7 @@ class QueueManager private constructor(private val context: Context) {
             val currentTrack = _currentQueue.value.firstOrNull()
             currentTrack?.let {
                 Log.d(TAG, "Queue size <= 2, fetching recommendations for: ${it.title}")
-                fetchAndQueueRecommendations(it)
+                fetchAndQueueRecommendations(it, false)
             }
         }
     }
@@ -161,21 +167,46 @@ class QueueManager private constructor(private val context: Context) {
      * 
      * @param tracks Initial queue
      */
-    fun initializeQueue(tracks: List<Track>) {
+    fun initializeQueue(tracks: List<Track>, isRadioMode: Boolean = false, preserveHistory: Boolean = false) {
         // Cancel any pending downloads from the previous song
         // This prevents old recommendation downloads from being added to the queue
         cancelPendingRecommendationDownloads()
 
         _currentQueue.value = tracks.toMutableList()
+        
+        if (!preserveHistory) {
+            firstPlayedTrack = tracks.firstOrNull()
+            playedTracksHistory.clear()
+        }
+
         Log.d(
             TAG,
-            "Queue initialized with ${tracks.size} tracks (cancelled previous recommendations)"
+            "Queue initialized with ${tracks.size} tracks (cancelled previous recommendations, preserveHistory: $preserveHistory)"
         )
 
         // Check if we need to fetch recommendations for the new song
         if (tracks.size <= 2) {
             val currentTrack = tracks.firstOrNull()
-            currentTrack?.let { fetchAndQueueRecommendations(it) }
+            currentTrack?.let { fetchAndQueueRecommendations(it, isRadioMode) }
+        }
+    }
+
+    /**
+     * Updates the played tracks history (e.g. from MusicViewModel when seeking in an existing queue)
+     * so that ensemble recommendations have accurate context.
+     * 
+     * @param history The list of tracks that were already played
+     */
+    fun updateHistory(history: List<Track>) {
+        if (history.isNotEmpty()) {
+            if (firstPlayedTrack == null) {
+                firstPlayedTrack = history.first()
+            }
+            val toKeep = history.takeLast(50) // Manage arbitrary history size
+            // Merge with existing avoiding duplicates
+            val existingIds = playedTracksHistory.map { it.uuid }.toSet()
+            val newTracks = toKeep.filter { it.uuid !in existingIds }
+            playedTracksHistory.addAll(newTracks)
         }
     }
 
@@ -234,7 +265,7 @@ class QueueManager private constructor(private val context: Context) {
         // User-triggered removals must not re-initiate a full recommendation cycle if one is underway.
         if (currentList.size <= 2 && !isRecommendationFetchInProgress) {
             val currentTrack = currentList.firstOrNull()
-            currentTrack?.let { fetchAndQueueRecommendations(it) }
+            currentTrack?.let { fetchAndQueueRecommendations(it, false) }
         }
     }
 
@@ -280,6 +311,10 @@ class QueueManager private constructor(private val context: Context) {
         // Get the track being removed (just played) and add to recent artists
         val playedTrack = currentList[0]
         addToRecentArtists(playedTrack.artist)
+        playedTracksHistory.add(playedTrack)
+        if (playedTracksHistory.size > 50) {
+            playedTracksHistory.removeFirst()
+        }
 
         // Remove first track
         currentList.removeAt(0)
@@ -290,7 +325,7 @@ class QueueManager private constructor(private val context: Context) {
         // Check if we need to fetch more recommendations
         if (currentList.size <= 2) {
             val currentTrack = currentList.firstOrNull()
-            currentTrack?.let { fetchAndQueueRecommendations(it) }
+            currentTrack?.let { fetchAndQueueRecommendations(it, false) }
         }
 
         // Ensure next 3 songs are downloaded/validated
@@ -323,7 +358,7 @@ class QueueManager private constructor(private val context: Context) {
      *
      * @param currentTrack Track to base recommendations on
      */
-    fun fetchAndQueueRecommendations(currentTrack: Track) {
+    fun fetchAndQueueRecommendations(currentTrack: Track, isRadioMode: Boolean = false) {
         serviceScope.launch {
             // Prevent multiple concurrent recommendation fetches
             if (isRecommendationFetchInProgress) {
@@ -335,34 +370,68 @@ class QueueManager private constructor(private val context: Context) {
             try {
                 Log.d(
                     TAG,
-                    "Fetching recommendations for: ${currentTrack.title} by ${currentTrack.artist}"
+                    "Fetching recommendations for: ${currentTrack.title} by ${currentTrack.artist} (Radio Mode: $isRadioMode)"
                 )
 
                 var onlineSucceeded = false
 
                 try {
                     // --- ONLINE PATH ---
-                    // Get YouTube video ID
-                    val videoId = currentTrack.ytVideoId ?: run {
-                        val query = "${currentTrack.title} ${currentTrack.artist}"
-                        RecommenderApi.getBestVideoMatch(query)
+                    val seedTracks = mutableListOf<Track>()
+                    seedTracks.add(currentTrack)
+
+                    if (!isRadioMode) {
+                        firstPlayedTrack?.let { if (it.uuid != currentTrack.uuid) seedTracks.add(it) }
+
+                        // Select up to 3 random tracks from history + queue
+                        val pool = (playedTracksHistory + _currentQueue.value)
+                            .filter { it.uuid != currentTrack.uuid && it.uuid != firstPlayedTrack?.uuid }
+                            .distinctBy { it.uuid }
+                            .shuffled()
+                        seedTracks.addAll(pool.take(3))
                     }
 
-                    if (videoId == null) {
-                        Log.w(
-                            TAG,
-                            "Could not find YouTube video ID for: ${currentTrack.title}. Falling back to offline."
-                        )
+                    Log.d(TAG, "Using ensemble seeds size: ${seedTracks.size}")
+
+                    val rawRecommendations = mutableListOf<RecommenderApi.YouTubeRecommendation>()
+
+                    coroutineScope {
+                        val deferredRecs = seedTracks.map { seed ->
+                            async {
+                                try {
+                                    val videoId = seed.ytVideoId ?: run {
+                                        val query = "${seed.title} ${seed.artist}"
+                                        RecommenderApi.getBestVideoMatch(query)
+                                    }
+                                    if (videoId != null) {
+                                        Log.d(TAG, "Fetching radio for seed: ${seed.title} ($videoId)")
+                                        RecommenderApi.fetchFullRadioQueue(videoId)
+                                    } else {
+                                        emptyList()
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed fetch for seed ${seed.title}: ${e.message}")
+                                    emptyList()
+                                }
+                            }
+                        }
+                        val results = deferredRecs.awaitAll()
+                        rawRecommendations.addAll(results.flatten())
+                    }
+
+                    val sortedRecommendations = if (isRadioMode || seedTracks.size == 1) {
+                        rawRecommendations
                     } else {
-                        Log.d(TAG, "Using YouTube video ID: $videoId")
+                        rawRecommendations.groupBy { it.id }
+                            .entries
+                            .sortedByDescending { it.value.size } // intersect frequency
+                            .map { it.value.first() } // take the first instance of each
+                    }
 
-                        // Fetch full radio queue (index 1 to ~49)
-                        val rawRecommendations = RecommenderApi.fetchFullRadioQueue(videoId)
-
-                        // ── Artist Blacklist Filter ───────────────────────────
-                        val blacklist = BlacklistManager.getBlacklistedArtists(context)
-                        val recommendations = if (blacklist.isNotEmpty()) {
-                            rawRecommendations.filter { rec ->
+                    // ── Artist Blacklist Filter ───────────────────────────
+                    val blacklist = BlacklistManager.getBlacklistedArtists(context)
+                    val recommendations = if (blacklist.isNotEmpty()) {
+                        sortedRecommendations.filter { rec ->
                                 val blocked = BlacklistManager.containsBlacklistedArtist(
                                     context,
                                     rec.artist,
@@ -379,7 +448,7 @@ class QueueManager private constructor(private val context: Context) {
                                 )
                                 !blocked
                             }
-                        } else rawRecommendations
+                        } else sortedRecommendations
                         if (blacklist.isNotEmpty()) {
                             Log.d(
                                 TAG,
@@ -500,7 +569,6 @@ class QueueManager private constructor(private val context: Context) {
                                 }
                             }
                         }
-                    }
                 } catch (onlineEx: Exception) {
                     if (onlineEx is OfflineException || onlineEx.isOffline()) {
                         Log.w(
@@ -1053,7 +1121,7 @@ class QueueManager private constructor(private val context: Context) {
      * @param track Track to base recommendations on
      */
     fun manuallyFetchRecommendations(track: Track) {
-        fetchAndQueueRecommendations(track)
+        fetchAndQueueRecommendations(track, isRadioMode = true)
     }
 
     /**
