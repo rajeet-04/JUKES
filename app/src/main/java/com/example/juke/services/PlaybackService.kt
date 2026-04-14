@@ -2000,9 +2000,9 @@ class PlaybackManager private constructor(private val context: Context) {
             val isCurrentTrack = ctrl.currentMediaItemIndex == index
             val currentPosition = if (isCurrentTrack) ctrl.currentPosition else 0L
 
-            // Replace: remove old, insert new at same position
-            ctrl.removeMediaItem(index)
-            ctrl.addMediaItem(index, newMediaItem)
+            // Replace atomically instead of remove/add to prevent timeline state desync
+            // which causes the track to be duplicated at the end of the queue.
+            ctrl.replaceMediaItem(index, newMediaItem)
 
             // If it was the current track, seek back to maintain position
             if (isCurrentTrack) {
