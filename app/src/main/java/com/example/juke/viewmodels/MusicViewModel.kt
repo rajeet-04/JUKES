@@ -18,6 +18,7 @@ import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.MusicService
 import com.example.juke.services.PlaybackManager
@@ -845,13 +846,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                 try {
                     val tempTrack = withContext(Dispatchers.IO) {
-                        musicService.streamTrack(song, forceSpotmateFirst = true).also {
+                        musicService.streamTrack(
+                            song,
+                            forceSpotmateFirst = true,
+                            fetchLyricsSynchronously = false,
+                            fetchYtVideoIdSynchronously = false
+                        ).also {
                             trackDao.insertTrack(it.toEntity())
                         }
                     }
 
                     // Play immediately
                     playTrack(tempTrack)
+
+                    // Hydrate lyrics off the critical playback path.
+                    if (tempTrack.syncedLyrics.isNullOrBlank() && tempTrack.plainLyrics.isNullOrBlank()) {
+                        refreshLyrics(tempTrack)
+                    }
+
+                    // Hydrate YT video ID off the critical playback path.
+                    if (tempTrack.ytVideoId.isNullOrBlank()) {
+                        refreshYtVideoId(tempTrack)
+                    }
+
                     _uiState.update { it.copy(isLoading = false) }
 
                     // Notify QueueManager so it doesn't try to recommend/download this
@@ -1429,6 +1446,58 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to refresh lyrics: ${e.message}", e)
+            }
+        }
+    }
+
+    fun refreshYtVideoId(track: Track) {
+        if (!track.ytVideoId.isNullOrBlank()) return
+
+        viewModelScope.launch {
+            Log.d("MusicViewModel", "Async fetching YT video ID for: ${track.title}")
+            try {
+                val ytVideoId = withContext(Dispatchers.IO) {
+                    RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}")
+                }
+
+                if (ytVideoId.isNullOrBlank()) {
+                    Log.d("MusicViewModel", "No YT video ID found for: ${track.title}")
+                    return@launch
+                }
+
+                Log.d("MusicViewModel", "New YT video ID found for: ${track.title} -> $ytVideoId")
+
+                // Persist with freshest DB snapshot to avoid overwriting newly hydrated metadata.
+                val persistedTrack = withContext(Dispatchers.IO) {
+                    val latest = trackDao.getTrackByUuid(track.uuid)?.toTrack() ?: track
+                    val updated = latest.copy(ytVideoId = ytVideoId)
+                    trackDao.insertTrack(updated.toEntity())
+                    updated
+                }
+
+                _uiState.update { state ->
+                    val updatedQueue = state.queue.map { queuedTrack ->
+                        if (queuedTrack.uuid == track.uuid) queuedTrack.copy(ytVideoId = ytVideoId)
+                        else queuedTrack
+                    }
+
+                    val updatedCurrentTrack = if (state.currentTrack?.uuid == track.uuid) {
+                        state.currentTrack.copy(ytVideoId = ytVideoId)
+                    } else {
+                        state.currentTrack
+                    }
+
+                    state.copy(
+                        queue = updatedQueue,
+                        currentTrack = updatedCurrentTrack
+                    )
+                }
+
+                // Keep QueueManager in sync so recommendation seeding can use hydrated video IDs.
+                queueManager.replaceTrackInQueue(track.uuid, persistedTrack)
+
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Failed to async fetch YT video ID: ${e.message}", e)
             }
         }
     }

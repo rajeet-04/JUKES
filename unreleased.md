@@ -17,6 +17,9 @@ This document tracks changes, features, and bug fixes that have been implemented
 
 - **Seamless Stream Promotion (Background Downloads):** Transitioning a song from a temporary stream to a permanent background download will no longer cause ExoPlayer timeline resets or audio stuttering if it is the actively playing track (via the `seamlessIfPlaying` atomic swap bypass).
 - **Optimized Stream Source Routing:** First-click instantly selected search tracks are now routed exclusively to the faster Spotmate API, while subsequent queue stream fetches remain 50/50 load-balanced across both Gamepvz and Spotmate providers.
+- **Async Lyrics Hydration for Instant Playback:** Decoupled LRCLib lyrics fetching from the instant stream critical path. Playback now starts immediately after stream file preparation, while lyrics are fetched in a detached background coroutine and applied to the active track/queue once available.
+- **Async YT Video ID Hydration for Stream Start:** Decoupled `RecommenderApi.getBestVideoMatch(...)` from the instant stream critical path. Stream playback now starts without waiting for YouTube ID resolution, then hydrates `ytVideoId` asynchronously into DB/UI/queue state for recommendation seeding.
+- **Graceful Lyrics Overlay Loading State:** Updated lyrics overlay rendering to handle delayed lyric arrival with a transient "Loading lyrics..." indicator, then a clean fallback message when lyrics are unavailable.
 
 ### Premium Interactive Media Controls
 

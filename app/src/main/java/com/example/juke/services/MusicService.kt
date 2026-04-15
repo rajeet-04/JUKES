@@ -403,12 +403,18 @@ class MusicService(private val context: Context) {
      * @param forceSpotmateFirst If true, Spotmate is tried first (faster for instant search plays).
      *                           Otherwise each call randomly picks primary/fallback (50/50).
      * @param pinnedUuids UUIDs that must NOT be evicted by LRU (e.g., the active queue's tracks).
+     * @param fetchLyricsSynchronously If true, lyrics are fetched on the critical path.
+     *                                 Set false for instant playback and hydrate lyrics later.
+     * @param fetchYtVideoIdSynchronously If true, YT video ID is fetched on the critical path.
+     *                                    Set false for instant playback and hydrate later.
      */
     suspend fun streamTrack(
         song: SpotdownSong,
         preferredUuid: String? = null,
         forceSpotmateFirst: Boolean = false,
-        pinnedUuids: Set<String> = emptySet()
+        pinnedUuids: Set<String> = emptySet(),
+        fetchLyricsSynchronously: Boolean = true,
+        fetchYtVideoIdSynchronously: Boolean = true
     ): Track {
         val durationSec = SpotifyApi.parseDuration(song.duration)
 
@@ -467,8 +473,18 @@ class MusicService(private val context: Context) {
         // Pinned UUIDs (currently queued tracks) are protected from eviction.
         evictStreamCache(pinnedUuids = pinnedUuids)
 
-        val lyricsResult = SpotifyApi.searchLyrics(song.title, song.artist, song.album, durationSec)
-        val ytVideoId = RecommenderApi.getBestVideoMatch("${song.title} ${song.artist}")
+        val lyricsResult = if (fetchLyricsSynchronously) {
+            SpotifyApi.searchLyrics(song.title, song.artist, song.album, durationSec)
+        } else {
+            Log.d(TAG, "Skipping synchronous lyrics fetch for instant stream: ${song.title}")
+            null
+        }
+        val ytVideoId = if (fetchYtVideoIdSynchronously) {
+            RecommenderApi.getBestVideoMatch("${song.title} ${song.artist}")
+        } else {
+            Log.d(TAG, "Skipping synchronous YT video ID fetch for instant stream: ${song.title}")
+            existing?.ytVideoId
+        }
 
         val track = Track(
             uuid = uuid,
@@ -478,8 +494,8 @@ class MusicService(private val context: Context) {
             durationSec = durationSec,
             localUri = localFilePath,
             ytVideoId = ytVideoId,
-            syncedLyrics = lyricsResult?.syncedLyrics,
-            plainLyrics = lyricsResult?.plainLyrics,
+            syncedLyrics = lyricsResult?.syncedLyrics ?: existing?.syncedLyrics,
+            plainLyrics = lyricsResult?.plainLyrics ?: existing?.plainLyrics,
             isFavourite = false,
             playCount = 0,
             lastPlayedAt = null,

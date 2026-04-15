@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -66,6 +67,7 @@ import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.viewmodels.MusicViewModel
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 /**
@@ -101,11 +103,25 @@ fun LyricsOverlay(
     onDismiss: () -> Unit
 ) {
     val density = LocalDensity.current
-    val syncedLyrics = currentTrack.syncedLyrics
+    val syncedLyrics = currentTrack.syncedLyrics?.takeIf { it.isNotBlank() }
+    val plainLyrics = currentTrack.plainLyrics?.takeIf { it.isNotBlank() }
     var localOffsetMs by remember(currentTrack.uuid) {
         mutableFloatStateOf(currentTrack.lyricsOffsetMs.toFloat())
     }
     var showSyncControls by remember(currentTrack.uuid) { mutableStateOf(false) }
+    var lyricsPending by remember(currentTrack.uuid) { mutableStateOf(false) }
+
+    LaunchedEffect(currentTrack.uuid, syncedLyrics, plainLyrics) {
+        if (syncedLyrics != null || plainLyrics != null) {
+            lyricsPending = false
+        } else {
+            lyricsPending = true
+            delay(2500)
+            if (currentTrack.syncedLyrics.isNullOrBlank() && currentTrack.plainLyrics.isNullOrBlank()) {
+                lyricsPending = false
+            }
+        }
+    }
 
     // Measure the actual overlay height to compute center padding dynamically
     var overlayHeightPx by remember { mutableIntStateOf(0) }
@@ -239,6 +255,25 @@ fun LyricsOverlay(
                     )
                 }
             }
+        } else if (lyricsPending) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.5.dp
+                    )
+                    Text(
+                        text = "Loading lyrics...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.72f),
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+            }
         } else {
             // Plain lyrics (no syncing)
             Box(
@@ -250,7 +285,7 @@ fun LyricsOverlay(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    currentTrack.plainLyrics ?: "No lyrics available",
+                    plainLyrics ?: "No lyrics available",
                     style = MaterialTheme.typography.bodyLarge.copy(
                         lineHeight = 30.sp,
                         letterSpacing = 0.2.sp
