@@ -1,6 +1,9 @@
 package com.example.juke.ui.screens
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -26,12 +30,21 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -58,7 +71,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.example.juke.network.SpotifyApi
-import com.example.juke.ui.components.GlassCard
 import com.example.juke.utils.BlacklistManager
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
@@ -74,8 +86,14 @@ fun AudioSettingsScreen(
     val isBoosterEnabled by musicViewModel.isBoosterEnabled.collectAsState()
     val boosterLevel by musicViewModel.boosterLevel.collectAsState()
     val isNormalizationEnabled by musicViewModel.isNormalizationEnabled.collectAsState()
+    val isStreamMode by musicViewModel.isStreamMode.collectAsState()
+    val isSkipSilenceEnabled by musicViewModel.isSkipSilenceEnabled.collectAsState()
+    val recommendationCount by musicViewModel.recommendationCount.collectAsState()
     val haptic = rememberJukeHaptics()
     var lastBoosterTickBucket by remember { mutableIntStateOf((boosterLevel / 5).coerceIn(0, 20)) }
+    var lastRecommendationTick by remember {
+        mutableIntStateOf(recommendationCount.coerceIn(3, 15))
+    }
 
     // Gradient Background
     Box(
@@ -109,191 +127,167 @@ fun AudioSettingsScreen(
             )
 
             LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 16.dp,
+                    bottom = 32.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Stream Mode Section
                 item {
-                    val isStreamMode by musicViewModel.isStreamMode.collectAsState()
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.Public, // Using Public icon for streaming
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Column {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Column {
+                            ListItem(
+                                headlineContent = {
                                     Text(
                                         "Stream Mode",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        "Stream music to save storage",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.6f)
+                                },
+                                supportingContent = {
+                                    Text("Play instantly without saving to device")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.CloudSync, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isStreamMode,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleStreamMode(it)
+                                        }
                                     )
-                                }
-                            }
-                            Switch(
-                                checked = isStreamMode,
-                                onCheckedChange = {
-                                    haptic.toggle()
-                                    musicViewModel.toggleStreamMode(it)
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Volume Normalization
-                item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.GraphicEq,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent
                                 )
-                                Column {
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            ListItem(
+                                headlineContent = {
                                     Text(
                                         "Stable Volume",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        "Consistent volume for all tracks",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.6f)
+                                },
+                                supportingContent = {
+                                    Text("Normalize loudness across tracks")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.GraphicEq, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isNormalizationEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleVolumeNormalization(it)
+                                        }
                                     )
-                                }
-                            }
-                            Switch(
-                                checked = isNormalizationEnabled,
-                                onCheckedChange = {
-                                    haptic.toggle()
-                                    musicViewModel.toggleVolumeNormalization(it)
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Skip Silence Section
-                item {
-                    val isSkipSilenceEnabled by musicViewModel.isSkipSilenceEnabled.collectAsState()
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.HourglassEmpty,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent
                                 )
-                                Column {
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            ListItem(
+                                headlineContent = {
                                     Text(
                                         "Skip Silence",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        "Skip silent parts at start/end of tracks",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.6f)
+                                },
+                                supportingContent = {
+                                    Text("Trim quiet intros and outros")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.SkipNext, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isSkipSilenceEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleSkipSilence(it)
+                                        }
                                     )
-                                }
-                            }
-                            Switch(
-                                checked = isSkipSilenceEnabled,
-                                onCheckedChange = {
-                                    haptic.toggle()
-                                    musicViewModel.toggleSkipSilence(it)
-                                }
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent
+                                )
                             )
                         }
                     }
                 }
 
-
-                // Volume Booster Section
                 item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.VolumeUp,
-                                        null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Column {
+                            ListItem(
+                                headlineContent = {
                                     Text(
                                         "Bass & Volume Boost",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
                                     )
-                                }
-                                Switch(
-                                    checked = isBoosterEnabled,
-                                    onCheckedChange = {
-                                        haptic.toggle()
-                                        musicViewModel.toggleVolumeBooster(it)
-                                    }
+                                },
+                                supportingContent = {
+                                    Text("Enhance depth and loudness")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isBoosterEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleVolumeBooster(it)
+                                        }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent
                                 )
-                            }
+                            )
 
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            if (isBoosterEnabled) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            AnimatedVisibility(
+                                visible = isBoosterEnabled,
+                                enter = expandVertically(),
+                                exit = shrinkVertically()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                                        .padding(bottom = 8.dp)
+                                ) {
                                     Text(
                                         text = "${boosterLevel}%",
                                         style = MaterialTheme.typography.headlineMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.align(Alignment.CenterHorizontally)
                                     )
 
                                     Slider(
@@ -310,63 +304,60 @@ fun AudioSettingsScreen(
                                         valueRange = 0f..100f,
                                         modifier = Modifier.fillMaxWidth()
                                     )
+
+                                    Text(
+                                        "High boost levels may distort audio.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Text(
-                                    "WARNING: Output > 100% may distort audio or damage speakers.",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
                             }
                         }
                     }
                 }
 
-                // Recommendation Settings Section
                 item {
-                    val recommendationCount by musicViewModel.recommendationCount.collectAsState()
-                    var lastRecommendationTick by remember {
-                        mutableIntStateOf(recommendationCount.coerceIn(3, 15))
-                    }
-
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.GraphicEq,
-                                        null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Column {
+                            ListItem(
+                                headlineContent = {
                                     Text(
-                                        "Recommendations",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold
+                                        "Recommendation Queue",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
                                     )
-                                }
-                            }
+                                },
+                                supportingContent = {
+                                    Text("Set how many songs are auto-fetched")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent
+                                )
+                            )
 
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(horizontal = 24.dp)
+                                    .padding(bottom = 20.dp)
+                            ) {
                                 Text(
-                                    text = "$recommendationCount tracks per session",
+                                    text = "$recommendationCount tracks",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
                                 )
-
-                                Spacer(modifier = Modifier.height(8.dp))
 
                                 Slider(
                                     value = recommendationCount.toFloat(),
@@ -390,25 +381,15 @@ fun AudioSettingsScreen(
                                     Text(
                                         "3",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White.copy(alpha = 0.5f)
+                                        color = Color.White.copy(alpha = 0.65f)
                                     )
                                     Text(
                                         "15",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White.copy(alpha = 0.5f)
+                                        color = Color.White.copy(alpha = 0.65f)
                                     )
                                 }
                             }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Text(
-                                "Controls how many songs are automatically queued when your queue runs low.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
                         }
                     }
                 }
@@ -418,7 +399,13 @@ fun AudioSettingsScreen(
                     val marketCode by musicViewModel.marketCode.collectAsState()
                     var showDialog by remember { mutableStateOf(false) }
 
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+                    ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -492,7 +479,13 @@ fun AudioSettingsScreen(
                         mutableStateOf(BlacklistManager.getBlacklistedArtists(context).sorted())
                     }
 
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+                    ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -566,7 +559,13 @@ fun AudioSettingsScreen(
 
                 // Storage / Purge Section
                 item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+                    ) {
                         Row(
                             modifier = Modifier
                                 .clickable { onNavigateToPurge() }

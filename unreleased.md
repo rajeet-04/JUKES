@@ -29,6 +29,7 @@ This document tracks changes, features, and bug fixes that have been implemented
 - **Lyrics Sync Controls Overhaul:** Redesigned sync offset controls into a rounded elevated card with richer typography, dedicated Reset/Done actions, and ratchet-style `haptic.tick()` feedback while scrubbing the sync slider.
 - **Floating Pill Mini-Player Redesign:** Upgraded the mini-player from a full-width sharp block to a rounded floating Material 3 card with side margins, elevated depth, softened album art corners, stronger text hierarchy, and an integrated clipped bottom progress bar.
 - **Animated Dancing Glass Background:** Added a frosted glassmorphism layer with animated, color-extracted mesh lights (`DancingGlassBackground`) that reacts to playback state and album palette for a premium, music-reactive mini-player surface.
+- **Audio Settings Grouped M3 Redesign:** Rebuilt `AudioSettingsScreen` around cohesive rounded Material 3 grouped cards using `ListItem` rows, semantic icons, divider-separated toggles, animated booster controls, and retained haptic/tick feedback for all switches and sliders.
 
 ### Haptics & Micro-interactions
 
