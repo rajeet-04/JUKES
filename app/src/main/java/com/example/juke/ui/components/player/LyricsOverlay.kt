@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +33,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -66,9 +70,11 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.ui.screens.parseSyncedLyrics
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Fading edge modifier that masks content with a vertical gradient,
@@ -103,10 +109,14 @@ fun LyricsOverlay(
     onDismiss: () -> Unit
 ) {
     val density = LocalDensity.current
+    val haptic = rememberJukeHaptics()
     val syncedLyrics = currentTrack.syncedLyrics?.takeIf { it.isNotBlank() }
     val plainLyrics = currentTrack.plainLyrics?.takeIf { it.isNotBlank() }
     var localOffsetMs by remember(currentTrack.uuid) {
         mutableFloatStateOf(currentTrack.lyricsOffsetMs.toFloat())
+    }
+    var lastTick by remember(currentTrack.uuid) {
+        mutableIntStateOf((currentTrack.lyricsOffsetMs / 100L).toInt())
     }
     var showSyncControls by remember(currentTrack.uuid) { mutableStateOf(false) }
     var lyricsPending by remember(currentTrack.uuid) { mutableStateOf(false) }
@@ -305,76 +315,116 @@ fun LyricsOverlay(
                     .padding(bottom = 12.dp, start = 16.dp, end = 16.dp),
                 contentAlignment = Alignment.BottomCenter
             ) {
-                Column(
+                Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Color(0xFF1A1A2E).copy(alpha = 0.92f),
-                            RoundedCornerShape(18.dp)
-                        )
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .fillMaxWidth(0.9f)
+                        .padding(bottom = 32.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                 ) {
-                    val sign = if (localOffsetMs > 0f) "+" else ""
-                    Text(
-                        text = "Sync Offset: $sign${
-                            String.format(
-                                Locale.US,
-                                "%.1f",
-                                localOffsetMs / 1000f
-                            )
-                        }s",
-                        color = Color.White.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            letterSpacing = 0.5.sp,
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        val sign = if (localOffsetMs > 0f) "+" else ""
+                        Text(
+                            text = "Sync Offset: $sign${String.format(Locale.US, "%.1f", localOffsetMs / 1000f)}s",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.SemiBold
                         )
-                    )
 
-                    Slider(
-                        value = localOffsetMs,
-                        onValueChange = { newValue ->
-                            localOffsetMs = newValue
-                        },
-                        onValueChangeFinished = {
-                            musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong())
-                        },
-                        valueRange = -20000f..20000f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = Color.White.copy(alpha = 0.7f),
-                            inactiveTrackColor = Color.White.copy(alpha = 0.15f)
-                        )
-                    )
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = {
-                            localOffsetMs = (localOffsetMs - 500f).coerceAtLeast(-20000f)
-                            musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong())
-                        }) {
-                            Icon(Icons.Default.Remove, "Minus 0.5s", tint = Color.White.copy(alpha = 0.8f))
-                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = {
+                                haptic.click()
+                                localOffsetMs = (localOffsetMs - 500f).coerceAtLeast(-5000f)
+                                val step = (localOffsetMs / 100f).roundToInt()
+                                lastTick = step
+                            }) {
+                                Icon(
+                                    Icons.Default.Remove,
+                                    contentDescription = "-0.5s",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
 
-                        TextButton(onClick = {
-                            localOffsetMs = 0f
-                            musicViewModel.saveLyricsOffset(currentTrack, 0L)
-                        }) {
-                            Text(
-                                "Reset",
-                                color = Color.White.copy(alpha = 0.8f),
-                                fontWeight = FontWeight.Medium
+                            Slider(
+                                value = localOffsetMs.coerceIn(-5000f, 5000f),
+                                onValueChange = { value ->
+                                    val currentStep = (value / 100f).roundToInt()
+                                    if (currentStep != lastTick) {
+                                        haptic.tick()
+                                        lastTick = currentStep
+                                    }
+                                    localOffsetMs = value
+                                },
+                                onValueChangeFinished = {
+                                    musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong())
+                                },
+                                valueRange = -5000f..5000f,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 8.dp)
+                                    .height(36.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                )
                             )
+
+                            IconButton(onClick = {
+                                haptic.click()
+                                localOffsetMs = (localOffsetMs + 500f).coerceAtMost(5000f)
+                                val step = (localOffsetMs / 100f).roundToInt()
+                                lastTick = step
+                            }) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "+0.5s",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
 
-                        IconButton(onClick = {
-                            localOffsetMs = (localOffsetMs + 500f).coerceAtMost(20000f)
-                            musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong())
-                        }) {
-                            Icon(Icons.Default.Add, "Plus 0.5s", tint = Color.White.copy(alpha = 0.8f))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = {
+                                haptic.click()
+                                localOffsetMs = 0f
+                                lastTick = 0
+                                musicViewModel.saveLyricsOffset(currentTrack, 0L)
+                            }) {
+                                Text(
+                                    "Reset",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            TextButton(onClick = {
+                                haptic.heavyClick()
+                                musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong())
+                                showSyncControls = false
+                            }) {
+                                Text(
+                                    "Done",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }

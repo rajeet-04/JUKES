@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AddCircle
@@ -28,7 +30,12 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Album
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,9 +48,11 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -447,79 +456,90 @@ fun PlayerScreen(
                                 }
                             }
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = if (isCompact) 12.dp else 24.dp, vertical = if (isCompact) 4.dp else 8.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
+                            Row(
                                 modifier = Modifier
-                                    .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .clickable {
-                                        haptic.click()
-                                        showQueue = true
-                                    }
-                                    .padding(if (isCompact) 8.dp else 12.dp)
+                                    .fillMaxWidth()
+                                    .padding(vertical = if (isCompact) 6.dp else 8.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.List,
-                                    "Queue",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(actionIconSize)
-                                )
-                                Text(
-                                    "Queue",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
-                                )
-                            }
-
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .clickable {
-                                        haptic.click()
-                                        musicViewModel.startRadio()
-                                    }
-                                    .padding(if (isCompact) 8.dp else 12.dp)
-                            ) {
-                                Icon(
-                                    Icons.Filled.Radio,
-                                    "Radio",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(actionIconSize)
-                                )
-                                Text(
-                                    "Radio",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
-                                )
-                            }
-
-                            if (currentTrack.spotifyId != null) {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
-                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .clip(CircleShape)
                                         .clickable {
                                             haptic.click()
-                                            onShareTrack(currentTrack.spotifyId)
+                                            showQueue = true
                                         }
-                                        .padding(if (isCompact) 8.dp else 12.dp)
+                                        .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = if (isCompact) 6.dp else 8.dp)
                                 ) {
                                     Icon(
-                                        Icons.Filled.Share,
-                                        "Share",
-                                        tint = Color.White,
+                                        Icons.AutoMirrored.Filled.List,
+                                        "Queue",
+                                        tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(actionIconSize)
                                     )
                                     Text(
-                                        "Share",
+                                        "Queue",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
+                                }
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            haptic.click()
+                                            musicViewModel.startRadio()
+                                        }
+                                        .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = if (isCompact) 6.dp else 8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Radio,
+                                        "Radio",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(actionIconSize)
+                                    )
+                                    Text(
+                                        "Radio",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                if (currentTrack.spotifyId != null) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .clickable {
+                                                haptic.click()
+                                                onShareTrack(currentTrack.spotifyId)
+                                            }
+                                            .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = if (isCompact) 6.dp else 8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Share,
+                                            "Share",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(actionIconSize)
+                                        )
+                                        Text(
+                                            "Share",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -680,10 +700,15 @@ fun PlayerHeader(
                 }
                 DropdownMenu(
                     expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
+                    onDismissRequest = { showMenu = false },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp))
                 ) {
                     DropdownMenuItem(
                         text = { Text("Sleep Timer") },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Timer, contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             onShowSleepTimer()
@@ -692,6 +717,9 @@ fun PlayerHeader(
                     if (isAlbumAvailable) {
                         DropdownMenuItem(
                             text = { Text("Go to Album") },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Album, contentDescription = null)
+                            },
                             onClick = {
                                 showMenu = false
                                 onNavigateToAlbum()
@@ -700,6 +728,9 @@ fun PlayerHeader(
                     }
                     DropdownMenuItem(
                         text = { Text("Refresh Lyrics") },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Refresh, contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             onRefreshLyrics()
@@ -715,6 +746,9 @@ fun PlayerHeader(
                                 }
                             )
                         },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Translate, contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             onToggleRomanizedLyrics()
@@ -727,6 +761,13 @@ fun PlayerHeader(
                         }
                         DropdownMenuItem(
                             text = { Text(if (hasBlacklisted) "Manage Blocked Artists" else "Block Artist") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Outlined.Block,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
                             onClick = {
                                 showMenu = false
                                 onShowBlacklistPicker()

@@ -24,6 +24,9 @@ This document tracks changes, features, and bug fixes that have been implemented
 ### Premium Interactive Media Controls
 
 - **Animated Play/Pause Transition:** Implemented a high-performance "Pro" animation combo for the main media controls and mini-player. Instead of abrupt icon swaps, the buttons now utilize a synchronized scale bounce (1.0 → 0.85 → 1.0) and a 180ms `Crossfade` transition, mimicking the premium feel of native morphing with zero SVG path overhead.
+- **Material 3 Player Options Menu Refresh:** Restyled the player 3-dots menu with rounded M3 surfaces, elevated tonal container color, and semantic leading icons for Sleep Timer, Album, Refresh Lyrics, Romanized toggle, and Block Artist actions.
+- **Bottom Action Pill Container:** Grouped Queue, Radio, and Share into a cohesive floating pill surface using tonal `surfaceVariant` styling, circle affordances, and improved visual grounding at the bottom of the player.
+- **Lyrics Sync Controls Overhaul:** Redesigned sync offset controls into a rounded elevated card with richer typography, dedicated Reset/Done actions, and ratchet-style `haptic.tick()` feedback while scrubbing the sync slider.
 
 ### Haptics & Micro-interactions
 
