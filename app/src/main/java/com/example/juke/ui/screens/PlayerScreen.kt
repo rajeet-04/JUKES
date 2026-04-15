@@ -18,8 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -280,7 +279,7 @@ fun PlayerScreen(
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
+                    .safeDrawingPadding()
             ) {
                 val screenH = maxHeight
                 // Scale breakpoints: tight (<640dp), normal (640-800dp), large (>800dp)
@@ -289,6 +288,8 @@ fun PlayerScreen(
                 val spacerMd = if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
                 val actionIconSize = if (isCompact) 18.dp else 24.dp
                 val actionBtnSize = if (isCompact) 36.dp else 48.dp
+                // Fixed sizes for the bottom bar so they never shrink too small
+                val actionBarIconSize = if (isCompact) 26.dp else 32.dp
                 val ctrlPlaySize = if (isCompact) 60.dp else if (isTablet) 88.dp else 72.dp
                 val ctrlBtnSize = if (isCompact) 44.dp else if (isTablet) 72.dp else 56.dp
                 val ctrlIconSize = if (isCompact) 28.dp else if (isTablet) 56.dp else 40.dp
@@ -299,7 +300,8 @@ fun PlayerScreen(
                     if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
                 val subtitleStyle =
                     if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium
-                val bottomPadding = if (isCompact) 16.dp else 40.dp
+                // Keep a safe bottom padding to avoid nav bar overlap
+                val bottomPadding = if (isCompact) 16.dp else 24.dp
 
                 Column(
                     modifier = Modifier
@@ -459,61 +461,67 @@ fun PlayerScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = if (isCompact) 12.dp else 24.dp, vertical = if (isCompact) 4.dp else 8.dp),
-                            shape = CircleShape,
+                                .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = if (isCompact) 6.dp else 8.dp),
+                                    .padding(vertical = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
-                                        .clip(CircleShape)
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
                                         .clickable {
                                             haptic.click()
                                             showQueue = true
                                         }
-                                        .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = if (isCompact) 6.dp else 8.dp)
+                                        .padding(vertical = 6.dp)
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.List,
                                         "Queue",
                                         tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(actionIconSize)
+                                        modifier = Modifier.size(actionBarIconSize)
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         "Queue",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
                                     )
                                 }
 
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
-                                        .clip(CircleShape)
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
                                         .clickable {
                                             haptic.click()
                                             musicViewModel.startRadio()
                                         }
-                                        .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = if (isCompact) 6.dp else 8.dp)
+                                        .padding(vertical = 6.dp)
                                 ) {
                                     Icon(
                                         Icons.Filled.Radio,
                                         "Radio",
                                         tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(actionIconSize)
+                                        modifier = Modifier.size(actionBarIconSize)
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         "Radio",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
                                     )
                                 }
 
@@ -521,29 +529,35 @@ fun PlayerScreen(
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
-                                            .clip(CircleShape)
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(12.dp))
                                             .clickable {
                                                 haptic.click()
                                                 onShareTrack(currentTrack.spotifyId)
                                             }
-                                            .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = if (isCompact) 6.dp else 8.dp)
+                                            .padding(vertical = 6.dp)
                                     ) {
                                         Icon(
                                             Icons.Filled.Share,
                                             "Share",
                                             tint = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(actionIconSize)
+                                            modifier = Modifier.size(actionBarIconSize)
                                         )
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             "Share",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1
                                         )
                                     }
                                 }
                             }
                         }
                     }
+
+                    // Ensure the main Column keeps spacing from the navigation bar
+                    Spacer(modifier = Modifier.height(bottomPadding))
                 }
             }
         }
