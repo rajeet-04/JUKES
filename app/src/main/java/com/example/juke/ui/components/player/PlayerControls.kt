@@ -19,7 +19,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,7 +90,7 @@ fun PlayerControls(
         val playButtonScale = remember { Animatable(1f) }
         LaunchedEffect(uiState.isPlaying) {
             playButtonScale.animateTo(0.85f, tween(90, easing = FastOutSlowInEasing))
-            playButtonScale.animateTo(1f,    tween(150, easing = FastOutSlowInEasing))
+            playButtonScale.animateTo(1f, tween(150, easing = FastOutSlowInEasing))
         }
 
         FilledIconButton(

@@ -17,8 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.Block
@@ -70,12 +69,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.juke.R
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.models.Track
 import com.example.juke.ui.components.AddToPlaylistDialog
@@ -461,7 +462,10 @@ fun PlayerScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = 8.dp),
+                                .padding(
+                                    horizontal = if (isCompact) 12.dp else 16.dp,
+                                    vertical = 8.dp
+                                ),
                             shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             contentColor = MaterialTheme.colorScheme.onSurface
@@ -511,14 +515,14 @@ fun PlayerScreen(
                                         .padding(vertical = 6.dp)
                                 ) {
                                     Icon(
-                                        Icons.Filled.Radio,
-                                        "Radio",
+                                        painter = painterResource(id = R.drawable.baseline_mix),
+                                        "Mix",
                                         tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(actionBarIconSize)
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        "Radio",
+                                        "Mix",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1
@@ -658,7 +662,7 @@ fun PlayerScreen(
     }
 
     // Blacklist Artist Picker Dialog
-        if (showBlacklistPicker) {
+    if (showBlacklistPicker) {
         BlacklistPickerDialog(
             artistString = currentTrack.artist,
             onDismiss = { showBlacklistPicker = false }
@@ -716,7 +720,11 @@ fun PlayerHeader(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp))
+                    modifier = Modifier.background(
+                        MaterialTheme.colorScheme.surfaceColorAtElevation(
+                            3.dp
+                        )
+                    )
                 ) {
                     DropdownMenuItem(
                         text = { Text("Sleep Timer") },
