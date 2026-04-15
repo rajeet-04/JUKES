@@ -5,7 +5,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,8 +33,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,10 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +63,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.ui.components.HeroTrackCard
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.HomeViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
@@ -78,6 +78,7 @@ fun HomeScreen(
     bottomPadding: Dp = 0.dp
 ) {
     val uiState by homeViewModel.uiState.collectAsState()
+    val haptic = rememberJukeHaptics()
 
     LaunchedEffect(Unit) {
         homeViewModel.loadHomeData()
@@ -97,7 +98,10 @@ fun HomeScreen(
         // Frozen header
         HomeHeader(
             greeting = uiState.greeting,
-            onSettingsClick = onSettingsClick
+            onSettingsClick = {
+                haptic.click()
+                onSettingsClick()
+            }
         )
 
         // Scrollable content with pull-to-refresh
@@ -167,34 +171,37 @@ private fun HomeHeader(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 20.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 24.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "JUKE",
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                letterSpacing = 2.sp
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = greeting,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "What are we listening to?",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
-        IconButton(onClick = onSettingsClick) {
+
+        FilledIconButton(
+            onClick = onSettingsClick,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        ) {
             Icon(
                 Icons.Filled.Settings,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                contentDescription = "Settings"
             )
         }
     }
@@ -225,7 +232,7 @@ private fun RecentlyPlayedSection(
 
         HorizontalPager(
             state = pagerState,
-            contentPadding = PaddingValues(horizontal = 20.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp),
             pageSpacing = 12.dp
         ) { page ->
             HeroTrackCard(
@@ -281,7 +288,7 @@ private fun HorizontalTrackSection(
     Column {
         SectionHeader(title = title)
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
+            contentPadding = PaddingValues(horizontal = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             itemsIndexed(tracks) { index, track ->
@@ -300,7 +307,7 @@ private fun FavoritesSection(
     Column {
         SectionHeader(title = "Favorites")
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
+            contentPadding = PaddingValues(horizontal = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             itemsIndexed(tracks) { index, track ->
@@ -319,21 +326,26 @@ private fun SectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 14.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
         )
         if (onActionClick != null) {
-            TextButton(onClick = onActionClick) {
+            TextButton(
+                onClick = onActionClick,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
                 Text(
                     "See All",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
@@ -345,17 +357,16 @@ private fun MusicCard(
     track: Track,
     onClick: () -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
+
     Box(
         modifier = Modifier
-            .size(140.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .size(160.dp)
+            .clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onClick()
-                })
+            .clickable {
+                haptic.click()
+                onClick()
             }
     ) {
         if (track.thumbnailUri != null) {
@@ -373,69 +384,67 @@ private fun MusicCard(
                 Icon(
                     Icons.Filled.MusicNote,
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )
             }
         }
 
-        // Gradient overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f)),
-                        startY = 80f
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                        startY = 120f
                     )
                 )
         )
 
-        // Title and artist at bottom
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(10.dp)
+                .padding(16.dp)
         ) {
             Text(
                 text = track.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.75f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Play count pill (top-right)
         if (track.playCount > 0) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(7.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(50))
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                    .padding(12.dp)
+                    .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(
                     Icons.Filled.PlayArrow,
                     contentDescription = null,
-                    modifier = Modifier.size(10.dp),
+                    modifier = Modifier.size(12.dp),
                     tint = Color.White
                 )
                 Text(
                     text = track.playCount.toString(),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,
-                    fontSize = 10.sp
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -447,22 +456,23 @@ private fun FavoriteCard(
     track: Track,
     onClick: () -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
+
     Column(
         modifier = Modifier
-            .width(90.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onClick()
-                })
-            },
+            .width(100.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable {
+                haptic.click()
+                onClick()
+            }
+            .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(90.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .size(92.dp)
+                .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
@@ -481,21 +491,34 @@ private fun FavoriteCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.3f)),
+                            radius = 150f
+                        )
+                    )
+            )
+
             Icon(
                 Icons.Filled.Favorite,
                 contentDescription = null,
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(5.dp)
-                    .size(13.dp),
-                tint = Color(0xFFE91E63)
+                    .size(24.dp),
+                tint = Color(0xFFE91E63).copy(alpha = 0.9f)
             )
         }
-        Spacer(modifier = Modifier.height(6.dp))
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         Text(
             text = track.title,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,

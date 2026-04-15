@@ -30,6 +30,7 @@ This document tracks changes, features, and bug fixes that have been implemented
 - **Floating Pill Mini-Player Redesign:** Upgraded the mini-player from a full-width sharp block to a rounded floating Material 3 card with side margins, elevated depth, softened album art corners, stronger text hierarchy, and an integrated clipped bottom progress bar.
 - **Animated Dancing Glass Background:** Added a frosted glassmorphism layer with animated, color-extracted mesh lights (`DancingGlassBackground`) that reacts to playback state and album palette for a premium, music-reactive mini-player surface.
 - **Audio Settings Grouped M3 Redesign:** Rebuilt `AudioSettingsScreen` around cohesive rounded Material 3 grouped cards using `ListItem` rows, semantic icons, divider-separated toggles, animated booster controls, and retained haptic/tick feedback for all switches and sliders.
+- **Home Screen Premium M3 Refresh:** Reworked `HomeScreen` with a larger immersive greeting header, edge-forward Recently Played hero spacing, cleaner section headers, softer rounded Most Played/Favorites cards, and upgraded card interactions to `JukeHaptics` (`rememberJukeHaptics`) for premium tactile feedback.
 
 ### Haptics & Micro-interactions
 
