@@ -1,7 +1,24 @@
 # JUKES - Release Notes
 
 ## Changelog
- 
+
+## [2.3.1-beta] - 2026-04-15
+
+### Added
+
+- Ensemble Recommendation Engine improvements (robust seed pool, parallel network intersections, offline fallback scoring).
+- Streaming playback & download resilience (seamless stream promotion, optimized source routing, async lyrics and YouTube ID hydration).
+- UI & UX polish: bottom action pill, mini-player redesign, animated play/pause transition, Material 3 player menu refresh, Search/Home/AudioSettings M3 updates.
+- Haptics engine upgrade with semantic haptics and `VIBRATE` permission.
+
+### Fixed
+
+- Queue race condition and duplication resolved via atomic `replaceMediaItem()` swaps.
+- LRU streaming stability fixes (eviction protection, redundant download prevention).
+- Duplicate stream request avoidance and related stability improvements.
+
+See full release notes: [v2.3.1-beta-RELEASE_NOTES.md](v2.3.1-beta-RELEASE_NOTES.md)
+
 ## [2.3.0-beta] - 2026-04-12
  
 ### Added
