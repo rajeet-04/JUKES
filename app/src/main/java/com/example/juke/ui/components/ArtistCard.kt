@@ -1,5 +1,6 @@
 package com.example.juke.ui.components
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -62,8 +63,11 @@ fun ArtistCard(
             Text(
                 text = artist.name,
                 style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .basicMarquee(),
+                maxLines = 1,
+                overflow = TextOverflow.Clip
             )
 
             // Followers
@@ -72,7 +76,11 @@ fun ArtistCard(
                     text = "${formatNumber(artist.followers.total)} followers",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .basicMarquee(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
                 )
             }
         }

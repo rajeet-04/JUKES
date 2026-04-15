@@ -1,5 +1,6 @@
 package com.example.juke.ui.components
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -56,8 +57,11 @@ fun PlaylistCard(
                 Text(
                     text = playlist.name,
                     style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .basicMarquee(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -66,7 +70,12 @@ fun PlaylistCard(
                 Text(
                     text = "${playlist.tracks?.total ?: 0} tracks",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .basicMarquee(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
                 )
             }
         }
