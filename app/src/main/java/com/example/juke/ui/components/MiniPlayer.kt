@@ -1,5 +1,9 @@
 package com.example.juke.ui.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -32,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -182,21 +187,34 @@ fun MiniPlayer(
                     }
 
                     // Play / Pause
+                    val miniPlayScale = remember { Animatable(1f) }
+                    LaunchedEffect(uiState.isPlaying) {
+                        miniPlayScale.animateTo(0.85f, tween(90, easing = FastOutSlowInEasing))
+                        miniPlayScale.animateTo(1f,    tween(150, easing = FastOutSlowInEasing))
+                    }
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             musicViewModel.togglePlayPause()
                         },
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier
+                            .size(40.dp)
+                            .scale(miniPlayScale.value)
                     ) {
-                        Icon(
-                            painter = painterResource(
-                                if (uiState.isPlaying) com.example.juke.R.drawable.baseline_pause_24
-                                else com.example.juke.R.drawable.baseline_play_24
-                            ),
-                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Crossfade(
+                            targetState = uiState.isPlaying,
+                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            label = "miniPlayPauseIcon"
+                        ) { isPlaying ->
+                            Icon(
+                                painter = painterResource(
+                                    if (isPlaying) com.example.juke.R.drawable.baseline_pause_24
+                                    else com.example.juke.R.drawable.baseline_play_24
+                                ),
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
 

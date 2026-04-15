@@ -1,5 +1,9 @@
 package com.example.juke.ui.components.player
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,8 +18,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -78,22 +86,39 @@ fun PlayerControls(
             )
         }
 
+        val playButtonScale = remember { Animatable(1f) }
+        LaunchedEffect(uiState.isPlaying) {
+            playButtonScale.animateTo(0.85f, tween(90, easing = FastOutSlowInEasing))
+            playButtonScale.animateTo(1f,    tween(150, easing = FastOutSlowInEasing))
+        }
+
         FilledIconButton(
             onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 musicViewModel.togglePlayPause()
             },
-            modifier = Modifier.size(resolvedPlayButtonSize),
+            modifier = Modifier
+                .size(resolvedPlayButtonSize)
+                .scale(playButtonScale.value),
             colors = IconButtonDefaults.filledIconButtonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
             )
         ) {
-            Icon(
-                painter = painterResource(if (uiState.isPlaying) R.drawable.baseline_pause_24 else R.drawable.baseline_play_24),
-                contentDescription = if (uiState.isPlaying) "Pause" else "Play",
-                modifier = Modifier.size(resolvedIconSize)
-            )
+            Crossfade(
+                targetState = uiState.isPlaying,
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                label = "playPauseIcon"
+            ) { isPlaying ->
+                Icon(
+                    painter = painterResource(
+                        if (isPlaying) R.drawable.baseline_pause_24
+                        else R.drawable.baseline_play_24
+                    ),
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    modifier = Modifier.size(resolvedIconSize)
+                )
+            }
         }
 
         IconButton(

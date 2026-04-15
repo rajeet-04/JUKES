@@ -4,24 +4,33 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
 
-    <!-- Left bar outline -->
+    <!-- Left book -->
     <path
         android:fillColor="@android:color/white"
-        android:pathData="M4,3 L6.5,3 L6.5,21 L4,21 Z"
-        android:strokeWidth="1"
-        android:strokeColor="@android:color/white" />
+        android:pathData="
+            M4.5,4
+            Q4,12 4.5,20
+            L6.5,20
+            Q6,12 6.5,4
+            Z"/>
 
-    <!-- Middle bar outline -->
+    <!-- Middle book -->
     <path
         android:fillColor="@android:color/white"
-        android:pathData="M9,3 L11.5,3 L11.5,21 L9,21 Z"
-        android:strokeWidth="1"
-        android:strokeColor="@android:color/white" />
+        android:pathData="
+            M9,4
+            Q8.5,12 9,20
+            L11,20
+            Q10.5,12 11,4
+            Z"/>
 
-    <!-- Right slanted panel outline -->
+    <!-- Right tilted book -->
     <path
         android:fillColor="@android:color/white"
-        android:pathData="M15,2 L22,5 L22,22 L15,22 Z"
-        android:strokeWidth="1"
-        android:strokeColor="@android:color/white" />
+        android:pathData="
+            M14,3
+            Q17,4 20.5,6
+            L20.5,20
+            Q17,20 14,20
+            Z"/>
 </vector>
