@@ -44,7 +44,7 @@ fun SearchResultItemM3(
             }
             .padding(horizontal = 4.dp),
         colors = ListItemDefaults.colors(
-            containerColor = Color.Transparent,
+            containerColor = MaterialTheme.colorScheme.background,
             headlineColor = MaterialTheme.colorScheme.onBackground,
             supportingColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
         ),

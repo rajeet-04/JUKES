@@ -32,6 +32,7 @@ This document tracks changes, features, and bug fixes that have been implemented
 - **Audio Settings Grouped M3 Redesign:** Rebuilt `AudioSettingsScreen` around cohesive rounded Material 3 grouped cards using `ListItem` rows, semantic icons, divider-separated toggles, animated booster controls, and retained haptic/tick feedback for all switches and sliders.
 - **Home Screen Premium M3 Refresh:** Reworked `HomeScreen` with a larger immersive greeting header, edge-forward Recently Played hero spacing, cleaner section headers, softer rounded Most Played/Favorites cards, and upgraded card interactions to `JukeHaptics` (`rememberJukeHaptics`) for premium tactile feedback.
 - **Search Screen Native M3 Upgrade:** Refactored `SearchScreen` to use Material 3 `SearchBar` with expanded/collapsed search states, modernized collapsed browse surface, and migrated Spotify result rows to a reusable `SearchResultItemM3` built on `ListItem` in `SearchResultItem.kt`.
+- **Library / Sort / Purge Visual De-Grey Pass:** Modernized `LibraryScreen` with a transparent collapsing `TopAppBar`, outlined+tinted filter chips, and a polished `ModalBottomSheet` sort picker; updated `LibraryTrackItem` and `PurgeSelectionScreen` selection rows to use transparent containers with soft primary tint highlights for a lighter glass-aligned M3 feel.
 
 ### Haptics & Micro-interactions
 

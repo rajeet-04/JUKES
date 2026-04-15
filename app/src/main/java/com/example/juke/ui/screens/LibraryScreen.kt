@@ -18,8 +18,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
@@ -49,15 +51,21 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -71,8 +79,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +98,7 @@ import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.ui.components.EditPlaylistDialog
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.ui.components.SwipeToAddNextContainer
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SortOption
@@ -102,13 +114,14 @@ fun LibraryScreen(
     val coroutineScope = rememberCoroutineScope()
     val uiState by libraryViewModel.uiState.collectAsState()
     val musicUiState by musicViewModel.uiState.collectAsState()
-
-    LocalContext.current
-    val view = LocalView.current
+    val haptic = rememberJukeHaptics()
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val searchFocusRequester = remember { FocusRequester() }
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
     // Helper for haptics
     fun performHapticFeedback() {
-        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        haptic.heavyClick()
     }
 
     // Handle back press to exit selection mode
@@ -150,7 +163,49 @@ fun LibraryScreen(
         // Initial load is handled by the flow in ViewModel
     }
 
-    Scaffold { paddingValues ->
+    Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
+        topBar = {
+            if (!uiState.isSelectionMode) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Your Library",
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                haptic.click()
+                                searchFocusRequester.requestFocus()
+                                keyboardController?.show()
+                            }
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+
+                        IconButton(
+                            onClick = {
+                                haptic.click()
+                                libraryViewModel.toggleSortSheet()
+                            }
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                    ),
+                    scrollBehavior = scrollBehavior
+                )
+            }
+        }
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -300,20 +355,19 @@ fun LibraryScreen(
                     }
                 }
             } else {
-                // Search and Sort Row
+                // Search Row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Search Field (70%)
                     TextField(
                         value = uiState.searchQuery,
                         onValueChange = { libraryViewModel.updateSearchQuery(it) },
-                        modifier = Modifier.weight(0.7f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(searchFocusRequester),
                         placeholder = { Text("Search Anything...") },
                         leadingIcon = {
                             Icon(
@@ -332,33 +386,25 @@ fun LibraryScreen(
                             }
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = TextFieldDefaults.colors(
-                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                            focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+                            disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
                         )
                     )
-                    Button(
-                        onClick = { libraryViewModel.toggleSortSheet() },
-                        modifier = Modifier
-                            .weight(0.1f)
-                            .heightIn(min = 56.dp),
-                        contentPadding = PaddingValues(0.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(0.dp)
-                    ) {
-                        Text(
-                            "Sort",
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1
-                        )
-                    }
                 }
             }
+
+            val chipColors = FilterChipDefaults.filterChipColors(
+                containerColor = Color.Transparent,
+                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                selectedLabelColor = MaterialTheme.colorScheme.primary
+            )
+
             // Enhanced Filter Row
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
@@ -371,6 +417,14 @@ fun LibraryScreen(
                         selected = uiState.selectedPlaylist == null && !uiState.showFavoritesOnly,
                         onClick = { libraryViewModel.loadAllTracks() },
                         label = { Text("All Tracks") },
+                        colors = chipColors,
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = uiState.selectedPlaylist == null && !uiState.showFavoritesOnly,
+                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        ),
+                        shape = CircleShape,
                         leadingIcon = if (uiState.selectedPlaylist == null && !uiState.showFavoritesOnly) {
                             {
                                 Icon(
@@ -389,6 +443,14 @@ fun LibraryScreen(
                         selected = uiState.showFavoritesOnly,
                         onClick = { libraryViewModel.toggleFavoritesFilter() },
                         label = { Text("Favourites") },
+                        colors = chipColors,
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = uiState.showFavoritesOnly,
+                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        ),
+                        shape = CircleShape,
                         leadingIcon = if (uiState.showFavoritesOnly) {
                             {
                                 Icon(
@@ -419,6 +481,14 @@ fun LibraryScreen(
                         selected = uiState.selectedPlaylist?.id == playlist.id,
                         onClick = { libraryViewModel.loadPlaylistTracks(playlist.id) },
                         label = { Text(playlist.name) },
+                        colors = chipColors,
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = uiState.selectedPlaylist?.id == playlist.id,
+                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        ),
+                        shape = CircleShape,
                         leadingIcon = if (uiState.selectedPlaylist?.id == playlist.id) {
                             {
                                 Icon(
@@ -745,7 +815,7 @@ fun LibraryScreen(
                         start = 20.dp,
                         top = 8.dp,
                         end = 20.dp,
-                        bottom = 16.dp + bottomPadding
+                        bottom = 100.dp + bottomPadding
                     ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -903,48 +973,11 @@ fun LibraryScreen(
 
     // Sort Bottom Sheet
     if (uiState.showSortSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { libraryViewModel.toggleSortSheet() },
-            sheetState = rememberModalBottomSheetState()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 32.dp)
-            ) {
-                Text(
-                    text = "Sort by",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
-                )
-
-                val sortOptions = listOf(
-                    SortOption.RECENTLY_ADDED to "Recently Added",
-                    SortOption.TITLE to "Title",
-                    SortOption.ARTIST to "Artist",
-                    SortOption.LAST_PLAYED to "Last Played",
-                    SortOption.MOST_PLAYED to "Most Played"
-                )
-
-                sortOptions.forEach { (option, label) ->
-                    ListItem(
-                        headlineContent = { Text(label) },
-                        leadingContent = {
-                            if (uiState.sortOption == option) {
-                                Icon(
-                                    Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { libraryViewModel.updateSortOption(option) }
-                    )
-                }
-            }
-        }
+        SortBottomSheet(
+            currentSortStyle = uiState.sortOption,
+            onSortSelected = { libraryViewModel.updateSortOption(it) },
+            onDismissRequest = { libraryViewModel.toggleSortSheet() }
+        )
     }
 
 
@@ -1029,6 +1062,74 @@ fun LibraryScreen(
                         Text("Undo")
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SortBottomSheet(
+    currentSortStyle: SortOption,
+    onSortSelected: (SortOption) -> Unit,
+    onDismissRequest: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Sort by",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            val sortOptions = listOf(
+                SortOption.TITLE to "Title",
+                SortOption.RECENTLY_ADDED to "Recently Added",
+                SortOption.ARTIST to "Artist",
+                SortOption.LAST_PLAYED to "Last Played",
+                SortOption.MOST_PLAYED to "Most Played"
+            )
+
+            sortOptions.forEach { (option, label) ->
+                val isSelected = currentSortStyle == option
+
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                            ),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    trailingContent = {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSortSelected(option) }
+                )
             }
         }
     }
