@@ -25,9 +25,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.example.juke.utils.rememberJukeHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +36,7 @@ fun SwipeToAddNextContainer(
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
 
     // Guard flag: ensures the action fires only ONCE per swipe gesture.
     // confirmValueChange can be called multiple times during a single drag
@@ -52,7 +51,7 @@ fun SwipeToAddNextContainer(
                 SwipeToDismissBoxValue.StartToEnd -> {
                     if (!actionFired.value) {
                         actionFired.value = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.confirm()
                         onAddNext()
                     }
                     false // Reset swipe position after action
@@ -61,7 +60,7 @@ fun SwipeToAddNextContainer(
                 SwipeToDismissBoxValue.EndToStart -> {
                     if (!actionFired.value) {
                         actionFired.value = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.reject()
                         onDelete?.invoke()
                     }
                     false // Reset swipe position after action

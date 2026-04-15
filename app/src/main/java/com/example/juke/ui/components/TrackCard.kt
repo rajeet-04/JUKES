@@ -19,13 +19,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.utils.rememberJukeHaptics
 
 @Composable
 fun TrackCard(
@@ -33,12 +32,12 @@ fun TrackCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
     Card(
         modifier = modifier
             .width(140.dp)
             .clickable {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                haptic.click()
                 onClick()
             },
         shape = RoundedCornerShape(8.dp)

@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.juke.models.Track
 import com.example.juke.ui.components.GlassCard
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import java.io.File
 import java.util.Locale
@@ -62,6 +63,7 @@ fun PurgeSelectionScreen(
     var selectedTracks by remember { mutableStateOf<Set<String>>(emptySet()) }
     var isLoading by remember { mutableStateOf(true) }
     var showConfirmation by remember { mutableStateOf(false) }
+    val haptic = rememberJukeHaptics()
 
     LaunchedEffect(Unit) {
         purgeableTracks = musicViewModel.getPurgeableTracks()
@@ -98,6 +100,7 @@ fun PurgeSelectionScreen(
                 actions = {
                     if (purgeableTracks.isNotEmpty()) {
                         TextButton(onClick = {
+                            haptic.click()
                             if (selectedTracks.size == purgeableTracks.size) {
                                 selectedTracks = emptySet()
                             } else {
@@ -188,6 +191,7 @@ fun PurgeSelectionScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
+                                        haptic.click()
                                         selectedTracks = if (isSelected) {
                                             selectedTracks - track.uuid
                                         } else {
@@ -200,6 +204,7 @@ fun PurgeSelectionScreen(
                                 Checkbox(
                                     checked = isSelected,
                                     onCheckedChange = { checked ->
+                                        haptic.click()
                                         selectedTracks = if (checked) {
                                             selectedTracks + track.uuid
                                         } else {

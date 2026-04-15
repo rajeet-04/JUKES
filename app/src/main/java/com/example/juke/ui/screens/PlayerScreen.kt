@@ -78,6 +78,7 @@ import com.example.juke.ui.components.player.PlayerProgress
 import com.example.juke.ui.components.player.QueueBottomSheetContent
 import com.example.juke.utils.BlacklistManager
 import com.example.juke.utils.LyricsRomanizer
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
@@ -146,6 +147,7 @@ fun PlayerScreen(
     var showBlacklistPicker by remember { mutableStateOf(false) }
     val romanizeLyrics by musicViewModel.isRomanizedLyricsEnabled.collectAsState()
     val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
+    val haptic = rememberJukeHaptics()
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
@@ -393,7 +395,10 @@ fun PlayerScreen(
                                 )
                             }
                             IconButton(
-                                onClick = { musicViewModel.toggleFavorite(currentTrack) },
+                                onClick = {
+                                    haptic.confirm()
+                                    musicViewModel.toggleFavorite(currentTrack)
+                                },
                                 modifier = Modifier.size(actionBtnSize)
                             ) {
                                 Icon(
@@ -447,14 +452,12 @@ fun PlayerScreen(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .clip(androidx.compose.foundation.shape.CircleShape)
                                     .clickable {
-                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        haptic.click()
                                         showQueue = true
                                     }
                                     .padding(if (isCompact) 8.dp else 12.dp)
@@ -477,7 +480,7 @@ fun PlayerScreen(
                                 modifier = Modifier
                                     .clip(androidx.compose.foundation.shape.CircleShape)
                                     .clickable {
-                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        haptic.click()
                                         musicViewModel.startRadio()
                                     }
                                     .padding(if (isCompact) 8.dp else 12.dp)
@@ -501,7 +504,7 @@ fun PlayerScreen(
                                     modifier = Modifier
                                         .clip(androidx.compose.foundation.shape.CircleShape)
                                         .clickable {
-                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                            haptic.click()
                                             onShareTrack(currentTrack.spotifyId)
                                         }
                                         .padding(if (isCompact) 8.dp else 12.dp)

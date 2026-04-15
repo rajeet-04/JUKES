@@ -23,16 +23,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.utils.rememberJukeHaptics
 
 @Composable
 fun CompactTrackCard(
@@ -40,7 +39,7 @@ fun CompactTrackCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
 
     Column(
         modifier = modifier
@@ -48,7 +47,7 @@ fun CompactTrackCard(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { 
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.click()
                         onClick() 
                     }
                 )

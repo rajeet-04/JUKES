@@ -24,13 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.example.juke.R
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicUiState
 import com.example.juke.viewmodels.MusicViewModel
 
@@ -46,7 +45,7 @@ fun PlayerControls(
     iconSize: Dp? = null,
     smallIconSize: Dp? = null
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
     val resolvedPlayButtonSize = playButtonSize ?: if (isLarge) 88.dp else 72.dp
     val resolvedButtonSize = buttonSize ?: if (isLarge) 72.dp else 56.dp
     val resolvedIconSize = iconSize ?: if (isLarge) 56.dp else 40.dp
@@ -59,7 +58,10 @@ fun PlayerControls(
     ) {
         // Shuffle Button
         IconButton(
-            onClick = { musicViewModel.toggleShuffle() },
+            onClick = {
+                haptic.toggle()
+                musicViewModel.toggleShuffle()
+            },
             modifier = Modifier.size(resolvedButtonSize)
         ) {
             Icon(
@@ -73,7 +75,7 @@ fun PlayerControls(
         }
         IconButton(
             onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                haptic.click()
                 musicViewModel.skipToPrevious()
             },
             modifier = Modifier.size(resolvedButtonSize)
@@ -94,7 +96,7 @@ fun PlayerControls(
 
         FilledIconButton(
             onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                haptic.heavyClick()
                 musicViewModel.togglePlayPause()
             },
             modifier = Modifier
@@ -123,7 +125,7 @@ fun PlayerControls(
 
         IconButton(
             onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                haptic.click()
                 musicViewModel.skipToNext()
             },
             modifier = Modifier.size(resolvedButtonSize)
@@ -138,7 +140,10 @@ fun PlayerControls(
 
         // Repeat Button
         IconButton(
-            onClick = { musicViewModel.toggleRepeat() },
+            onClick = {
+                haptic.toggle()
+                musicViewModel.toggleRepeat()
+            },
             modifier = Modifier.size(resolvedButtonSize)
         ) {
             val (icon, tint) = when (uiState.repeatMode) {

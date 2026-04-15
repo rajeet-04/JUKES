@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
+import com.example.juke.utils.rememberJukeHaptics
     
 @Composable
 fun EditPlaylistDialog(
@@ -44,6 +45,7 @@ fun EditPlaylistDialog(
 ) {
     var name by remember { mutableStateOf(initialName) }
     var selectedUri by remember { mutableStateOf<Uri?>(initialThumbnailUri?.let { it.toUri() }) }
+    val haptic = rememberJukeHaptics()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -111,6 +113,7 @@ fun EditPlaylistDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    haptic.heavyClick()
                     onConfirm(name.trim(), selectedUri?.toString())
                 },
                 enabled = name.isNotBlank()
@@ -119,7 +122,10 @@ fun EditPlaylistDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                haptic.click()
+                onDismiss()
+            }) {
                 Text("Cancel")
             }
         }

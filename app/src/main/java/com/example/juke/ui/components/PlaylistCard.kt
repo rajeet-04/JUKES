@@ -13,13 +13,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyPlaylist
+import com.example.juke.utils.rememberJukeHaptics
 
 @Composable
 fun PlaylistCard(
@@ -27,12 +26,12 @@ fun PlaylistCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
     Card(
         modifier = modifier
             .width(140.dp)
             .clickable {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                haptic.click()
                 onClick()
             },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

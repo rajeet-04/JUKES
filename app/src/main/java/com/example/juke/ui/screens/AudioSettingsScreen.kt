@@ -44,6 +44,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,7 +60,9 @@ import androidx.core.net.toUri
 import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassCard
 import com.example.juke.utils.BlacklistManager
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,6 +74,8 @@ fun AudioSettingsScreen(
     val isBoosterEnabled by musicViewModel.isBoosterEnabled.collectAsState()
     val boosterLevel by musicViewModel.boosterLevel.collectAsState()
     val isNormalizationEnabled by musicViewModel.isNormalizationEnabled.collectAsState()
+    val haptic = rememberJukeHaptics()
+    var lastBoosterTickBucket by remember { mutableIntStateOf((boosterLevel / 5).coerceIn(0, 20)) }
 
     // Gradient Background
     Box(
@@ -145,7 +150,10 @@ fun AudioSettingsScreen(
                             }
                             Switch(
                                 checked = isStreamMode,
-                                onCheckedChange = { musicViewModel.toggleStreamMode(it) }
+                                onCheckedChange = {
+                                    haptic.toggle()
+                                    musicViewModel.toggleStreamMode(it)
+                                }
                             )
                         }
                     }
@@ -188,7 +196,10 @@ fun AudioSettingsScreen(
                             }
                             Switch(
                                 checked = isNormalizationEnabled,
-                                onCheckedChange = { musicViewModel.toggleVolumeNormalization(it) }
+                                onCheckedChange = {
+                                    haptic.toggle()
+                                    musicViewModel.toggleVolumeNormalization(it)
+                                }
                             )
                         }
                     }
@@ -232,7 +243,10 @@ fun AudioSettingsScreen(
                             }
                             Switch(
                                 checked = isSkipSilenceEnabled,
-                                onCheckedChange = { musicViewModel.toggleSkipSilence(it) }
+                                onCheckedChange = {
+                                    haptic.toggle()
+                                    musicViewModel.toggleSkipSilence(it)
+                                }
                             )
                         }
                     }
@@ -264,7 +278,10 @@ fun AudioSettingsScreen(
                                 }
                                 Switch(
                                     checked = isBoosterEnabled,
-                                    onCheckedChange = { musicViewModel.toggleVolumeBooster(it) }
+                                    onCheckedChange = {
+                                        haptic.toggle()
+                                        musicViewModel.toggleVolumeBooster(it)
+                                    }
                                 )
                             }
 
@@ -281,7 +298,15 @@ fun AudioSettingsScreen(
 
                                     Slider(
                                         value = boosterLevel.toFloat(),
-                                        onValueChange = { musicViewModel.setVolumeBoosterLevel(it.toInt()) },
+                                        onValueChange = { value ->
+                                            val intValue = value.roundToInt().coerceIn(0, 100)
+                                            val currentBucket = intValue / 5
+                                            if (currentBucket != lastBoosterTickBucket) {
+                                                haptic.tick()
+                                                lastBoosterTickBucket = currentBucket
+                                            }
+                                            musicViewModel.setVolumeBoosterLevel(intValue)
+                                        },
                                         valueRange = 0f..100f,
                                         modifier = Modifier.fillMaxWidth()
                                     )
@@ -304,6 +329,9 @@ fun AudioSettingsScreen(
                 // Recommendation Settings Section
                 item {
                     val recommendationCount by musicViewModel.recommendationCount.collectAsState()
+                    var lastRecommendationTick by remember {
+                        mutableIntStateOf(recommendationCount.coerceIn(3, 15))
+                    }
 
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -342,7 +370,14 @@ fun AudioSettingsScreen(
 
                                 Slider(
                                     value = recommendationCount.toFloat(),
-                                    onValueChange = { musicViewModel.setRecommendationCount(it.toInt()) },
+                                    onValueChange = { value ->
+                                        val intValue = value.roundToInt().coerceIn(3, 15)
+                                        if (intValue != lastRecommendationTick) {
+                                            haptic.tick()
+                                            lastRecommendationTick = intValue
+                                        }
+                                        musicViewModel.setRecommendationCount(intValue)
+                                    },
                                     valueRange = 3f..15f,
                                     steps = 11,
                                     modifier = Modifier.fillMaxWidth()
@@ -643,6 +678,7 @@ private fun MarketCodeDialog(
     onSelect: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    val haptic = rememberJukeHaptics()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -673,7 +709,10 @@ private fun MarketCodeDialog(
 
                     items(filtered) { (code, name) ->
                         TextButton(
-                            onClick = { onSelect(code) },
+                            onClick = {
+                                haptic.click()
+                                onSelect(code)
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.textButtonColors(
                                 contentColor = if (code == currentCode)
@@ -703,7 +742,10 @@ private fun MarketCodeDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                haptic.click()
+                onDismiss()
+            }) {
                 Text("Close")
             }
         }

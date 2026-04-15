@@ -21,10 +21,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicUiState
 import com.example.juke.viewmodels.MusicViewModel
 
@@ -74,8 +73,9 @@ private fun CustomSeekBar(
     onProgressChange: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
     var isDragging by remember { mutableStateOf(false) }
+    var lastTickBucket by remember { mutableStateOf(0) }
     val primaryColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
 
@@ -85,7 +85,7 @@ private fun CustomSeekBar(
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    haptic.click()
                     onProgressChange(newProgress)
                 }
             }
@@ -93,16 +93,19 @@ private fun CustomSeekBar(
                 detectHorizontalDragGestures(
                     onDragStart = { 
                         isDragging = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        lastTickBucket = progressToScrubBucket(progress)
+                        haptic.gestureStart()
                     },
                     onDragEnd = { 
                         isDragging = false 
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptic.gestureEnd()
                     },
                     onHorizontalDrag = { change, _ ->
                         val newProgress = (change.position.x / size.width).coerceIn(0f, 1f)
-                        if (newProgress != progress) {
-                           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val currentBucket = progressToScrubBucket(newProgress)
+                        if (currentBucket != lastTickBucket) {
+                            haptic.tick()
+                            lastTickBucket = currentBucket
                         }
                         onProgressChange(newProgress)
                     }
@@ -148,4 +151,9 @@ private fun formatTime(milliseconds: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+private fun progressToScrubBucket(progress: Float): Int {
+    val steps = 24
+    return (progress.coerceIn(0f, 1f) * steps).toInt()
 }

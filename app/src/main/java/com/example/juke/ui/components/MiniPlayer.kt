@@ -37,14 +37,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
 
@@ -56,7 +55,7 @@ fun MiniPlayer(
 ) {
     val uiState by musicViewModel.uiState.collectAsState()
     val currentTrack = uiState.currentTrack
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
 
     // Poll for progress updates when playing
     LaunchedEffect(uiState.isPlaying) {
@@ -75,7 +74,7 @@ fun MiniPlayer(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            haptic.click()
                             onExpand()
                         }
                     )
@@ -84,10 +83,10 @@ fun MiniPlayer(
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             if (offsetX < -100f) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptic.click()
                                 musicViewModel.skipToNext()
                             } else if (offsetX > 100f) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptic.click()
                                 musicViewModel.skipToPrevious()
                             }
                             offsetX = 0f
@@ -152,7 +151,7 @@ fun MiniPlayer(
                     // Favourite button — tinted primary when hearted
                     IconButton(
                         onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            haptic.confirm()
                             musicViewModel.toggleFavorite(currentTrack)
                         },
                         modifier = Modifier.size(40.dp)
@@ -172,7 +171,7 @@ fun MiniPlayer(
                     if (currentTrack.isStream) {
                         IconButton(
                             onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptic.click()
                                 musicViewModel.promoteTrackToDownload(currentTrack)
                             },
                             modifier = Modifier.size(40.dp)
@@ -194,7 +193,7 @@ fun MiniPlayer(
                     }
                     IconButton(
                         onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            haptic.heavyClick()
                             musicViewModel.togglePlayPause()
                         },
                         modifier = Modifier

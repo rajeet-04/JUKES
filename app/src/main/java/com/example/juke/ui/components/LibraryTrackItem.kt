@@ -36,13 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.utils.rememberJukeHaptics
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -63,7 +62,7 @@ fun LibraryTrackItem(
         label = "favoriteScale"
     )
 
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -78,9 +77,12 @@ fun LibraryTrackItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = onPlay,
+                    onClick = {
+                        haptic.click()
+                        onPlay()
+                    },
                     onLongClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.heavyClick()
                         onLongClick()
                     }
                 )
@@ -192,7 +194,7 @@ fun LibraryTrackItem(
                 IconButton(
                     onClick = {
                         isFavoritePressed = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.confirm()
                         onToggleFavorite()
                     },
                     modifier = Modifier.scale(favoriteScale)

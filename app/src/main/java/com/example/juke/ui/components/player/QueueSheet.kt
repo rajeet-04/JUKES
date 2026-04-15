@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,11 +52,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.juke.R
+import com.example.juke.utils.rememberJukeHaptics
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -76,7 +76,7 @@ fun QueueBottomSheetContent(
     onRemoveTrack: (trackId: String) -> Unit,
     onPlayTrack: (track: com.example.juke.models.Track) -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
 
     Column(
         modifier = Modifier
@@ -219,12 +219,14 @@ fun QueueBottomSheetContent(
                     // Drag state for visual feedback
                     var dragOffset by remember { mutableFloatStateOf(0f) }
                     var isDragging by remember { mutableStateOf(false) }
+                    var lastDragPosition by remember { mutableIntStateOf(0) }
+                    val itemHeightPx = with(density) { 72.dp.toPx() }
 
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { dismissValue ->
                             // Only allow dismiss when not dragging
                             if (!isDragging && dismissValue == SwipeToDismissBoxValue.EndToStart) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptic.reject()
                                 onRemoveTrack(track.uuid)
                                 true
                             } else {
@@ -300,7 +302,7 @@ fun QueueBottomSheetContent(
                                     .fillMaxWidth()
                                     .padding(12.dp)
                                     .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        haptic.click()
                                         onPlayTrack(track)
                                     },
                                 verticalAlignment = Alignment.CenterVertically
@@ -360,15 +362,12 @@ fun QueueBottomSheetContent(
                                             if (!uiState.isQueueOperationInProgress) {
                                                 detectDragGestures(
                                                     onDragStart = {
-                                                        haptic.performHapticFeedback(
-                                                            HapticFeedbackType.LongPress
-                                                        )
+                                                        haptic.gestureStart()
                                                         dragOffset = 0f
+                                                        lastDragPosition = 0
                                                         isDragging = true
                                                     },
                                                     onDragEnd = {
-                                                        val itemHeightPx =
-                                                            with(density) { 72.dp.toPx() } // Approx height
                                                         val positionsToMove =
                                                             (dragOffset / itemHeightPx).toInt()
 
@@ -387,7 +386,7 @@ fun QueueBottomSheetContent(
                                                         }
                                                         dragOffset = 0f
                                                         isDragging = false
-                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        haptic.gestureEnd()
                                                     },
                                                     onDragCancel = {
                                                         dragOffset = 0f
@@ -396,6 +395,13 @@ fun QueueBottomSheetContent(
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
                                                         dragOffset += dragAmount.y
+
+                                                        // Ratchet feedback when dragged item crosses another item's boundary.
+                                                        val currentPosition = (dragOffset / itemHeightPx).toInt()
+                                                        if (currentPosition != lastDragPosition) {
+                                                            haptic.tick()
+                                                            lastDragPosition = currentPosition
+                                                        }
                                                     }
                                                 )
                                             }

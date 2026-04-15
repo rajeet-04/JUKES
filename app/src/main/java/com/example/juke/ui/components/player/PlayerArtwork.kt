@@ -23,6 +23,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 
 @Composable
@@ -35,6 +36,8 @@ fun PlayerArtwork(
     onToggleLyrics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = rememberJukeHaptics()
+
     // Use fillMaxHeight so the artwork is bounded by the parent Box's height constraint,
     // then use aspectRatio(1f) to ensure it stays square. This prevents overflow on small screens.
     val artworkModifier = modifier
@@ -50,7 +53,10 @@ fun PlayerArtwork(
                 spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
             )
             .clip(RoundedCornerShape(24.dp))
-            .clickable { onToggleLyrics() },
+            .clickable {
+                haptic.click()
+                onToggleLyrics()
+            },
         contentAlignment = Alignment.Center
     ) {
         if (currentTrack.thumbnailUri != null) {

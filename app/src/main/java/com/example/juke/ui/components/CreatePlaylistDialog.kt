@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.example.juke.utils.rememberJukeHaptics
 
 @Composable
 fun CreatePlaylistDialog(
@@ -16,6 +17,7 @@ fun CreatePlaylistDialog(
     onCreate: (String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    val haptic = rememberJukeHaptics()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -30,14 +32,20 @@ fun CreatePlaylistDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onCreate(name) },
+                onClick = {
+                    haptic.heavyClick()
+                    onCreate(name)
+                },
                 enabled = name.isNotBlank()
             ) {
                 Text("Create")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                haptic.click()
+                onDismiss()
+            }) {
                 Text("Cancel")
             }
         }
