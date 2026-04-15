@@ -27,6 +27,8 @@ This document tracks changes, features, and bug fixes that have been implemented
 - **Material 3 Player Options Menu Refresh:** Restyled the player 3-dots menu with rounded M3 surfaces, elevated tonal container color, and semantic leading icons for Sleep Timer, Album, Refresh Lyrics, Romanized toggle, and Block Artist actions.
 - **Bottom Action Pill Container:** Grouped Queue, Radio, and Share into a cohesive floating pill surface using tonal `surfaceVariant` styling, circle affordances, and improved visual grounding at the bottom of the player.
 - **Lyrics Sync Controls Overhaul:** Redesigned sync offset controls into a rounded elevated card with richer typography, dedicated Reset/Done actions, and ratchet-style `haptic.tick()` feedback while scrubbing the sync slider.
+- **Floating Pill Mini-Player Redesign:** Upgraded the mini-player from a full-width sharp block to a rounded floating Material 3 card with side margins, elevated depth, softened album art corners, stronger text hierarchy, and an integrated clipped bottom progress bar.
+- **Animated Dancing Glass Background:** Added a frosted glassmorphism layer with animated, color-extracted mesh lights (`DancingGlassBackground`) that reacts to playback state and album palette for a premium, music-reactive mini-player surface.
 
 ### Haptics & Micro-interactions
 

@@ -739,11 +739,10 @@ class MusicService(private val context: Context) {
      * Clean up old cache files that are no longer referenced in database.
      * Call this periodically (e.g., on app startup) to keep cache under control.
      * 
-     * @param maxAgeDays Files older than this many days will be deleted (default 30)
+     * @param maxAgeDays Files older than this many days will be deleted (default 7)
      * @return Pair of (filesDeleted, bytesFreed)
      */
-    suspend fun cleanupOrphanedCacheFiles(maxAgeDays: Int = 7): Pair<Int, Long> {
-        val musicDir = File(context.filesDir, "music")
+    suspend fun cleanupOrphanedCacheFiles(maxAgeDays: Int = 7): Pair<Int, Long> {        val musicDir = File(context.filesDir, "music")
         if (!musicDir.exists()) {
             Log.d(TAG, "Music directory doesn't exist, nothing to clean")
             return Pair(0, 0L)

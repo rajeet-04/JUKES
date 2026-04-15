@@ -10,12 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
@@ -36,10 +36,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -71,6 +74,7 @@ fun MiniPlayer(
         Card(
             modifier = modifier
                 .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
@@ -96,53 +100,67 @@ fun MiniPlayer(
                         }
                     )
                 },
+            shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+                containerColor = Color.Transparent
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
+                DancingGlassBackground(
+                    extractedColors = uiState.extractedColors,
+                    isPlaying = uiState.isPlaying,
+                    modifier = Modifier.matchParentSize()
+                )
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 2.dp) // space for progress bar
-                        .padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+                        .padding(bottom = 2.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Thumbnail
-                    Box(
-                        modifier = Modifier.size(44.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (currentTrack.thumbnailUri != null) {
-                            AsyncImage(
-                                model = currentTrack.thumbnailUri,
-                                contentDescription = currentTrack.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
+                    if (currentTrack.thumbnailUri != null) {
+                        AsyncImage(
+                            model = currentTrack.thumbnailUri,
+                            contentDescription = currentTrack.title,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
                                 contentDescription = null,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.dp),
+                                tint = Color.White
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
                     // Title + artist
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = currentTrack.title,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = currentTrack.artist,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.72f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -162,7 +180,7 @@ fun MiniPlayer(
                             contentDescription = if (currentTrack.isFavourite) "Remove from favourites"
                             else "Add to favourites",
                             tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            else Color.White.copy(alpha = 0.86f),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -179,7 +197,7 @@ fun MiniPlayer(
                             Icon(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = "Download track",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = Color.White.copy(alpha = 0.86f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -211,7 +229,8 @@ fun MiniPlayer(
                                     else com.example.juke.R.drawable.baseline_play_24
                                 ),
                                 contentDescription = if (isPlaying) "Pause" else "Play",
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.dp),
+                                tint = Color.White
                             )
                         }
                     }
@@ -230,8 +249,8 @@ fun MiniPlayer(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .height(2.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    color = Color.White.copy(alpha = 0.8f),
+                    trackColor = Color.Transparent
                 )
             }
         }
