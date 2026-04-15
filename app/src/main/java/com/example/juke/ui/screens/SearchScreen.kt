@@ -131,58 +131,67 @@ fun SearchScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             SearchBar(
-                query = uiState.query,
-                onQueryChange = { searchViewModel.updateQuery(it) },
-                onSearch = {
-                    if (uiState.query.isNotBlank() && !uiState.isSearching) {
-                        keyboardController?.hide()
-                        searchViewModel.search(uiState.query)
-                    }
+                inputField = {
+                    SearchBarDefaults.InputField(
+                        query = uiState.query,
+                        onQueryChange = { searchViewModel.updateQuery(it) },
+                        onSearch = {
+                            if (uiState.query.isNotBlank() && !uiState.isSearching) {
+                                keyboardController?.hide()
+                                searchViewModel.search(uiState.query)
+                            }
+                        },
+                        expanded = active,
+                        onExpandedChange = { active = it },
+                        placeholder = {
+                            Text(
+                                text = "Search songs, artists, albums",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        leadingIcon = {
+                            if (active) {
+                                IconButton(
+                                    onClick = {
+                                        haptic.click()
+                                        active = false
+                                        keyboardController?.hide()
+                                        searchViewModel.updateQuery("")
+                                    }
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "Back"
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    Icons.Rounded.Search,
+                                    contentDescription = "Search",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        },
+                        trailingIcon = {
+                            if (uiState.query.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        haptic.click()
+                                        searchViewModel.updateQuery("")
+                                    }
+                                ) {
+                                    Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
+                                }
+                            }
+                        }
+                    )
                 },
-                active = active,
-                onActiveChange = { active = it },
+                expanded = active,
+                onExpandedChange = { active = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = if (active) 0.dp else 16.dp)
                     .padding(top = 8.dp, bottom = 16.dp),
-                placeholder = {
-                    Text(
-                        text = "Search songs, artists, albums",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                leadingIcon = {
-                    if (active) {
-                        IconButton(
-                            onClick = {
-                                haptic.click()
-                                active = false
-                                keyboardController?.hide()
-                                searchViewModel.updateQuery("")
-                            }
-                        ) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-                        }
-                    } else {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = "Search",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                trailingIcon = {
-                    if (uiState.query.isNotEmpty()) {
-                        IconButton(
-                            onClick = {
-                                haptic.click()
-                                searchViewModel.updateQuery("")
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
-                        }
-                    }
-                },
                 colors = SearchBarDefaults.colors(
                     containerColor = if (active) Color.Transparent else MaterialTheme.colorScheme.surface,
                     dividerColor = Color.Transparent
@@ -318,42 +327,44 @@ fun SearchScreen(
             }
 
             AnimatedVisibility(
-                visible = !active,
+                visible = !active && (uiState.query.isNotBlank() || uiState.recentSearches.isNotEmpty()),
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text(
-                        text = "Browse Categories",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
+                    if (uiState.query.isNotBlank()) {
+                        Text(
+                            text = "Browse Categories",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
 
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(filters) { filter ->
-                            FilterChip(
-                                selected = selectedFilter == filter,
-                                onClick = {
-                                    haptic.click()
-                                    selectedFilter = filter
-                                    active = true
-                                },
-                                label = { Text(filter) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = Color.Transparent,
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                    labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                                    selectedLabelColor = MaterialTheme.colorScheme.primary
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(filters) { filter ->
+                                FilterChip(
                                     selected = selectedFilter == filter,
-                                    borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                    selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                ),
-                                shape = CircleShape
-                            )
+                                    onClick = {
+                                        haptic.click()
+                                        selectedFilter = filter
+                                        active = true
+                                    },
+                                    label = { Text(filter) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = Color.Transparent,
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                        labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                        selectedLabelColor = MaterialTheme.colorScheme.primary
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = selectedFilter == filter,
+                                        borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                    ),
+                                    shape = CircleShape
+                                )
+                            }
                         }
                     }
 

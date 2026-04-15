@@ -1552,10 +1552,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     )
     val isRomanizedLyricsEnabled: StateFlow<Boolean> = _isRomanizedLyricsEnabled.asStateFlow()
 
+    private val _isMiniPlayerLyricsEnabled = MutableStateFlow(
+        settingsPrefs.getBoolean("miniplayer_lyrics_enabled", true)
+    )
+    val isMiniPlayerLyricsEnabled: StateFlow<Boolean> = _isMiniPlayerLyricsEnabled.asStateFlow()
+
     fun toggleRomanizedLyrics() {
         val enabled = !_isRomanizedLyricsEnabled.value
         _isRomanizedLyricsEnabled.value = enabled
         settingsPrefs.edit { putBoolean("romanized_lyrics_enabled", enabled) }
+    }
+
+    fun toggleMiniPlayerLyrics(enabled: Boolean) {
+        _isMiniPlayerLyricsEnabled.value = enabled
+        settingsPrefs.edit { putBoolean("miniplayer_lyrics_enabled", enabled) }
+        Log.d("MusicViewModel", "Mini-Player Lyrics set to $enabled")
     }
 
     private val _recommendationCount =

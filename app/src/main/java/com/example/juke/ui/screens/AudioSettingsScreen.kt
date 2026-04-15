@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -88,6 +89,7 @@ fun AudioSettingsScreen(
     val isNormalizationEnabled by musicViewModel.isNormalizationEnabled.collectAsState()
     val isStreamMode by musicViewModel.isStreamMode.collectAsState()
     val isSkipSilenceEnabled by musicViewModel.isSkipSilenceEnabled.collectAsState()
+    val isMiniPlayerLyricsEnabled by musicViewModel.isMiniPlayerLyricsEnabled.collectAsState()
     val recommendationCount by musicViewModel.recommendationCount.collectAsState()
     val haptic = rememberJukeHaptics()
     var lastBoosterTickBucket by remember { mutableIntStateOf((boosterLevel / 5).coerceIn(0, 20)) }
@@ -224,6 +226,36 @@ fun AudioSettingsScreen(
                                         onCheckedChange = {
                                             haptic.toggle()
                                             musicViewModel.toggleSkipSilence(it)
+                                        }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent
+                                )
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        "Mini-Player Lyrics",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                supportingContent = {
+                                    Text("Show synced lyrics directly in the mini-player")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.Lyrics, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isMiniPlayerLyricsEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleMiniPlayerLyrics(it)
                                         }
                                     )
                                 },

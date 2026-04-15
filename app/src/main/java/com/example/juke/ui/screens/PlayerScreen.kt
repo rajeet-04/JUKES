@@ -644,7 +644,7 @@ fun PlayerScreen(
     }
 
     // Blacklist Artist Picker Dialog
-    if (showBlacklistPicker && currentTrack != null) {
+        if (showBlacklistPicker) {
         BlacklistPickerDialog(
             artistString = currentTrack.artist,
             onDismiss = { showBlacklistPicker = false }
