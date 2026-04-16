@@ -11,6 +11,7 @@ import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
+import com.example.juke.utils.FastDownloader
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import kotlinx.coroutines.delay
@@ -90,41 +91,51 @@ class MusicService(private val context: Context) {
         val primaryName = if (useGamepvzFirst) "Gamepvz" else "Spotmate"
         val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
 
-        suspend fun streamPrimary() =
-            if (useGamepvzFirst) SpotifyApi.downloadSongFromGamepvz(song.url)
-            else SpotifyApi.downloadSongFromSpotmate(song.url)
+        suspend fun downloadToTempFile(useGamepvz: Boolean) {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
 
-        suspend fun streamFallback() =
-            if (useGamepvzFirst) SpotifyApi.downloadSongFromSpotmate(song.url)
-            else SpotifyApi.downloadSongFromGamepvz(song.url)
+            val request = if (useGamepvz) {
+                SpotifyApi.getGamepvzDownloadRequest(song.url)
+            } else {
+                SpotifyApi.getSpotmateDownloadRequest(song.url)
+            }
 
-        val audioData = try {
-            withTimeout(90_000L) { streamPrimary() }
+            FastDownloader.downloadSegmented(
+                url = request.url,
+                outputFile = tempFile,
+                headers = request.headers,
+                threads = 4
+            )
+
+            if (!tempFile.exists() || tempFile.length() < 100_000L) {
+                throw Exception("Stream payload is too small")
+            }
+        }
+
+        try {
+            withTimeout(90_000L) { downloadToTempFile(useGamepvzFirst) }
         } catch (e: Exception) {
             Log.w(
                 TAG,
                 "$primaryName stream fetch failed (${e.message}), falling back to $fallbackName"
             )
             try {
-                withTimeout(90_000L) { streamFallback() }
+                withTimeout(90_000L) { downloadToTempFile(!useGamepvzFirst) }
             } catch (fallbackEx: Exception) {
                 Log.e(TAG, "Both stream sources failed: ${fallbackEx.message}")
                 throw Exception("Stream unavailable: $primaryName=${e.message}, $fallbackName=${fallbackEx.message}")
             }
         }
 
-        if (audioData.isEmpty() || audioData.size < 100_000) {
-            throw Exception("Stream payload is too small")
-        }
-
-        tempFile.writeBytes(audioData)
         if (finalFile.exists()) {
             finalFile.delete()
         }
 
         val moved = tempFile.renameTo(finalFile)
         if (!moved) {
-            finalFile.writeBytes(audioData)
+            tempFile.copyTo(finalFile, overwrite = true)
             tempFile.delete()
         }
 
@@ -265,20 +276,31 @@ class MusicService(private val context: Context) {
                 "Downloading '${song.title}' — primary: ${if (useGamepvzFirst) "Gamepvz" else "Spotmate"}"
             )
 
-            suspend fun trySource(useGamepvz: Boolean): ByteArray {
-                val data = if (useGamepvz) {
-                    SpotifyApi.downloadSongFromGamepvz(song.url)
-                } else {
-                    SpotifyApi.downloadSongFromSpotmate(song.url)
+            suspend fun trySource(useGamepvz: Boolean) {
+                if (audioFile.exists()) {
+                    audioFile.delete()
                 }
-                if (data.isEmpty() || data.size < 100_000) {
+
+                val request = if (useGamepvz) {
+                    SpotifyApi.getGamepvzDownloadRequest(song.url)
+                } else {
+                    SpotifyApi.getSpotmateDownloadRequest(song.url)
+                }
+
+                FastDownloader.downloadSegmented(
+                    url = request.url,
+                    outputFile = audioFile,
+                    headers = request.headers,
+                    threads = 4
+                )
+
+                if (!audioFile.exists() || audioFile.length() < 100_000L) {
                     throw Exception("Downloaded file is too small to be a valid MP3")
                 }
-                return data
             }
 
             var usedGamepvzFirst = useGamepvzFirst
-            val audioData = try {
+            try {
                 withTimeout(90_000L) { trySource(useGamepvzFirst) }
             } catch (e: Exception) {
                 val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
@@ -287,8 +309,7 @@ class MusicService(private val context: Context) {
                 withTimeout(90_000L) { trySource(!useGamepvzFirst) }
             }
 
-            audioFile.writeBytes(audioData)
-            Log.d(TAG, "Downloaded ${audioData.size} bytes — wrote to ${audioFile.absolutePath}")
+            Log.d(TAG, "Downloaded ${audioFile.length()} bytes — wrote to ${audioFile.absolutePath}")
 
             if (!audioFile.exists() || audioFile.length() == 0L) {
                 throw Exception("Failed to write audio file")
@@ -314,11 +335,9 @@ class MusicService(private val context: Context) {
                         "Duration mismatch! Expected ${durationSec}s, got ${fileDurationSec}s. Retrying with $altName"
                     )
                     try {
-                        val altData = withTimeout(90_000L) {
-                            if (usedGamepvzFirst) SpotifyApi.downloadSongFromSpotmate(song.url)
-                            else SpotifyApi.downloadSongFromGamepvz(song.url)
+                        withTimeout(90_000L) {
+                            trySource(!usedGamepvzFirst)
                         }
-                        audioFile.writeBytes(altData)
                         Log.d(TAG, "Alternative download succeeded, overwrote file.")
                     } catch (retryEx: Exception) {
                         Log.w(TAG, "Alternative also failed (${retryEx.message}), keeping original")
