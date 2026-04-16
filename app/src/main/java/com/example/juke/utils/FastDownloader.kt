@@ -110,6 +110,12 @@ object FastDownloader {
         }.getOrNull()
     }
 
+    /**
+     * Chooses an effective segment count for ranged downloads.
+     *
+     * Caps thread usage so each segment is large enough to be worthwhile and avoids
+     * spawning workers that would only fetch tiny ranges.
+     */
     private fun resolveThreadCount(contentLength: Long, preferredThreads: Int): Int {
         val clamped = preferredThreads.coerceIn(MIN_THREADS, MAX_THREADS)
         if (contentLength <= 0L) {
@@ -178,6 +184,9 @@ object FastDownloader {
         writeResponseToFile(response, destination)
     }
 
+    /**
+     * Fallback path when range requests are unavailable or segmented download fails.
+     */
     private suspend fun downloadSingleThread(
         url: String,
         destination: File,

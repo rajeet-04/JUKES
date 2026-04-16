@@ -382,6 +382,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
 
+    /**
+     * Adds a track to a playlist if it is not already present.
+     *
+     * Deduplication is keyed by track `uuid` via a single scan of current playlist entries
+     * (O(m), where m is playlist size).
+     * The method keeps playlist ordering stable (append-only) and updates `trackCount`
+     * in the same flow so UI counts stay consistent.
+     */
     suspend fun addToPlaylist(playlist: PlaylistEntity, track: Track) {
         // Check if track is already in playlist
         val existingTracks = playlistDao.getPlaylistTracks(playlist.id)
@@ -497,6 +505,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Batch variant of [addToPlaylist] that performs a single read of playlist contents,
+     * then appends only non-duplicate tracks in input order.
+     *
+     * Deduplication is keyed by track `uuid` and uses a set-based membership check, keeping
+     * filtering at O(m + n) (m existing + n incoming) instead of repeated O(m * n) scans.
+     * The method is a no-op when [tracks] is empty or every input UUID already exists.
+     */
     fun addTracksToPlaylist(playlist: PlaylistEntity, tracks: List<Track>) {
         if (tracks.isEmpty()) return
 
@@ -535,6 +551,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Enqueues a playlist using the active library sort option so queue order matches UI intent.
+     */
     fun addPlaylistToQueue(playlist: PlaylistEntity, musicViewModel: MusicViewModel) {
         viewModelScope.launch {
             var tracks = playlistDao.getPlaylistTracks(playlist.id).map { it.toTrack() }

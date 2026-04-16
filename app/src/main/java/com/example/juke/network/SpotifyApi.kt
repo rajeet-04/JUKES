@@ -1153,7 +1153,8 @@ object SpotifyApi {
     }
 
     /**
-     * Cleans song title by removing metadata in parentheses like (From ...), (feat ...), etc.
+     * Cleans song titles by removing parenthesized metadata that hurts fuzzy matching
+     * (for example: "From ...", "feat ...", "live", or "remaster").
      */
     private fun cleanSongTitle(title: String): String {
         // Regex to match content in parentheses starting with specific keywords

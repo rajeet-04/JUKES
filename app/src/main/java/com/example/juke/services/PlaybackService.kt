@@ -1050,6 +1050,12 @@ class PlaybackService : MediaLibraryService() {
             }.asListenableFuture()
         }
 
+        /**
+         * Bridges coroutine-based library queries to the Media3 callback API.
+         *
+         * MediaLibrarySession callbacks are expected to return `ListenableFuture`, while the
+         * implementation uses coroutines internally.
+         */
         @kotlin.OptIn(ExperimentalCoroutinesApi::class)
         private fun <T> kotlinx.coroutines.Deferred<T>.asListenableFuture(): ListenableFuture<T> {
             val deferred = this
@@ -1896,8 +1902,10 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     /**
-     * Clears all tracks from the queue except the currently playing one,
-     * without interrupting playback.
+     * Shrinks the queue to only the currently playing item without stopping playback.
+     *
+     * Stream cache entries for removed items are explicitly evicted so a manual queue clear
+     * (for example when switching modes) does not leave stale media on disk.
      */
     @OptIn(UnstableApi::class)
     fun keepOnlyCurrentTrack() {

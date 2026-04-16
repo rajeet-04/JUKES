@@ -86,8 +86,8 @@ object BlacklistManager {
     }
 
     /**
-     * Returns `true` if the song **title** mentions a blacklisted artist
-     * (e.g. "SongName feat. BlockedArtist").
+     * Returns `true` when the track title itself references any blacklisted artist
+     * (for example "Song feat. Blocked Artist").
      */
     fun titleContainsBlacklistedArtist(
         context: Context,

@@ -194,6 +194,9 @@ class QueueManager private constructor(private val context: Context) {
     /**
      * Updates the played tracks history (e.g. from MusicViewModel when seeking in an existing queue)
      * so that ensemble recommendations have accurate context.
+     *
+     * Deduplication key is track `uuid`. Existing history UUIDs are materialized into a set so
+     * merge cost is O(h + n) (h existing, n incoming) instead of repeated linear checks.
      * 
      * @param history The list of tracks that were already played
      */
@@ -212,6 +215,9 @@ class QueueManager private constructor(private val context: Context) {
 
     /**
      * Add a track to the end of the queue.
+     *
+     * If another entry with the same `uuid` already exists, it is removed first so the track
+     * is effectively "moved to end" and remains unique within this queue.
      * 
      * @param track Track to add
      */
@@ -334,6 +340,9 @@ class QueueManager private constructor(private val context: Context) {
         return currentList.firstOrNull()
     }
 
+    /**
+     * Maintains a recency-ordered artist list used to diversify future recommendations.
+     */
     private fun addToRecentArtists(artist: String) {
         // Handle multiple artists (split by comma, &, etc. if needed, but simple addition is fine for now)
         // We want to track distinct artist names
@@ -756,7 +765,7 @@ class QueueManager private constructor(private val context: Context) {
     }
 
     /**
-     * Returns true if a localUri points to a file that exists, is readable, and has content.
+     * Returns whether a local URI is immediately playable (exists, readable, and non-empty).
      */
     private fun isLocalFilePlayable(uri: String?): Boolean {
         if (uri == null) return false

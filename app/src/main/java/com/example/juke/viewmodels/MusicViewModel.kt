@@ -597,6 +597,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Insert a list of tracks so they play immediately after the current track.
+     *
+     * Incoming tracks are deduplicated by `uuid` against the existing queue (except the
+     * currently playing item), using a set-based filter to avoid repeated linear scans.
      */
     fun addNext(tracks: List<Track>) {
         if (tracks.isEmpty()) return
@@ -675,6 +678,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Appends tracks to the queue while preserving current playback position.
+     *
+     * Incoming tracks are de-duplicated by UUID and the currently playing item is retained
+     * exactly once to avoid playback jumps after queue mutation.
+     * Deduplication uses a UUID set (`trackUuidsToAdd`) so queue cleanup is O(q + n)
+     * rather than repeated O(q * n) membership checks (q queue size, n incoming size).
+     */
     fun addToQueue(tracks: List<Track>) {
         if (tracks.isEmpty()) return
 
@@ -768,6 +779,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Queue a Spotify track to play next.
      * Honors stream mode immediately at the time of request.
+     *
+     * Duplicate suppression key: `"title-artist"` (lower-level request coalescing while
+     * operations are in-flight), plus active download-state checks.
      */
     fun queueSpotifyTrackNext(
         spotifyTrack: SpotifyTrack,
@@ -929,6 +943,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Download a simplified Spotify track (album context) and queue it to play next.
+     *
+     * Duplicate suppression key: `"title-artist"` while the operation is pending, with
+     * additional checks against active download state to avoid parallel duplicates.
      */
     fun queueSimplifiedTrackNext(track: SpotifySimplifiedTrack, album: SpotifyAlbum) {
         val spotdownSong = SpotifyApi.simplifiedTrackToSong(track, album)
@@ -1058,6 +1075,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Schedules a song for download with de-duplication against active and pending work.
+     *
+     * Duplicate suppression key: `"title-artist"` for in-memory queue/download tracking.
+     * The method intentionally re-checks queue/download state after DB lookup to reduce
+     * race-condition duplicates between concurrent requests.
+     * If the track already exists locally, download is skipped and optional immediate playback
+     * is handled without queuing a redundant job.
+     */
     fun addToDownloadQueue(song: SpotdownSong, shouldPlayAfterDownload: Boolean = false) {
         viewModelScope.launch {
             // Check if already in queue or downloading
