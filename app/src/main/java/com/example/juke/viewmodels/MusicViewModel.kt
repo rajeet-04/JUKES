@@ -740,13 +740,39 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun resolveQueueTrack(spotdownSong: SpotdownSong, useStreamMode: Boolean): Track {
+        return if (useStreamMode) {
+            Log.d(
+                "MusicViewModel",
+                "Stream mode enabled, queueing stream track: ${spotdownSong.title}"
+            )
+
+            // Keep current queue entries pinned so stream cache eviction does not remove
+            // files that are about to be played.
+            val pinnedUuids = _uiState.value.queue.map { it.uuid }.toSet()
+            musicService.streamTrack(
+                song = spotdownSong,
+                pinnedUuids = pinnedUuids
+            ).also { streamedTrack ->
+                trackDao.insertTrack(streamedTrack.toEntity())
+            }
+        } else {
+            Log.d(
+                "MusicViewModel",
+                "Stream mode disabled, queueing permanent download: ${spotdownSong.title}"
+            )
+            musicService.smartDownloadAndIndex(spotdownSong)
+        }
+    }
+
     /**
-     * Download a Spotify track (if needed) and queue it to play next.
+     * Queue a Spotify track to play next.
+     * Honors stream mode immediately at the time of request.
      */
-    /**
-     * Download a Spotify track (if needed) and queue it to play next.
-     */
-    fun queueSpotifyTrackNext(spotifyTrack: SpotifyTrack) {
+    fun queueSpotifyTrackNext(
+        spotifyTrack: SpotifyTrack,
+        useStreamMode: Boolean = queueManager.isStreamMode
+    ) {
         val spotdownSong = SpotifyApi.spotifyTrackToSong(spotifyTrack)
         val key = "${spotdownSong.title}-${spotdownSong.artist}"
 
@@ -784,7 +810,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 queueManager.notifyDownloadStarted(trackToNotify)
 
                 val track = withContext(Dispatchers.IO) {
-                    musicService.smartDownloadAndIndex(spotdownSong)
+                    resolveQueueTrack(spotdownSong, useStreamMode)
                 }
                 addNext(track)
             } catch (e: Exception) {
@@ -957,8 +983,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // spotdownSong created above
-                val downloaded = withContext(Dispatchers.IO) {
-                    // Notify QueueManager to prevent duplicate downloads
+                val trackToQueue = withContext(Dispatchers.IO) {
+                    // Notify QueueManager to prevent duplicate processing.
                     queueManager.notifyDownloadStarted(
                         Track(
                             uuid = UUID.randomUUID().toString(),
@@ -968,9 +994,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             durationSec = 0
                         )
                     )
-                    musicService.smartDownloadAndIndex(spotdownSong)
+                    resolveQueueTrack(
+                        spotdownSong,
+                        useStreamMode = queueManager.isStreamMode
+                    )
                 }
-                addNext(downloaded)
+                addNext(trackToQueue)
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to queue simplified track next: ${e.message}", e)
             } finally {

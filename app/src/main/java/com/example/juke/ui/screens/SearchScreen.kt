@@ -105,6 +105,7 @@ fun SearchScreen(
     bottomPadding: Dp = 0.dp
 ) {
     val uiState by searchViewModel.uiState.collectAsState()
+    val isStreamMode by musicViewModel.isStreamMode.collectAsState()
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val haptic = rememberJukeHaptics()
@@ -245,6 +246,7 @@ fun SearchScreen(
                                 musicViewModel = musicViewModel,
                                 searchViewModel = searchViewModel,
                                 scope = scope,
+                                isStreamMode = isStreamMode,
                                 onNavigateToArtist = onNavigateToArtist,
                                 onNavigateToPlaylist = onNavigateToPlaylist,
                                 onNavigateToAlbum = onNavigateToAlbum,
@@ -521,6 +523,7 @@ private fun SearchResultsList(
     musicViewModel: MusicViewModel,
     searchViewModel: SearchViewModel,
     scope: kotlinx.coroutines.CoroutineScope,
+    isStreamMode: Boolean,
     onNavigateToArtist: (SpotifyArtist) -> Unit,
     onNavigateToPlaylist: (SpotifyPlaylist) -> Unit,
     onNavigateToAlbum: (SpotifyAlbum) -> Unit,
@@ -557,7 +560,10 @@ private fun SearchResultsList(
                         scope.launch {
                             searchViewModel.setDownloading(track.id)
                             try {
-                                musicViewModel.queueSpotifyTrackNext(track)
+                                musicViewModel.queueSpotifyTrackNext(
+                                    spotifyTrack = track,
+                                    useStreamMode = isStreamMode
+                                )
                             } finally {
                                 searchViewModel.setDownloading(null)
                             }
