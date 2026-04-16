@@ -81,6 +81,42 @@ object SpotifyApi {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 
+    /**
+     * Thrown when Spotmate accepted the conversion request but queued it for later processing.
+     * The caller can use [taskId] to poll the task endpoint while trying alternate providers.
+     */
+    class SpotmateQueuedException(val taskId: String, message: String) : Exception(message)
+
+    @kotlinx.serialization.Serializable
+    private data class SpotmateConvertResponse(
+        val error: Boolean? = null,
+        val status: String? = null,
+        @kotlinx.serialization.SerialName("task_id") val taskId: String? = null,
+        val url: String? = null
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class SpotmateTaskResponse(
+        val error: Boolean? = null,
+        val data: SpotmateTaskData? = null
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class SpotmateTaskData(
+        @kotlinx.serialization.SerialName("task_id") val taskId: String,
+        val status: String,
+        val result: SpotmateTaskResult? = null,
+        val progress: Int? = null,
+        val message: String? = null
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class SpotmateTaskResult(
+        @kotlinx.serialization.SerialName("download_url") val downloadUrl: String? = null,
+        @kotlinx.serialization.SerialName("spotify_id") val spotifyId: String? = null,
+        val format: String? = null
+    )
+
     private var accessToken: String? = null
     private var tokenExpiryTime: Long = 0
     private val tokenMutex = Mutex()
@@ -651,7 +687,27 @@ object SpotifyApi {
             val postBody = postResponse.bodyAsText()
             Log.d(TAG, "Spotmate Convert Response ($postStatus): ${postBody.take(1000)}")
 
-            // 5. Extract URL from JSON
+            val convertResponse = runCatching {
+                json.decodeFromString<SpotmateConvertResponse>(postBody)
+            }.getOrNull()
+
+            val convertStatus = convertResponse?.status?.lowercase()
+            if (convertStatus == "queued" || convertStatus == "processing") {
+                val taskId = convertResponse.taskId ?: extractSpotmateTaskId(postBody)
+                if (!taskId.isNullOrBlank()) {
+                    throw SpotmateQueuedException(
+                        taskId = taskId,
+                        message = "Spotmate conversion queued (status=$convertStatus)"
+                    )
+                }
+            }
+
+            val parsedUrl = convertResponse?.url?.replace("\\/", "/")
+            if (!parsedUrl.isNullOrBlank()) {
+                return parsedUrl
+            }
+
+            // 5. Extract URL from JSON (legacy fallback parser)
             // Handle potentially escaped forward slashes and surrounding quotes/spaces
             val urlPattern = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"")
             val downloadUrlMatch = urlPattern.find(postBody)
@@ -672,6 +728,11 @@ object SpotifyApi {
             Log.e(TAG, "Error getting Spotmate URL: ${e.message}", e)
             throw e
         }
+    }
+
+    private fun extractSpotmateTaskId(responseBody: String): String? {
+        val taskIdPattern = Regex("\"task_id\"\\s*:\\s*\"([^\"]+)\"")
+        return taskIdPattern.find(responseBody)?.groupValues?.getOrNull(1)
     }
 
     /**
@@ -748,6 +809,84 @@ object SpotifyApi {
             Log.e(TAG, "Error downloading from Spotmate: ${e.message}", e)
             throw e
         }
+    }
+
+    /**
+     * Poll Spotmate queued conversion task until a downloadable URL is available.
+     *
+     * @param taskId Spotmate task identifier returned by /convert.
+     * @param maxAttempts Max polling attempts.
+     * @param pollDelayMs Delay between poll requests.
+     * @return Direct MP3 URL
+     */
+    suspend fun resolveSpotmateTask(
+        taskId: String,
+        maxAttempts: Int = 30,
+        pollDelayMs: Long = 3_000L
+    ): String {
+        val sanitizedTaskId = taskId.trim()
+        if (sanitizedTaskId.isBlank()) {
+            throw Exception("Spotmate task_id is empty")
+        }
+
+        repeat(maxAttempts) { attempt ->
+            val pollResponse: HttpResponse = ApiClient.httpClient.get(
+                "$SPOTMATE_BASE_URL/tasks/$sanitizedTaskId"
+            ) {
+                header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+                )
+                header("Accept", "application/json")
+            }
+
+            val pollBody = pollResponse.bodyAsText()
+            Log.d(
+                TAG,
+                "Spotmate Task Poll [${attempt + 1}/$maxAttempts] (${pollResponse.status.value}): ${pollBody.take(500)}"
+            )
+
+            val taskResponse = try {
+                json.decodeFromString<SpotmateTaskResponse>(pollBody)
+            } catch (parseEx: Exception) {
+                Log.w(TAG, "Spotmate task parse failed: ${parseEx.message}")
+                null
+            }
+
+            val taskData = taskResponse?.data
+            val status = taskData?.status?.lowercase()
+
+            if (status == "failed") {
+                throw Exception(taskData.message ?: "Spotmate task failed")
+            }
+
+            val downloadUrl = taskData?.result?.downloadUrl?.replace("\\/", "/")
+            if (status == "finished" && !downloadUrl.isNullOrBlank()) {
+                return downloadUrl
+            }
+
+            if (attempt < maxAttempts - 1) {
+                delay(pollDelayMs)
+            }
+        }
+
+        throw Exception("Spotmate task polling timed out after ${(maxAttempts * pollDelayMs) / 1000}s")
+    }
+
+    /**
+     * Resolve a Spotmate queued task and download the resulting MP3.
+     */
+    suspend fun downloadSongFromSpotmateTask(taskId: String): ByteArray {
+        val downloadUrl = resolveSpotmateTask(taskId)
+        val response: HttpResponse = ApiClient.httpClient.get(downloadUrl)
+        val audioData: ByteArray = response.body()
+
+        if (audioData.size < 100_000) {
+            throw Exception("Spotmate queued download too small (${audioData.size} bytes)")
+        }
+
+        return audioData
     }
 
     /**

@@ -12,3 +12,10 @@ This document tracks changes, features, and bug fixes implemented after the **v2
 - **Mini-Player Smart Lyrics Fallback:** Added two intelligent conditions to prevent stale lyrics lingering in the mini-player:
     - **Music Symbol Filter:** Lines composed entirely of musical notation symbols (♪ ♫ ♬ 𝄞 ♯ ♭ ♮ etc.) are detected as instrumentation markers, causing the display to fallback to song metadata.
     - **Adaptive Gap Threshold:** Implemented a per-song threshold calculation (Median Gap × 2.2) to intelligently revert to metadata during silences, ensuring lyrics hold appropriately for slow ballads while falling back quickly for fast tracks.
+
+### Spotmate Queue-Aware Download Recovery
+
+- **Queued Convert Detection:** Spotmate `/convert` responses with `status: queued` or `status: processing` now raise a typed queue exception carrying `task_id`, instead of being treated as a hard failure.
+- **Immediate Fallback Preservation:** When Spotmate queues a task, JUKE now immediately falls back to Gamepvz so playback/download does not stall waiting on Spotmate processing.
+- **Deferred Spotmate Recovery:** If both direct providers fail, JUKE now polls `https://spotmate.online/tasks/{task_id}` and downloads from `result.download_url` once Spotmate reports `status: finished`.
+- **Applied To Both Flows:** The queue-aware fallback logic is now active for both instant stream file resolution and full `smartDownloadAndIndex` downloads.
