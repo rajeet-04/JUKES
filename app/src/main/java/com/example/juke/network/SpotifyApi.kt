@@ -65,6 +65,11 @@ fun Throwable.isOffline(): Boolean {
  */
 object SpotifyApi {
 
+    data class DirectDownloadRequest(
+        val url: String,
+        val headers: Map<String, String> = emptyMap()
+    )
+
     private const val TAG = "SpotifyApi"
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
     private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
@@ -72,6 +77,9 @@ object SpotifyApi {
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val GAMEPVZ_BASE_URL  = "https://gamepvz.com"
     private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
+    private const val GAMEPVZ_USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 
     /**
      * Thrown when Spotmate accepted the conversion request but queued it for later processing.
@@ -728,6 +736,49 @@ object SpotifyApi {
     }
 
     /**
+     * Resolve Spotmate to a direct MP3 request.
+     * The returned URL can be consumed by a streaming downloader.
+     */
+    suspend fun getSpotmateDownloadRequest(spotifyUrl: String): DirectDownloadRequest {
+        val downloadUrl = getSpotmateStreamUrl(spotifyUrl)
+        return DirectDownloadRequest(url = downloadUrl)
+    }
+
+    /**
+     * Resolve Gamepvz to a direct MP3 request.
+     * Includes headers required by Gamepvz download endpoints.
+     */
+    suspend fun getGamepvzDownloadRequest(spotifyUrl: String): DirectDownloadRequest {
+        val metaResponse: HttpResponse =
+            ApiClient.httpClient.post("$GAMEPVZ_BASE_URL/api/download/get-url") {
+                contentType(ContentType.Application.Json)
+                header("User-Agent", GAMEPVZ_USER_AGENT)
+                header("Accept", "application/json, text/plain, */*")
+                header("Sec-Fetch-Site", "same-origin")
+                header("Sec-Fetch-Mode", "cors")
+                header("Sec-Fetch-Dest", "empty")
+                setBody(mapOf("url" to spotifyUrl))
+            }
+
+        val metaBody = metaResponse.bodyAsText()
+        Log.d(TAG, "Gamepvz meta response (${metaResponse.status.value}): ${metaBody.take(500)}")
+
+        val relativeUrl = json.decodeFromString<GamepvzMetaResponse>(metaBody).originalVideoUrl
+            ?: throw Exception("Gamepvz: originalVideoUrl missing in response")
+
+        val downloadUrl = "$GAMEPVZ_BASE_URL$relativeUrl"
+        Log.d(TAG, "Gamepvz download URL: $downloadUrl")
+
+        return DirectDownloadRequest(
+            url = downloadUrl,
+            headers = mapOf(
+                "Referer" to "$GAMEPVZ_BASE_URL/",
+                "User-Agent" to GAMEPVZ_USER_AGENT
+            )
+        )
+    }
+
+    /**
      * Download from Spotmate (Fallback Source).
      *
      * @param spotifyUrl Spotify track URL
@@ -737,11 +788,15 @@ object SpotifyApi {
         Log.d(TAG, "Attempting fallback download from Spotmate for: $spotifyUrl")
 
         try {
-            val downloadUrl = getSpotmateStreamUrl(spotifyUrl)
-            Log.d(TAG, "Extracted Spotmate download URL: $downloadUrl")
+            val request = getSpotmateDownloadRequest(spotifyUrl)
+            Log.d(TAG, "Extracted Spotmate download URL: ${request.url}")
 
             // Download the file
-            val response: HttpResponse = ApiClient.httpClient.get(downloadUrl)
+            val response: HttpResponse = ApiClient.httpClient.get(request.url) {
+                request.headers.forEach { (name, value) ->
+                    header(name, value)
+                }
+            }
             val audioData: ByteArray = response.body()
 
             if (audioData.size < 100_000) {
@@ -848,36 +903,13 @@ object SpotifyApi {
     suspend fun downloadSongFromGamepvz(spotifyUrl: String): ByteArray {
         Log.d(TAG, "Attempting Gamepvz download for: $spotifyUrl")
         try {
-            // Step 1: Resolve to a download path
-            val metaResponse: HttpResponse =
-                ApiClient.httpClient.post("$GAMEPVZ_BASE_URL/api/download/get-url") {
-                    contentType(ContentType.Application.Json)
-                    header("User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                        "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
-                    header("Accept", "application/json, text/plain, */*")
-                    header("Sec-Fetch-Site", "same-origin")
-                    header("Sec-Fetch-Mode", "cors")
-                    header("Sec-Fetch-Dest", "empty")
-                    setBody(mapOf("url" to spotifyUrl))
-                }
-
-            val metaBody = metaResponse.bodyAsText()
-            Log.d(TAG, "Gamepvz meta response (${metaResponse.status.value}): ${metaBody.take(500)}")
-
-            // Parse the `originalVideoUrl` field (relative path like /api/download/dl?url=...)
-            val relativeUrl = json.decodeFromString<GamepvzMetaResponse>(metaBody).originalVideoUrl
-                ?: throw Exception("Gamepvz: originalVideoUrl missing in response")
-
-            val downloadUrl = "$GAMEPVZ_BASE_URL$relativeUrl"
-            Log.d(TAG, "Gamepvz download URL: $downloadUrl")
+            val request = getGamepvzDownloadRequest(spotifyUrl)
 
             // Step 2: Download the MP3
-            val audioResponse: HttpResponse = ApiClient.httpClient.get(downloadUrl) {
-                header("Referer", "$GAMEPVZ_BASE_URL/")
-                header("User-Agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
+            val audioResponse: HttpResponse = ApiClient.httpClient.get(request.url) {
+                request.headers.forEach { (name, value) ->
+                    header(name, value)
+                }
             }
             val audioData: ByteArray = audioResponse.body()
 

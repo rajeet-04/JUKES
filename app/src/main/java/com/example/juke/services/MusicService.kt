@@ -11,6 +11,7 @@ import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
+import com.example.juke.utils.FastDownloader
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import kotlinx.coroutines.delay
@@ -89,15 +90,18 @@ class MusicService(private val context: Context) {
             else (System.currentTimeMillis() % 2L) == 0L
         val primaryName = if (useGamepvzFirst) "Gamepvz" else "Spotmate"
         val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
-
         var queuedSpotmateTaskId: String? = null
 
-        suspend fun tryStreamSource(useGamepvz: Boolean): ByteArray {
-            return if (useGamepvz) {
-                SpotifyApi.downloadSongFromGamepvz(song.url)
+        suspend fun downloadToTempFile(useGamepvz: Boolean) {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+
+            val request = if (useGamepvz) {
+                SpotifyApi.getGamepvzDownloadRequest(song.url)
             } else {
                 try {
-                    SpotifyApi.downloadSongFromSpotmate(song.url)
+                    SpotifyApi.getSpotmateDownloadRequest(song.url)
                 } catch (queuedEx: SpotifyApi.SpotmateQueuedException) {
                     queuedSpotmateTaskId = queuedEx.taskId
                     Log.w(
@@ -107,17 +111,28 @@ class MusicService(private val context: Context) {
                     throw queuedEx
                 }
             }
+
+            FastDownloader.downloadSegmented(
+                url = request.url,
+                outputFile = tempFile,
+                headers = request.headers,
+                threads = 4
+            )
+
+            if (!tempFile.exists() || tempFile.length() < 100_000L) {
+                throw Exception("Stream payload is too small")
+            }
         }
 
-        val audioData = try {
-            withTimeout(90_000L) { tryStreamSource(useGamepvzFirst) }
+        try {
+            withTimeout(90_000L) { downloadToTempFile(useGamepvzFirst) }
         } catch (primaryEx: Exception) {
             Log.w(
                 TAG,
                 "$primaryName stream fetch failed (${primaryEx.message}), falling back to $fallbackName"
             )
             try {
-                withTimeout(90_000L) { tryStreamSource(!useGamepvzFirst) }
+                withTimeout(90_000L) { downloadToTempFile(!useGamepvzFirst) }
             } catch (fallbackEx: Exception) {
                 val queuedTaskId = queuedSpotmateTaskId
                 if (!queuedTaskId.isNullOrBlank()) {
@@ -126,9 +141,18 @@ class MusicService(private val context: Context) {
                         "Both direct stream sources failed; polling queued Spotmate task: $queuedTaskId"
                     )
                     try {
-                        withTimeout(120_000L) {
+                        val queuedData = withTimeout(120_000L) {
                             SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId)
                         }
+
+                        if (queuedData.isEmpty() || queuedData.size < 100_000) {
+                            throw Exception("Queued Spotmate stream payload is too small")
+                        }
+
+                        if (tempFile.exists()) {
+                            tempFile.delete()
+                        }
+                        tempFile.writeBytes(queuedData)
                     } catch (queuedTaskEx: Exception) {
                         Log.e(TAG, "Queued Spotmate task failed: ${queuedTaskEx.message}")
                         throw Exception(
@@ -146,18 +170,13 @@ class MusicService(private val context: Context) {
             }
         }
 
-        if (audioData.isEmpty() || audioData.size < 100_000) {
-            throw Exception("Stream payload is too small")
-        }
-
-        tempFile.writeBytes(audioData)
         if (finalFile.exists()) {
             finalFile.delete()
         }
 
         val moved = tempFile.renameTo(finalFile)
         if (!moved) {
-            finalFile.writeBytes(audioData)
+            tempFile.copyTo(finalFile, overwrite = true)
             tempFile.delete()
         }
 
@@ -297,15 +316,18 @@ class MusicService(private val context: Context) {
                 TAG,
                 "Downloading '${song.title}' — primary: ${if (useGamepvzFirst) "Gamepvz" else "Spotmate"}"
             )
-
             var queuedSpotmateTaskId: String? = null
 
-            suspend fun trySource(useGamepvz: Boolean): ByteArray {
-                val data = if (useGamepvz) {
-                    SpotifyApi.downloadSongFromGamepvz(song.url)
+            suspend fun trySource(useGamepvz: Boolean) {
+                if (audioFile.exists()) {
+                    audioFile.delete()
+                }
+
+                val request = if (useGamepvz) {
+                    SpotifyApi.getGamepvzDownloadRequest(song.url)
                 } else {
                     try {
-                        SpotifyApi.downloadSongFromSpotmate(song.url)
+                        SpotifyApi.getSpotmateDownloadRequest(song.url)
                     } catch (queuedEx: SpotifyApi.SpotmateQueuedException) {
                         queuedSpotmateTaskId = queuedEx.taskId
                         Log.w(
@@ -315,14 +337,21 @@ class MusicService(private val context: Context) {
                         throw queuedEx
                     }
                 }
-                if (data.isEmpty() || data.size < 100_000) {
+
+                FastDownloader.downloadSegmented(
+                    url = request.url,
+                    outputFile = audioFile,
+                    headers = request.headers,
+                    threads = 4
+                )
+
+                if (!audioFile.exists() || audioFile.length() < 100_000L) {
                     throw Exception("Downloaded file is too small to be a valid MP3")
                 }
-                return data
             }
 
             var usedGamepvzFirst = useGamepvzFirst
-            val audioData = try {
+            try {
                 withTimeout(90_000L) { trySource(useGamepvzFirst) }
             } catch (primaryEx: Exception) {
                 val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
@@ -337,9 +366,18 @@ class MusicService(private val context: Context) {
                             TAG,
                             "Both direct sources failed; polling queued Spotmate task: $queuedTaskId"
                         )
-                        withTimeout(120_000L) {
+                        val queuedData = withTimeout(120_000L) {
                             SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId)
                         }
+
+                        if (queuedData.isEmpty() || queuedData.size < 100_000) {
+                            throw Exception("Queued Spotmate download is too small")
+                        }
+
+                        if (audioFile.exists()) {
+                            audioFile.delete()
+                        }
+                        audioFile.writeBytes(queuedData)
                     } else {
                         throw Exception(
                             "All sources failed: primary=${primaryEx.message}, fallback=${fallbackEx.message}"
@@ -348,8 +386,7 @@ class MusicService(private val context: Context) {
                 }
             }
 
-            audioFile.writeBytes(audioData)
-            Log.d(TAG, "Downloaded ${audioData.size} bytes — wrote to ${audioFile.absolutePath}")
+            Log.d(TAG, "Downloaded ${audioFile.length()} bytes — wrote to ${audioFile.absolutePath}")
 
             if (!audioFile.exists() || audioFile.length() == 0L) {
                 throw Exception("Failed to write audio file")
@@ -375,11 +412,9 @@ class MusicService(private val context: Context) {
                         "Duration mismatch! Expected ${durationSec}s, got ${fileDurationSec}s. Retrying with $altName"
                     )
                     try {
-                        val altData = withTimeout(90_000L) {
-                            if (usedGamepvzFirst) SpotifyApi.downloadSongFromSpotmate(song.url)
-                            else SpotifyApi.downloadSongFromGamepvz(song.url)
+                        withTimeout(90_000L) {
+                            trySource(!usedGamepvzFirst)
                         }
-                        audioFile.writeBytes(altData)
                         Log.d(TAG, "Alternative download succeeded, overwrote file.")
                     } catch (retryEx: Exception) {
                         Log.w(TAG, "Alternative also failed (${retryEx.message}), keeping original")
