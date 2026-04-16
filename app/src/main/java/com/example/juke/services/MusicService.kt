@@ -90,26 +90,59 @@ class MusicService(private val context: Context) {
         val primaryName = if (useGamepvzFirst) "Gamepvz" else "Spotmate"
         val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
 
-        suspend fun streamPrimary() =
-            if (useGamepvzFirst) SpotifyApi.downloadSongFromGamepvz(song.url)
-            else SpotifyApi.downloadSongFromSpotmate(song.url)
+        var queuedSpotmateTaskId: String? = null
 
-        suspend fun streamFallback() =
-            if (useGamepvzFirst) SpotifyApi.downloadSongFromSpotmate(song.url)
-            else SpotifyApi.downloadSongFromGamepvz(song.url)
+        suspend fun tryStreamSource(useGamepvz: Boolean): ByteArray {
+            return if (useGamepvz) {
+                SpotifyApi.downloadSongFromGamepvz(song.url)
+            } else {
+                try {
+                    SpotifyApi.downloadSongFromSpotmate(song.url)
+                } catch (queuedEx: SpotifyApi.SpotmateQueuedException) {
+                    queuedSpotmateTaskId = queuedEx.taskId
+                    Log.w(
+                        TAG,
+                        "Spotmate stream conversion queued (taskId=${queuedEx.taskId}), trying alternate source"
+                    )
+                    throw queuedEx
+                }
+            }
+        }
 
         val audioData = try {
-            withTimeout(90_000L) { streamPrimary() }
-        } catch (e: Exception) {
+            withTimeout(90_000L) { tryStreamSource(useGamepvzFirst) }
+        } catch (primaryEx: Exception) {
             Log.w(
                 TAG,
-                "$primaryName stream fetch failed (${e.message}), falling back to $fallbackName"
+                "$primaryName stream fetch failed (${primaryEx.message}), falling back to $fallbackName"
             )
             try {
-                withTimeout(90_000L) { streamFallback() }
+                withTimeout(90_000L) { tryStreamSource(!useGamepvzFirst) }
             } catch (fallbackEx: Exception) {
-                Log.e(TAG, "Both stream sources failed: ${fallbackEx.message}")
-                throw Exception("Stream unavailable: $primaryName=${e.message}, $fallbackName=${fallbackEx.message}")
+                val queuedTaskId = queuedSpotmateTaskId
+                if (!queuedTaskId.isNullOrBlank()) {
+                    Log.w(
+                        TAG,
+                        "Both direct stream sources failed; polling queued Spotmate task: $queuedTaskId"
+                    )
+                    try {
+                        withTimeout(120_000L) {
+                            SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId)
+                        }
+                    } catch (queuedTaskEx: Exception) {
+                        Log.e(TAG, "Queued Spotmate task failed: ${queuedTaskEx.message}")
+                        throw Exception(
+                            "Stream unavailable: $primaryName=${primaryEx.message}, " +
+                                    "$fallbackName=${fallbackEx.message}, queued=${queuedTaskEx.message}"
+                        )
+                    }
+                } else {
+                    Log.e(TAG, "Both stream sources failed: ${fallbackEx.message}")
+                    throw Exception(
+                        "Stream unavailable: $primaryName=${primaryEx.message}, " +
+                                "$fallbackName=${fallbackEx.message}"
+                    )
+                }
             }
         }
 
@@ -265,11 +298,22 @@ class MusicService(private val context: Context) {
                 "Downloading '${song.title}' — primary: ${if (useGamepvzFirst) "Gamepvz" else "Spotmate"}"
             )
 
+            var queuedSpotmateTaskId: String? = null
+
             suspend fun trySource(useGamepvz: Boolean): ByteArray {
                 val data = if (useGamepvz) {
                     SpotifyApi.downloadSongFromGamepvz(song.url)
                 } else {
-                    SpotifyApi.downloadSongFromSpotmate(song.url)
+                    try {
+                        SpotifyApi.downloadSongFromSpotmate(song.url)
+                    } catch (queuedEx: SpotifyApi.SpotmateQueuedException) {
+                        queuedSpotmateTaskId = queuedEx.taskId
+                        Log.w(
+                            TAG,
+                            "Spotmate conversion queued (taskId=${queuedEx.taskId}), trying alternate source"
+                        )
+                        throw queuedEx
+                    }
                 }
                 if (data.isEmpty() || data.size < 100_000) {
                     throw Exception("Downloaded file is too small to be a valid MP3")
@@ -280,11 +324,28 @@ class MusicService(private val context: Context) {
             var usedGamepvzFirst = useGamepvzFirst
             val audioData = try {
                 withTimeout(90_000L) { trySource(useGamepvzFirst) }
-            } catch (e: Exception) {
+            } catch (primaryEx: Exception) {
                 val fallbackName = if (useGamepvzFirst) "Spotmate" else "Gamepvz"
-                Log.w(TAG, "Primary download failed (${e.message}), falling back to $fallbackName")
+                Log.w(TAG, "Primary download failed (${primaryEx.message}), falling back to $fallbackName")
                 usedGamepvzFirst = !useGamepvzFirst
-                withTimeout(90_000L) { trySource(!useGamepvzFirst) }
+                try {
+                    withTimeout(90_000L) { trySource(!useGamepvzFirst) }
+                } catch (fallbackEx: Exception) {
+                    val queuedTaskId = queuedSpotmateTaskId
+                    if (!queuedTaskId.isNullOrBlank()) {
+                        Log.w(
+                            TAG,
+                            "Both direct sources failed; polling queued Spotmate task: $queuedTaskId"
+                        )
+                        withTimeout(120_000L) {
+                            SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId)
+                        }
+                    } else {
+                        throw Exception(
+                            "All sources failed: primary=${primaryEx.message}, fallback=${fallbackEx.message}"
+                        )
+                    }
+                }
             }
 
             audioFile.writeBytes(audioData)
