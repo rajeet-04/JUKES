@@ -1,48 +1,56 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-03-08
+**Analysis Date:** 2026-04-16
 
 ## Test Framework
 
 **Runner:**
-- JUnit 4.13.2 - Unit testing framework
-- AndroidJUnit4 - Instrumentation testing framework
-- Config: `app/src/test/java/com/example/juke/ExampleUnitTest.kt`
-- Config: `app/src/androidTest/java/com/example/juke/ExampleInstrumentedTest.kt`
+- JUnit 4 (unit tests)
+- AndroidJUnitRunner (instrumented tests)
+- Compose UI Test (Compose tests)
 
 **Assertion Library:**
-- Standard JUnit assertions
+- JUnit assertions (`org.junit.Assert.assertEquals`)
+- Compose test assertions
 
 **Run Commands:**
 ```bash
-./gradlew test                           # Run all unit tests
-./gradlew connectedAndroidTest           # Run instrumentation tests
+# Run all unit tests
+./gradlew test
+
+# Run specific test class
+./gradlew test --tests "com.example.juke.ExampleUnitTest"
+
+# Run instrumented tests (requires device/emulator)
+./gradlew connectedAndroidTest
+
+# Generate coverage report
+./gradlew testDebugUnitTestCoverage
 ```
 
 ## Test File Organization
 
 **Location:**
-- Unit tests: `app/src/test/` (co-located with source code by package)
-- Instrumentation tests: `app/src/androidTest/` (mirroring source structure)
+- Unit tests: `app/src/test/java/com/example/juke/`
+- Instrumented tests: `app/src/androidTest/java/com/example/juke/`
 
 **Naming:**
-- Class name + "Test": `ExampleUnitTest.kt`, `SpotifyApiTest.kt` (inferred pattern)
+- Unit tests: `*Test.kt`
+- Instrumented tests: `*Test.kt`
 
 **Structure:**
-```
-app/src/
-├── test/                    # Unit tests
-│   └── java/
-│       └── com/example/juke/   # Mirrors main source structure
-└── androidTest/             # Instrumentation tests
-    └── java/
-        └── com/example/juke/   # Mirrors main source structure
-```
+- Follows standard JUnit 4 structure
+- `@Test` annotated methods
 
 ## Test Structure
 
 **Suite Organization:**
 ```kotlin
+package com.example.juke
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
 class ExampleUnitTest {
     @Test
     fun addition_isCorrect() {
@@ -51,87 +59,93 @@ class ExampleUnitTest {
 }
 ```
 
-**Patterns:**
-- Arrange-Act-Assert pattern
-- One test class per production class convention
-- Use of standard JUnit annotations (@Test, @Before, @After)
-
 ## Mocking
 
-**Framework:** 
-- Not explicitly configured (would typically use Mockito or similar)
+**Framework:** Not explicitly used
 
-**Patterns:**
-- Not currently implemented in the codebase
-- Would likely use Mockito for Android/Kotlin testing
+**Patterns:** Would use MockK for Kotlin mocking if tests were expanded
 
 **What to Mock:**
-- Network calls for unit tests (when implemented)
-- Database operations for isolated business logic testing
-- External service dependencies
+- Network responses
+- Database operations
+- File system access
 
 **What NOT to Mock:**
-- Simple data classes and models
-- Pure functions without side effects
+- Simple utility functions
+- Data classes
 
 ## Fixtures and Factories
 
 **Test Data:**
-```kotlin
-// Basic test data setup in existing tests
-val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-```
+- Minimal fixture usage currently
+- Would use factory functions or builders for complex objects
 
 **Location:**
-- Test data embedded within test methods for simple cases
-- Would benefit from dedicated test fixture factories (not yet implemented)
+- Inline in test files (currently)
 
 ## Coverage
 
-**Requirements:** None enforced currently
+**Requirements:** None enforced
 
 **View Coverage:**
 ```bash
-./gradlew jacocoTestReport              # Would generate coverage report (if configured)
+./gradlew testDebugUnitTestCoverage
 ```
 
 ## Test Types
 
 **Unit Tests:**
-- Scope: Individual functions and classes in isolation
-- Approach: Currently minimal implementation with placeholder test
+- Scope: Pure functions, utility classes
 - Location: `app/src/test/`
+- Current: Minimal (one example test)
 
 **Integration Tests:**
-- Scope: Module interactions and database operations
-- Approach: Minimal implementation with placeholder test
-- Location: `app/src/androidTest/`
+- Scope: Database operations, API parsing
+- Location: Would be in `app/src/androidTest/`
+- Current: None
 
 **E2E Tests:**
-- Framework: Not currently implemented
-- Scope: Full user flows through the application UI
-- Approach: Would use Espresso or similar UI testing framework
+- Framework: Not used
+- Alternative: Manual testing via debug APK
 
 ## Common Patterns
 
 **Async Testing:**
 ```kotlin
-// Would use runTest coroutine test builder when implemented
-@Test
-fun testAsyncFunction() = runTest {
-    // Test suspending functions
+// Current pattern: minimal async tests
+// Would use runBlocking for suspend functions
+runBlocking {
+    val result = someSuspendFunction()
+    assertEquals(expected, result)
 }
 ```
 
 **Error Testing:**
 ```kotlin
-// Would use assertThrows equivalent when implemented
-@Test(expected = IllegalArgumentException::class)
-fun testException() {
-    // Code that should throw
+@Test(expected = SomeException::class)
+fun shouldThrowException() {
+    // Test code that should throw
 }
 ```
 
+## Current Test Status
+
+**Summary:**
+- Unit tests: 1 example test (placeholder)
+- Instrumented tests: 0
+- Coverage: Not measured
+
+**Recommended Tests to Add:**
+
+| Component | Test Type | Coverage |
+|-----------|-----------|----------|
+| `MusicService` | Unit | Download retry, LRU eviction |
+| `QueueManager` | Unit | Scoring algorithm, blacklist filtering |
+| `SpotifyApi` | Unit (Mock) | Token refresh, response parsing |
+| `TrackDao` | Instrumented | CRUD operations |
+| `ArtistUtils` | Unit | Matching algorithms |
+| UI Screens | Compose UI test | Navigation, state |
+
 ---
 
-*Testing analysis: 2026-03-08*
+*Testing analysis: 2026-04-16*

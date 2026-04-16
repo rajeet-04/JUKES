@@ -1,120 +1,167 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-03-08
+**Analysis Date:** 2026-04-16
 
 ## Tech Debt
 
-**Incomplete Implementation:**
-- Issue: Stubbed function with TODO marker in SpotifyApi.kt
-- Files: `app/src/main/java/com/example/juke/network/SpotifyApi.kt` (line 132)
-- Impact: Potential runtime issues if setter is called
-- Fix approach: Implement proper setter logic or remove if not needed
+**Large Files:**
+- Issue: Several files exceed 1000 lines
+- Files: `MusicViewModel.kt` (1400+), `QueueManager.kt` (1136), `SpotifyApi.kt` (1239), `RecommenderApi.kt` (931)
+- Impact: Harder to navigate, understand, and modify
+- Fix approach: Extract to smaller helper classes or utilities
 
-**Large Files / God Classes:**
-- Issue: Several extremely large files with multiple responsibilities
-- Files: 
-  - `app/src/main/java/com/example/juke/viewmodels/MusicViewModel.kt` (appears to be very large based on directory output)
-  - `app/src/main/java/com/example/juke/network/SpotifyApi.kt` (1145 lines)
-  - `app/src/main/java/com/example/juke/services/PlaybackService.kt` (96,977 lines from directory output)
-  - `app/src/main/java/com/example/juke/services/QueueManager.kt` (39,451 lines from directory output)
-- Impact: Hard to maintain, understand, and test; violates single responsibility principle
-- Fix approach: Extract related functionality into separate classes or modules
+**Singleton Pattern Overuse:**
+- Issue: `PlaybackManager`, `QueueManager`, `MusicDatabase` use singleton pattern
+- Files: `services/PlaybackManager.kt`, `services/QueueManager.kt`, `database/MusicDatabase.kt`
+- Impact: Difficult to test, tight coupling
+- Fix approach: Consider dependency injection
+
+**Magic Numbers:**
+- Issue: Hardcoded numbers throughout codebase
+- Examples: `30_000` buffer time, `256L * 1024 * 1024` cache size, `180` rate limit
+- Files: `PlaybackService.kt`, `MusicService.kt`, `SpotifyApi.kt`
+- Impact: Unclear meaning, hard to maintain
+- Fix approach: Extract to named constants
+
+**Commented Code:**
+- Issue: Historical commented code remains in files
+- Files: `MusicService.kt` (line 632 commented delete), `MusicDatabase.kt` (multiple commented sections)
+- Impact: Clutter, confusion
+- Fix approach: Remove dead code
 
 ## Known Bugs
 
-**No Explicit Bugs Found:**
-- Symptoms: No explicit bug markers found in codebase
-- Files: N/A
-- Trigger: N/A
-- Workaround: N/A
+**Stream Cache Eviction Timing:**
+- Symptom: Playback crashes when stream file evicted during play
+- Files: `services/MusicService.kt`, `services/QueueManager.kt`
+- Trigger: LRU eviction runs while track is playing
+- Workaround: `pinnedUuids` parameter partially mitigates
+
+**Notification Artwork Lag:**
+- Symptom: Stale or missing album art in notification
+- Files: `services/PlaybackService.kt`
+- Trigger: Thumbnail not downloaded when notification created
+- Workaround: 3-second delayed metadata refresh (line 446-463)
 
 ## Security Considerations
 
-**Hardcoded Secrets:**
-- Risk: API key exposed in source code
-- Files: `app/src/main/java/com/example/juke/JukeApplication.kt`
-- Current mitigation: API key is in source code but potentially could be obfuscated
-- Recommendations: Use secure keystore or runtime configuration for sensitive keys
+**Spotify Credentials:**
+- Risk: API keys stored in `local.properties` (not committed)
+- Files: `app/build.gradle.kts` (reads local.properties)
+- Current mitigation: File is gitignored
+- Recommendations: Use Gradle secrets plugin or environment variables
 
-**Network Security:**
-- Risk: Cleartext traffic enabled in manifest
-- Files: `app/src/main/AndroidManifest.xml` (usesCleartextTraffic="true")
-- Current mitigation: Allows HTTP traffic for development/debugging
-- Recommendations: Disable cleartext traffic in production builds using build flavors
+**HTTP Downloads:**
+- Risk: MP3 files downloaded over HTTP
+- Files: `services/MusicService.kt`, `network/SpotifyApi.kt`
+- Current mitigation: Downloads from known services only
+- Recommendations: Use HTTPS for all downloads
+
+**No ProGuard Optimization of Logs:**
+- Risk: Debug logs remain in release builds
+- Files: `proguard-rules.pro`
+- Current mitigation: `-assumenosideeffects` removes Log.d/v/i/w in release
+- Recommendations: Already addressed
 
 ## Performance Bottlenecks
 
-**Large ViewModel:**
-- Problem: MusicViewModel appears extremely large
-- Files: `app/src/main/java/com/example/juke/viewmodels/MusicViewModel.kt`
-- Cause: Multiple concerns (playback, queue management, downloads, UI state) in one class
-- Improvement path: Split into focused ViewModels or extract business logic to separate classes
+**Database Queries:**
+- Problem: Full scans for search operations
+- Files: `database/MusicDatabase.kt`
+- Cause: LIKE queries on large datasets
+- Improvement path: Add FTS (Full-Text Search) index
 
-**Blocking Operations on Main Thread:**
-- Problem: Potential blocking operations in ViewModel init
-- Files: `app/src/main/java/com/example/juke/viewmodels/MusicViewModel.kt`
-- Cause: Database migration helper called directly in init
-- Improvement path: Ensure all database operations are properly dispatched to IO thread
+**Recommendation Fetching:**
+- Problem: Sequential YouTube Music API calls for ensemble seeds
+- Files: `services/QueueManager.kt`
+- Cause: `coroutineScope { async { } }` but limited parallelism
+- Improvement path: Parallel fetching with rate limiting
+
+**Large Download Queue:**
+- Problem: UI thread blocked during queue operations
+- Files: `viewmodels/MusicViewModel.kt`
+- Cause: Heavy operations in `addNext()` and `setQueue()`
+- Improvement path: Background processing with progress updates
 
 ## Fragile Areas
 
-**Complex State Management:**
-- Files: `app/src/main/java/com/example/juke/viewmodels/MusicViewModel.kt`
-- Why fragile: Heavy reliance on coordinated state flows between multiple managers
-- Safe modification: Add comprehensive tests before modifying state propagation logic
-- Test coverage: Appears minimal based on test files
+**Spotify Token Management:**
+- Files: `network/SpotifyApi.kt`
+- Why fragile: Token expiry race condition, no refresh mechanism mid-request
+- Safe modification: Always use `tokenMutex.withLock`
+- Test coverage: Gap - no unit tests
 
-**Network Layer Complexity:**
-- Files: `app/src/main/java/com/example/juke/network/SpotifyApi.kt`
-- Why fragile: Multiple fallback mechanisms and complex error handling
-- Safe modification: Ensure thorough testing of all fallback paths
-- Test coverage: No specific network tests found
+**YouTube Music API:**
+- Files: `network/RecommenderApi.kt`
+- Why fragile: Unofficial API, parsing JSON with deep nested paths
+- Safe modification: Add null checks for each JSON extraction
+- Test coverage: Gap - no unit tests
+
+**ExoPlayer State Management:**
+- Files: `services/PlaybackService.kt`, `services/PlaybackManager.kt`
+- Why fragile: Complex state machine across service/controller boundary
+- Safe modification: Always check player initialization with `::player.isInitialized`
+- Test coverage: Gap - no unit tests
 
 ## Scaling Limits
 
-**Room Database Migrations:**
-- Current capacity: Version 7 with 6 migrations
-- Limit: Manual migration complexity increases with each version
-- Scaling path: Consider automated migration strategies or consolidation
+**Database:**
+- Current capacity: Unknown
+- Limit: SQLite performance degrades with millions of rows
+- Scaling path: Paginate queries, add indices
 
-**Concurrent Downloads:**
-- Current capacity: Single active download with queue
-- Limit: No apparent parallelization of downloads
-- Scaling path: Implement concurrent download manager with configurable thread pool
+**Stream Cache:**
+- Current capacity: 256MB ExoPlayer cache + LRU 30 files stream cache
+- Limit: Storage dependent
+- Scaling path: Configurable cache size
+
+**Queue Manager:**
+- Current capacity: 6 concurrent downloads
+- Limit: Memory and network bandwidth
+- Scaling path: Configurable concurrency
 
 ## Dependencies at Risk
 
-**PostHog Version:**
-- Risk: Dynamic version resolution ("3.32.+") may cause instability
-- Impact: Potential breaking changes without notice
-- Migration plan: Pin to specific stable version
+**Spotmate/Gamepvz:**
+- Risk: Unofficial services, may change or go offline
+- Impact: Downloads fail
+- Migration plan: Add fallback services (spotDL, youtubedl)
+
+**mp3juice3.ninja:**
+- Risk: Unofficial scraper, may break
+- Impact: Video matching fails
+- Migration plan: Alternative YouTube API
+
+**LRCLib:**
+- Risk: Community-maintained service
+- Impact: Lyrics unavailable
+- Migration plan: Multiple lyrics sources (Genius, Musixmatch)
 
 ## Missing Critical Features
 
-**Comprehensive Testing:**
-- Problem: Minimal test implementation with only placeholder tests
-- Blocks: Confidence in code changes, regression prevention
-- Files: `app/src/test/java/com/example/juke/ExampleUnitTest.kt`, `app/src/androidTest/java/com/example/juke/ExampleInstrumentedTest.kt`
+**Offline Mode:**
+- Problem: App requires network for initial song selection
+- Blocks: Full offline usage
+- Priority: High
 
-**Static Analysis:**
-- Problem: No explicit linting or static analysis configuration
-- Blocks: Automated code quality enforcement
-- Files: Missing configuration files for linting tools
+**Playlist Sync:**
+- Problem: Playlists stored locally only
+- Blocks: Multi-device sync
+- Priority: Medium
 
 ## Test Coverage Gaps
 
-**No Business Logic Tests:**
-- What's not tested: Core playback logic, network operations, database operations
-- Files: All major service and ViewModel classes
-- Risk: High chance of regressions and undetected bugs
-- Priority: High
+**Untested Areas:**
+- `MusicService` - No unit tests for download logic
+- `QueueManager` - No unit tests for recommendation algorithm
+- `SpotifyApi` - No mocking of network responses
+- `PlaybackManager` - No state machine tests
+- UI screens - No Compose UI tests
 
-**UI Tests:**
-- What's not tested: Screen interactions and user flows
-- Files: All UI components and screens
-- Risk: UI bugs may go unnoticed
-- Priority: Medium
+**Risk:** Changes to these components may break silently
+
+**Priority:** High for MusicService and QueueManager (core business logic)
 
 ---
 
-*Concerns audit: 2026-03-08*
+*Concerns audit: 2026-04-16*

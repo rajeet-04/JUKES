@@ -1,102 +1,116 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-03-08
+**Analysis Date:** 2026-04-16
 
 ## Naming Patterns
 
 **Files:**
-- PascalCase for class files: `MusicViewModel.kt`, `SpotifyApi.kt`
-- Descriptive names matching class purpose
+- Kotlin files: PascalCase - `MusicService.kt`, `TrackCard.kt`
+- Screen composables: PascalCase - `HomeScreen.kt`, `PlayerScreen.kt`
+- Component composables: PascalCase - `MiniPlayer.kt`, `TrackCard.kt`
 
 **Functions:**
-- camelCase for function names: `searchSongs()`, `downloadSong()`
-- Verb-based naming for actions: `play()`, `pause()`, `download()`
-- Boolean functions prefixed with `is` or `has`: `isPlaying()`, `hasRestoredState()`
+- camelCase: `playTrack()`, `addToQueue()`, `getTrackByUuid()`
+- Private helper: `_internalMethod()` or `processSomething()`
+- Suspend functions: Same naming, clearly marked as suspend
 
 **Variables:**
-- camelCase for variables: `accessToken`, `trackList`, `uiState`
-- Descriptive names with clear purpose
-- Constants in UPPER_SNAKE_CASE: `SPOTIFY_API_BASE_URL`, `TAG`
+- camelCase: `musicViewModel`, `currentTrack`, `isPlaying`
+- Mutable vs Immutable: `MutableStateFlow` for private, `StateFlow` for public
+- Constants: SCREAMING_SNAKE_CASE in companion objects or top-level
 
 **Types:**
-- Data classes for models: `Track`, `SpotifyTrack`, `DownloadItem`
-- Sealed classes for state representation: `DownloadStatus`
-- Enums for fixed sets of values: `ScreenState`
+- Classes: PascalCase - `MusicViewModel`, `TrackEntity`
+- Data classes: PascalCase - `MusicUiState`, `DownloadItem`
+- Enums: PascalCase - `DownloadStatus.QUEUED`
+- Type aliases: PascalCase
 
 ## Code Style
 
 **Formatting:**
-- Standard Kotlin formatting with 4-space indentation
-- Line length generally kept under 120 characters
-- Consistent spacing around operators and keywords
+- Tool: Gradle Kotlin DSL (built-in)
+- 4-space indentation
+- No line length limit (Compose often exceeds 100 chars)
 
 **Linting:**
-- Android lint checks integrated via Gradle
-- Kotlin compiler warnings treated as errors in strict mode
+- Not explicitly configured (no detekt or ktlint)
+- Relies on Kotlin compiler and IDE
 
 ## Import Organization
 
 **Order:**
-1. Standard Java/Android imports
-2. Third-party library imports
-3. Project-relative imports (com.example.juke.*)
+1. Android framework (`android.*`)
+2. Kotlin standard library (`kotlin.*`)
+3. AndroidX libraries (`androidx.*`)
+4. Third-party libraries (coil, ktor, etc.)
+5. App local imports (`com.example.juke.*`)
 
-**Path Aliases:**
-- No custom path aliases used
-- Full package imports always used
+**Example:**
+```kotlin
+import android.content.Context
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.compose.material3.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import io.ktor.client.*
+import com.example.juke.database.MusicDatabase
+import com.example.juke.models.Track
+```
 
 ## Error Handling
 
 **Patterns:**
-- Try-catch blocks for network operations and file I/O
-- Custom exception types for specific error cases: `OfflineException`
-- Result types for suspending functions where appropriate
-- Proper logging of errors with appropriate log levels
+- Custom exceptions for specific errors: `OfflineException`, `SpotmateQueuedException`
+- Try-catch with logging: `try { } catch (e: Exception) { Log.e(TAG, ...); throw e }`
+- Extension function for offline detection: `Throwable.isOffline()`
+- Graceful degradation with fallback paths
 
-## Logging
-
-**Framework:** Android Log system with tag-based categorization
-
-**Patterns:**
-- Log.d for debug information
-- Log.e for error conditions
-- Log.w for warning conditions
-- Consistent tagging with class name or functional area
+**Logging:**
+```kotlin
+private const val TAG = "ClassName"
+Log.d(TAG, "MethodName: action description")
+Log.e(TAG, "Error occurred", e)
+```
 
 ## Comments
 
 **When to Comment:**
-- Function documentation for public APIs
-- Complex algorithm explanations
-- Non-obvious implementation decisions
+- Complex algorithms (Levenshtein distance, scoring)
+- Business logic rationale
+- Workarounds for bugs
+- API quirks
 
 **JSDoc/TSDoc:**
-- KotlinDoc-style comments for classes and public functions
-- `@param` and `@return` annotations for function documentation
+- Minimal usage
+- KDoc for public APIs: `/** Description */`
 
 ## Function Design
 
-**Size:** Functions typically under 50 lines, with complex logic extracted to helper functions
+**Size:**
+- Small, focused functions preferred
+- Complex logic broken into private helpers
+- Example: `isOffline()` as extension function
 
-**Parameters:** 
-- Named parameters preferred for functions with multiple arguments
-- Default parameter values used to reduce function overloads
+**Parameters:**
+- Named parameters for clarity in complex calls
+- Nullable with defaults where appropriate
+- Suspend functions clearly marked
 
-**Return Values:** 
-- Suspended functions for async operations
-- Sealed classes or Result types for operations that can fail
-- Non-null returns preferred with safe-call operators
+**Return Values:**
+- Nullability explicit in return types
+- `List<T>` for collections (not arrays)
+- Flow/StateFlow for reactive streams
 
 ## Module Design
 
-**Exports:** 
-- Public functions and classes clearly marked
-- Internal visibility for implementation details not meant for external consumption
+**Exports:**
+- Top-level `object` declarations for singletons: `SpotifyApi`, `RecommenderApi`
+- Factory methods in companion objects: `MusicDatabase.getDatabase()`
 
-**Barrel Files:** 
-- No barrel files used
-- Direct imports of specific classes preferred
+**Barrel Files:**
+- Not used
+- Direct imports per file
 
 ---
 
-*Convention analysis: 2026-03-08*
+*Convention analysis: 2026-04-16*

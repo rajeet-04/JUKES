@@ -1,141 +1,160 @@
 # Architecture
 
-**Analysis Date:** 2026-03-08
+**Analysis Date:** 2026-04-16
 
 ## Pattern Overview
 
-**Overall:** MVVM (Model-View-ViewModel) with Repository pattern
+**Overall:** MVVM + Clean Architecture + Repository Pattern
 
 **Key Characteristics:**
-- Jetpack Compose UI layer with reactive state management
-- ViewModel layer managing business logic and state
-- Repository pattern through Room database for local persistence
-- Network layer using Ktor for REST API communication
-- Service layer for background media playback
-- Modular architecture with clear separation of concerns
+- UI layer uses Jetpack Compose with unidirectional data flow
+- ViewModels manage UI state via StateFlow
+- Services handle business logic (playback, downloads, recommendations)
+- Data layer uses Room DAOs for database access
+- Network layer uses Ktor client for API calls
 
 ## Layers
 
-**Presentation Layer:**
-- Purpose: UI rendering and user interaction handling
+**UI Layer (Compose):**
+- Purpose: Display data and capture user input
 - Location: `app/src/main/java/com/example/juke/ui/`
-- Contains: Compose components, screens, themes, and UI utilities
-- Depends on: ViewModel layer for data
-- Used by: Android framework to render UI
+- Contains: Screens, components, theme
+- Depends on: ViewModels
+- Used by: Android Activity
 
 **ViewModel Layer:**
-- Purpose: Business logic and UI state management
+- Purpose: Manage UI state, business logic coordination
 - Location: `app/src/main/java/com/example/juke/viewmodels/`
-- Contains: ViewModel classes that expose state via StateFlow
-- Depends on: Repository and network layers
-- Used by: UI components for reactive state updates
-
-**Repository Layer:**
-- Purpose: Data access abstraction for local storage
-- Location: `app/src/main/java/com/example/juke/database/`
-- Contains: Room DAOs, database entities, and converters
-- Depends on: Room persistence library
-- Used by: ViewModel layer
-
-**Network Layer:**
-- Purpose: API communication with external services
-- Location: `app/src/main/java/com/example/juke/network/`
-- Contains: API clients using Ktor, service objects for Spotify integration
-- Depends on: Ktor HTTP client library
-- Used by: ViewModel and service layers
-
-**Domain Model Layer:**
-- Purpose: Data models and business objects
-- Location: `app/src/main/java/com/example/juke/models/`
-- Contains: Data classes representing tracks, artists, albums, etc.
-- Depends on: None (pure data structures)
-- Used by: All other layers
+- Contains: `MusicViewModel`, `SearchViewModel`, `LibraryViewModel`, etc.
+- Depends on: Services, DAOs, API clients
+- Used by: UI layer (Compose screens)
 
 **Service Layer:**
-- Purpose: Background processing and system integration
+- Purpose: Core business logic (playback, downloads, queue management)
 - Location: `app/src/main/java/com/example/juke/services/`
-- Contains: Playback service, music service, queue management
-- Depends on: Android Media3 framework, repository layer
-- Used by: Android framework for background operations
+- Contains: `PlaybackService`, `PlaybackManager`, `MusicService`, `QueueManager`, `AudioEffectController`
+- Depends on: Database, Network, Models
+- Used by: ViewModels
 
-**Utility Layer:**
-- Purpose: Helper functions and common utilities
-- Location: `app/src/main/java/com/example/juke/utils/`
-- Contains: Helper classes for various operations
-- Depends on: Various Android and third-party libraries
-- Used by: All layers as needed
+**Data Layer (Room):**
+- Purpose: Local SQLite database access
+- Location: `app/src/main/java/com/example/juke/database/`
+- Contains: `MusicDatabase`, `TrackDao`, `PlaylistDao`, Entities
+- Depends on: Room runtime
+- Used by: Services, ViewModels
+
+**Network Layer:**
+- Purpose: HTTP API communication
+- Location: `app/src/main/java/com/example/juke/network/`
+- Contains: `ApiClient`, `SpotifyApi`, `RecommenderApi`
+- Depends on: Ktor client
+- Used by: Services
 
 ## Data Flow
 
-**Music Playback Flow:**
+**Play Track Flow:**
+1. User taps track in UI
+2. Screen calls `MusicViewModel.playTrack(track)`
+3. `MusicViewModel` updates `_uiState`
+4. `PlaybackManager.setQueue(tracks, index)` called
+5. `PlaybackService` receives command via MediaController
+6. `ExoPlayer` loads and plays MediaItem
+7. Notification updates with track info
+8. `QueueManager` triggers for recommendations
 
-1. User selects a track in UI (`ui/screens/`)
-2. UI calls methods in `MusicViewModel` to handle playback
-3. ViewModel coordinates with `PlaybackManager` and `QueueManager`
-4. `PlaybackService` handles actual media playback using Media3
-5. Playback state changes are propagated back through `PlaybackManager`
-6. ViewModel updates UI state via StateFlow emissions
-7. UI recomposes with new state
+**Download Flow:**
+1. User requests download
+2. `MusicService.smartDownloadAndIndex(song)` called
+3. Try Spotmate → fallback to Gamepvz
+4. Multi-threaded download via `FastDownloader`
+5. MP3 header and duration verification
+6. Lyrics fetched from LRCLib
+7. Thumbnail downloaded
+8. Track saved to Room database
+9. UI updates via Flow observation
 
-**Track Download Flow:**
-
-1. User initiates download via UI interaction
-2. ViewModel adds track to download queue
-3. Network layer (`SpotifyApi`) fetches track data
-4. Service layer handles download and storage
-5. Repository layer persists track metadata
-6. UI receives updates through StateFlow
+**Recommendation Flow:**
+1. Queue size drops to ≤2 tracks
+2. `QueueManager.checkAndFetchRecommendations()` triggered
+3. Online: YouTube Music radio queue → Spotify validation
+4. Offline fallback: Score local library tracks
+5. Filter by artist blacklist
+6. Add validated tracks to queue
+7. Start downloads (max 6 concurrent)
 
 **State Management:**
-- Reactive: StateFlow/LiveData for observing changes
-- Centralized: Single source of truth in ViewModels
-- Persistent: Room database for durable storage
+- ViewModels expose `StateFlow` for UI state
+- `MutableStateFlow.update {}` for immutable state updates
+- Services use `StateFlow` internally
+- UI observes via `collectAsState()`
 
 ## Key Abstractions
 
-**PlaybackManager:**
-- Purpose: Central coordinator for playback operations
-- Examples: `app/src/main/java/com/example/juke/services/PlaybackManager.kt`
-- Pattern: Singleton with coroutine-based state management
+**MusicViewModel:**
+- Purpose: Central state holder for playback and downloads
+- Examples: `MusicUiState`, `DownloadItem`, `DownloadStatus`
+- Pattern: Single source of truth for playback state
 
-**QueueManager:**
-- Purpose: Manages playback queue and recommendations
-- Examples: `app/src/main/java/com/example/juke/services/QueueManager.kt`
-- Pattern: Singleton with algorithmic queue augmentation
+**PlaybackManager (Singleton):**
+- Purpose: Control ExoPlayer via MediaController
+- Examples: `playTrack()`, `addToQueue()`, `seekTo()`
+- Pattern: Singleton with companion object
 
-**SpotifyApi:**
-- Purpose: Interface to Spotify Web API
-- Examples: `app/src/main/java/com/example/juke/network/SpotifyApi.kt`
-- Pattern: Object-oriented service with OAuth authentication
+**QueueManager (Singleton):**
+- Purpose: Smart recommendation engine
+- Examples: `initializeQueue()`, `fetchAndQueueRecommendations()`
+- Pattern: Singleton managing background coroutine scope
+
+**MusicService:**
+- Purpose: Download and stream management
+- Examples: `smartDownloadAndIndex()`, `streamTrack()`
+- Pattern: Context-dependent service class
+
+**SpotifyApi (Object):**
+- Purpose: Spotify Web API wrapper
+- Examples: `search()`, `getTrack()`, `getPlaylist()`
+- Pattern: Object declaration with Ktor client
 
 ## Entry Points
 
-**Main Activity:**
+**MainActivity:**
 - Location: `app/src/main/java/com/example/juke/MainActivity.kt`
 - Triggers: App launch, intent handling
-- Responsibilities: Root component composition, navigation setup, permission handling
+- Responsibilities: Navigation, permission handling, update checks
 
-**Playback Service:**
+**PlaybackService (Media3):**
 - Location: `app/src/main/java/com/example/juke/services/PlaybackService.kt`
-- Triggers: Media session interactions, notification controls
-- Responsibilities: Background media playback, lifecycle management
+- Triggers: Media button, notification, Android Auto
+- Responsibilities: Foreground service, ExoPlayer, media session
+
+**JukeApplication:**
+- Location: `app/src/main/java/com/example/juke/JukeApplication.kt`
+- Triggers: App start
+- Responsibilities: PostHog initialization, AnalyticsManager setup
 
 ## Error Handling
 
-**Strategy:** Mixed approaches with explicit error types
+**Strategy:** Exception propagation with specific error types
 
 **Patterns:**
-- Sealed classes for operation results
-- Extension functions for exception categorization
-- Logging with appropriate severity levels
-- User-facing error messages with recovery suggestions
+- Custom exceptions: `OfflineException`, `SpotmateQueuedException`
+- `Throwable.isOffline()` extension for network detection
+- Retry logic in `MusicService.retryWithBackoff()`
+- Graceful degradation: Online → offline recommendations
 
 ## Cross-Cutting Concerns
 
-**Logging:** Android Log with tag-based categorization
-**Validation:** Input sanitization in ViewModel layers
-**Authentication:** Spotify OAuth2 client credentials flow
+**Logging:** `android.util.Log` with class-specific TAG constants
+
+**Validation:** 
+- Spotify URL format validation
+- Duration matching tolerance (±2-15 seconds)
+- Artist matching with Levenshtein distance
+
+**Authentication:**
+- OAuth token refresh with mutex (thread-safe)
+- 5-minute buffer before token expiry
 
 ---
 
-*Architecture analysis: 2026-03-08*
+*Architecture analysis: 2026-04-16*
