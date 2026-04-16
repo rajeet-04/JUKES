@@ -92,25 +92,35 @@ app/src/main/java/com/example/juke/
 5. **Coroutine-based Async**: Kotlin Coroutines + Flows for threading
 6. **Event-driven**: UI reacts to ViewModel StateFlow emissions
 
+## Agent helper files
+
+- [AGENTS.md](AGENTS.md): concise agent quick guide at repository root — run/build commands, environment notes, and recommended places to inspect first. Read this before running large tasks.
+- `docs/`: in-depth architecture and feature documentation (linked from AGENTS.md).
+- Update process: propose changes via PR targeting `beta` and mention maintainers; never commit secrets.
+
 ## Technology Stack
 
 ### UI & Composition
+
 - **Jetpack Compose** (2024.12.01): Declarative UI framework
 - **Material Design 3**: Google's latest design system
 - **Coil 2.7.0**: Image loading and caching
 - **Navigation Compose**: Type-safe screen navigation
 
 ### State Management & Async
+
 - **Kotlin Coroutines 1.8.1**: Async programming model
 - **StateFlow**: Reactive state management for ViewModels
 - **Android Lifecycle**: ViewModel, LifecycleScope integration
 
 ### Data & Persistence
+
 - **Room 2.6.1**: SQLite ORM with Flow support
 - **Kotlin Serialization 1.6.3**: JSON serialization (used with Ktor)
 - **Gson 2.10.1**: JSON serialization for YouTube Music API responses
 
 ### Networking
+
 - **Ktor Client 3.0.0**: HTTP client with content negotiation
   - `ktor-client-android`: Android engine
   - `ktor-serialization-kotlinx-json`: JSON serialization plugin
@@ -118,24 +128,28 @@ app/src/main/java/com/example/juke/
   - `ktor-client-content-negotiation`: Automatic content type handling
 
 ### Media & Playback
+
 - **Media3 1.5.0** (ExoPlayer successor):
   - `media3-exoplayer`: Audio playback engine
   - `media3-session`: System media control integration
   - `media3-ui`: Built-in UI components
 
 ### Other
+
 - **AndroidX Libraries**: Core, Lifecycle, Activity, Palette
 - **PostHog Analytics** (3.32+): User analytics tracking
 
 ## Code Conventions
 
 ### Kotlin Style
+
 - Follow [Kotlin Coding Conventions](https://kotlinlang.org/docs/coding-conventions.html)
 - Enforce via `kotlin.code.style=official` in gradle.properties
 - Use default parameter names, prefer named arguments for clarity
 - Top-level functions for utility code
 
 ### Compose Conventions
+
 - **@Composable functions**: PascalCase (e.g., `SearchScreen()`, `TrackCard()`)
 - **State management**: Use `remember`, `mutableStateOf`, `rememberSaveable` for local state
 - **Modifiers**: Last parameter, chained naturally
@@ -143,6 +157,7 @@ app/src/main/java/com/example/juke/
 - **Code organization**: Group related composables, use lambda receivers for content blocks
 
 ### Naming Conventions
+
 - **Packages**: `com.example.juke.{feature}` (lowercase)
 - **Classes**: PascalCase (ViewModels end with `ViewModel`)
 - **Functions/Variables**: camelCase
@@ -150,6 +165,7 @@ app/src/main/java/com/example/juke/
 - **Database**: Entity names singular (Track, Playlist), table names match class names lowercase with plural plurals via @Entity annotation
 
 ### Database Conventions
+
 - **Entities**: Located in `database/` with Entity suffix (e.g., TrackEntity)
 - **DAOs**: Separate files per entity collection, named `{Entity}Dao.kt`
 - **Queries**: Use Flow<T> return types for reactive updates
@@ -157,6 +173,7 @@ app/src/main/java/com/example/juke/
 - **IDs**: Use UUID or auto-generated primary keys
 
 ### ViewModel Conventions
+
 - **Naming**: `{Feature}ViewModel` (e.g., `MusicViewModel`, `SearchViewModel`)
 - **State**: Expose data via `StateFlow<UiState>` or individual flows
 - **Methods**: Public functions for UI events, private for internal business logic
@@ -164,12 +181,14 @@ app/src/main/java/com/example/juke/
 - **Coroutines**: Launch within `viewModelScope` for automatic cancellation
 
 ### Service Conventions
+
 - **Naming**: `{Feature}Service` or `{Feature}Manager` for orchestration
 - **Scope**: Application-level lifecycle, injected into ViewModels
 - **Async**: Use coroutines with proper exception handling
 - **Dependencies**: Receive through constructor injection
 
 ### Networking Conventions
+
 - **API Clients**: `{Service}Api.kt` (e.g., `SpotifyApi.kt`, `RecommenderApi.kt`)
 - **Error Handling**: Wrap API responses in try-catch, emit errors to UI via StateFlow
 - **Rate Limiting**: Respect API rate limits, implement backoff strategies
@@ -181,6 +200,7 @@ app/src/main/java/com/example/juke/
 ### Core Services
 
 #### QueueManager
+
 - **Location**: `services/QueueManager.kt`
 - **Purpose**: Smart queue management with automatic recommendations
 - **Key Methods**: `initializeQueue()`, `fetchAndQueueRecommendations()`, `moveToNext()`, `ensureNext2Downloaded()`
@@ -189,6 +209,7 @@ app/src/main/java/com/example/juke/
 - **Notes**: Validates recommendations using Spotify API, filters spam keywords
 
 #### PlaybackManager
+
 - **Location**: `services/PlaybackManager.kt`
 - **Purpose**: Media3 ExoPlayer integration and playback control
 - **Key Methods**: `play()`, `pause()`, `seekTo()`, `skipNext()`, `setRepeatMode()`, `setShuffle()`
@@ -196,6 +217,7 @@ app/src/main/java/com/example/juke/
 - **Used by**: All player screens via ViewModel
 
 #### MusicService
+
 - **Location**: `services/MusicService.kt`
 - **Purpose**: Download management and track indexing
 - **Key Methods**: `downloadTrack()`, `downloadTracksSequentially()`, `indexTrack()`
@@ -205,16 +227,19 @@ app/src/main/java/com/example/juke/
 ### ViewModels
 
 #### MusicViewModel
+
 - **Purpose**: Central music state (playback, queue, library, downloads)
 - **State**: Current track, queue, library tracks, playlists, playback mode
 - **Methods**: `playTrack()`, `skipNext()`, `previous()`, `updateQueue()`, `toggleFavorite()`
 
 #### SearchViewModel
+
 - **Purpose**: Search and playlist import functionality
 - **State**: Search results (tracks, artists, albums, playlists), import progress
 - **Methods**: `search()`, `importPlaylist()`, `getPlaylistTracks()`
 
 #### LibraryViewModel
+
 - **Purpose**: Downloaded tracks and playlist browsing
 - **State**: All tracks, filtered tracks, playlists, filters applied
 - **Methods**: `applyFilters()`, `sortBy()`, `deleteTrack()`, `getPlaylistTracks()`
@@ -222,12 +247,14 @@ app/src/main/java/com/example/juke/
 ### API Clients
 
 #### SpotifyApi
+
 - **Authentication**: Client Credentials Flow (automatic token refresh)
 - **Endpoints**: Search, track details, artist info, album data, playlist metadata
 - **Rate Limit**: 180 requests/minute (normal tier)
 - **Usage**: Validation, metadata enrichment, recommendations filtering
 
 #### RecommenderApi
+
 - **Purpose**: YouTube Music recommendation integration
 - **Key Methods**: `fetchFullRadioQueue()`, `validateAndFilterWithSpotify()`
 - **Process**: Fetch 50 recommendations → Validate with Spotify → Filter spam → Return top 10
@@ -235,6 +262,7 @@ app/src/main/java/com/example/juke/
 - **Usage**: QueueManager queries this for recommendations
 
 #### Other APIs
+
 - **Spotdown**: MP3 downloads with caching
 - **LRCLib**: Synced and plain lyrics fetching
 - **All APIs**: Wrapped in Ktor HTTP client with error handling
@@ -242,18 +270,21 @@ app/src/main/java/com/example/juke/
 ### Database
 
 #### Key Entities
+
 - **TrackEntity**: Downloaded tracks with metadata
 - **PlaylistEntity**: User playlists with relationships
 - **FavoriteEntity**: Marked favorite tracks
 - **HistoryEntity**: Recently played tracks
 
 #### Key DAOs
+
 - **TrackDao**: CRUD operations, query by title/artist, get by playlist
 - **PlaylistDao**: Manage playlists and relationships
 - **FavoriteDao**: Toggle favorites, query favorite status
 - **HistoryDao**: Add/query history, purge old entries
 
 #### Features
+
 - **Reactive Queries**: All DAOs return Flow<T> for reactive updates
 - **Relationships**: One-to-many (Playlists-to-Tracks), many-to-many (user defined)
 - **Room Configuration**: Version-controlled with migration scripts
@@ -263,6 +294,7 @@ app/src/main/java/com/example/juke/
 ### Creating New Screens
 
 1. **Create Screen File**: `ui/screens/{Feature}Screen.kt`
+
    ```kotlin
    @Composable
    fun MyScreen(
@@ -270,7 +302,7 @@ app/src/main/java/com/example/juke/
        onNavigate: (route: String) -> Unit
    ) {
        val uiState by viewModel.uiState.collectAsState()
-       
+
        Column(modifier = Modifier.fillMaxSize()) {
            // UI here
        }
@@ -278,11 +310,12 @@ app/src/main/java/com/example/juke/
    ```
 
 2. **Create ViewModel**: `viewmodels/{Feature}ViewModel.kt`
+
    ```kotlin
    class MyViewModel(app: Application) : AndroidViewModel(app) {
        private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
        val uiState = _uiState.asStateFlow()
-       
+
        fun onEvent(event: UiEvent) {
            viewModelScope.launch {
                // Handle event
@@ -292,6 +325,7 @@ app/src/main/java/com/example/juke/
    ```
 
 3. **Add Navigation**: Update `MainActivity.kt` NavHost
+
    ```kotlin
    composable("myRoute") { MyScreen(onNavigate = navController::navigate) }
    ```
@@ -301,6 +335,7 @@ app/src/main/java/com/example/juke/
 ### Adding API Integrations
 
 1. **Create API Client**: `network/{Service}Api.kt`
+
    ```kotlin
    class MyApi(private val client: HttpClient) {
        suspend fun fetchData(query: String): Result<MyData> = runCatching {
@@ -343,69 +378,83 @@ app/src/main/java/com/example/juke/
 ## Common Pitfalls & Solutions
 
 ### 1. Spotify Credentials Not Found
+
 **Problem**: `BuildConfig.SPOTIFY_CLIENT_ID` or `SPOTIFY_CLIENT_SECRET` empty
-**Solution**: 
+**Solution**:
+
 - Add to `local.properties`: `SPOTIFY_CLIENT_ID=xyz` and `SPOTIFY_CLIENT_SECRET=abc`
 - Run `./gradlew clean` then rebuild
 - Verify credentials in `app/build.gradle.kts` (lines load properties)
 
 ### 2. No Search Results
+
 **Symptom**: Empty search despite valid queries
 **Causes**:
+
 - Spotify credentials invalid or expired
 - Network connectivity issue
 - Rate limit hit (wait 60 seconds)
-**Debug**: Check logcat filter "SpotifyApi" for error messages
+  **Debug**: Check logcat filter "SpotifyApi" for error messages
 
 ### 3. Downloads Stalling
+
 **Symptom**: Files stuck "downloading" forever
 **Causes**:
+
 - Spotdown API down or rate limited
 - Insufficient storage space
 - Network timeout
-**Solution**: 
+  **Solution**:
 - Check internet connection
 - Verify storage > 500MB free
 - Check Spotdown API status
 - Implement retry in `MusicService`
 
 ### 4. Queue Not Auto-Refilling
+
 **Symptom**: Queue empties instead of auto-fetching recommendations
 **Causes**:
+
 - `queueManager.cleanup()` called too early
 - Queue size never drops to ≤2 (player skips before threshold)
 - YouTube video ID missing for current track
-**Debug**: 
+  **Debug**:
 - Check logcat tag "QueueManager"
 - Verify `moveToNext()` called when skipping
 - Ensure Track has valid `ytVideoId`
 
 ### 5. UI Not Updating
+
 **Symptom**: ViewModel changes not reflected in UI
 **Causes**:
+
 - **Not using StateFlow**: Use `MutableStateFlow` + `asStateFlow()`
 - **Not collecting on main**: Collect with `.collectAsState()` in Compose
 - **Late ViewModel initialization**: Initialize in VM constructor, not onCreate
-**Solution**: 
+  **Solution**:
   ```kotlin
   val state by viewModel.uiState.collectAsState()  // Correct
   ```
 
 ### 6. Memory Leaks
+
 **Likely sources**:
+
 - Listeners not unregistered in onCleared()
 - Long-lived coroutine jobs (use viewModelScope)
 - Bitmap memory in Coil (use `.memoryCache()` with limits)
-**Prevention**: Always use `viewModelScope`, clean up in VM.onCleared()
+  **Prevention**: Always use `viewModelScope`, clean up in VM.onCleared()
 
 ## Git & Release Workflow
 
 ### Branches
+
 - **main**: Production-ready releases
 - **beta**: Pre-release feature development (current development branch)
 - **feature/**: Individual feature branches off beta
 
 ### Release Process
+
 1. Merge features to `beta`, test thoroughly
 2. Create release branch: `release/v1.0.x`
 3. Update version in `app/build.gradle.kts` and `versionName`
@@ -415,6 +464,7 @@ app/src/main/java/com/example/juke/
 7. Create GitHub release with APK and notes
 
 ### Current Version
+
 - **Latest**: v1.0.8-beta (in development on `beta` branch)
 - **Version Code**: 8 (incremented per release)
 - **Version Name**: "1.0.x-beta" pattern
