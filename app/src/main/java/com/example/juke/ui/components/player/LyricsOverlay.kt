@@ -345,7 +345,7 @@ fun LyricsOverlay(
                         ) {
                             IconButton(onClick = {
                                 haptic.click()
-                                localOffsetMs = (localOffsetMs - 500f).coerceAtLeast(-5000f)
+                                localOffsetMs = (localOffsetMs - 500f).coerceAtLeast(-12000f)
                                 val step = (localOffsetMs / 100f).roundToInt()
                                 lastTick = step
                             }) {
@@ -357,7 +357,7 @@ fun LyricsOverlay(
                             }
 
                             Slider(
-                                value = localOffsetMs.coerceIn(-5000f, 5000f),
+                                value = localOffsetMs.coerceIn(-12000f, 12000f),
                                 onValueChange = { value ->
                                     val currentStep = (value / 100f).roundToInt()
                                     if (currentStep != lastTick) {
@@ -369,7 +369,7 @@ fun LyricsOverlay(
                                 onValueChangeFinished = {
                                     musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong())
                                 },
-                                valueRange = -5000f..5000f,
+                                valueRange = -12000f..12000f,
                                 modifier = Modifier
                                     .weight(1f)
                                     .padding(horizontal = 8.dp)
@@ -383,7 +383,7 @@ fun LyricsOverlay(
 
                             IconButton(onClick = {
                                 haptic.click()
-                                localOffsetMs = (localOffsetMs + 500f).coerceAtMost(5000f)
+                                localOffsetMs = (localOffsetMs + 500f).coerceAtMost(12000f)
                                 val step = (localOffsetMs / 100f).roundToInt()
                                 lastTick = step
                             }) {

@@ -1,7 +1,7 @@
 package com.example.juke.ui.components
 
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -51,11 +51,44 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.juke.ui.screens.LyricLine
 import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.utils.LyricsRomanizer
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
+
+/** Returns true if the lyric line contains only musical notation symbols / whitespace.
+ *  Such lines signal an instrumental passage and should not be shown in the mini-player. */
+private fun isMusicOnlyLine(text: String): Boolean {
+    // Strip all recognized music/notation Unicode symbols and whitespace, then check if empty.
+    val musicPattern = Regex("[♪♫♬♩𝄞𝄢𝄫𝅗𝅝𝅗𝅥♯♭♮\\s()\\[\\]{}]+")
+    return text.replace(musicPattern, "").isEmpty()
+}
+
+/**
+ * Computes a per-song adaptive gap threshold for the mini-player lyric fallback.
+ *
+ * Strategy:
+ *  1. Collect all inter-line gaps from the parsed lyrics list.
+ *  2. Sort them and take the median — the median is naturally outlier-resistant,
+ *     meaning a 38-second instrumental silence won't pull the value up.
+ *  3. Multiply by 2.2 to get a threshold that covers genuinely long sung lines
+ *     (where the LRC timestamp is set once for the start of a phrase that the
+ *     singer holds for 10–14 s) while still catching real silences which always
+ *     exceed the median by a wide margin.
+ *  4. Clamp to [1800 ms, 12 000 ms] to handle degenerate edge-cases.
+ */
+private fun computeAdaptiveLyricsGapThreshold(lyrics: List<LyricLine>): Long {
+    if (lyrics.size < 3) return 4_000L
+    val gaps = (0 until lyrics.size - 1)
+        .map { i -> lyrics[i + 1].timeMs - lyrics[i].timeMs }
+        .filter { it > 0L }
+        .sorted()
+    if (gaps.size < 2) return 4_000L
+    val median = gaps[gaps.size / 2]
+    return (median * 2.2).toLong().coerceIn(1_800L, 12_000L)
+}
 
 @Composable
 fun MiniPlayer(
@@ -114,6 +147,12 @@ fun MiniPlayer(
             } ?: emptyList()
         }
 
+        // Compute the adaptive gap threshold once per lyric set so it adapts to
+        // each song's own pacing without any manual tuning.
+        val gapThreshold = remember(parsedLyrics) {
+            computeAdaptiveLyricsGapThreshold(parsedLyrics)
+        }
+
         val activeLyric = remember(
             currentPosition,
             parsedLyrics,
@@ -129,8 +168,18 @@ fun MiniPlayer(
                 } else {
                     val currentLine = parsedLyrics[activeIndex]
                     val nextLine = parsedLyrics.getOrNull(activeIndex + 1)
+
+                    // --- Condition 1: music-symbol-only lines are instrumentation markers ---
+                    // Lines like "♪", "(♫)", etc. indicate a musical interlude; treat as blank.
+                    if (isMusicOnlyLine(currentLine.text)) return@remember null
+
                     val shouldShowLine = if (nextLine != null) {
-                        currentPosition < nextLine.timeMs
+                        val msUntilNext = nextLine.timeMs - currentPosition
+                        // --- Condition 2: adaptive gap detection ---
+                        // `gapThreshold` is derived from the song's own median inter-line gap
+                        // (× 2.2), so it naturally tolerates long sung phrases while still
+                        // falling back during genuine instrumental silences.
+                        msUntilNext > 0 && (currentPosition - currentLine.timeMs) < gapThreshold
                     } else {
                         // Avoid pinning the final lyric line during long instrumental outros.
                         (currentPosition - currentLine.timeMs) <= 4500L
@@ -222,7 +271,7 @@ fun MiniPlayer(
                         modifier = Modifier.weight(1f),
                         transitionSpec = {
                             fadeIn(animationSpec = tween(300)) togetherWith
-                                fadeOut(animationSpec = tween(300))
+                                    fadeOut(animationSpec = tween(300))
                         },
                         label = "MiniPlayer_Lyrics_Transition"
                     ) { currentLyric ->
@@ -297,7 +346,7 @@ fun MiniPlayer(
                     val miniPlayScale = remember { Animatable(1f) }
                     LaunchedEffect(uiState.isPlaying) {
                         miniPlayScale.animateTo(0.85f, tween(90, easing = FastOutSlowInEasing))
-                        miniPlayScale.animateTo(1f,    tween(150, easing = FastOutSlowInEasing))
+                        miniPlayScale.animateTo(1f, tween(150, easing = FastOutSlowInEasing))
                     }
                     IconButton(
                         onClick = {
@@ -310,7 +359,10 @@ fun MiniPlayer(
                     ) {
                         Crossfade(
                             targetState = uiState.isPlaying,
-                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            animationSpec = tween(
+                                durationMillis = 180,
+                                easing = FastOutSlowInEasing
+                            ),
                             label = "miniPlayPauseIcon"
                         ) { isPlaying ->
                             Icon(
