@@ -8,10 +8,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,9 +26,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MusicNote
@@ -40,7 +40,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -131,7 +130,10 @@ fun SearchScreen(
             searchViewModel.updateQuery("")
             active = true
             kotlinx.coroutines.delay(100)
-            try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
+            try {
+                searchFocusRequester.requestFocus()
+            } catch (_: Exception) {
+            }
             keyboardController?.show()
         }
     }
@@ -142,7 +144,10 @@ fun SearchScreen(
             previousFocusTrigger = searchFocusTrigger
             active = true
             kotlinx.coroutines.delay(100)
-            try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
+            try {
+                searchFocusRequester.requestFocus()
+            } catch (_: Exception) {
+            }
             keyboardController?.show()
         }
     }
@@ -286,13 +291,21 @@ fun SearchScreen(
                                         border = FilterChipDefaults.filterChipBorder(
                                             enabled = true,
                                             selected = selectedFilter == filter,
-                                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                            borderColor = MaterialTheme.colorScheme.outline.copy(
+                                                alpha = 0.2f
+                                            ),
+                                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(
+                                                alpha = 0.5f
+                                            )
                                         ),
                                         colors = FilterChipDefaults.filterChipColors(
                                             containerColor = Color.Transparent,
-                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                            labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(
+                                                alpha = 0.15f
+                                            ),
+                                            labelColor = MaterialTheme.colorScheme.onBackground.copy(
+                                                alpha = 0.7f
+                                            ),
                                             selectedLabelColor = MaterialTheme.colorScheme.primary
                                         ),
                                         shape = CircleShape
@@ -323,7 +336,11 @@ fun SearchScreen(
                                     onImport = {
                                         scope.launch {
                                             searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
-                                                musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
+                                                musicViewModel.downloadSong(
+                                                    SpotifyApi.spotifyTrackToSong(
+                                                        track
+                                                    )
+                                                )
                                             }
                                         }
                                     }
@@ -371,7 +388,10 @@ fun SearchScreen(
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                        modifier = Modifier.padding(
+                                            horizontal = 16.dp,
+                                            vertical = 12.dp
+                                        ),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
@@ -420,15 +440,21 @@ fun SearchScreen(
                                     label = { Text(filter) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         containerColor = Color.Transparent,
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                        labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(
+                                            alpha = 0.15f
+                                        ),
+                                        labelColor = MaterialTheme.colorScheme.onBackground.copy(
+                                            alpha = 0.7f
+                                        ),
                                         selectedLabelColor = MaterialTheme.colorScheme.primary
                                     ),
                                     border = FilterChipDefaults.filterChipBorder(
                                         enabled = true,
                                         selected = selectedFilter == filter,
                                         borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(
+                                            alpha = 0.5f
+                                        )
                                     ),
                                     shape = CircleShape
                                 )
@@ -630,7 +656,9 @@ private fun SearchResultsList(
         // ── Songs ────────────────────────────────────────────────────────
         if ((selectedFilter == "All" || selectedFilter == "Tracks") && uiState.tracks.isNotEmpty()) {
             item { SectionHeader("Songs") }
-            items(uiState.tracks.distinctBy { it.id ?: it.uri }, key = { it.id ?: it.uri }) { track ->
+            items(
+                uiState.tracks.distinctBy { it.id ?: it.uri },
+                key = { it.id ?: it.uri }) { track ->
                 SwipeToAddNextContainer(
                     onAddNext = {
                         scope.launch {
@@ -656,8 +684,7 @@ private fun SearchResultsList(
                                 kotlinx.coroutines.delay(2000)
                                 searchViewModel.setDownloading(null)
                             }
-                        },
-                        onMoreClick = {}
+                        }
                     )
                 }
             }
@@ -672,7 +699,9 @@ private fun SearchResultsList(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(uiState.artists.distinctBy { it.id ?: it.uri ?: it.name }, key = { it.id ?: it.uri ?: it.name }) { artist ->
+                    items(
+                        uiState.artists.distinctBy { it.id ?: it.uri ?: it.name },
+                        key = { it.id ?: it.uri ?: it.name }) { artist ->
                         ArtistCard(artist = artist, onClick = { onNavigateToArtist(artist) })
                     }
                 }
@@ -707,7 +736,9 @@ private fun SearchResultsList(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    items(uiState.albums.distinctBy { it.id ?: it.uri ?: it.name }, key = { it.id ?: it.uri ?: it.name }) { album ->
+                    items(
+                        uiState.albums.distinctBy { it.id ?: it.uri ?: it.name },
+                        key = { it.id ?: it.uri ?: it.name }) { album ->
                         AlbumCard(album = album, onClick = { onNavigateToAlbum(album) })
                     }
                 }

@@ -33,3 +33,4 @@ This document tracks changes, features, and bug fixes implemented after the **v2
 - **Precision Keyboard Management:**
     - **Scroll-to-Dismiss:** Implemented a nested scroll connection on the search results list. Dragging the list down by more than 5px automatically dismisses the keyboard, matching native Android system behavior (Google App pattern).
     - **Programmatic Focus:** Added 100ms delayed `FocusRequester` triggers to ensure reliable keyboard pops during navigation transitions.
+- **Duration-Aware Search Results:** Replaced the unused "3 dots" icon in search results with the track duration (e.g., "3:45"), aligning the search results layout with the native library track format.

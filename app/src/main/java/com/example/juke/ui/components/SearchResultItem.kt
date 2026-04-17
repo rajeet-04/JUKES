@@ -7,10 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -31,8 +28,7 @@ import com.example.juke.utils.rememberJukeHaptics
 fun SearchResultItemM3(
     track: SpotifyTrack,
     isDownloading: Boolean,
-    onClick: () -> Unit,
-    onMoreClick: (() -> Unit)? = null
+    onClick: () -> Unit
 ) {
     val haptic = rememberJukeHaptics()
 
@@ -100,13 +96,14 @@ fun SearchResultItemM3(
                     color = MaterialTheme.colorScheme.primary
                 )
             } else {
-                IconButton(onClick = { onMoreClick?.invoke() }) {
-                    Icon(
-                        imageVector = Icons.Rounded.MoreVert,
-                        contentDescription = "More options",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                val totalSeconds = track.durationMs / 1000
+                val minutes = totalSeconds / 60
+                val seconds = totalSeconds % 60
+                Text(
+                    text = "%d:%02d".format(minutes, seconds),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
             }
         }
     )
