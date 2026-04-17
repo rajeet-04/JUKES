@@ -34,3 +34,13 @@ This document tracks changes, features, and bug fixes implemented after the **v2
     - **Scroll-to-Dismiss:** Implemented a nested scroll connection on the search results list. Dragging the list down by more than 5px automatically dismisses the keyboard, matching native Android system behavior (Google App pattern).
     - **Programmatic Focus:** Added 100ms delayed `FocusRequester` triggers to ensure reliable keyboard pops during navigation transitions.
 - **Duration-Aware Search Results:** Replaced the unused "3 dots" icon in search results with the track duration (e.g., "3:45"), aligning the search results layout with the native library track format.
+
+### Three-Stage Lyrics Fallback Chain
+
+Significantly expanded lyrics coverage by wiring two YouTube sources as automatic fallbacks after LRCLib:
+
+- **Stage 1 — LRCLib (unchanged):** Primary source; attempts exact track + artist match and an individual-artist fallback. Results are ranked by validation score, synced-lyrics availability, and duration proximity.
+- **Stage 2 — YouTube Music Lyrics (new):** When LRCLib returns no match, a YTM-dedicated lyrics endpoint is queried via the two-step Innertube `next` + `browse` flow. Provides the cleanest, human-reviewed plain text lyrics for tracks where YTM has an official lyrics tab.
+- **Stage 3 — YouTube Captions (new):** If the YTM lyrics tab is absent, YouTube's `player` endpoint is called to obtain a pre-signed timedtext URL (no signature reverse-engineering needed). Captions are fetched in JSON3 format and flattened to plain text.
+- **On-the-Fly Video ID Resolution:** Each track stores a `ytVideoId`. If this field is not yet populated (e.g., newly indexed tracks), `RecommenderApi.getBestVideoMatch("$title $artist")` is called inline to resolve one before attempting Stages 2 and 3, eliminating the hard dependency on asynchronous pre-population.
+- **No performance impact for LRCLib tracks:** YTM API calls are only made when LRCLib returns `null`, ensuring zero overhead for the majority of tracks already covered by LRCLib.

@@ -346,19 +346,8 @@ object RecommenderApi {
                 return null
             }
 
-            // First, try to find official match
-            items.forEach { item ->
-                val officialScore = getOfficialScore(item.title)
-                if (officialScore > 0.0) {
-                    Log.d(
-                        TAG,
-                        "Official Match Found: ${item.title}, Official Score: $officialScore"
-                    )
-                    return item.id
-                }
-            }
-
-            // Advanced scoring for best match
+            // Score all items — title similarity is the primary gate.
+            // Official keywords are only rewarded when the item already looks like a match.
             var bestMatchItem: SearchItem? = null
             var highestScore = 0.0
 
@@ -368,48 +357,48 @@ object RecommenderApi {
             items.forEachIndexed { index, item ->
                 val titleLower = item.title.lowercase()
 
-                // Skip spam content
+                // Step 1: Skip spam/variant content regardless of anything else
                 if (isSpamOrVariant(item.title)) {
                     Log.d(TAG, "Skipping spam item: ${item.title}")
                     return@forEachIndexed
                 }
 
-                // Calculate comprehensive score
                 var score = 0.0
 
-                // Position bonus (earlier results are better)
-                val positionBonus = maxOf(0.0, 10.0 - index * 0.5)
-                score += positionBonus
-
-                // Title similarity
+                // Step 2: Title similarity — must be computed first
                 val rawTitleSim = similarity(queryLower, titleLower)
                 val cleanTitleSim = similarity(cleanTitle(queryLower), cleanTitle(titleLower))
                 val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
-                score += titleSimilarity * 30.0
+                score += titleSimilarity * 50.0 // Dominant factor to ensure the right song wins
 
-                // Word match bonus
+                // Step 3: Word-match bonus (query words present in title)
                 var wordMatches = 0
                 queryWords.forEach { word ->
                     if (titleLower.contains(word)) {
                         wordMatches++
                     }
                 }
-                score += wordMatches * 5.0
+                val matchRatio = if (queryWords.isNotEmpty()) wordMatches.toDouble() / queryWords.size else 0.0
+                score += matchRatio * 30.0 // Heavily reward containing the exact requested words
 
-                // Length similarity bonus (prefer similar duration)
-                // This is a rough heuristic - official versions tend to be similar length
+                // Step 4: Title-length similarity bonus
                 val titleWords = titleLower.split("\\s+".toRegex()).size
                 val lengthDiff = abs(queryWords.size - titleWords)
                 score += maxOf(0.0, 5.0 - lengthDiff)
 
-                // Prefer titles that look like official music videos
-                if (titleLower.contains("official") || titleLower.contains("music video") ||
-                    titleLower.contains("prod by") || titleLower.contains("ft.")
-                ) {
-                    score += 10.0
+                // Step 5: Official-keyword bonus — ONLY if the title already resembles the query.
+                // Scale the bonus by matchRatio so an unrelated song by the same artist 
+                // doesn't win just by having "Official" in its title.
+                if (titleSimilarity >= 0.3 || matchRatio >= 0.5) {
+                    val officialBonus = getOfficialScore(item.title)
+                    if (officialBonus > 0.0) {
+                        val scaledBonus = officialBonus * 5.0 * matchRatio
+                        score += scaledBonus
+                        Log.d(TAG, "Official bonus ($scaledBonus) applied to '${item.title}'")
+                    }
                 }
 
-                // Prefer titles without extra qualifiers
+                // Step 6: No-bad-indicator bonus (clean original, no remixes/covers etc.)
                 val badIndicators = listOf(
                     "lyrics", "remix", "cover", "live", "acoustic",
                     "slowed", "reverb", "8d", "reaction", "tutorial"
@@ -419,9 +408,13 @@ object RecommenderApi {
                     score += 5.0
                 }
 
+                // Step 7: Position bonus (earlier API results are slightly preferred)
+                val positionBonus = maxOf(0.0, 5.0 - index * 0.5)
+                score += positionBonus
+
                 Log.d(
                     TAG,
-                    "Item [$index] '${item.title}' - Score: ${score.toInt()}, Similarity: ${(titleSimilarity * 100).toInt()}%"
+                    "Item [$index] '${item.title}' - Score: ${score.toInt()}, TitleSim: ${(titleSimilarity * 100).toInt()}%"
                 )
 
                 if (score > highestScore) {

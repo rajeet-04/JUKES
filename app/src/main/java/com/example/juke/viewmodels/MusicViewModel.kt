@@ -1,4 +1,4 @@
-package com.example.juke.viewmodels
+﻿package com.example.juke.viewmodels
 
 import android.app.Application
 import android.util.Log
@@ -1465,7 +1465,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     SpotifyApi.searchLyrics(
                         title = track.title,
                         artist = track.artist,
-                        duration = track.durationSec
+                        duration = track.durationSec,
+                        ytVideoId = track.ytVideoId
                     )
                 }
 
