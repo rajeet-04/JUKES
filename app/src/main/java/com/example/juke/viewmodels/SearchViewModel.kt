@@ -16,8 +16,15 @@ import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.network.ApiClient
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.QueueManager
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -30,9 +37,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONObject
 
 data class SearchUiState(
     val query: String = "",
+    val suggestions: List<String> = emptyList(),
+    val isShowingSuggestions: Boolean = false,
     val tracks: List<SpotifyTrack> = emptyList(),
     val localTracks: List<Track> = emptyList(),
     val artists: List<SpotifyArtist> = emptyList(),
@@ -79,20 +89,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private var searchJob: Job? = null
 
     fun updateQuery(query: String) {
-        _uiState.value = _uiState.value.copy(query = query)
+        // Typing always puts us in suggestion mode
+        _uiState.value = _uiState.value.copy(query = query, isShowingSuggestions = true)
 
-        // Cancel previous search job
         searchJob?.cancel()
 
-        // Start new search job with debounce
         if (query.isNotBlank()) {
             searchJob = viewModelScope.launch {
-                delay(769) // 0.769 second debounce
-                search(query)
+                delay(300) // Short debounce for live suggestions
+                fetchSuggestions(query)
             }
         } else {
-            // Clear results immediately when query is empty
+            // Clear everything when the field is emptied
             _uiState.value = _uiState.value.copy(
+                suggestions = emptyList(),
+                isShowingSuggestions = false,
                 tracks = emptyList(),
                 localTracks = emptyList(),
                 artists = emptyList(),
@@ -104,8 +115,76 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private suspend fun fetchSuggestions(query: String) {
+        try {
+            val payload = """
+                {
+                    "input": "${query.replace("\"", "\\\"")}",
+                    "context": {
+                        "client": {
+                            "clientName": "WEB_REMIX",
+                            "clientVersion": "1.20260414.05.00",
+                            "hl": "en-US",
+                            "gl": "US"
+                        }
+                    }
+                }
+            """.trimIndent()
+
+            val response = ApiClient.httpClient.post(
+                "https://music.youtube.com/youtubei/v1/music/get_search_suggestions?prettyPrint=false"
+            ) {
+                header("Referer", "https://music.youtube.com/")
+                header("X-Origin", "https://music.youtube.com")
+                contentType(ContentType.Application.Json)
+                setBody(payload)
+            }
+
+            val json = JSONObject(response.bodyAsText())
+            val results = mutableListOf<String>()
+            val contents = json.optJSONArray("contents")
+
+            if (contents != null) {
+                for (i in 0 until contents.length()) {
+                    val sectionContents = contents.getJSONObject(i)
+                        .optJSONObject("searchSuggestionsSectionRenderer")
+                        ?.optJSONArray("contents") ?: continue
+
+                    for (j in 0 until sectionContents.length()) {
+                        val suggestionRenderer = sectionContents.getJSONObject(j)
+                            .optJSONObject("searchSuggestionRenderer")
+
+                        val runs = suggestionRenderer
+                            ?.optJSONObject("suggestion")
+                            ?.optJSONArray("runs")
+                        if (runs != null) {
+                            val textBuilder = StringBuilder()
+                            for (k in 0 until runs.length()) {
+                                textBuilder.append(runs.getJSONObject(k).optString("text", ""))
+                            }
+                            val text = textBuilder.toString().trim()
+                            if (text.isNotEmpty()) results.add(text)
+                        }
+                    }
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(suggestions = results)
+        } catch (e: Exception) {
+            Log.e("SearchViewModel", "Failed to fetch suggestions", e)
+            _uiState.value = _uiState.value.copy(suggestions = emptyList())
+        }
+    }
+
     fun search(query: String) {
         val trimmedQuery = query.trim()
+        searchJob?.cancel() // Cancel any pending suggestion fetch
+        // Flip out of suggestion mode immediately so results can render
+        _uiState.value = _uiState.value.copy(
+            isShowingSuggestions = false,
+            suggestions = emptyList(),
+            query = trimmedQuery
+        )
         if (trimmedQuery.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 tracks = emptyList(),

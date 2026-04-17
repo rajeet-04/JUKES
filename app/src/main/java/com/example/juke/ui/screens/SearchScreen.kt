@@ -224,129 +224,169 @@ fun SearchScreen(
                 )
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    AnimatedVisibility(
-                        visible = uiState.query.isNotEmpty(),
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        LazyRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(filters) { filter ->
-                                FilterChip(
-                                    selected = selectedFilter == filter,
-                                    onClick = { selectedFilter = filter },
-                                    label = {
-                                        Text(
-                                            filter,
-                                            style = MaterialTheme.typography.labelLarge
-                                        )
-                                    },
-                                    border = FilterChipDefaults.filterChipBorder(
-                                        enabled = true,
-                                        selected = selectedFilter == filter,
-                                        borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                    ),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        containerColor = Color.Transparent,
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                        labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                                        selectedLabelColor = MaterialTheme.colorScheme.primary
-                                    ),
-                                    shape = CircleShape
+
+                    // ── Suggestions view (shown while the user is typing) ────────────
+                    if (uiState.isShowingSuggestions && uiState.query.isNotBlank()) {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(uiState.suggestions) { suggestion ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            haptic.click()
+                                            keyboardController?.hide()
+                                            searchViewModel.search(suggestion)
+                                        }
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Text(
+                                        text = suggestion,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                HorizontalDivider(
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
                                 )
                             }
                         }
                     }
-
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (hasResults(uiState) && !uiState.isPlaylistUrl) {
-                            SearchResultsList(
-                                uiState = uiState,
-                                selectedFilter = selectedFilter,
-                                musicViewModel = musicViewModel,
-                                searchViewModel = searchViewModel,
-                                scope = scope,
-                                isStreamMode = isStreamMode,
-                                onNavigateToArtist = onNavigateToArtist,
-                                onNavigateToPlaylist = onNavigateToPlaylist,
-                                onNavigateToAlbum = onNavigateToAlbum,
-                                bottomPadding = bottomPadding,
-                                keyboardController = keyboardController
-                            )
-                        } else if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
-                            val playlist = uiState.playlists.first()
-                            ImportPlaylistCard(
-                                playlist = playlist,
-                                onImport = {
-                                    scope.launch {
-                                        searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
-                                            musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
-                                        }
-                                    }
+                    // ── Full results view (shown after the user submits a search) ────
+                    else {
+                        AnimatedVisibility(
+                            visible = uiState.query.isNotEmpty(),
+                            enter = fadeIn(),
+                            exit = fadeOut()
+                        ) {
+                            LazyRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(filters) { filter ->
+                                    FilterChip(
+                                        selected = selectedFilter == filter,
+                                        onClick = { selectedFilter = filter },
+                                        label = {
+                                            Text(
+                                                filter,
+                                                style = MaterialTheme.typography.labelLarge
+                                            )
+                                        },
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true,
+                                            selected = selectedFilter == filter,
+                                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                        ),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            containerColor = Color.Transparent,
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                            labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                            selectedLabelColor = MaterialTheme.colorScheme.primary
+                                        ),
+                                        shape = CircleShape
+                                    )
                                 }
-                            )
-                        } else if (uiState.isImportingPlaylist && uiState.query.isBlank()) {
-                            ImportProgressCard(
-                                progress = uiState.importProgress,
-                                total = uiState.importTotal
-                            )
-                        } else if (!hasResults(uiState) && !uiState.isImportingPlaylist) {
-                            if (uiState.query.isBlank() && uiState.recentSearches.isNotEmpty()) {
-                                RecentSearches(
-                                    searches = uiState.recentSearches,
-                                    onSearchClick = {
-                                        haptic.click()
-                                        searchViewModel.updateQuery(it)
-                                    },
-                                    onRemoveClick = { searchViewModel.removeRecentSearch(it) },
-                                    onClearAll = {
-                                        uiState.recentSearches.forEach {
-                                            searchViewModel.removeRecentSearch(it)
-                                        }
-                                    },
-                                    bottomPadding = bottomPadding
-                                )
-                            } else {
-                                EmptySearchState(
-                                    isQueryEmpty = uiState.query.isBlank(),
-                                    isSearching = uiState.isSearching,
-                                    bottomPadding = bottomPadding
-                                )
                             }
                         }
 
-                        if (uiState.error != null) {
-                            Card(
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(12.dp)
-                                    .fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer
-                                ),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (hasResults(uiState) && !uiState.isPlaylistUrl) {
+                                SearchResultsList(
+                                    uiState = uiState,
+                                    selectedFilter = selectedFilter,
+                                    musicViewModel = musicViewModel,
+                                    searchViewModel = searchViewModel,
+                                    scope = scope,
+                                    isStreamMode = isStreamMode,
+                                    onNavigateToArtist = onNavigateToArtist,
+                                    onNavigateToPlaylist = onNavigateToPlaylist,
+                                    onNavigateToAlbum = onNavigateToAlbum,
+                                    bottomPadding = bottomPadding,
+                                    keyboardController = keyboardController
+                                )
+                            } else if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
+                                val playlist = uiState.playlists.first()
+                                ImportPlaylistCard(
+                                    playlist = playlist,
+                                    onImport = {
+                                        scope.launch {
+                                            searchViewModel.importPlaylist(uiState.playlistId!!) { track ->
+                                                musicViewModel.downloadSong(SpotifyApi.spotifyTrackToSong(track))
+                                            }
+                                        }
+                                    }
+                                )
+                            } else if (uiState.isImportingPlaylist && uiState.query.isBlank()) {
+                                ImportProgressCard(
+                                    progress = uiState.importProgress,
+                                    total = uiState.importTotal
+                                )
+                            } else if (!hasResults(uiState) && !uiState.isImportingPlaylist) {
+                                if (uiState.query.isBlank() && uiState.recentSearches.isNotEmpty()) {
+                                    RecentSearches(
+                                        searches = uiState.recentSearches,
+                                        onSearchClick = {
+                                            haptic.click()
+                                            keyboardController?.hide()
+                                            searchViewModel.search(it)
+                                        },
+                                        onRemoveClick = { searchViewModel.removeRecentSearch(it) },
+                                        onClearAll = {
+                                            uiState.recentSearches.forEach {
+                                                searchViewModel.removeRecentSearch(it)
+                                            }
+                                        },
+                                        bottomPadding = bottomPadding
+                                    )
+                                } else {
+                                    EmptySearchState(
+                                        isQueryEmpty = uiState.query.isBlank(),
+                                        isSearching = uiState.isSearching,
+                                        bottomPadding = bottomPadding
+                                    )
+                                }
+                            }
+
+                            if (uiState.error != null) {
+                                Card(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(12.dp)
+                                        .fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Icon(
-                                        Icons.Default.Warning,
-                                        null,
-                                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        uiState.error!!,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Warning,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            uiState.error!!,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
                                 }
                             }
                         }
