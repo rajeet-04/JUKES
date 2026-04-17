@@ -181,6 +181,7 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 var showPlayerModal by remember { mutableStateOf(false) }
                 var searchResetTrigger by remember { mutableIntStateOf(0) }
+                var searchFocusTrigger by remember { mutableIntStateOf(0) }
 
                 // --- UPDATE CHECK LOGIC ---
                 var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
@@ -377,12 +378,18 @@ class MainActivity : ComponentActivity() {
                                                 selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                                                 onClick = {
                                                     // Check if already on the selected screen
-                                                    val isSelected =
+                                                     val isSelected =
                                                         currentDestination?.hierarchy?.any { it.route == screen.route } == true
 
                                                     if (screen == Screen.Search && isSelected) {
-                                                        // Already on search, trigger search reset
-                                                        searchResetTrigger++
+                                                        if (searchResetTrigger > 0 && searchFocusTrigger == searchResetTrigger) {
+                                                            // 3rd tap: already reset, now focus + show keyboard
+                                                            searchFocusTrigger++
+                                                        } else {
+                                                            // 2nd tap: reset the search
+                                                            searchResetTrigger++
+                                                            searchFocusTrigger = searchResetTrigger
+                                                        }
                                                     } else {
                                                         navController.navigate(screen.route) {
                                                             popUpTo(navController.graph.findStartDestination().id) {
@@ -436,6 +443,7 @@ class MainActivity : ComponentActivity() {
                                 musicViewModel = musicViewModel,
                                 searchViewModel = searchViewModel,
                                 searchResetTrigger = searchResetTrigger,
+                                searchFocusTrigger = searchFocusTrigger,
                                 onNavigateToArtist = { artist ->
                                     searchViewModel.loadArtistDetails(artist)
                                     navController.navigate("artist/${artist.id}")

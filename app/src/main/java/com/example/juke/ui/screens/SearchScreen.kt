@@ -68,7 +68,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +105,7 @@ fun SearchScreen(
     musicViewModel: MusicViewModel,
     searchViewModel: SearchViewModel = viewModel(),
     searchResetTrigger: Int = 0,
+    searchFocusTrigger: Int = 0,
     onNavigateToArtist: (SpotifyArtist) -> Unit = {},
     onNavigateToPlaylist: (SpotifyPlaylist) -> Unit = {},
     onNavigateToAlbum: (SpotifyAlbum) -> Unit = {},
@@ -111,15 +118,32 @@ fun SearchScreen(
     val haptic = rememberJukeHaptics()
 
     var previousTrigger by remember { mutableIntStateOf(searchResetTrigger) }
+    var previousFocusTrigger by remember { mutableIntStateOf(searchFocusTrigger) }
+    val searchFocusRequester = remember { FocusRequester() }
     var selectedFilter by rememberSaveable { mutableStateOf("All") }
     var active by rememberSaveable { mutableStateOf(false) }
     val filters = listOf("All", "Tracks", "Artists", "Playlists", "Albums")
 
+    // 2nd tap: reset query, open bar, show keyboard
     LaunchedEffect(searchResetTrigger) {
         if (searchResetTrigger != previousTrigger && searchResetTrigger > 0) {
             previousTrigger = searchResetTrigger
             searchViewModel.updateQuery("")
             active = true
+            kotlinx.coroutines.delay(100)
+            try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
+            keyboardController?.show()
+        }
+    }
+
+    // 3rd tap: keep current state, just show keyboard
+    LaunchedEffect(searchFocusTrigger) {
+        if (searchFocusTrigger != previousFocusTrigger && searchFocusTrigger > 0) {
+            previousFocusTrigger = searchFocusTrigger
+            active = true
+            kotlinx.coroutines.delay(100)
+            try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
+            keyboardController?.show()
         }
     }
 
@@ -184,7 +208,8 @@ fun SearchScreen(
                                     Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
                                 }
                             }
-                        }
+                        },
+                        modifier = Modifier.focusRequester(searchFocusRequester)
                     )
                 },
                 expanded = active,
@@ -250,7 +275,8 @@ fun SearchScreen(
                                 onNavigateToArtist = onNavigateToArtist,
                                 onNavigateToPlaylist = onNavigateToPlaylist,
                                 onNavigateToAlbum = onNavigateToAlbum,
-                                bottomPadding = bottomPadding
+                                bottomPadding = bottomPadding,
+                                keyboardController = keyboardController
                             )
                         } else if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
                             val playlist = uiState.playlists.first()
@@ -527,10 +553,20 @@ private fun SearchResultsList(
     onNavigateToArtist: (SpotifyArtist) -> Unit,
     onNavigateToPlaylist: (SpotifyPlaylist) -> Unit,
     onNavigateToAlbum: (SpotifyAlbum) -> Unit,
-    bottomPadding: Dp
+    bottomPadding: Dp,
+    keyboardController: androidx.compose.ui.platform.SoftwareKeyboardController? = null
 ) {
+    val hideKeyboardOnScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -5f) keyboardController?.hide()
+                return Offset.Zero
+            }
+        }
+    }
     LazyColumn(
-        contentPadding = PaddingValues(bottom = bottomPadding + 24.dp)
+        contentPadding = PaddingValues(bottom = bottomPadding + 24.dp),
+        modifier = Modifier.nestedScroll(hideKeyboardOnScrollConnection)
     ) {
         // ── In Your Library ──────────────────────────────────────────────
         if ((selectedFilter == "All" || selectedFilter == "Tracks") && uiState.localTracks.isNotEmpty()) {
