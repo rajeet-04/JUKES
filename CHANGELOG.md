@@ -2,6 +2,23 @@
 
 ## Changelog
 
+## [2.3.2-beta] - 2026-04-27
+
+### Added
+
+- Three-stage lyrics fallback chain: LRCLib primary lookup with YouTube Music lyrics and YouTube captions fallbacks.
+- Search UX upgrade with YouTube Music autocomplete, debounced typing suggestions, and submit-only full Spotify metadata searches.
+- Search tab multi-tap behavior in `MainActivity` (single tap navigate, double tap reset-and-focus, triple tap focus-without-clear).
+- Mini-player lyrics intelligence: music-symbol filtering and adaptive gap threshold fallback.
+
+### Fixed
+
+- Spotmate queue responses (`queued`/`processing`) now trigger typed queue handling instead of hard-failing convert requests.
+- Playback/download resilience improved through immediate provider fallback and deferred Spotmate task polling recovery.
+- Search keyboard handling refined with scroll-to-dismiss and reliable delayed focus triggers.
+
+See full release notes: [v2.3.2-beta-RELEASE_NOTES.md](v2.3.2-beta-RELEASE_NOTES.md)
+
 ## [2.3.1-beta] - 2026-04-15
 
 ### Added

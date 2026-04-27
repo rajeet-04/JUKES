@@ -6,7 +6,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
-[![Version](https://img.shields.io/badge/Version-2.2.0--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.2.0-beta)
+[![Version](https://img.shields.io/badge/Version-2.3.2--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android music streaming app with smart recommendations, Spotify integration, and offline playback**
@@ -23,17 +23,17 @@ JUKE is a feature-rich Android music player that combines the power of Spotify's
 
 ## 📦 Latest Release
 
-**JUKE v2.2.0-beta** is now available! 🚀
+**JUKE v2.3.2-beta** is now available! 🚀
 
-**Minor Release** — Introduces stream caching and artist blacklist functionality
+**Incremental Beta Release** focused on smarter lyrics fallback, queue-aware download recovery, and faster search interactions.
 
 What's new:
 
-- Stream playback caching for instant seeking back in tracks
-- Artist blacklist UI to exclude unwanted artists from recommendations
-- Bug fixes for radio mode, foreground service crashes, and shuffle logic
+- Three-stage lyrics fallback chain (LRCLib -> YouTube Music lyrics -> YouTube captions)
+- Spotmate queue-aware recovery with immediate fallback and deferred task polling
+- Faster split search architecture with debounced autocomplete suggestions
 
-[📥 Download v2.2.0-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.2.0-beta) | [📝 Full Release Notes](v2.2.0-beta-RELEASE_NOTES.md)
+[📥 Download v2.3.2-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta) | [📝 Full Release Notes](v2.3.2-beta-RELEASE_NOTES.md)
 
 ## ✨ Features
 
@@ -137,7 +137,7 @@ What's new:
 
 2. **Download from Releases** (Recommended for end users)
 
-   **Latest Release: [v1.0.8-beta](https://github.com/rajeet-04/JUKES/releases/tag/v1.0.8-beta)**
+   **Latest Release: [v2.3.2-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta)**
    - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
    - Install the APK on your Android device
    - Grant necessary permissions when prompted
@@ -475,6 +475,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY RASH**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v2.1.1--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v2.1.1-beta)
+[![Release](https://img.shields.io/badge/Release-v2.3.2--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta)
 
 </div>

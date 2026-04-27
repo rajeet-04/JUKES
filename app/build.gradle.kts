@@ -11,14 +11,14 @@ plugins {
 
 android {
     namespace = "com.example.juke"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.juke"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "2.3.1-beta-unreleased"
+        versionCode = 16
+        versionName = "2.3.2-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
