@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.edit
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.palette.graphics.Palette
@@ -421,6 +422,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         ?: muted?.rgb
                         ?: 0xFF6650a4.toInt()
 
+                    // Ensure primary has enough luminance to be visible against a dark background
+                    val finalPrimaryInt = if (ColorUtils.calculateLuminance(primaryInt) < 0.15) {
+                        lightVibrant?.rgb
+                            ?: vibrant?.rgb
+                            ?: palette.lightMutedSwatch?.rgb
+                            ?: 0xFF6650a4.toInt()
+                    } else {
+                        primaryInt
+                    }
+                    val finalOnPrimary = if (ColorUtils.calculateLuminance(finalPrimaryInt) > 0.35) {
+                        android.graphics.Color.BLACK
+                    } else {
+                        vibrant?.bodyTextColor ?: android.graphics.Color.WHITE
+                    }
+
                     // Secondary color priority: Dark Vibrant -> Muted -> Dark Muted -> Dominant -> Default
                     val secondaryInt = darkVibrant?.rgb
                         ?: muted?.rgb
@@ -435,12 +451,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         ?: 0xFF7D5260.toInt()
 
                     val extracted = ExtractedColors(
-                        primary = Color(primaryInt),
+                        primary = Color(finalPrimaryInt),
                         secondary = Color(secondaryInt),
                         tertiary = Color(tertiaryInt),
                         background = Color.Black,
                         surface = Color.Black,
-                        onPrimary = Color(vibrant?.bodyTextColor ?: android.graphics.Color.WHITE),
+                        onPrimary = Color(finalOnPrimary),
                         onSecondary = Color.White,
                         onTertiary = Color.White,
                         onBackground = Color.White,

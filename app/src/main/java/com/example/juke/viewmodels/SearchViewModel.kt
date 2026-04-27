@@ -36,27 +36,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.json.JSONObject
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.Locale
-import org.json.JSONObject
 
 data class SearchUiState(
     val query: String = "",
     val suggestions: List<String> = emptyList(),
     val isShowingSuggestions: Boolean = false,
-    val suggestionApiToUiMs: Long? = null,
-    val suggestionApiCallMs: Long? = null,
-    val suggestionHeadersMs: Long? = null,
-    val suggestionBodyReadMs: Long? = null,
-    val suggestionParseMs: Long? = null,
-    val suggestionUiUpdateMs: Long? = null,
     val tracks: List<SpotifyTrack> = emptyList(),
     val localTracks: List<Track> = emptyList(),
     val artists: List<SpotifyArtist> = emptyList(),
     val playlists: List<SpotifyPlaylist> = emptyList(),
     val albums: List<SpotifyAlbum> = emptyList(),
-    val fullSearchApiToUiMs: Long? = null,
     val isSearching: Boolean = false,
     val downloadingId: String? = null,
     val error: String? = null,
@@ -109,7 +102,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private var searchJob: Job? = null
     private val suggestionRequestNonce = AtomicLong(0L)
     private val warmupRequestNonce = AtomicLong(0L)
-    private val suggestionPrefixCache = LinkedHashMap<String, List<String>>(SUGGESTION_CACHE_MAX_ENTRIES)
+    private val suggestionPrefixCache =
+        LinkedHashMap<String, List<String>>(SUGGESTION_CACHE_MAX_ENTRIES)
 
     fun updateQuery(query: String) {
         // Skip duplicate consecutive input values (distinctUntilChanged behavior).
@@ -118,14 +112,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         // Typing always puts us in suggestion mode
         _uiState.value = _uiState.value.copy(
             query = query,
-            isShowingSuggestions = true,
-            suggestionApiToUiMs = null,
-            suggestionApiCallMs = null,
-            suggestionHeadersMs = null,
-            suggestionBodyReadMs = null,
-            suggestionParseMs = null,
-            suggestionUiUpdateMs = null,
-            fullSearchApiToUiMs = null
+            isShowingSuggestions = true
         )
 
         searchJob?.cancel()
@@ -135,13 +122,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             // Serve an immediate best-effort prefix hit while a fresh request is in-flight.
             getCachedSuggestions(query)?.let { cached ->
                 _uiState.value = _uiState.value.copy(
-                    suggestions = cached,
-                    suggestionApiToUiMs = 0,
-                    suggestionApiCallMs = 0,
-                    suggestionHeadersMs = 0,
-                    suggestionBodyReadMs = 0,
-                    suggestionParseMs = 0,
-                    suggestionUiUpdateMs = 0
+                    suggestions = cached
                 )
             }
 
@@ -153,26 +134,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         } else if (query.isNotBlank()) {
             // For short inputs, keep typing mode active but avoid remote calls.
             _uiState.value = _uiState.value.copy(
-                suggestions = emptyList(),
-                suggestionApiToUiMs = null,
-                suggestionApiCallMs = null,
-                suggestionHeadersMs = null,
-                suggestionBodyReadMs = null,
-                suggestionParseMs = null,
-                suggestionUiUpdateMs = null
+                suggestions = emptyList()
             )
         } else {
             // Clear everything when the field is emptied
             _uiState.value = _uiState.value.copy(
                 suggestions = emptyList(),
                 isShowingSuggestions = false,
-                suggestionApiToUiMs = null,
-                suggestionApiCallMs = null,
-                suggestionHeadersMs = null,
-                suggestionBodyReadMs = null,
-                suggestionParseMs = null,
-                suggestionUiUpdateMs = null,
-                fullSearchApiToUiMs = null,
                 tracks = emptyList(),
                 localTracks = emptyList(),
                 artists = emptyList(),
@@ -250,7 +218,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun fetchSuggestions(query: String, requestNonce: Long) {
         try {
-            val totalStartNs = System.nanoTime()
             val locale = Locale.getDefault()
             val languageTag = locale.toLanguageTag().ifBlank { "en-US" }
             val region = locale.country.ifBlank { "US" }
@@ -269,7 +236,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 }
             """.trimIndent()
 
-            val callStartNs = System.nanoTime()
             val response = ApiClient.httpClient.post(YT_SUGGESTIONS_URL) {
                 header("Accept", "*/*")
                 header("Accept-Language", "$languageTag,en;q=0.9")
@@ -281,15 +247,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 contentType(ContentType.Application.Json)
                 setBody(payload)
             }
-            val headersElapsedMs = (System.nanoTime() - callStartNs) / 1_000_000
-
-            val bodyReadStartNs = System.nanoTime()
             val responseBody = response.bodyAsText()
-            val bodyReadElapsedMs = (System.nanoTime() - bodyReadStartNs) / 1_000_000
 
-            val callElapsedMs = headersElapsedMs + bodyReadElapsedMs
-
-            val parseStartNs = System.nanoTime()
             val json = JSONObject(responseBody)
             val results = mutableListOf<String>()
             val contents = json.optJSONArray("contents")
@@ -318,7 +277,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
-            val parseElapsedMs = (System.nanoTime() - parseStartNs) / 1_000_000
 
             // Drop stale responses if a newer query was typed while this request was in-flight.
             if (requestNonce != suggestionRequestNonce.get()) return
@@ -326,32 +284,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
             putCachedSuggestions(query, results)
 
-            val uiUpdateStartNs = System.nanoTime()
             _uiState.value = _uiState.value.copy(
-                suggestions = results,
-                suggestionApiToUiMs = (System.nanoTime() - totalStartNs) / 1_000_000,
-                suggestionApiCallMs = callElapsedMs,
-                suggestionHeadersMs = headersElapsedMs,
-                suggestionBodyReadMs = bodyReadElapsedMs,
-                suggestionParseMs = parseElapsedMs
-            )
-            val uiUpdateElapsedMs = (System.nanoTime() - uiUpdateStartNs) / 1_000_000
-            _uiState.value = _uiState.value.copy(suggestionUiUpdateMs = uiUpdateElapsedMs)
-
-            Log.d(
-                "SearchViewModel",
-                "YT suggestions timing: headers=${headersElapsedMs}ms body=${bodyReadElapsedMs}ms call=${callElapsedMs}ms parse=${parseElapsedMs}ms uiUpdate=${uiUpdateElapsedMs}ms total=${_uiState.value.suggestionApiToUiMs}ms"
+                suggestions = results
             )
         } catch (e: Exception) {
             Log.e("SearchViewModel", "Failed to fetch suggestions", e)
             _uiState.value = _uiState.value.copy(
-                suggestions = emptyList(),
-                suggestionApiToUiMs = null,
-                suggestionApiCallMs = null,
-                suggestionHeadersMs = null,
-                suggestionBodyReadMs = null,
-                suggestionParseMs = null,
-                suggestionUiUpdateMs = null
+                suggestions = emptyList()
             )
         }
     }
@@ -392,75 +331,59 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     // Handle URL-based search
                     when (urlInfo.type) {
                         "track" -> {
-                            val apiStartNs = System.nanoTime()
                             val track = SpotifyApi.getTrack(urlInfo.id)
-                            val elapsedMs = (System.nanoTime() - apiStartNs) / 1_000_000
                             _uiState.value = _uiState.value.copy(
                                 tracks = listOf(track),
                                 localTracks = emptyList(),
                                 artists = emptyList(),
                                 playlists = emptyList(),
                                 albums = emptyList(),
-                                fullSearchApiToUiMs = elapsedMs,
                                 isSearching = false,
                                 isPlaylistUrl = false,
                                 playlistId = null
                             )
-                            Log.d("SearchViewModel", "Spotify track API->UI latency: ${elapsedMs}ms")
                         }
 
                         "artist" -> {
-                            val apiStartNs = System.nanoTime()
                             val artist = SpotifyApi.getArtist(urlInfo.id)
-                            val elapsedMs = (System.nanoTime() - apiStartNs) / 1_000_000
                             _uiState.value = _uiState.value.copy(
                                 tracks = emptyList(),
                                 localTracks = emptyList(),
                                 artists = listOf(artist),
                                 playlists = emptyList(),
                                 albums = emptyList(),
-                                fullSearchApiToUiMs = elapsedMs,
                                 isSearching = false,
                                 isPlaylistUrl = false,
                                 playlistId = null
                             )
-                            Log.d("SearchViewModel", "Spotify artist API->UI latency: ${elapsedMs}ms")
                         }
 
                         "playlist" -> {
-                            val apiStartNs = System.nanoTime()
                             val playlist = SpotifyApi.getPlaylist(urlInfo.id)
-                            val elapsedMs = (System.nanoTime() - apiStartNs) / 1_000_000
                             _uiState.value = _uiState.value.copy(
                                 tracks = emptyList(),
                                 localTracks = emptyList(),
                                 artists = emptyList(),
                                 playlists = listOf(playlist),
                                 albums = emptyList(),
-                                fullSearchApiToUiMs = elapsedMs,
                                 isSearching = false,
                                 isPlaylistUrl = true,
                                 playlistId = urlInfo.id
                             )
-                            Log.d("SearchViewModel", "Spotify playlist API->UI latency: ${elapsedMs}ms")
                         }
 
                         "album" -> {
-                            val apiStartNs = System.nanoTime()
                             val album = SpotifyApi.getAlbum(urlInfo.id)
-                            val elapsedMs = (System.nanoTime() - apiStartNs) / 1_000_000
                             _uiState.value = _uiState.value.copy(
                                 tracks = emptyList(),
                                 localTracks = emptyList(),
                                 artists = emptyList(),
                                 playlists = emptyList(),
                                 albums = listOf(album),
-                                fullSearchApiToUiMs = elapsedMs,
                                 isSearching = false,
                                 isPlaylistUrl = false,
                                 playlistId = null
                             )
-                            Log.d("SearchViewModel", "Spotify album API->UI latency: ${elapsedMs}ms")
                         }
                     }
                 } else {
@@ -493,7 +416,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results
-                    val apiStartNs = System.nanoTime()
                     val response = SpotifyApi.search(trimmedQuery)
                     // Filter out Spotify tracks that are already in local results (by title+artist match)
                     val localTitles =
@@ -506,24 +428,19 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                             key !in localTitles
                         }
 
-                    val elapsedMs = (System.nanoTime() - apiStartNs) / 1_000_000
-
                     _uiState.value = _uiState.value.copy(
                         tracks = filteredSpotifyTracks,
                         artists = response.artists?.items ?: emptyList(),
                         playlists = response.playlists?.items?.filterNotNull() ?: emptyList(),
                         albums = response.albums?.items ?: emptyList(),
-                        fullSearchApiToUiMs = elapsedMs,
                         isSearching = false,
                         isPlaylistUrl = false,
                         playlistId = null
                     )
-                    Log.d("SearchViewModel", "Spotify search API->UI latency: ${elapsedMs}ms")
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isSearching = false,
-                    fullSearchApiToUiMs = null,
                     error = e.message ?: "Search failed"
                 )
             }

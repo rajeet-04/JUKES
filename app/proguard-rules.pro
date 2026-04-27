@@ -80,3 +80,12 @@
 -keep class com.google.gson.JsonElement { *; }
 -keep class com.google.gson.JsonObject { *; }
 -keep class com.google.gson.JsonArray { *; }
+
+# Strip unused Media3 extractors (~150-200KB savings)
+-assumenosideeffects class androidx.media3.extractor.mkv.** { *; }
+-assumenosideeffects class androidx.media3.extractor.flv.** { *; }
+-assumenosideeffects class androidx.media3.extractor.wav.** { *; }
+-assumenosideeffects class androidx.media3.extractor.ogg.** { *; }
+-assumenosideeffects class androidx.media3.extractor.amr.** { *; }
+-assumenosideeffects class androidx.media3.extractor.flac.** { *; }
+-assumenosideeffects class androidx.media3.extractor.ts.** { *; }

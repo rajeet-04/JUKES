@@ -38,10 +38,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             java.util.Locale.getDefault()
         )
         return when {
-            hour in 5..11 -> "Rise & Shine!"
-            hour in 12..16 -> "Good Afternoon!"
-            hour in 17..20 -> "Good Evening!"
-            else -> "Night Vibes!"
+            hour in 5..11  -> "First Light Sounds !"
+            hour in 12..16 -> "Afternoon Drift !"
+            hour in 17..20 -> "The Golden Hour !"
+            else           -> "After Dark !"
         }
     }
 
