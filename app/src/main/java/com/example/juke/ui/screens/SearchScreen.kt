@@ -123,6 +123,11 @@ fun SearchScreen(
     var active by rememberSaveable { mutableStateOf(false) }
     val filters = listOf("All", "Tracks", "Artists", "Playlists", "Albums")
 
+    // Warm the YT suggestions connection once when search screen is opened.
+    LaunchedEffect(Unit) {
+        searchViewModel.warmSuggestionsConnection()
+    }
+
     // 2nd tap: reset query, open bar, show keyboard
     LaunchedEffect(searchResetTrigger) {
         if (searchResetTrigger != previousTrigger && searchResetTrigger > 0) {
@@ -233,6 +238,60 @@ fun SearchScreen(
                     // ── Suggestions view (shown while the user is typing) ────────────
                     if (uiState.isShowingSuggestions && uiState.query.isNotBlank()) {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            item {
+                                ApiLatencyBadge(
+                                    label = "YT suggestions API -> UI",
+                                    latencyMs = uiState.suggestionApiToUiMs,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                                )
+                            }
+                            item {
+                                ApiLatencyBadge(
+                                    label = "YT suggestions call duration",
+                                    latencyMs = uiState.suggestionApiCallMs,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 2.dp)
+                                )
+                            }
+                            item {
+                                ApiLatencyBadge(
+                                    label = "YT request->headers",
+                                    latencyMs = uiState.suggestionHeadersMs,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 2.dp)
+                                )
+                            }
+                            item {
+                                ApiLatencyBadge(
+                                    label = "YT body read",
+                                    latencyMs = uiState.suggestionBodyReadMs,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 2.dp)
+                                )
+                            }
+                            item {
+                                ApiLatencyBadge(
+                                    label = "YT parse duration",
+                                    latencyMs = uiState.suggestionParseMs,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 2.dp)
+                                )
+                            }
+                            item {
+                                ApiLatencyBadge(
+                                    label = "YT ui-update duration",
+                                    latencyMs = uiState.suggestionUiUpdateMs,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 2.dp)
+                                )
+                            }
                             items(uiState.suggestions) { suggestion ->
                                 Row(
                                     modifier = Modifier
@@ -267,6 +326,14 @@ fun SearchScreen(
                     }
                     // ── Full results view (shown after the user submits a search) ────
                     else {
+                        ApiLatencyBadge(
+                            label = "Search API -> UI",
+                            latencyMs = uiState.fullSearchApiToUiMs,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+
                         AnimatedVisibility(
                             visible = uiState.query.isNotEmpty(),
                             enter = fadeIn(),
@@ -512,6 +579,22 @@ private fun hasResults(uiState: com.example.juke.viewmodels.SearchUiState): Bool
             uiState.artists.isNotEmpty() ||
             uiState.playlists.isNotEmpty() ||
             uiState.albums.isNotEmpty()
+}
+
+@Composable
+private fun ApiLatencyBadge(
+    label: String,
+    latencyMs: Long?,
+    modifier: Modifier = Modifier
+) {
+    if (latencyMs == null) return
+
+    Text(
+        text = "$label: ${latencyMs}ms",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+    )
 }
 
 @Composable

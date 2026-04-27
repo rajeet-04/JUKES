@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "com.example.juke"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.juke"
@@ -39,6 +39,11 @@ android {
             "SPOTIFY_CLIENT_SECRET",
             "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
         )
+    }
+
+    androidResources {
+        // Strips all languages except English
+        localeFilters += "en"
     }
 
     signingConfigs {
@@ -95,6 +100,7 @@ dependencies {
     // Ktor
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.client.logging)
     implementation(libs.ktor.serialization.kotlinx.json)

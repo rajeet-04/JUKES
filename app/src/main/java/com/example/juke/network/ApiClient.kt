@@ -1,7 +1,8 @@
 package com.example.juke.network
 
+import com.example.juke.BuildConfig
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.android.Android
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
@@ -17,18 +18,24 @@ import kotlinx.serialization.json.Json
  */
 object ApiClient {
 
-    val httpClient = HttpClient(Android) {
+    val httpClient = HttpClient(OkHttp) {
+        engine {
+            config {
+                retryOnConnectionFailure(true)
+            }
+        }
+
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
                 isLenient = true
-                prettyPrint = true
+                prettyPrint = false
             })
         }
 
         install(Logging) {
             logger = Logger.DEFAULT
-            level = LogLevel.INFO
+            level = if (BuildConfig.DEBUG) LogLevel.HEADERS else LogLevel.NONE
         }
 
         install(HttpTimeout) {
