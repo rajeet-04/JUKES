@@ -1,5 +1,6 @@
 package com.example.juke.analytics
 
+import android.content.Context
 import com.example.juke.models.Track
 
 /**
@@ -8,9 +9,9 @@ import com.example.juke.models.Track
  * Add these methods to your PlayerViewModel to track playback events
  */
 
-class PlayerAnalyticsHelper {
+class PlayerAnalyticsHelper(context: Context) {
     
-    private val analytics = AnalyticsManager.getInstance()
+    private val analytics = AnalyticsManager.getInstance(context.applicationContext)
     private var currentSongStartTime: Long = 0
     private var currentSongId: String? = null
     private var currentSongDuration: Long = 0

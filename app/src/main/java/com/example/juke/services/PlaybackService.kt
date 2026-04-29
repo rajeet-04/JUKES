@@ -88,29 +88,29 @@ class PlaybackService : MediaLibraryService() {
 
         /**
          * Resolve artwork for a track into MediaMetadata.
-         * - Local files: read bytes and embed via setArtworkData (most reliable for notifications).
-         * - HTTP URLs: set as artworkUri so DataSourceBitmapLoader can fetch them.
+         *
+         * Use artwork URIs for both remote and local images so queue operations do not clone large
+         * embedded byte arrays for every MediaItem. The session bitmap loader can resolve the URI
+         * lazily when artwork is actually needed for the active item/notification.
          */
         internal fun applyArtwork(metadataBuilder: MediaMetadata.Builder, thumbnailUri: String?) {
             thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
                 try {
-                    if (uriString.startsWith("http", ignoreCase = true)) {
-                        metadataBuilder.setArtworkUri(uriString.toUri())
-                    } else {
-                        val file =
-                            if (uriString.startsWith("file://") || uriString.startsWith("content://")) {
-                                java.io.File(uriString.toUri().path ?: return@let)
+                    val artworkUri = when {
+                        uriString.startsWith("http", ignoreCase = true) -> uriString.toUri()
+                        uriString.startsWith("file://", ignoreCase = true) -> uriString.toUri()
+                        uriString.startsWith("content://", ignoreCase = true) -> uriString.toUri()
+                        else -> {
+                            val file = java.io.File(uriString)
+                            if (file.exists() && file.canRead() && file.length() > 0) {
+                                file.toUri()
                             } else {
-                                java.io.File(uriString)
+                                null
                             }
-                        if (file.exists() && file.canRead() && file.length() > 0) {
-                            val bytes = file.readBytes()
-                            metadataBuilder.setArtworkData(
-                                bytes,
-                                MediaMetadata.PICTURE_TYPE_FRONT_COVER
-                            )
                         }
                     }
+
+                    artworkUri?.let(metadataBuilder::setArtworkUri)
                 } catch (e: Exception) {
                     // Silently ignore artwork errors — notification will just show no art
                 }
@@ -1152,6 +1152,7 @@ class PlaybackManager private constructor(private val context: Context) {
     /**
      * Helper function to create validated MediaItem with artwork checking
      */
+    @OptIn(UnstableApi::class)
     private fun createValidatedMediaItem(track: Track): MediaItem? {
         if (track.localUri == null) return null
 
@@ -1585,7 +1586,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 TAG,
                                                 "Analytics: Found track '${track.title}' by ${track.artist}, calling trackSongPlayed"
                                             )
-                                            AnalyticsManager.getInstance().trackSongPlayed(
+                                            AnalyticsManager.getInstance(context).trackSongPlayed(
                                                 songId = "${track.title} - ${track.artist}",
                                                 songTitle = track.title,
                                                 songArtist = track.artist,
@@ -1680,6 +1681,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
 
         initialize()
+        _isShuffleEnabled.value = false
 
         controller?.apply {
             setMediaItem(mediaItem)
@@ -1702,6 +1704,10 @@ class PlaybackManager private constructor(private val context: Context) {
         keepShuffleMode: Boolean = false
     ) {
         initialize()
+
+        if (!keepShuffleMode) {
+            _isShuffleEnabled.value = false
+        }
 
         // Clear all disk cache when a brand new queue/song is played
         PlaybackService.StreamCacheManager.clearAllCache()
@@ -1840,33 +1846,50 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun toggleShuffle() {
-        val wasEnabled = _isShuffleEnabled.value
-        if (!wasEnabled) {
-            _isShuffleEnabled.value = true
+        val isNowEnabled = !_isShuffleEnabled.value
+        _isShuffleEnabled.value = isNowEnabled
+
+        if (!isNowEnabled) {
+            Log.d(TAG, "Shuffle disabled")
+            return
         }
-        // Always shuffle the remaining items when shuffle is active
+
+        var reordered = false
         controller?.let { ctrl ->
             val totalItems = ctrl.mediaItemCount
-            val currentIndex = ctrl.currentMediaItemIndex
-            if (currentIndex in 0 until totalItems - 1) {
-                val remainingItems = mutableListOf<MediaItem>()
-                for (i in currentIndex + 1 until totalItems) {
-                    remainingItems.add(ctrl.getMediaItemAt(i))
-                }
-                remainingItems.shuffle()
+            val firstShuffleIndex = ctrl.currentMediaItemIndex + 1
 
-                for (i in totalItems - 1 downTo currentIndex + 1) {
-                    ctrl.removeMediaItem(i)
-                }
-                ctrl.addMediaItems(currentIndex + 1, remainingItems)
+            if (firstShuffleIndex in 1 until totalItems) {
+                val shuffledIds = (firstShuffleIndex until totalItems)
+                    .map { ctrl.getMediaItemAt(it).mediaId }
+                    .shuffled()
 
-                scope.launch {
-                    saveQueueStructure()
+                shuffledIds.forEachIndexed { offset, mediaId ->
+                    val targetIndex = firstShuffleIndex + offset
+                    var sourceIndex = targetIndex
+
+                    while (
+                        sourceIndex < ctrl.mediaItemCount &&
+                        ctrl.getMediaItemAt(sourceIndex).mediaId != mediaId
+                    ) {
+                        sourceIndex++
+                    }
+
+                    if (sourceIndex < ctrl.mediaItemCount && sourceIndex != targetIndex) {
+                        ctrl.moveMediaItem(sourceIndex, targetIndex)
+                        reordered = true
+                    }
                 }
             }
         }
 
-        Log.d(TAG, "Shuffle ${if (wasEnabled) "reshuffled" else "enabled"}")
+        if (reordered) {
+            scope.launch {
+                saveQueueStructure()
+            }
+        }
+
+        Log.d(TAG, if (reordered) "Shuffle enabled" else "Shuffle enabled (nothing to reorder)")
     }
 
     fun toggleRepeatMode() {
@@ -1992,7 +2015,11 @@ class PlaybackManager private constructor(private val context: Context) {
      * @param newTrack The new track to replace it with
      * @return true if the track was replaced, false otherwise
      */
-    fun replaceTrackInQueue(oldMediaId: String, newTrack: Track, seamlessIfPlaying: Boolean = false): Boolean {
+    fun replaceTrackInQueue(
+        oldMediaId: String,
+        newTrack: Track,
+        seamlessIfPlaying: Boolean = false
+    ): Boolean {
         controller?.let { ctrl ->
             val index = (0 until ctrl.mediaItemCount).firstOrNull { i ->
                 ctrl.getMediaItemAt(i).mediaId == oldMediaId
@@ -2009,7 +2036,10 @@ class PlaybackManager private constructor(private val context: Context) {
 
             if (isCurrentTrack && seamlessIfPlaying) {
                 // Background download: Keep playing the temporary file to prevent stuttering.
-                Log.d(TAG, "Track $oldMediaId is playing. Skipping ExoPlayer swap for seamless audio.")
+                Log.d(
+                    TAG,
+                    "Track $oldMediaId is playing. Skipping ExoPlayer swap for seamless audio."
+                )
             } else {
                 // Atomic replacement prevents the timeline "blip" that causes queue duplication
                 ctrl.replaceMediaItem(index, newMediaItem)

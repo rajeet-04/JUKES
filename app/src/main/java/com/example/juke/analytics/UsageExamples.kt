@@ -1,5 +1,7 @@
 package com.example.juke.analytics
 
+import android.content.Context
+
 /**
  * Example Usage of AnalyticsManager in your app
  * 
@@ -7,20 +9,28 @@ package com.example.juke.analytics
  */
 
 // 1. In MainActivity.onCreate() - Track app opened
-fun onAppOpened() {
-    AnalyticsManager.getInstance().trackAppOpened()
+fun onAppOpened(context: Context) {
+    AnalyticsManager.getInstance(context).trackAppOpened()
 }
 
 // 2. In MainActivity.onDestroy() or onStop() - Track app closed and end session
 fun onAppClosed() {
-    val analytics = AnalyticsManager.getInstance()
-    analytics.trackAppClosed()
-    analytics.endSession()
+    AnalyticsManager.getIfInitialized()?.let { analytics ->
+        analytics.trackAppClosed()
+        analytics.endSession()
+    }
 }
 
 // 3. When a song starts playing (in PlaybackService or PlayerViewModel)
-fun onSongStarted(songId: String, title: String, artist: String, durationMs: Long, position: Int) {
-    AnalyticsManager.getInstance().trackSongPlayed(
+fun onSongStarted(
+    context: Context,
+    songId: String,
+    title: String,
+    artist: String,
+    durationMs: Long,
+    position: Int
+) {
+    AnalyticsManager.getInstance(context).trackSongPlayed(
         songId = songId,
         songTitle = title,
         songArtist = artist,
@@ -30,8 +40,8 @@ fun onSongStarted(songId: String, title: String, artist: String, durationMs: Lon
 }
 
 // 4. When a song ends or is skipped (in PlaybackService or PlayerViewModel)
-fun onSongEnded(songId: String, playedDurationMs: Long, totalDurationMs: Long) {
-    AnalyticsManager.getInstance().trackSongEnd(
+fun onSongEnded(context: Context, songId: String, playedDurationMs: Long, totalDurationMs: Long) {
+    AnalyticsManager.getInstance(context).trackSongEnd(
         songId = songId,
         playDuration = playedDurationMs,
         songDuration = totalDurationMs
@@ -39,13 +49,13 @@ fun onSongEnded(songId: String, playedDurationMs: Long, totalDurationMs: Long) {
 }
 
 // 5. When user performs a search (in SearchViewModel)
-fun onSearchPerformed(query: String) {
-    AnalyticsManager.getInstance().trackSearchQuery(query)
+fun onSearchPerformed(context: Context, query: String) {
+    AnalyticsManager.getInstance(context).trackSearchQuery(query)
 }
 
 // 6. Get analytics data
-fun getAnalyticsMetrics() {
-    val analytics = AnalyticsManager.getInstance()
+fun getAnalyticsMetrics(context: Context) {
+    val analytics = AnalyticsManager.getInstance(context)
 
     val userId = analytics.getUserId()
     val totalSongs = analytics.getTotalSongsPlayed()
@@ -60,8 +70,8 @@ fun getAnalyticsMetrics() {
 }
 
 // 7. Force sync (useful for testing or manual sync button)
-fun forceSyncAnalytics() {
-    AnalyticsManager.getInstance().forceSync()
+fun forceSyncAnalytics(context: Context) {
+    AnalyticsManager.getInstance(context).forceSync()
 }
 
 /**

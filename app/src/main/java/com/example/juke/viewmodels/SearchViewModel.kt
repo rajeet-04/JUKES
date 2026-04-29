@@ -316,7 +316,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         // Track search query
-        AnalyticsManager.getInstance().trackSearchQuery(trimmedQuery)
+        AnalyticsManager.getInstance(getApplication()).trackSearchQuery(trimmedQuery)
         // Save to recent searches
         saveRecentSearch(trimmedQuery)
 

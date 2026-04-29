@@ -39,6 +39,16 @@ android {
             "SPOTIFY_CLIENT_SECRET",
             "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
         )
+        buildConfigField(
+            "String",
+            "POSTHOG_API_KEY",
+            "\"${properties.getProperty("POSTHOG_API_KEY", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "POSTHOG_HOST",
+            "\"${properties.getProperty("POSTHOG_HOST", "")}\""
+        )
     }
 
     androidResources {

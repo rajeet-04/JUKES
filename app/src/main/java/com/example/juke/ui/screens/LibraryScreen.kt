@@ -76,6 +76,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.services.DownloadInfo
 import com.example.juke.ui.components.AddToPlaylistDialog
 import com.example.juke.ui.components.CompactDownloadBanner
 import com.example.juke.ui.components.CreatePlaylistDialog
@@ -99,10 +101,13 @@ import com.example.juke.ui.components.EditPlaylistDialog
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.utils.rememberJukeHaptics
+import com.example.juke.viewmodels.DownloadItem
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SortOption
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,7 +118,21 @@ fun LibraryScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val uiState by libraryViewModel.uiState.collectAsState()
-    val musicUiState by musicViewModel.uiState.collectAsState()
+    val libraryDownloadBannerState by remember(musicViewModel) {
+        musicViewModel.uiState
+            .map { state ->
+                LibraryDownloadBannerState(
+                    currentDownload = state.currentDownload,
+                    downloadQueue = state.downloadQueue
+                )
+            }
+            .distinctUntilChanged()
+    }.collectAsState(
+        initial = LibraryDownloadBannerState(
+            currentDownload = musicViewModel.uiState.value.currentDownload,
+            downloadQueue = musicViewModel.uiState.value.downloadQueue
+        )
+    )
     val haptic = rememberJukeHaptics()
     val keyboardController = LocalSoftwareKeyboardController.current
     val searchFocusRequester = remember { FocusRequester() }
@@ -131,6 +150,8 @@ fun LibraryScreen(
 
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var showEditPlaylistDialog by remember { mutableStateOf(false) }
+    var isLibraryShufflePrepared by rememberSaveable { mutableStateOf(false) }
+    var preparedLibraryShuffleIds by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
 
     // Changed to support multiple tracks
     var tracksForPlaylistDialog by remember { mutableStateOf<List<Track>?>(null) }
@@ -161,6 +182,40 @@ fun LibraryScreen(
 
     LaunchedEffect(Unit) {
         // Initial load is handled by the flow in ViewModel
+    }
+
+    val currentLibraryTrackIds = remember(uiState.tracks) {
+        uiState.tracks.map { it.uuid }
+    }
+    val preparedLibraryTracks = remember(
+        uiState.tracks,
+        preparedLibraryShuffleIds,
+        isLibraryShufflePrepared
+    ) {
+        if (!isLibraryShufflePrepared) {
+            uiState.tracks
+        } else {
+            val tracksById = uiState.tracks.associateBy { it.uuid }
+            val preparedTracks = preparedLibraryShuffleIds.mapNotNull { tracksById[it] }
+            if (preparedTracks.size == uiState.tracks.size) {
+                preparedTracks
+            } else {
+                val preparedTrackIds = preparedTracks.map { it.uuid }.toSet()
+                preparedTracks + uiState.tracks.filter { it.uuid !in preparedTrackIds }
+            }
+        }
+    }
+
+    LaunchedEffect(currentLibraryTrackIds) {
+        if (isLibraryShufflePrepared) {
+            val sameMembership =
+                preparedLibraryShuffleIds.size == currentLibraryTrackIds.size &&
+                        preparedLibraryShuffleIds.toSet() == currentLibraryTrackIds.toSet()
+
+            if (!sameMembership) {
+                preparedLibraryShuffleIds = currentLibraryTrackIds.shuffled()
+            }
+        }
     }
 
     Scaffold(
@@ -239,7 +294,9 @@ fun LibraryScreen(
                     ) {
                         IconButton(onClick = {
                             val selectedTracks =
-                                uiState.tracks.filter { uiState.selectedTrackUuids.contains(it.uuid) }
+                                preparedLibraryTracks.filter {
+                                    uiState.selectedTrackUuids.contains(it.uuid)
+                                }
                             musicViewModel.addNext(selectedTracks)
                             libraryViewModel.clearSelection()
                             performHapticFeedback()
@@ -253,7 +310,9 @@ fun LibraryScreen(
 
                         IconButton(onClick = {
                             val selectedTracks =
-                                uiState.tracks.filter { uiState.selectedTrackUuids.contains(it.uuid) }
+                                preparedLibraryTracks.filter {
+                                    uiState.selectedTrackUuids.contains(it.uuid)
+                                }
                             musicViewModel.addToQueue(selectedTracks)
                             libraryViewModel.clearSelection()
                             performHapticFeedback()
@@ -267,7 +326,9 @@ fun LibraryScreen(
 
                         IconButton(onClick = {
                             val selectedTracks =
-                                uiState.tracks.filter { uiState.selectedTrackUuids.contains(it.uuid) }
+                                preparedLibraryTracks.filter {
+                                    uiState.selectedTrackUuids.contains(it.uuid)
+                                }
                             if (selectedTracks.isNotEmpty()) {
                                 tracksForPlaylistDialog = selectedTracks
                                 libraryViewModel.clearSelection() // Optionally keep selection?
@@ -691,64 +752,20 @@ fun LibraryScreen(
                         }
                     }
 
-                    // Shuffle button
-                    IconButton(
-                        onClick = { musicViewModel.toggleShuffle() }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "Shuffle",
-                            tint = if (musicUiState.isShuffleEnabled) {
-                                MaterialTheme.colorScheme.primary
+                    LibraryPlaybackActions(
+                        musicViewModel = musicViewModel,
+                        tracks = preparedLibraryTracks,
+                        isShufflePrepared = isLibraryShufflePrepared,
+                        onToggleShuffle = {
+                            val shouldEnable = !isLibraryShufflePrepared
+                            isLibraryShufflePrepared = shouldEnable
+                            preparedLibraryShuffleIds = if (shouldEnable) {
+                                currentLibraryTrackIds.shuffled()
                             } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                                emptyList()
                             }
-                        )
-                    }
-
-                    // Add to Queue button
-                    IconButton(
-                        onClick = {
-                            if (uiState.tracks.isNotEmpty()) {
-                                val tracksToAdd = if (musicUiState.isShuffleEnabled) {
-                                    uiState.tracks.shuffled()
-                                } else {
-                                    uiState.tracks
-                                }
-                                musicViewModel.addToQueue(tracksToAdd)
-                            }
-                        },
-                        enabled = uiState.tracks.isNotEmpty()
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = "Add all to Queue",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Play button
-                    FilledTonalButton(
-                        onClick = {
-                            if (uiState.tracks.isNotEmpty()) {
-                                val tracksToPlay = if (musicUiState.isShuffleEnabled) {
-                                    uiState.tracks.shuffled()
-                                } else {
-                                    uiState.tracks
-                                }
-                                musicViewModel.setQueue(tracksToPlay, startIndex = 0)
-                            }
-                        },
-                        enabled = uiState.tracks.isNotEmpty()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Play all",
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Play")
-                    }
+                        }
+                    )
                 }
             }
 
@@ -830,14 +847,14 @@ fun LibraryScreen(
                     }
 
                     // Compact download banner — collapses all active downloads into one slim row
-                    val hasAnyDownload = musicUiState.currentDownload != null ||
-                            musicUiState.downloadQueue.isNotEmpty() ||
+                    val hasAnyDownload = libraryDownloadBannerState.currentDownload != null ||
+                            libraryDownloadBannerState.downloadQueue.isNotEmpty() ||
                             uiState.recommendationDownloads.isNotEmpty()
                     if (hasAnyDownload) {
                         item(key = "download_banner") {
                             CompactDownloadBanner(
-                                currentDownload = musicUiState.currentDownload,
-                                downloadQueue = musicUiState.downloadQueue,
+                                currentDownload = libraryDownloadBannerState.currentDownload,
+                                downloadQueue = libraryDownloadBannerState.downloadQueue,
                                 recommendationDownloads = uiState.recommendationDownloads,
                                 onCancelDownload = { id -> musicViewModel.cancelDownload(id) },
                                 onRetryDownload = { item -> musicViewModel.retryFailedDownload(item) }
@@ -1063,6 +1080,70 @@ fun LibraryScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+private data class LibraryDownloadBannerState(
+    val currentDownload: DownloadItem?,
+    val downloadQueue: List<DownloadItem>
+)
+
+@Composable
+private fun LibraryPlaybackActions(
+    musicViewModel: MusicViewModel,
+    tracks: List<Track>,
+    isShufflePrepared: Boolean,
+    onToggleShuffle: () -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onToggleShuffle
+        ) {
+            Icon(
+                imageVector = Icons.Default.Shuffle,
+                contentDescription = "Shuffle",
+                tint = if (isShufflePrepared) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+
+        IconButton(
+            onClick = {
+                if (tracks.isNotEmpty()) {
+                    musicViewModel.addToQueue(tracks)
+                }
+            },
+            enabled = tracks.isNotEmpty()
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = "Add all to Queue",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        FilledTonalButton(
+            onClick = {
+                if (tracks.isNotEmpty()) {
+                    musicViewModel.setQueue(tracks, startIndex = 0)
+                }
+            },
+            enabled = tracks.isNotEmpty()
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = "Play all",
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Play")
         }
     }
 }

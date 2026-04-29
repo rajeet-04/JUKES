@@ -11,7 +11,10 @@ import android.os.Build
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.edit
+import com.example.juke.BuildConfig
 import com.posthog.PostHog
+import com.posthog.android.PostHogAndroid
+import com.posthog.android.PostHogAndroidConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,18 +43,41 @@ class AnalyticsManager private constructor(private val context: Context) {
         @Volatile
         private var instance: AnalyticsManager? = null
 
+        @Volatile
+        private var isPostHogInitialized = false
+
         fun initialize(context: Context) {
-            if (instance == null) {
-                synchronized(this) {
-                    if (instance == null) {
-                        instance = AnalyticsManager(context.applicationContext)
-                    }
-                }
+            getInstance(context)
+        }
+
+        fun getInstance(context: Context): AnalyticsManager {
+            val appContext = context.applicationContext
+            ensurePostHogInitialized(appContext)
+
+            return instance ?: synchronized(this) {
+                instance ?: AnalyticsManager(appContext).also { instance = it }
             }
         }
 
         fun getInstance(): AnalyticsManager {
             return instance ?: throw IllegalStateException("AnalyticsManager not initialized")
+        }
+
+        fun getIfInitialized(): AnalyticsManager? = instance
+
+        private fun ensurePostHogInitialized(context: Context) {
+            if (isPostHogInitialized) return
+
+            synchronized(this) {
+                if (isPostHogInitialized) return
+
+                val config = PostHogAndroidConfig(
+                    apiKey = BuildConfig.POSTHOG_API_KEY,
+                    host = BuildConfig.POSTHOG_HOST
+                )
+                PostHogAndroid.setup(context, config)
+                isPostHogInitialized = true
+            }
         }
     }
 

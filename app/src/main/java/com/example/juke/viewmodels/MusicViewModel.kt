@@ -75,7 +75,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = MusicDatabase.getDatabase(application)
     private val trackDao = database.trackDao()
-    private val musicService = MusicService(application)
+    private val musicService by lazy { MusicService(application) }
     val playbackManager = PlaybackManager.getInstance(application)
     private val queueManager = QueueManager.getInstance(application)
 
@@ -112,6 +112,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
 
     private var isProcessingQueue = false
+    private var hasStartedDeferredStartupWork = false
     private val pendingQueueOperations =
         java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
@@ -144,21 +145,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         playbackManager.initialize()
-
-        // Run database migration helper to fix download timestamps
-        viewModelScope.launch {
-            DatabaseMigrationHelper.fixDownloadTimestamps(application)
-        }
-
-        // Purge stale stream entries from DB, but keep stream tracks that are in the saved queue
-        viewModelScope.launch(Dispatchers.IO) {
-            val prefs = application.getSharedPreferences("playback_state_prefs", android.content.Context.MODE_PRIVATE)
-            val savedIds = prefs.getString("queue_track_ids", "")
-                ?.split(",")
-                ?.filter { it.isNotBlank() }
-                ?.toSet() ?: emptySet()
-            musicService.purgeStaleStreamEntries(preserveUuids = savedIds)
-        }
 
         // Observe restored state and update UI with saved queue
         viewModelScope.launch {
@@ -385,6 +371,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     "Recommendation downloads in progress: ${downloading.size} tracks"
                 )
             }
+        }
+    }
+
+    fun startDeferredStartupWork() {
+        if (hasStartedDeferredStartupWork) return
+        hasStartedDeferredStartupWork = true
+
+        val application = getApplication<Application>()
+
+        viewModelScope.launch {
+            DatabaseMigrationHelper.fixDownloadTimestamps(application)
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val prefs = application.getSharedPreferences(
+                "playback_state_prefs",
+                android.content.Context.MODE_PRIVATE
+            )
+            val savedIds = prefs.getString("queue_track_ids", "")
+                ?.split(",")
+                ?.filter { it.isNotBlank() }
+                ?.toSet() ?: emptySet()
+            musicService.purgeStaleStreamEntries(preserveUuids = savedIds)
         }
     }
 

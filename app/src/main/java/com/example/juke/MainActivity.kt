@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -58,6 +59,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -144,20 +146,6 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
 
-        // 2. Request the permission immediately on launch
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.READ_PHONE_STATE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-            }
-        }
-
-        // Track app opened
-        AnalyticsManager.getInstance().trackAppOpened()
-
         // Check intent immediately
         handlePlayerIntent(intent)
 
@@ -169,15 +157,15 @@ class MainActivity : ComponentActivity() {
                 extractedColors = uiState.extractedColors
             ) {
                 val navController = rememberNavController()
-                val searchViewModel: SearchViewModel = viewModel()
-                val playlistDetailViewModel: PlaylistDetailViewModel = viewModel()
+                val activityViewModelProvider = remember(this@MainActivity) {
+                    ViewModelProvider(this@MainActivity)
+                }
 
                 // Initialize SpotifyApi with saved market code
                 LaunchedEffect(Unit) {
                     val savedMarket = musicViewModel.marketCode.value
                     SpotifyApi.setDefaultMarket(savedMarket)
                 }
-                val albumDetailViewModel: AlbumDetailViewModel = viewModel()
                 val context = LocalContext.current
                 var showPlayerModal by remember { mutableStateOf(false) }
                 var searchResetTrigger by remember { mutableIntStateOf(0) }
@@ -188,8 +176,14 @@ class MainActivity : ComponentActivity() {
                 val uriHandler = LocalUriHandler.current
 
                 LaunchedEffect(Unit) {
-                    // Runs once on app launch
+                    // Yield the first frame before optional launch work.
+                    withFrameNanos { }
+                    musicViewModel.startDeferredStartupWork()
+                    requestReadPhoneStatePermissionIfNeeded()
+                    AnalyticsManager.getInstance(context).trackAppOpened()
                     updateAvailable = UpdateManager.checkForUpdates()
+
+
                 }
 
                 if (updateAvailable != null) {
@@ -293,7 +287,11 @@ class MainActivity : ComponentActivity() {
                                             (context as? android.app.Activity)?.finishAffinity()
                                         }
                                     } catch (e: Exception) {
-                                        android.util.Log.e("MainActivity", "Failed to open update URL", e)
+                                        android.util.Log.e(
+                                            "MainActivity",
+                                            "Failed to open update URL",
+                                            e
+                                        )
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
@@ -378,7 +376,7 @@ class MainActivity : ComponentActivity() {
                                                 selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                                                 onClick = {
                                                     // Check if already on the selected screen
-                                                     val isSelected =
+                                                    val isSelected =
                                                         currentDestination?.hierarchy?.any { it.route == screen.route } == true
 
                                                     if (screen == Screen.Search && isSelected) {
@@ -439,6 +437,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable(Screen.Search.route) {
+                            val searchViewModel =
+                                activityViewModelProvider[SearchViewModel::class.java]
                             SearchScreen(
                                 musicViewModel = musicViewModel,
                                 searchViewModel = searchViewModel,
@@ -449,11 +449,13 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate("artist/${artist.id}")
                                 },
                                 onNavigateToPlaylist = { playlist ->
-                                    playlistDetailViewModel.loadPlaylistDetails(playlist)
+                                    activityViewModelProvider[PlaylistDetailViewModel::class.java]
+                                        .loadPlaylistDetails(playlist)
                                     navController.navigate("playlist/${playlist.id}")
                                 },
                                 onNavigateToAlbum = { album ->
-                                    albumDetailViewModel.loadAlbumDetails(album)
+                                    activityViewModelProvider[AlbumDetailViewModel::class.java]
+                                        .loadAlbumDetails(album)
                                     navController.navigate("album/${album.id}")
                                 },
                                 bottomPadding = bottomPadding
@@ -485,6 +487,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("artist/{artistId}") {
+                            val searchViewModel =
+                                activityViewModelProvider[SearchViewModel::class.java]
                             ArtistDetailScreen(
                                 searchViewModel = searchViewModel,
                                 musicViewModel = musicViewModel,
@@ -493,13 +497,16 @@ class MainActivity : ComponentActivity() {
                                     navController.popBackStack()
                                 },
                                 onNavigateToAlbum = { album ->
-                                    albumDetailViewModel.loadAlbumDetails(album)
+                                    activityViewModelProvider[AlbumDetailViewModel::class.java]
+                                        .loadAlbumDetails(album)
                                     navController.navigate("album/${album.id}")
                                 },
                                 bottomPadding = bottomPadding
                             )
                         }
                         composable("playlist/{playlistId}") {
+                            val playlistDetailViewModel =
+                                activityViewModelProvider[PlaylistDetailViewModel::class.java]
                             PlaylistDetailScreen(
                                 playlistDetailViewModel = playlistDetailViewModel,
                                 musicViewModel = musicViewModel,
@@ -511,6 +518,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("album/{albumId}") {
+                            val albumDetailViewModel =
+                                activityViewModelProvider[AlbumDetailViewModel::class.java]
                             AlbumDetailScreen(
                                 albumDetailViewModel = albumDetailViewModel,
                                 musicViewModel = musicViewModel,
@@ -531,12 +540,14 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { showPlayerModal = false },
                         onNavigateToArtist = { artistId ->
                             showPlayerModal = false
-                            searchViewModel.loadArtistDetailsById(artistId)
+                            activityViewModelProvider[SearchViewModel::class.java]
+                                .loadArtistDetailsById(artistId)
                             navController.navigate("artist/$artistId")
                         },
                         onNavigateToAlbum = { albumId ->
                             showPlayerModal = false
-                            albumDetailViewModel.loadAlbumDetailsById(albumId)
+                            activityViewModelProvider[AlbumDetailViewModel::class.java]
+                                .loadAlbumDetailsById(albumId)
                             navController.navigate("album/$albumId")
                         },
                         onShareTrack = { spotifyId ->
@@ -569,11 +580,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestReadPhoneStatePermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_PHONE_STATE
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        requestPermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         // Track app closed and end session
-        val analytics = AnalyticsManager.getInstance()
-        analytics.trackAppClosed()
-        analytics.endSession()
+        AnalyticsManager.getIfInitialized()?.let { analytics ->
+            analytics.trackAppClosed()
+            analytics.endSession()
+        }
     }
 }

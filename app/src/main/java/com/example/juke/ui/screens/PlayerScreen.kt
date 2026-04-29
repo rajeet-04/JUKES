@@ -347,7 +347,7 @@ fun PlayerScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(spacerMd))
+                    Spacer(modifier = Modifier.weight(1f))
 
                     // Track Info & Action icons
                     Row(
@@ -423,7 +423,7 @@ fun PlayerScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(spacerSm))
+                    Spacer(modifier = Modifier.weight(0.5f))
 
                     // Progress
                     PlayerProgress(
@@ -432,7 +432,7 @@ fun PlayerScreen(
                         musicViewModel = musicViewModel
                     )
 
-                    Spacer(modifier = Modifier.height(spacerSm))
+                    Spacer(modifier = Modifier.weight(0.5f))
 
                     // Controls
                     PlayerControls(
@@ -445,7 +445,7 @@ fun PlayerScreen(
                         smallIconSize = ctrlSmallIconSize
                     )
 
-                    Spacer(modifier = Modifier.height(spacerSm))
+                    Spacer(modifier = Modifier.weight(0.5f))
 
                     // Bottom Action Row (Queue, Radio, Share)
                     Box(
@@ -560,8 +560,6 @@ fun PlayerScreen(
                         }
                     }
 
-                    // Ensure the main Column keeps spacing from the navigation bar
-                    Spacer(modifier = Modifier.height(bottomPadding))
                 }
             }
         }

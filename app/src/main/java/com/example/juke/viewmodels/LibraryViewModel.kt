@@ -564,10 +564,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             tracks = sortTracks(tracks, _uiState.value.sortOption)
 
             if (tracks.isNotEmpty()) {
-                // If shuffle is enabled, shuffle the tracks before adding
-                if (musicViewModel.uiState.value.isShuffleEnabled) {
-                    tracks = tracks.shuffled()
-                }
                 musicViewModel.addToQueue(tracks)
             }
         }
