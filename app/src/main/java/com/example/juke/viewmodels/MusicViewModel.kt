@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.example.juke.database.MusicDatabase
@@ -206,6 +207,34 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         currentTrack = updatedCurrentTrack,
                         queue = updatedQueue
                     )
+                }
+            }
+        }
+
+        // Observe track promotions (stream → download) triggered from the notification.
+        // Re-fetches the promoted track from DB so isStream is reflected in the UI.
+        viewModelScope.launch {
+            playbackManager.trackPromotedFlow.collect { uuid ->
+                withContext(Dispatchers.IO) {
+                    val updatedTrack = trackDao.getTrackByUuid(uuid)?.toTrack() ?: return@withContext
+                    // Pre-warm the singleton Coil memory cache with the new local thumbnail
+                    // so AsyncImage gets an instant cache hit when the state update triggers
+                    // recomposition — this prevents the brief blank/flash during the transition.
+                    val newThumbnailUri = updatedTrack.thumbnailUri
+                    if (newThumbnailUri != null) {
+                        val request = ImageRequest.Builder(getApplication<Application>())
+                            .data(newThumbnailUri)
+                            .build()
+                        getApplication<Application>().imageLoader.execute(request)
+                    }
+                    _uiState.update { state ->
+                        val newQueue = state.queue.map { if (it.uuid == uuid) updatedTrack else it }
+                        state.copy(
+                            currentTrack = if (state.currentTrack?.uuid == uuid) updatedTrack else state.currentTrack,
+                            queue = newQueue
+                        )
+                    }
+                    Log.d("MusicViewModel", "trackPromotedFlow: updated track ${updatedTrack.title} isStream=${updatedTrack.isStream}")
                 }
             }
         }
@@ -1880,6 +1909,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         isLoading = false
                     )
                 }
+                // Signal PlaybackService so it updates the notification layout (hides Download button)
+                playbackManager.emitTrackPromoted(track.uuid)
                 Log.d("MusicViewModel", "Promoted track to download: ${track.title}")
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to promote track: ${e.message}", e)

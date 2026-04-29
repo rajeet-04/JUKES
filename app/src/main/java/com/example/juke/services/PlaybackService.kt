@@ -85,6 +85,8 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         private const val CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID =
             "CUSTOM_COMMAND_TOGGLE_FAVORITE"
+        private const val CUSTOM_COMMAND_DOWNLOAD_TRACK_ACTION_ID =
+            "CUSTOM_COMMAND_DOWNLOAD_TRACK"
 
         /**
          * Resolve artwork for a track into MediaMetadata.
@@ -429,7 +431,7 @@ class PlaybackService : MediaLibraryService() {
                     try {
                         val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
                         if (track != null) {
-                            updateCustomLayout(track.isFavourite)
+                            updateCustomLayout(track.isFavourite, track.isStream)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error updating custom layout: ${e.message}")
@@ -673,7 +675,25 @@ class PlaybackService : MediaLibraryService() {
         serviceScope.launch {
             PlaybackManager.getInstance(applicationContext).favouriteChangedFlow.collect { (_, isFavourite) ->
                 withContext(Dispatchers.Main) {
-                    updateCustomLayout(isFavourite)
+                    updateCustomLayout(isFavourite, isStream = false)
+                }
+            }
+        }
+
+        // Collect track promotions (stream → download) triggered from the in-app player UI.
+        // Updates the notification layout to hide the Download button for the current track.
+        serviceScope.launch {
+            PlaybackManager.getInstance(applicationContext).trackPromotedFlow.collect { uuid ->
+                val currentId = player.currentMediaItem?.mediaId
+                if (currentId == uuid) {
+                    val track = withContext(Dispatchers.IO) {
+                        database.trackDao().getTrackByUuid(uuid)?.toTrack()
+                    }
+                    if (track != null) {
+                        withContext(Dispatchers.Main) {
+                            updateCustomLayout(isFavorite = track.isFavourite, isStream = false)
+                        }
+                    }
                 }
             }
         }
@@ -802,23 +822,36 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Helper to update custom layout (Favorite button)
+     * Helper to update custom layout (Favorite or Download button)
      */
-    private fun updateCustomLayout(isFavorite: Boolean) {
-        val iconResId =
-            if (isFavorite) R.drawable.baseline_favorite_24 else R.drawable.baseline_favorite_border_24
-        val favoriteButton = CommandButton.Builder()
-            .setDisplayName("Favorite")
-            .setIconResId(iconResId)
-            .setSessionCommand(
-                SessionCommand(
-                    CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID,
-                    Bundle.EMPTY
+    private fun updateCustomLayout(isFavorite: Boolean, isStream: Boolean) {
+        val button = if (isStream) {
+            CommandButton.Builder()
+                .setDisplayName("Download")
+                .setIconResId(R.drawable.baseline_download_24)
+                .setSessionCommand(
+                    SessionCommand(
+                        CUSTOM_COMMAND_DOWNLOAD_TRACK_ACTION_ID,
+                        Bundle.EMPTY
+                    )
                 )
-            )
-            .build()
+                .build()
+        } else {
+            val iconResId =
+                if (isFavorite) R.drawable.baseline_favorite_24 else R.drawable.baseline_favorite_border_24
+            CommandButton.Builder()
+                .setDisplayName("Favorite")
+                .setIconResId(iconResId)
+                .setSessionCommand(
+                    SessionCommand(
+                        CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID,
+                        Bundle.EMPTY
+                    )
+                )
+                .build()
+        }
 
-        mediaSession?.setCustomLayout(listOf(favoriteButton))
+        mediaSession?.setCustomLayout(listOf(button))
     }
 
     /**
@@ -868,6 +901,12 @@ class PlaybackService : MediaLibraryService() {
                             Bundle.EMPTY
                         )
                     )
+                    .add(
+                        SessionCommand(
+                            CUSTOM_COMMAND_DOWNLOAD_TRACK_ACTION_ID,
+                            Bundle.EMPTY
+                        )
+                    )
                     .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
@@ -901,6 +940,33 @@ class PlaybackService : MediaLibraryService() {
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error processing favorite command: ${e.message}")
+                        }
+                    }
+                }
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            } else if (customCommand.customAction == CUSTOM_COMMAND_DOWNLOAD_TRACK_ACTION_ID) {
+                val currentTrackId = player.currentMediaItem?.mediaId
+                if (currentTrackId != null) {
+                    serviceScope.launch {
+                        try {
+                            val track =
+                                database.trackDao().getTrackByUuid(currentTrackId)?.toTrack()
+                            if (track != null && track.isStream) {
+                                val promotedTrack = withContext(Dispatchers.IO) {
+                                    musicService.promoteStreamToDownload(track)
+                                }
+                                // Update ExoPlayer queue and QueueManager — same as promoteTrackToDownload in MusicViewModel
+                                PlaybackManager.getInstance(applicationContext)
+                                    .replaceTrackInQueue(track.uuid, promotedTrack, seamlessIfPlaying = true)
+                                queueManager.replaceTrackInQueue(track.uuid, promotedTrack)
+                                updateCustomLayout(isFavorite = promotedTrack.isFavourite, isStream = false)
+                                // Signal MusicViewModel so it re-fetches from DB and updates _uiState
+                                PlaybackManager.getInstance(applicationContext)
+                                    .emitTrackPromoted(track.uuid)
+                                Log.d(TAG, "Promoted stream to download from notification: ${promotedTrack.title}")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error promoting track from notification: ${e.message}")
                         }
                     }
                 }
@@ -1142,6 +1208,16 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun emitFavouriteChanged(uuid: String, isFavourite: Boolean) {
         _favouriteChanged.tryEmit(uuid to isFavourite)
+    }
+
+    // Shared bus for stream-to-download promotions (emits promoted track UUID).
+    // Notification handler emits here so MusicViewModel can update _uiState.
+    // MusicViewModel emits here so PlaybackService can update the notification layout.
+    private val _trackPromoted = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val trackPromotedFlow: SharedFlow<String> = _trackPromoted.asSharedFlow()
+
+    fun emitTrackPromoted(uuid: String) {
+        _trackPromoted.tryEmit(uuid)
     }
 
     // Queue manager for recommendations
