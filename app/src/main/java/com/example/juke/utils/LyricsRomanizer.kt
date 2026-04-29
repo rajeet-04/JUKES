@@ -71,6 +71,7 @@ object LyricsRomanizer {
                     }
 
                     val result = romanizedResult.toString().trim().ifBlank { null }
+                        ?.replaceFirstChar { it.uppercase() }
                     if (result != null) {
                         lineCache[cacheKey] = result
                     }

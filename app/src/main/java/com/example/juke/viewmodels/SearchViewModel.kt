@@ -6,6 +6,8 @@ import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.sqlite.db.SimpleSQLiteQuery
+import coil.Coil
+import coil.request.ImageRequest
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
@@ -437,6 +439,17 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         isPlaylistUrl = false,
                         playlistId = null
                     )
+
+                    // Pre-warm thumbnail cache so images are in-flight when the list renders.
+                    val ctx = getApplication<Application>()
+                    val imageLoader = Coil.imageLoader(ctx)
+                    filteredSpotifyTracks.forEach { track ->
+                        track.album.images.lastOrNull()?.url?.let { url ->
+                            imageLoader.enqueue(
+                                ImageRequest.Builder(ctx).data(url).build()
+                            )
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

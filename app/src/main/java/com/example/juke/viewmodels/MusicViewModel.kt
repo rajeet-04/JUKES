@@ -238,23 +238,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 if (queueIds.isEmpty()) return@collect
 
                 withContext(Dispatchers.IO) {
-                    // Optimized sync: reuse existing objects, fetch only if missing
+                    // Always resync queue items from DB when PlaybackManager timeline changes.
+                    // Queue IDs can remain the same while metadata (e.g. thumbnail URI) changes.
                     val currentTrackMap = _uiState.value.queue.associateBy { it.uuid }
-                    val currentQueueIds = _uiState.value.queue.map { it.uuid }
+                    val existingQueue = _uiState.value.queue
+                    val existingIds = existingQueue.map { it.uuid }
+                    val idsChanged = existingIds != queueIds
 
-                    if (currentQueueIds != queueIds) {
-                        val newQueue = queueIds.mapNotNull { id ->
-                            currentTrackMap[id] ?: try {
-                                trackDao.getTrackByUuid(id)?.toTrack()
-                            } catch (e: Exception) {
-                                null
-                            }
+                    val newQueue = queueIds.mapNotNull { id ->
+                        try {
+                            trackDao.getTrackByUuid(id)?.toTrack() ?: currentTrackMap[id]
+                        } catch (e: Exception) {
+                            currentTrackMap[id]
                         }
+                    }
 
+                    if (newQueue != existingQueue || idsChanged) {
                         _uiState.update { state ->
                             val currentIndex = state.queueIndex
-                            // If index is valid in new queue, update current track because the track at this index might have changed
-                            // (e.g. when the current track is deleted and the next one immediately takes its place)
                             val newCurrentTrack =
                                 if (currentIndex >= 0 && currentIndex < newQueue.size) {
                                     newQueue[currentIndex]
@@ -269,7 +270,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         Log.d(
                             "MusicViewModel",
-                            "Synced UI queue with PlaybackManager: ${newQueue.size} tracks"
+                            "Synced UI queue with PlaybackManager: ${newQueue.size} tracks (idsChanged=$idsChanged)"
                         )
                     }
                 }
@@ -284,10 +285,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val currentQueue = currentState.queue
 
                 if (index >= 0 && index < currentQueue.size) {
-                    val track = currentQueue[index]
+                    val queueTrack = currentQueue[index]
+                    val track = withContext(Dispatchers.IO) {
+                        trackDao.getTrackByUuid(queueTrack.uuid)?.toTrack() ?: queueTrack
+                    }
 
                     // Only update if something changed
-                    if (currentState.queueIndex != index || currentState.currentTrack?.uuid != track.uuid) {
+                    if (
+                        currentState.queueIndex != index ||
+                        currentState.currentTrack?.uuid != track.uuid ||
+                        currentState.currentTrack != track
+                    ) {
                         _uiState.update {
                             it.copy(
                                 currentTrack = track,
