@@ -270,6 +270,8 @@ fun PlayerScreen(
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(currentTrack.thumbnailUri)
+                        .memoryCacheKey(currentTrack.thumbnailUri)
+                        .diskCacheKey(currentTrack.thumbnailUri)
                         .crossfade(true)
                         .build(),
                     contentDescription = null,

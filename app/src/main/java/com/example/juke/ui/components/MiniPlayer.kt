@@ -46,11 +46,13 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.juke.ui.screens.LyricLine
 import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.utils.LyricsRomanizer
@@ -103,6 +105,7 @@ fun MiniPlayer(
     val isRomanizedLyricsEnabled by musicViewModel.isRomanizedLyricsEnabled.collectAsState()
     val isMiniPlayerLyricsEnabled by musicViewModel.isMiniPlayerLyricsEnabled.collectAsState()
     val haptic = rememberJukeHaptics()
+    val context = LocalContext.current
 
     // Poll for progress updates when playing
     LaunchedEffect(uiState.isPlaying) {
@@ -257,8 +260,16 @@ fun MiniPlayer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (currentTrack.thumbnailUri != null) {
+                        // Explicit cache keys ensure Coil hits memory/disk cache immediately
+                        // when the MiniPlayer re-renders after a track change, preventing
+                        // the blank thumbnail flash on already-loaded images.
                         AsyncImage(
-                            model = currentTrack.thumbnailUri,
+                            model = ImageRequest.Builder(context)
+                                .data(currentTrack.thumbnailUri)
+                                .memoryCacheKey(currentTrack.thumbnailUri)
+                                .diskCacheKey(currentTrack.thumbnailUri)
+                                .crossfade(true)
+                                .build(),
                             contentDescription = currentTrack.title,
                             modifier = Modifier
                                 .size(48.dp)

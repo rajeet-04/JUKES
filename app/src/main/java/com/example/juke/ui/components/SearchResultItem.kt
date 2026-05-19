@@ -18,9 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.utils.rememberJukeHaptics
 
@@ -31,6 +33,13 @@ fun SearchResultItemM3(
     onClick: () -> Unit
 ) {
     val haptic = rememberJukeHaptics()
+    val context = LocalContext.current
+    // Prefer the smallest image that is still at least 64px wide so the 48dp slot
+    // doesn't upscale a tiny thumbnail. Fall back to the last entry if none qualify.
+    val thumbnailUrl = track.album.images
+        .filter { (it.width ?: 0) >= 64 }
+        .minByOrNull { it.width ?: Int.MAX_VALUE }?.url
+        ?: track.album.images.lastOrNull()?.url
 
     ListItem(
         modifier = Modifier
@@ -66,8 +75,15 @@ fun SearchResultItemM3(
                     .size(48.dp)
                     .clip(RoundedCornerShape(8.dp))
             ) {
+                // Explicit cache keys let Coil serve from memory/disk immediately when
+                // the list re-renders (e.g. after scrolling back), avoiding late loads.
                 AsyncImage(
-                    model = track.album.images.lastOrNull()?.url,
+                    model = ImageRequest.Builder(context)
+                        .data(thumbnailUrl)
+                        .memoryCacheKey(thumbnailUrl)
+                        .diskCacheKey(thumbnailUrl)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = "${track.name} Album Art",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize()

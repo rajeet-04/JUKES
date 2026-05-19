@@ -441,12 +441,22 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     )
 
                     // Pre-warm thumbnail cache so images are in-flight when the list renders.
+                    // Use the same image-selection logic as SearchResultItemM3: smallest image
+                    // that is still ≥64px wide, with explicit cache keys so Coil can deduplicate.
                     val ctx = getApplication<Application>()
                     val imageLoader = Coil.imageLoader(ctx)
                     filteredSpotifyTracks.forEach { track ->
-                        track.album.images.lastOrNull()?.url?.let { url ->
+                        val url = track.album.images
+                            .filter { (it.width ?: 0) >= 64 }
+                            .minByOrNull { it.width ?: Int.MAX_VALUE }?.url
+                            ?: track.album.images.lastOrNull()?.url
+                        url?.let {
                             imageLoader.enqueue(
-                                ImageRequest.Builder(ctx).data(url).build()
+                                ImageRequest.Builder(ctx)
+                                    .data(it)
+                                    .memoryCacheKey(it)
+                                    .diskCacheKey(it)
+                                    .build()
                             )
                         }
                     }

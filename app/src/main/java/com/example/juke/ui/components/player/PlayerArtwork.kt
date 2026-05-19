@@ -23,8 +23,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.juke.models.Track
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
@@ -127,6 +129,7 @@ private fun ArtworkCard(
     modifier: Modifier = Modifier
 ) {
     val haptic = rememberJukeHaptics()
+    val context = LocalContext.current
 
     Box(
         modifier = modifier
@@ -145,8 +148,16 @@ private fun ArtworkCard(
         contentAlignment = Alignment.Center
     ) {
         if (track.thumbnailUri != null) {
+            // Use an explicit ImageRequest so Coil can key the memory/disk cache by URI
+            // and immediately serve from cache when the composable is re-entered after
+            // a track switch (avoids the blank-frame flash on already-rendered components).
             AsyncImage(
-                model = track.thumbnailUri,
+                model = ImageRequest.Builder(context)
+                    .data(track.thumbnailUri)
+                    .memoryCacheKey(track.thumbnailUri)
+                    .diskCacheKey(track.thumbnailUri)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = track.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
