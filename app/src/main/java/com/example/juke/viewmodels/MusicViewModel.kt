@@ -990,47 +990,68 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // 2. Not downloaded -> Stream instant via Spotdown-backed local stream file.
-                // For the first stream triggered from search, always use Spotmate (faster response).
+                // 2. Not downloaded -> Stream instantly from direct HTTP URL.
+                // ExoPlayer's CacheDataSource streams from the network URL immediately
+                // while FastDownloader saves the full file to disk in the background.
                 Log.d(
                     "MusicViewModel",
-                    "Track not local, starting instant stream (Spotmate-first): ${song.title}"
+                    "Track not local, starting instant HTTP stream: ${song.title}"
                 )
                 _uiState.update { it.copy(isLoading = true) }
 
                 try {
-                    val tempTrack = withContext(Dispatchers.IO) {
-                        musicService.streamTrack(
-                            song,
+                    val pinnedUuids = _uiState.value.queue.map { it.uuid }.toSet()
+
+                    val httpTrack = withContext(Dispatchers.IO) {
+                        musicService.streamTrackInstant(
+                            song = song,
                             forceSpotmateFirst = true,
-                            fetchLyricsSynchronously = false,
-                            fetchYtVideoIdSynchronously = false
-                        ).also {
-                            trackDao.insertTrack(it.toEntity())
+                            pinnedUuids = pinnedUuids,
+                            onLocalFileReady = { localTrack ->
+                                // Background download finished — swap ExoPlayer source to local file.
+                                // seamlessIfPlaying=true keeps audio uninterrupted during the swap.
+                                val swapped = playbackManager.replaceTrackInQueue(
+                                    oldMediaId = localTrack.uuid,
+                                    newTrack = localTrack,
+                                    seamlessIfPlaying = true
+                                )
+                                // Update DB and in-memory queue with the local file path
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    trackDao.insertTrack(localTrack.toEntity())
+                                }
+                                queueManager.replaceTrackInQueue(localTrack.uuid, localTrack)
+                                _uiState.update { state ->
+                                    val newQueue = state.queue.map {
+                                        if (it.uuid == localTrack.uuid) localTrack else it
+                                    }
+                                    state.copy(
+                                        queue = newQueue,
+                                        currentTrack = if (state.currentTrack?.uuid == localTrack.uuid) localTrack else state.currentTrack
+                                    )
+                                }
+                                Log.d("MusicViewModel", "Swapped to local file for '${localTrack.title}' (swapped=$swapped)")
+                            }
+                        ).also { track ->
+                            // Persist the HTTP-URI track to DB so queue survives app restart
+                            trackDao.insertTrack(track.toEntity())
                         }
                     }
 
-                    // Play immediately
-                    playTrack(tempTrack)
+                    // Play immediately from the HTTP URL
+                    playTrack(httpTrack)
 
-                    // Hydrate lyrics off the critical playback path.
-                    if (tempTrack.syncedLyrics.isNullOrBlank() && tempTrack.plainLyrics.isNullOrBlank()) {
-                        refreshLyrics(tempTrack)
+                    // Hydrate lyrics and YT video ID off the critical path
+                    if (httpTrack.syncedLyrics.isNullOrBlank() && httpTrack.plainLyrics.isNullOrBlank()) {
+                        refreshLyrics(httpTrack)
                     }
-
-                    // Hydrate YT video ID off the critical playback path.
-                    if (tempTrack.ytVideoId.isNullOrBlank()) {
-                        refreshYtVideoId(tempTrack)
+                    if (httpTrack.ytVideoId.isNullOrBlank()) {
+                        refreshYtVideoId(httpTrack)
                     }
 
                     _uiState.update { it.copy(isLoading = false) }
+                    queueManager.notifyDownloadStarted(httpTrack, addToUi = false)
 
-                    // Notify QueueManager so it doesn't try to recommend/download this
-                    // Stream tracks are NOW saved to database — they exist in the
-                    // playback queue and LRU disk cache until explicitly promoted to download.
-                    queueManager.notifyDownloadStarted(tempTrack, addToUi = false)
-
-                    Log.d("MusicViewModel", "Spotdown stream prepared and playing: ${song.title}")
+                    Log.d("MusicViewModel", "Instant HTTP stream playing: ${song.title}")
 
                 } catch (e: Exception) {
                     Log.e("MusicViewModel", "Instant play failed (stream fetch): ${e.message}", e)

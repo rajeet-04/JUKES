@@ -15,7 +15,11 @@ import com.example.juke.network.SpotifyApi
 import com.example.juke.utils.FastDownloader
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.UUID
@@ -478,6 +482,214 @@ class MusicService(private val context: Context) {
         }
     }
 
+
+    /**
+     * Instant-play path: resolves the direct MP3 URL and returns a Track immediately so
+     * ExoPlayer can start streaming from the network URL right away (sub-second start).
+     *
+     * Simultaneously kicks off a background download via [FastDownloader] to save the full
+     * file to [stream_files/]. When the download completes, [onLocalFileReady] is called
+     * with the updated Track (localUri pointing to the local file) so the caller can swap
+     * the ExoPlayer source for better persistence and LRU caching.
+     *
+     * @param song            Source song metadata.
+     * @param forceSpotmateFirst  Use Spotmate as primary source (faster for search taps).
+     * @param pinnedUuids     UUIDs protected from LRU eviction during the download.
+     * @param onLocalFileReady Called on [Dispatchers.Main] once the background download
+     *                         finishes. Receives the updated Track with a local file URI.
+     *                         Will NOT be called if the download fails.
+     * @return A Track with [localUri] set to the direct HTTP URL, ready for immediate playback.
+     */
+    suspend fun streamTrackInstant(
+        song: SpotdownSong,
+        forceSpotmateFirst: Boolean = true,
+        pinnedUuids: Set<String> = emptySet(),
+        onLocalFileReady: suspend (Track) -> Unit
+    ): Track {
+        if (!song.url.startsWith("https://open.spotify.com/track/")) {
+            throw Exception("Invalid Spotify URL format")
+        }
+
+        val durationSec = SpotifyApi.parseDuration(song.duration)
+
+        // Check for an existing permanent download first — no streaming needed.
+        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+        val existing = candidates.find {
+            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
+        }
+        if (existing != null && !existing.isStream && existing.localUri != null &&
+            !existing.localUri.startsWith("http") && File(existing.localUri).exists()
+        ) {
+            return existing.toTrack()
+        }
+
+        // Check for a healthy cached stream file — play from disk instantly.
+        val uuid = existing?.uuid ?: generateUUID()
+        val streamDir = File(context.filesDir, "stream_files")
+        val cachedFile = File(streamDir, "${uuid}_stream.mp3")
+        if (cachedFile.exists() && isHealthyExistingStreamFile(cachedFile.absolutePath, durationSec)) {
+            Log.d(TAG, "streamTrackInstant: reusing cached stream file for '${song.title}'")
+            cachedFile.setLastModified(System.currentTimeMillis())
+            val cachedTrack = existing?.toTrack()?.copy(
+                localUri = cachedFile.absolutePath,
+                isStream = true,
+                thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else existing.thumbnailUri
+            ) ?: Track(
+                uuid = uuid,
+                title = song.title,
+                artist = song.artist,
+                thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else null,
+                durationSec = durationSec,
+                localUri = cachedFile.absolutePath,
+                isStream = true,
+                spotifyId = song.spotifyId,
+                albumSpotifyId = song.albumSpotifyId,
+                artistSpotifyIds = song.artistSpotifyIds
+            )
+            return cachedTrack
+        }
+
+        // Resolve the direct MP3 URL — this is a fast API call (~200-500ms), NOT a download.
+        val useGamepvzFirst = !forceSpotmateFirst
+        var directRequest: SpotifyApi.DirectDownloadRequest? = null
+        var queuedSpotmateTaskId: String? = null
+
+        try {
+            directRequest = if (useGamepvzFirst) {
+                SpotifyApi.getGamepvzDownloadRequest(song.url)
+            } else {
+                try {
+                    SpotifyApi.getSpotmateDownloadRequest(song.url)
+                } catch (queuedEx: SpotifyApi.SpotmateQueuedException) {
+                    queuedSpotmateTaskId = queuedEx.taskId
+                    Log.w(TAG, "Spotmate queued (taskId=${queuedEx.taskId}), trying Gamepvz")
+                    throw queuedEx
+                }
+            }
+        } catch (primaryEx: Exception) {
+            Log.w(TAG, "Primary URL resolve failed (${primaryEx.message}), trying fallback")
+            try {
+                directRequest = if (useGamepvzFirst) {
+                    try {
+                        SpotifyApi.getSpotmateDownloadRequest(song.url)
+                    } catch (queuedEx: SpotifyApi.SpotmateQueuedException) {
+                        queuedSpotmateTaskId = queuedEx.taskId
+                        throw queuedEx
+                    }
+                } else {
+                    SpotifyApi.getGamepvzDownloadRequest(song.url)
+                }
+            } catch (fallbackEx: Exception) {
+                // Both direct sources failed — if Spotmate queued a task, wait for it
+                val taskId = queuedSpotmateTaskId
+                if (!taskId.isNullOrBlank()) {
+                    Log.w(TAG, "Both direct sources failed; polling queued Spotmate task: $taskId")
+                    // Fall through to the old full-download path as last resort
+                    val localPath = resolveStreamToLocalFile(song, uuid, forceSpotmateFirst)
+                    val fallbackTrack = Track(
+                        uuid = uuid,
+                        title = song.title,
+                        artist = song.artist,
+                        thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else null,
+                        durationSec = durationSec,
+                        localUri = localPath,
+                        isStream = true,
+                        isFavourite = existing?.isFavourite ?: false,
+                        playCount = existing?.playCount ?: 0,
+                        lastPlayedAt = existing?.lastPlayedAt,
+                        downloadedAt = existing?.downloadedAt ?: System.currentTimeMillis(),
+                        spotifyId = song.spotifyId,
+                        albumSpotifyId = song.albumSpotifyId,
+                        artistSpotifyIds = song.artistSpotifyIds
+                    )
+                    return fallbackTrack
+                }
+                throw Exception("URL resolve failed: ${fallbackEx.message}")
+            }
+        }
+
+        val resolvedRequest = directRequest
+            ?: throw Exception("Could not resolve a direct MP3 URL for '${song.title}'")
+
+        // Build a Track with the HTTP URL as localUri — ExoPlayer's CacheDataSource
+        // will stream it directly from the network while caching chunks in its 256 MB
+        // SimpleCache. Playback starts as soon as the first ~1.5s of audio is buffered.
+        val httpTrack = Track(
+            uuid = uuid,
+            title = song.title,
+            artist = song.artist,
+            thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else null,
+            durationSec = durationSec,
+            localUri = resolvedRequest.url,   // <-- HTTP URL, not a file path
+            isStream = true,
+            isFavourite = existing?.isFavourite ?: false,
+            playCount = existing?.playCount ?: 0,
+            lastPlayedAt = existing?.lastPlayedAt,
+            downloadedAt = existing?.downloadedAt ?: System.currentTimeMillis(),
+            spotifyId = song.spotifyId,
+            albumSpotifyId = song.albumSpotifyId,
+            artistSpotifyIds = song.artistSpotifyIds,
+            syncedLyrics = existing?.syncedLyrics,
+            plainLyrics = existing?.plainLyrics,
+            lyricsOffsetMs = existing?.lyricsOffsetMs ?: 0L
+        )
+
+        // Background: download the full file to stream_files/ for LRU persistence.
+        // When done, call back so the caller can swap ExoPlayer's source to the local file.
+        val bgScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        bgScope.launch {
+            try {
+                Log.d(TAG, "streamTrackInstant: background download started for '${song.title}'")
+                if (!streamDir.exists()) streamDir.mkdirs()
+                val finalFile = File(streamDir, "${uuid}_stream.mp3")
+                val tempFile = File(streamDir, "${uuid}_stream.tmp")
+
+                withTimeout(120_000L) {
+                    FastDownloader.downloadSegmented(
+                        url = resolvedRequest.url,
+                        outputFile = tempFile,
+                        headers = resolvedRequest.headers,
+                        threads = 4
+                    )
+                }
+
+                if (!tempFile.exists() || tempFile.length() < 100_000L) {
+                    Log.w(TAG, "streamTrackInstant: background download too small, discarding")
+                    tempFile.delete()
+                    return@launch
+                }
+
+                if (finalFile.exists()) finalFile.delete()
+                val moved = tempFile.renameTo(finalFile)
+                if (!moved) {
+                    tempFile.copyTo(finalFile, overwrite = true)
+                    tempFile.delete()
+                }
+
+                if (!finalFile.exists() || finalFile.length() <= 0L) {
+                    Log.w(TAG, "streamTrackInstant: failed to persist background download")
+                    return@launch
+                }
+
+                Log.d(TAG, "streamTrackInstant: background download complete for '${song.title}' (${finalFile.length() / 1024}KB)")
+
+                // Evict old stream files now that we have a new one
+                evictStreamCache(pinnedUuids = pinnedUuids + uuid)
+
+                val localTrack = httpTrack.copy(localUri = finalFile.absolutePath)
+
+                // Notify caller on Main so they can swap ExoPlayer source
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onLocalFileReady(localTrack)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "streamTrackInstant: background download failed for '${song.title}': ${e.message}")
+                // Non-fatal — ExoPlayer continues streaming from the HTTP URL via its cache
+            }
+        }
+
+        return httpTrack
+    }
 
     /**
      * Stream a track to a local file and return a playable Track object.
