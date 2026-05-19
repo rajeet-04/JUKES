@@ -6,6 +6,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -37,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,7 +57,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -70,7 +71,9 @@ import androidx.navigation.compose.rememberNavController
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.models.GithubRelease
 import com.example.juke.network.SpotifyApi
+import com.example.juke.services.DownloadedUpdate
 import com.example.juke.services.UpdateManager
+import com.example.juke.services.UpdateDownloadState
 import com.example.juke.ui.components.MiniPlayer
 import com.example.juke.ui.screens.AlbumDetailScreen
 import com.example.juke.ui.screens.ArtistDetailScreen
@@ -173,7 +176,8 @@ class MainActivity : ComponentActivity() {
 
                 // --- UPDATE CHECK LOGIC ---
                 var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
-                val uriHandler = LocalUriHandler.current
+                val updateDownloadState by UpdateManager.downloadState.collectAsState()
+                val isUpdateDownloading = updateDownloadState is UpdateDownloadState.Downloading
 
                 LaunchedEffect(Unit) {
                     // Yield the first frame before optional launch work.
@@ -184,6 +188,13 @@ class MainActivity : ComponentActivity() {
                     updateAvailable = UpdateManager.checkForUpdates()
 
 
+                }
+
+                LaunchedEffect(updateDownloadState) {
+                    val errorMessage =
+                        (updateDownloadState as? UpdateDownloadState.Error)?.message ?: return@LaunchedEffect
+                    Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
+                    UpdateManager.clearDownloadState()
                 }
 
                 if (updateAvailable != null) {
@@ -280,25 +291,16 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {
                             Button(
                                 onClick = {
-                                    try {
-                                        uriHandler.openUri(release.htmlUrl)
+                                    if (UpdateManager.startUpdateDownload(context, release)) {
                                         updateAvailable = null
-                                        if (isEmergency) {
-                                            (context as? android.app.Activity)?.finishAffinity()
-                                        }
-                                    } catch (e: Exception) {
-                                        android.util.Log.e(
-                                            "MainActivity",
-                                            "Failed to open update URL",
-                                            e
-                                        )
                                     }
                                 },
+                                enabled = !isUpdateDownloading,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (isEmergency) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                 )
                             ) {
-                                Text("Download Update")
+                                Text(if (isUpdateDownloading) "Downloading..." else "Download Update")
                             }
                         },
                         dismissButton = {
@@ -312,6 +314,14 @@ class MainActivity : ComponentActivity() {
                         containerColor = MaterialTheme.colorScheme.surface,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                val readyUpdate = (updateDownloadState as? UpdateDownloadState.Ready)?.update
+                if (readyUpdate != null) {
+                    UpdateReadyDialog(
+                        downloadedUpdate = readyUpdate,
+                        onDismiss = { UpdateManager.clearDownloadState() }
                     )
                 }
                 // --- END UPDATE CHECK LOGIC ---
@@ -602,4 +612,44 @@ class MainActivity : ComponentActivity() {
             analytics.endSession()
         }
     }
+}
+
+@Composable
+private fun UpdateReadyDialog(
+    downloadedUpdate: DownloadedUpdate,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Update Downloaded") },
+        text = {
+            Text(
+                "${downloadedUpdate.fileName} is ready. Install ${downloadedUpdate.releaseTag} now or open Downloads to manage the APK manually."
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (UpdateManager.installDownloadedUpdate(context, downloadedUpdate)) {
+                        onDismiss()
+                    }
+                }
+            ) {
+                Text("Install Now")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = {
+                    if (UpdateManager.openDownloadsFolder(context)) {
+                        onDismiss()
+                    }
+                }
+            ) {
+                Text("Open Folder")
+            }
+        }
+    )
 }
