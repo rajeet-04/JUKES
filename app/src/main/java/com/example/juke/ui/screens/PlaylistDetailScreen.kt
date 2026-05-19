@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.network.SpotifyApi
+import com.example.juke.ui.components.MediaDetailSkeleton
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
@@ -62,20 +62,18 @@ fun PlaylistDetailScreen(
 ) {
     val uiState by playlistDetailViewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
-    
-    if (uiState.playlist == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-    
-    val playlist = uiState.playlist!!
+    val playlist = uiState.playlist
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(playlist.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Text(
+                        playlist?.name ?: "Playlist",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -85,15 +83,16 @@ fun PlaylistDetailScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+        if (uiState.isLoading || playlist == null) {
+            MediaDetailSkeleton(
+                modifier = Modifier.padding(paddingValues),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    top = 16.dp,
+                    end = 20.dp,
+                    bottom = 16.dp + bottomPadding
+                )
+            )
         } else {
             LazyColumn(
                 modifier = Modifier

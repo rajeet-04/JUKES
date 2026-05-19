@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +51,7 @@ import android.widget.Toast
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyImage
 import com.example.juke.models.SpotifyTrack
+import com.example.juke.ui.components.MediaDetailSkeleton
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.utils.BlacklistManager
 import com.example.juke.viewmodels.MusicViewModel
@@ -70,64 +70,59 @@ fun ArtistDetailScreen(
     val uiState by searchViewModel.artistDetailState.collectAsState()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
-
-    if (uiState.artist == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
-    val artist = uiState.artist!!
+    val artist = uiState.artist
 
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(artist.name) },
+                title = { Text(artist?.name ?: "Artist") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
                 actions = {
-                    val isBlacklisted = remember(artist.name) {
-                        BlacklistManager.containsBlacklistedArtist(context, artist.name)
-                    }
-                    var blacklisted by remember(artist.name) { mutableStateOf(isBlacklisted) }
-                    IconButton(onClick = {
-                        if (blacklisted) {
-                            BlacklistManager.removeArtist(context, artist.name)
-                            Toast.makeText(context, "${artist.name} unblocked", Toast.LENGTH_SHORT).show()
-                        } else {
-                            BlacklistManager.addArtist(context, artist.name)
-                            Toast.makeText(context, "${artist.name} blocked", Toast.LENGTH_SHORT).show()
+                    if (artist != null) {
+                        val isBlacklisted = remember(artist.name) {
+                            BlacklistManager.containsBlacklistedArtist(context, artist.name)
                         }
-                        blacklisted = !blacklisted
-                    }) {
-                        Icon(
-                            imageVector = if (blacklisted)
-                                Icons.Filled.Block
-                            else
-                                Icons.Outlined.Block,
-                            contentDescription = if (blacklisted) "Unblock Artist" else "Block Artist",
-                            tint = if (blacklisted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                        )
+                        var blacklisted by remember(artist.name) { mutableStateOf(isBlacklisted) }
+                        IconButton(onClick = {
+                            if (blacklisted) {
+                                BlacklistManager.removeArtist(context, artist.name)
+                                Toast.makeText(context, "${artist.name} unblocked", Toast.LENGTH_SHORT).show()
+                            } else {
+                                BlacklistManager.addArtist(context, artist.name)
+                                Toast.makeText(context, "${artist.name} blocked", Toast.LENGTH_SHORT).show()
+                            }
+                            blacklisted = !blacklisted
+                        }) {
+                            Icon(
+                                imageVector = if (blacklisted)
+                                    Icons.Filled.Block
+                                else
+                                    Icons.Outlined.Block,
+                                contentDescription = if (blacklisted) "Unblock Artist" else "Block Artist",
+                                tint = if (blacklisted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+        if (uiState.isLoading || artist == null) {
+            MediaDetailSkeleton(
+                modifier = Modifier.padding(paddingValues),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    top = 16.dp,
+                    end = 20.dp,
+                    bottom = 16.dp + bottomPadding
+                )
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -149,7 +144,7 @@ fun ArtistDetailScreen(
                     ) {
                         AsyncImage(
                             model = bestImageUrl(artist.images) ?: artist.images.firstOrNull()?.url
-                            ?: "",
+                                ?: "",
                             contentDescription = artist.name,
                             modifier = Modifier
                                 .size(200.dp)

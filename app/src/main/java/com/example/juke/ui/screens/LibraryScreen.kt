@@ -100,6 +100,7 @@ import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.ui.components.EditPlaylistDialog
 import com.example.juke.ui.components.LibraryTrackItem
 import com.example.juke.ui.components.SwipeToAddNextContainer
+import com.example.juke.ui.components.TrackListSkeleton
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.DownloadItem
 import com.example.juke.viewmodels.LibraryViewModel
@@ -770,12 +771,10 @@ fun LibraryScreen(
             }
 
             if (uiState.isLoading) {
-                Box(
+                TrackListSkeleton(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
+                    contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp + bottomPadding)
+                )
             } else if (uiState.tracks.isEmpty()) {
                 Box(
                     modifier = Modifier
