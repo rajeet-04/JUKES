@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -230,23 +229,6 @@ fun PlayerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .pointerInput(Unit) {
-                    var totalDrag = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { totalDrag = 0f },
-                        onDragEnd = {
-                            if (totalDrag < -150f) {
-                                musicViewModel.skipToNext()
-                            } else if (totalDrag > 150f) {
-                                musicViewModel.skipToPrevious()
-                            }
-                            totalDrag = 0f
-                        }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        totalDrag += dragAmount
-                    }
-                }
         ) {
             // Immersive Background
             if (currentTrack.thumbnailUri != null) {
@@ -339,6 +321,8 @@ fun PlayerScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         PlayerArtwork(
+                            queue = uiState.queue,
+                            queueIndex = uiState.queueIndex,
                             currentTrack = displayTrack,
                             currentPosition = uiState.position,
                             showLyrics = showLyrics,
