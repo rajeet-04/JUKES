@@ -1,11 +1,16 @@
 package com.example.juke.ui.screens
 
+import android.os.Build
+import android.view.accessibility.AccessibilityManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +32,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -44,12 +51,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,6 +86,8 @@ import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.HomeViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -134,6 +155,7 @@ fun HomeScreen(
                             HorizontalTrackSection(
                                 title = "Most Played",
                                 tracks = uiState.mostPlayed,
+                                onSeeAllClick = onSeeAllClick,
                                 onTrackClick = { index ->
                                     musicViewModel.setQueue(uiState.mostPlayed, index)
                                 }
@@ -145,6 +167,7 @@ fun HomeScreen(
                         item {
                             FavoritesSection(
                                 tracks = uiState.favorites,
+                                onSeeAllClick = onSeeAllClick,
                                 onTrackClick = { index ->
                                     musicViewModel.setQueue(uiState.favorites, index)
                                 }
@@ -209,15 +232,62 @@ private fun RecentlyPlayedSection(
     onTrackClick: (Int) -> Unit,
     onSeeAllClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val haptic = rememberJukeHaptics()
     val pagerState = rememberPagerState(pageCount = { tracks.size })
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
+    val accessibilityManager = remember(context) {
+        context.getSystemService(AccessibilityManager::class.java)
+    }
+    val autoAdvanceDelayMillis = remember(accessibilityManager) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            accessibilityManager?.getRecommendedTimeoutMillis(
+                6000,
+                AccessibilityManager.FLAG_CONTENT_TEXT or
+                        AccessibilityManager.FLAG_CONTENT_ICONS or
+                        AccessibilityManager.FLAG_CONTENT_CONTROLS
+            ) ?: 6000
+        } else {
+            6000
+        }
+    }
+    val touchExplorationEnabled = accessibilityManager?.isTouchExplorationEnabled == true
+    var autoAdvanceResetKey by remember(tracks.size) { mutableIntStateOf(0) }
+    var isAutoScrolling by remember { mutableStateOf(false) }
+    val visibleIndicatorCount = tracks.size.coerceAtMost(8)
+    val indicatorStart = when {
+        tracks.size <= visibleIndicatorCount -> 0
+        pagerState.currentPage <= 3 -> 0
+        pagerState.currentPage >= tracks.lastIndex - 3 -> tracks.size - visibleIndicatorCount
+        else -> pagerState.currentPage - 3
+    }
 
-    LaunchedEffect(pagerState, tracks) {
-        while (true) {
-            delay(4000)
-            val isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-            if (!pagerState.isScrollInProgress && tracks.isNotEmpty() && isResumed) {
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.isScrollInProgress }
+            .collectLatest { isScrollInProgress ->
+                if (isScrollInProgress && !isAutoScrolling) {
+                    autoAdvanceResetKey++
+                }
+            }
+    }
+
+    LaunchedEffect(
+        autoAdvanceResetKey,
+        tracks.size,
+        autoAdvanceDelayMillis,
+        touchExplorationEnabled
+    ) {
+        if (tracks.size <= 1 || touchExplorationEnabled) return@LaunchedEffect
+
+        delay(autoAdvanceDelayMillis.toLong())
+        val isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        if (!pagerState.isScrollInProgress && isResumed) {
+            isAutoScrolling = true
+            try {
                 pagerState.animateScrollToPage((pagerState.currentPage + 1) % tracks.size)
+            } finally {
+                isAutoScrolling = false
             }
         }
     }
@@ -226,6 +296,10 @@ private fun RecentlyPlayedSection(
         SectionHeader(title = "Recently Played", onActionClick = onSeeAllClick)
 
         HorizontalPager(
+            modifier = Modifier.semantics {
+                contentDescription = "Recently played tracks carousel"
+                stateDescription = "Track ${pagerState.currentPage + 1} of ${tracks.size}"
+            },
             state = pagerState,
             contentPadding = PaddingValues(horizontal = 12.dp),
             pageSpacing = 12.dp
@@ -236,37 +310,88 @@ private fun RecentlyPlayedSection(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Animated pill indicators
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            horizontalArrangement = if (tracks.size > 1) Arrangement.SpaceBetween else Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            repeat(tracks.size.coerceAtMost(8)) { index ->
-                val isSelected = index == pagerState.currentPage
-                val pillWidth by animateDpAsState(
-                    targetValue = if (isSelected) 22.dp else 6.dp,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "pillWidth"
-                )
-                val pillColor by animateColorAsState(
-                    targetValue = if (isSelected)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                    animationSpec = tween(durationMillis = 300),
-                    label = "pillColor"
-                )
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 3.dp)
-                        .height(6.dp)
-                        .width(pillWidth)
-                        .clip(CircleShape)
-                        .background(pillColor)
-                )
+            if (tracks.size > 1) {
+                FilledIconButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            haptic.click()
+                            pagerState.animateScrollToPage(
+                                if (pagerState.currentPage == 0) tracks.lastIndex else pagerState.currentPage - 1
+                            )
+                        }
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Previous recently played track"
+                    )
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(visibleIndicatorCount) { offset ->
+                    val pageIndex = indicatorStart + offset
+                    val isSelected = pageIndex == pagerState.currentPage
+                    val pillWidth by animateDpAsState(
+                        targetValue = if (isSelected) 22.dp else 6.dp,
+                        animationSpec = tween(durationMillis = 300),
+                        label = "pillWidth"
+                    )
+                    val pillColor by animateColorAsState(
+                        targetValue = if (isSelected)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                        animationSpec = tween(durationMillis = 300),
+                        label = "pillColor"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .height(6.dp)
+                            .width(pillWidth)
+                            .clip(CircleShape)
+                            .background(pillColor)
+                    )
+                }
+            }
+
+            if (tracks.size > 1) {
+                FilledIconButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            haptic.click()
+                            pagerState.animateScrollToPage(
+                                if (pagerState.currentPage == tracks.lastIndex) 0 else pagerState.currentPage + 1
+                            )
+                        }
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Next recently played track"
+                    )
+                }
             }
         }
 
@@ -278,10 +403,11 @@ private fun RecentlyPlayedSection(
 private fun HorizontalTrackSection(
     title: String,
     tracks: List<Track>,
+    onSeeAllClick: () -> Unit,
     onTrackClick: (Int) -> Unit
 ) {
     Column {
-        SectionHeader(title = title)
+        SectionHeader(title = title, onActionClick = onSeeAllClick)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -297,10 +423,11 @@ private fun HorizontalTrackSection(
 @Composable
 private fun FavoritesSection(
     tracks: List<Track>,
+    onSeeAllClick: () -> Unit,
     onTrackClick: (Int) -> Unit
 ) {
     Column {
-        SectionHeader(title = "Favorites")
+        SectionHeader(title = "Favorites", onActionClick = onSeeAllClick)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -353,13 +480,40 @@ private fun MusicCard(
     onClick: () -> Unit
 ) {
     val haptic = rememberJukeHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 140),
+        label = "musicCardScale"
+    )
 
     Box(
         modifier = Modifier
             .size(160.dp)
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
             .clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable {
+            .semantics(mergeDescendants = true) {
+                contentDescription = buildString {
+                    append(track.title)
+                    append(" by ")
+                    append(track.artist)
+                    if (track.playCount > 0) {
+                        append(", played ")
+                        append(track.playCount)
+                        append(" times")
+                    }
+                }
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                role = Role.Button,
+                onClickLabel = "Play ${track.title}"
+            ) {
                 haptic.click()
                 onClick()
             }
@@ -367,7 +521,7 @@ private fun MusicCard(
         if (track.thumbnailUri != null) {
             AsyncImage(
                 model = track.thumbnailUri,
-                contentDescription = track.title,
+                contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
@@ -424,7 +578,7 @@ private fun MusicCard(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(12.dp)
-                    .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.72f), CircleShape)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -452,12 +606,31 @@ private fun FavoriteCard(
     onClick: () -> Unit
 ) {
     val haptic = rememberJukeHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 140),
+        label = "favoriteCardScale"
+    )
 
     Column(
         modifier = Modifier
-            .width(100.dp)
+            .width(112.dp)
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${track.title} by ${track.artist}"
+                stateDescription = "Favorite track"
+            }
             .clip(RoundedCornerShape(12.dp))
-            .clickable {
+            .clickable(
+                interactionSource = interactionSource,
+                role = Role.Button,
+                onClickLabel = "Play ${track.title}"
+            ) {
                 haptic.click()
                 onClick()
             }
@@ -466,7 +639,7 @@ private fun FavoriteCard(
     ) {
         Box(
             modifier = Modifier
-                .size(92.dp)
+                .size(96.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
@@ -474,7 +647,7 @@ private fun FavoriteCard(
             if (track.thumbnailUri != null) {
                 AsyncImage(
                     model = track.thumbnailUri,
-                    contentDescription = track.title,
+                    contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
@@ -503,7 +676,7 @@ private fun FavoriteCard(
                 contentDescription = null,
                 modifier = Modifier
                     .size(24.dp),
-                tint = Color(0xFFE91E63).copy(alpha = 0.9f)
+                tint = MaterialTheme.colorScheme.secondary
             )
         }
 
@@ -561,7 +734,7 @@ private fun EmptyHomeState(
             ) {
                 Icon(
                     Icons.Filled.MusicNote,
-                    contentDescription = null,
+                    contentDescription = "Music note",
                     modifier = Modifier.size(40.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
