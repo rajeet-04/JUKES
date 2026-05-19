@@ -17,6 +17,7 @@ import android.os.Handler
 import android.os.Looper
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
@@ -212,6 +213,44 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var audioManager: AudioManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private var resumeRunnable: Runnable? = null
+    private var pendingPlayAfterManualTrackChangeFromIndex: Int? = null
+
+    private fun rememberManualTrackChangeRequest(@Player.Command playerCommand: Int) {
+        pendingPlayAfterManualTrackChangeFromIndex =
+            if (willTrackChangeForCommand(playerCommand)) {
+                player.currentMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+            } else {
+                null
+            }
+    }
+
+    private fun willTrackChangeForCommand(@Player.Command playerCommand: Int): Boolean {
+        return when (playerCommand) {
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> player.hasNextMediaItem()
+
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> player.hasPreviousMediaItem()
+
+            Player.COMMAND_SEEK_TO_PREVIOUS -> {
+                player.hasPreviousMediaItem() && (
+                    (player.isCurrentMediaItemLive && !player.isCurrentMediaItemSeekable) ||
+                        player.currentPosition <= player.maxSeekToPreviousPosition
+                    )
+            }
+
+            else -> false
+        }
+    }
+
+    private fun maybeStartPlaybackAfterManualTrackChange() {
+        val previousIndex = pendingPlayAfterManualTrackChangeFromIndex ?: return
+        pendingPlayAfterManualTrackChangeFromIndex = null
+
+        if (player.currentMediaItemIndex != previousIndex) {
+            player.play()
+            Log.d(TAG, "Started playback after manual next/previous track change")
+        }
+    }
 
     // 1. Define the Receiver
     private val callStateReceiver = object : BroadcastReceiver() {
@@ -973,6 +1012,52 @@ class PlaybackService : MediaLibraryService() {
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             return super.onCustomCommand(session, controller, customCommand, args)
+        }
+
+        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            @Player.Command playerCommand: Int
+        ): Int {
+            rememberManualTrackChangeRequest(playerCommand)
+            return super.onPlayerCommandRequest(session, controller, playerCommand)
+        }
+
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent
+        ): Boolean {
+            val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+            }
+
+            if (keyEvent?.action == KeyEvent.ACTION_DOWN) {
+                when (keyEvent.keyCode) {
+                    KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        rememberManualTrackChangeRequest(Player.COMMAND_SEEK_TO_NEXT)
+                    }
+
+                    KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                        rememberManualTrackChangeRequest(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    }
+                }
+            }
+
+            return super.onMediaButtonEvent(session, controllerInfo, intent)
+        }
+
+        override fun onPlayerInteractionFinished(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            playerCommands: Player.Commands
+        ) {
+            maybeStartPlaybackAfterManualTrackChange()
+            super.onPlayerInteractionFinished(session, controllerInfo, playerCommands)
         }
 
         override fun onGetLibraryRoot(
@@ -1913,17 +1998,27 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    private fun runTrackChangeStartingPlaybackIfTrackChanged(action: (Player) -> Unit) {
+        controller?.let { ctrl ->
+            val startingIndex = ctrl.currentMediaItemIndex
+            action(ctrl)
+            if (ctrl.currentMediaItemIndex != startingIndex) {
+                ctrl.play()
+            }
+        }
+    }
+
     fun shouldResumeAfterTrackChange(): Boolean {
         return controller?.playWhenReady ?: _isPlaying.value
     }
 
     fun skipToNext() {
-        runTrackChangePreservingPlayState { it.seekToNext() }
+        runTrackChangeStartingPlaybackIfTrackChanged { it.seekToNext() }
         Log.d(TAG, "Skip to next")
     }
 
     fun skipToPrevious() {
-        runTrackChangePreservingPlayState {
+        runTrackChangeStartingPlaybackIfTrackChanged {
             if (it.currentPosition > 3000) {
                 it.seekTo(0)
             } else {
