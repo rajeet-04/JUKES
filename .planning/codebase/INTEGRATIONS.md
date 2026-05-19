@@ -1,109 +1,127 @@
 # External Integrations
 
-**Analysis Date:** 2026-04-16
+**Analysis Date:** 2026-05-19
 
 ## APIs & External Services
 
-**Music Streaming & Metadata:**
-- **Spotify Web API** - Music search, metadata, OAuth authentication
-  - SDK/Client: Custom Ktor-based `SpotifyApi.kt`
-  - Auth: OAuth 2.0 Client Credentials Flow
-  - Endpoints: search, tracks, artists, albums, playlists
+**[Music Streaming]:**
+- Spotify - Official music search and metadata retrieval
+  - SDK/Client: Custom Ktor-based implementation in `SpotifyApi.kt`
+  - Auth: OAuth 2.0 Client Credentials flow using `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` from BuildConfig
+  - Endpoints: 
+    - Accounts: `https://accounts.spotify.com/api/token` (token exchange)
+    - Web API: `https://api.spotify.com/v1` (search, artist/album/track/playlist data)
+  - Used in: `SpotifyApi.kt` for search, artist albums, top tracks, track/artist/album/playlist details
 
-- **YouTube Music API** - Music recommendations via unofficial API
-  - SDK/Client: Custom Ktor-based `RecommenderApi.kt`
-  - Method: HTTP POST to internal scraper
-  - Purpose: Radio queue generation, video matching
+**[Lyrics]:**
+- LRCLib - Synchronized and plain text lyrics
+  - SDK/Client: Direct HTTP calls via Ktor in `SpotifyApi.kt` (`searchLyrics` function)
+  - Auth: None required (public API)
+  - Endpoint: `https://lrclib.meek.workers.dev`
+  - Used in: `SpotifyApi.kt` for fetching lyrics with validation
 
-**Download Services:**
-- **Spotmate (spotmate.online)** - Primary MP3 download source
-  - SDK/Client: Custom HTTP client with CSRF handling
-  - Auth: Cookie-based session
-  - Fallback: Task polling for queued conversions
+**[YouTube]:**
+- YouTube Music & YouTube - Lyrics and captions fallback
+  - SDK/Client: Direct HTTP calls via Ktor in `SpotifyApi.kt` (`getYoutubeMusicLyrics`, `getYoutubeCaptions` functions)
+  - Auth: None required (uses Innertube API with hardcoded client context)
+  - Endpoints:
+    - YouTube Music: `https://music.youtube.com/youtubei/v1/`
+    - YouTube: `https://www.youtube.com/youtubei/v1/`
+  - Used in: `SpotifyApi.kt` as fallback when LRCLib doesn't have lyrics
 
-- **Gamepvz (gamepvz.com)** - Secondary MP3 download source
-  - SDK/Client: Custom Ktor-based `ApiClient.kt`
-  - Auth: User-Agent and Referer headers
+**[Audio Download]:**
+- Spotmate - MP3 conversion and download service
+  - SDK/Client: Direct HTTP calls via Ktor in `SpotifyApi.kt` (multiple functions)
+  - Auth: None required (handles session/CSRF tokens dynamically)
+  - Endpoint: `https://spotmate.online`
+  - Used in: `SpotifyApi.kt` for getting stream URLs, download requests, and actual downloads
 
-- **mp3juice3.ninja** - YouTube data scraper
-  - SDK/Client: Custom HTTP POST
-  - Purpose: Video ID lookup
+**[Audio Download]:**
+- Gamepvz - Alternative MP3 download service
+  - SDK/Client: Direct HTTP calls via Ktor in `SpotifyApi.kt` (multiple functions)
+  - Auth: None required (requires specific User-Agent and Referer headers)
+  - Endpoint: `https://gamepvz.com`
+  - Used in: `SpotifyApi.kt` as fallback when Spotmate fails
 
-**Lyrics:**
-- **LRCLib (lrclib.meek.workers.dev)** - Synced and plain lyrics
-  - SDK/Client: Custom HTTP GET
-  - Matching: Track name, artist, duration
-
-**Analytics:**
-- **PostHog** - Usage analytics
-  - SDK: `com.posthog:posthog-android:3.40.2`
-  - Host: `https://us.i.posthog.com`
-  - API Key: Configured in `JukeApplication.kt`
+**[Analytics]:**
+- PostHog - Event tracking and analytics
+  - SDK/Client: PostHog Android SDK (`com.posthog:posthog-android:3.40.2`)
+  - Auth: API key from `POSTHOG_API_KEY` BuildConfig field
+  - Host: Configurable via `POSTHOG_HOST` BuildConfig field
+  - Used in: `AnalyticsManager.kt` for initialization and event capture
 
 ## Data Storage
 
 **Databases:**
-- SQLite via Room 2.6.1
-  - Database name: `music_database`
-  - Entities: `TrackEntity`, `PlaylistEntity`, `PlaylistTrackEntity`
-  - Version: 8
+- SQLite via Room
+  - Connection: Local database instance
+  - Client: Room ORM with KSP (`androidx.room:room-runtime`, `androidx.room:room-ktx`, `androidx.room:room-compiler`)
+  - Schema: Defined in `MusicDatabase.kt` and entity classes in `database/` package
+  - Used for: Storing music metadata, playlists, user preferences
 
 **File Storage:**
-- **Local filesystem** (app-internal)
-  - Audio files: `filesDir/music/*.mp3`
-  - Thumbnails: `filesDir/music/*_thumb.jpg`
-  - Stream cache: `cacheDir/stream_cache/` (ExoPlayer managed)
-  - Stream files: `filesDir/stream_files/*.mp3`
+- Local filesystem only (internal app storage)
+  - Used for: Caching downloaded MP3 files, analytics event queue persistence
+  - Directories: App-specific internal storage accessed via Context methods
+
+**Caching:**
+- In-memory caches:
+  - Spotify API token caching in `SpotifyApi.kt` (`accessToken`, `tokenExpiryTime`)
+  - LRCLib results caching implied in `searchLyrics` function
+  - Network response caching via OkHttp (configured in `ApiClient.kt`)
+- No external caching service (Redis/Memcached) detected
 
 ## Authentication & Identity
 
-**Spotify:**
-- OAuth 2.0 Client Credentials Flow
-- Credentials stored in `local.properties` (not committed)
-- Loaded at build time via `BuildConfig`
-
-**Analytics:**
-- Anonymous user tracking via PostHog
-- User ID generated on first install (UUID)
-- Stored in SharedPreferences
+**Auth Provider:**
+- Spotify OAuth 2.0 (Client Credentials flow)
+  - Implementation: Custom token management in `SpotifyApi.kt`
+  - Token storage: Memory-only with automatic refresh before expiry
+  - Scope: Limited to what's needed for search and metadata (no user-specific data)
+  - Credentials: Stored in `local.properties` (never committed), loaded into BuildConfig
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- Android Logcat (Log.e for errors)
-- PostHog for crash/event analytics
+- None detected (beyond basic Android logging)
 
 **Logs:**
-- `android.util.Log` throughout codebase
-- Tagged loggers: `TAG` constants per class
-- Levels: DEBUG (d), INFO (i), WARN (w), ERROR (e)
+- Android Logcat with tag-based filtering:
+  - AnalyticsManager: Uses "AnalyticsManager" tag
+  - SpotifyApi: Uses "SpotifyApi" tag
+  - Various levels: DEBUG, ERROR, WARNING based on BuildConfig.DEBUG
+  - Configured in: `ApiClient.kt` (Ktor Logging plugin), `AnalyticsManager.kt` (android.util.Log)
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- GitHub Releases for APK distribution
+- Google Play Store (implied by Android app)
 
 **CI Pipeline:**
-- None detected (manual builds)
+- GitHub Actions (inferred from `.github` directory presence)
+- Specific workflows not examined in this analysis
 
 ## Environment Configuration
 
-**Required env vars:**
-- `sdk.dir` - Android SDK path
-- `SPOTIFY_CLIENT_ID` - Spotify app client ID
-- `SPOTIFY_CLIENT_SECRET` - Spotify app client secret
+**Required env vars (in local.properties):**
+- SPOTIFY_CLIENT_ID - Spotify API client ID
+- SPOTIFY_CLIENT_SECRET - Spotify API client secret
+- POSTHOG_API_KEY - PostHog project API key
+- POSTHOG_HOST - PostHog instance host (optional, defaults to app.posthog.com)
 
 **Secrets location:**
-- `local.properties` (gitignored, not committed)
+- `local.properties` file in project root (gitignored via `.gitignore`)
+- Loaded at build time to generate BuildConfig constants
+- Never committed to version control
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None
+- None detected (no webhook servers or listeners implemented)
 
 **Outgoing:**
-- None detected
+- None detected (all integrations are client-initiated requests)
 
 ---
 
-*Integration audit: 2026-04-16*
+*Integration audit: 2026-05-19*
