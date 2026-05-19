@@ -475,7 +475,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val current = loadRecentSearches().toMutableList()
         current.remove(trimmed) // remove duplicate
         current.add(0, trimmed) // add to front
-        val updated = current.take(5) // keep only last 5
+        val updated = current.take(15) // keep only last 15
         searchPrefs.edit { putString("recent_searches", updated.joinToString("|||")) }
         _uiState.value = _uiState.value.copy(recentSearches = updated)
     }

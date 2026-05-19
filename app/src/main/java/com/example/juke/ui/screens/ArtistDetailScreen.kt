@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import android.widget.Toast
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyImage
 import com.example.juke.models.SpotifyTrack
@@ -97,8 +98,10 @@ fun ArtistDetailScreen(
                     IconButton(onClick = {
                         if (blacklisted) {
                             BlacklistManager.removeArtist(context, artist.name)
+                            Toast.makeText(context, "${artist.name} unblocked", Toast.LENGTH_SHORT).show()
                         } else {
                             BlacklistManager.addArtist(context, artist.name)
+                            Toast.makeText(context, "${artist.name} blocked", Toast.LENGTH_SHORT).show()
                         }
                         blacklisted = !blacklisted
                     }) {

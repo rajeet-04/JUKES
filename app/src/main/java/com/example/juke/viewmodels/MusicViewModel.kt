@@ -2,6 +2,7 @@
 
 import android.app.Application
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.edit
 import androidx.core.graphics.ColorUtils
@@ -1273,6 +1274,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     Log.d("MusicViewModel", "Download completed: ${nextItem.song.title}")
+                    Toast.makeText(getApplication(), "Downloaded: ${nextItem.song.title}", Toast.LENGTH_SHORT).show()
 
                     // Check if this track is currently in the queue (streaming version)
                     // Since we preserve UUIDs, the track object already has the correct UUID
@@ -1912,6 +1914,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // Signal PlaybackService so it updates the notification layout (hides Download button)
                 playbackManager.emitTrackPromoted(track.uuid)
                 Log.d("MusicViewModel", "Promoted track to download: ${track.title}")
+                Toast.makeText(getApplication(), "Downloaded: ${track.title}", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to promote track: ${e.message}", e)
                 _uiState.update {

@@ -1,6 +1,7 @@
 package com.example.juke.ui.screens
 
 import android.annotation.SuppressLint
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -286,7 +287,7 @@ fun PlayerScreen(
                 // Scale breakpoints: tight (<640dp), normal (640-800dp), large (>800dp)
                 val isCompact = screenH < 640.dp
                 val spacerSm = if (isCompact) 8.dp else if (screenH < 800.dp) 16.dp else 24.dp
-                val spacerMd = if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
+                if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
                 val actionIconSize = if (isCompact) 18.dp else 24.dp
                 val actionBtnSize = if (isCompact) 36.dp else 48.dp
                 // Fixed sizes for the bottom bar so they never shrink too small
@@ -980,8 +981,12 @@ fun BlacklistPickerDialog(
                             onCheckedChange = { checked ->
                                 if (checked) {
                                     BlacklistManager.addArtist(context, name)
+                                    Toast.makeText(context, "$name blocked", Toast.LENGTH_SHORT)
+                                        .show()
                                 } else {
                                     BlacklistManager.removeArtist(context, name)
+                                    Toast.makeText(context, "$name unblocked", Toast.LENGTH_SHORT)
+                                        .show()
                                 }
                                 blockedMap = blockedMap.toMutableMap().apply {
                                     put(name, checked)
