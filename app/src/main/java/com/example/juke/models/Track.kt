@@ -16,6 +16,8 @@ data class Track(
     val ytVideoId: String? = null,
     val syncedLyrics: String? = null,
     val plainLyrics: String? = null,
+    val romanizedSyncedLyrics: String? = null,
+    val romanizedPlainLyrics: String? = null,
     val isFavourite: Boolean = false,
     val playCount: Int = 0,
     val lastPlayedAt: String? = null,
@@ -26,6 +28,18 @@ data class Track(
     val isStream: Boolean = false,
     val lyricsOffsetMs: Long = 0L
 )
+
+fun Track.withUpdatedLyrics(
+    syncedLyrics: String?,
+    plainLyrics: String?
+): Track {
+    return copy(
+        syncedLyrics = syncedLyrics,
+        plainLyrics = plainLyrics,
+        romanizedSyncedLyrics = if (this.syncedLyrics == syncedLyrics) romanizedSyncedLyrics else null,
+        romanizedPlainLyrics = if (this.plainLyrics == plainLyrics) romanizedPlainLyrics else null
+    )
+}
 
 /**
  * Spotdown song search result from Spotify.

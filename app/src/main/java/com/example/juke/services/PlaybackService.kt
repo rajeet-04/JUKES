@@ -1905,13 +1905,25 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    private fun runTrackChangePreservingPlayState(action: (Player) -> Unit) {
+        controller?.let { ctrl ->
+            val shouldPlayWhenReady = ctrl.playWhenReady
+            action(ctrl)
+            ctrl.playWhenReady = shouldPlayWhenReady
+        }
+    }
+
+    fun shouldResumeAfterTrackChange(): Boolean {
+        return controller?.playWhenReady ?: _isPlaying.value
+    }
+
     fun skipToNext() {
-        controller?.seekToNext()
+        runTrackChangePreservingPlayState { it.seekToNext() }
         Log.d(TAG, "Skip to next")
     }
 
     fun skipToPrevious() {
-        controller?.let {
+        runTrackChangePreservingPlayState {
             if (it.currentPosition > 3000) {
                 it.seekTo(0)
             } else {
@@ -1988,7 +2000,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun seekToIndex(index: Int) {
-        controller?.seekTo(index, 0L)
+        runTrackChangePreservingPlayState { it.seekTo(index, 0L) }
         Log.d(TAG, "Seeked to index $index")
     }
 

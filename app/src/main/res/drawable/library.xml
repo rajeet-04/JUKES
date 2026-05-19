@@ -11,9 +11,7 @@
         android:strokeWidth="1.6"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="
-            M5,4
-            Q4.5,12 5,20"/>
+        android:pathData="M5 4q-.5 8 0 16"/>
 
     <!-- Middle book -->
     <path
@@ -22,9 +20,7 @@
         android:strokeWidth="1.6"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="
-            M10,4
-            Q9.5,12 10,20"/>
+        android:pathData="M10 4q-.5 8 0 16"/>
 
     <!-- Right tilted book -->
     <path
@@ -32,10 +28,5 @@
         android:strokeColor="@android:color/white"
         android:strokeWidth="1.6"
         android:strokeLineJoin="round"
-        android:pathData="
-            M14,3
-            Q17,4 20,6
-            V20
-            Q17,20 14,20
-            Z"/>
+        android:pathData="M14 3q3 1 6 3v14h-6Z"/>
 </vector>

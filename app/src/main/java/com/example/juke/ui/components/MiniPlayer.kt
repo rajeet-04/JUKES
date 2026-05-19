@@ -117,16 +117,33 @@ fun MiniPlayer(
 
         var romanizedSyncedLyrics by remember(
             currentTrack.uuid,
-            isRomanizedLyricsEnabled
+            isRomanizedLyricsEnabled,
+            currentTrack.syncedLyrics,
+            currentTrack.romanizedSyncedLyrics
         ) { mutableStateOf<String?>(null) }
 
-        LaunchedEffect(currentTrack.uuid, currentTrack.syncedLyrics, isRomanizedLyricsEnabled) {
+        LaunchedEffect(
+            currentTrack.uuid,
+            currentTrack.syncedLyrics,
+            currentTrack.romanizedSyncedLyrics,
+            isRomanizedLyricsEnabled
+        ) {
             if (!isRomanizedLyricsEnabled) {
                 romanizedSyncedLyrics = null
                 return@LaunchedEffect
             }
-            romanizedSyncedLyrics = currentTrack.syncedLyrics?.let {
+            romanizedSyncedLyrics = currentTrack.romanizedSyncedLyrics ?: currentTrack.syncedLyrics?.let {
                 LyricsRomanizer.romanizeSyncedLyrics(it)
+            }
+
+            if (romanizedSyncedLyrics != null &&
+                romanizedSyncedLyrics != currentTrack.romanizedSyncedLyrics
+            ) {
+                musicViewModel.persistRomanizedLyrics(
+                    track = currentTrack,
+                    romanizedSyncedLyrics = romanizedSyncedLyrics,
+                    romanizedPlainLyrics = null
+                )
             }
         }
 

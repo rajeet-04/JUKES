@@ -21,6 +21,7 @@ import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.models.withUpdatedLyrics
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.MusicService
@@ -142,6 +143,55 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     queue = updatedQueue
                 )
             }
+        }
+    }
+
+    private fun updateTrackInUiState(updatedTrack: Track) {
+        _uiState.update { state ->
+            val updatedQueue = state.queue.map { queuedTrack ->
+                if (queuedTrack.uuid == updatedTrack.uuid) updatedTrack else queuedTrack
+            }
+
+            state.copy(
+                currentTrack = if (state.currentTrack?.uuid == updatedTrack.uuid) {
+                    updatedTrack
+                } else {
+                    state.currentTrack
+                },
+                queue = updatedQueue
+            )
+        }
+    }
+
+    fun persistRomanizedLyrics(
+        track: Track,
+        romanizedSyncedLyrics: String?,
+        romanizedPlainLyrics: String?
+    ) {
+        if (romanizedSyncedLyrics.isNullOrBlank() && romanizedPlainLyrics.isNullOrBlank()) {
+            return
+        }
+
+        viewModelScope.launch {
+            val updatedTrack = withContext(Dispatchers.IO) {
+                val latest = trackDao.getTrackByUuid(track.uuid)?.toTrack() ?: track
+                val mergedTrack = latest.copy(
+                    romanizedSyncedLyrics = romanizedSyncedLyrics ?: latest.romanizedSyncedLyrics,
+                    romanizedPlainLyrics = romanizedPlainLyrics ?: latest.romanizedPlainLyrics
+                )
+
+                if (mergedTrack.romanizedSyncedLyrics == latest.romanizedSyncedLyrics &&
+                    mergedTrack.romanizedPlainLyrics == latest.romanizedPlainLyrics
+                ) {
+                    null
+                } else {
+                    trackDao.insertTrack(mergedTrack.toEntity())
+                    mergedTrack
+                }
+            } ?: return@launch
+
+            queueManager.replaceTrackInQueue(track.uuid, updatedTrack)
+            updateTrackInUiState(updatedTrack)
         }
     }
 
@@ -571,6 +621,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val currentState = _uiState.value
             val queue = currentState.queue
+            val shouldResumePlayback = playbackManager.shouldResumeAfterTrackChange()
 
             // Find the track index in the current queue
             val trackIndex = queue.indexOfFirst { it.uuid == track.uuid }
@@ -587,7 +638,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     currentTrack = track,
                     queueIndex = trackIndex,
-                    isPlaying = true,
+                    isPlaying = shouldResumePlayback,
                     duration = track.durationSec.toLong() * 1000
                 )
             }
@@ -1537,26 +1588,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 if (result != null) {
                     Log.d("MusicViewModel", "New lyrics found for: ${track.title}")
 
-                    // Update track with new lyrics
-                    val updatedTrack = track.copy(
-                        syncedLyrics = result.syncedLyrics,
-                        plainLyrics = result.plainLyrics
-                    )
-
-                    // Update database
-                    trackDao.insertTrack(updatedTrack.toEntity())
-
-                    // Update UI State (Current Track + Queue)
-                    _uiState.update { state ->
-                        val updatedQueue = state.queue.map {
-                            if (it.uuid == track.uuid) updatedTrack else it
-                        }
-
-                        state.copy(
-                            queue = updatedQueue,
-                            currentTrack = if (state.currentTrack?.uuid == track.uuid) updatedTrack else state.currentTrack
+                    val updatedTrack = withContext(Dispatchers.IO) {
+                        val latest = trackDao.getTrackByUuid(track.uuid)?.toTrack() ?: track
+                        val refreshedTrack = latest.withUpdatedLyrics(
+                            syncedLyrics = result.syncedLyrics,
+                            plainLyrics = result.plainLyrics
                         )
+                        trackDao.insertTrack(refreshedTrack.toEntity())
+                        refreshedTrack
                     }
+
+                    queueManager.replaceTrackInQueue(track.uuid, updatedTrack)
+                    updateTrackInUiState(updatedTrack)
 
                     // No need to explicitly update PlaybackManager queue as it's primarily used for playback context
                     // and doesn't display lyrics. The UI observes currentTrackId and pulls from UI queue.

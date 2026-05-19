@@ -7,30 +7,15 @@
     <!-- Left book -->
     <path
         android:fillColor="@android:color/white"
-        android:pathData="
-            M4.5,4
-            Q4,12 4.5,20
-            L6.5,20
-            Q6,12 6.5,4
-            Z"/>
+        android:pathData="M4.5 4q-.5 8 0 16h2q-.5-8 0-16Z"/>
 
     <!-- Middle book -->
     <path
         android:fillColor="@android:color/white"
-        android:pathData="
-            M9,4
-            Q8.5,12 9,20
-            L11,20
-            Q10.5,12 11,4
-            Z"/>
+        android:pathData="M9 4q-.5 8 0 16h2q-.5-8 0-16Z"/>
 
     <!-- Right tilted book -->
     <path
         android:fillColor="@android:color/white"
-        android:pathData="
-            M14,3
-            Q17,4 20.5,6
-            L20.5,20
-            Q17,20 14,20
-            Z"/>
+        android:pathData="M14 3q3 1 6.5 3v14H14Z"/>
 </vector>

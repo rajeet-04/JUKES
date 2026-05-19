@@ -92,9 +92,14 @@ fun PlayerArtwork(
             val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
             val scale = 1f - (0.15f * pageOffset.absoluteValue.coerceIn(0f, 1f))
             val alpha = 1f - (0.5f * pageOffset.absoluteValue.coerceIn(0f, 1f))
+            val pageTrack = if (page == queueIndex) {
+                currentTrack
+            } else {
+                queue.getOrNull(page) ?: currentTrack
+            }
 
             ArtworkCard(
-                track = queue.getOrNull(page) ?: currentTrack,
+                track = pageTrack,
                 // Only show lyrics on the active page
                 showLyrics = showLyrics && page == pagerState.currentPage,
                 currentPosition = currentPosition,

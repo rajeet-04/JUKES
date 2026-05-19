@@ -205,25 +205,48 @@ fun PlayerScreen(
 
     var romanizedTrack by remember(
         currentTrack.uuid,
-        romanizeLyrics
+        romanizeLyrics,
+        currentTrack.syncedLyrics,
+        currentTrack.plainLyrics,
+        currentTrack.romanizedSyncedLyrics,
+        currentTrack.romanizedPlainLyrics
     ) { mutableStateOf<Track?>(null) }
 
-    LaunchedEffect(currentTrack, romanizeLyrics) {
+    LaunchedEffect(
+        currentTrack.uuid,
+        currentTrack.syncedLyrics,
+        currentTrack.plainLyrics,
+        currentTrack.romanizedSyncedLyrics,
+        currentTrack.romanizedPlainLyrics,
+        romanizeLyrics
+    ) {
         if (!romanizeLyrics) {
             romanizedTrack = null
             return@LaunchedEffect
         }
 
-        val romanizedSynced = currentTrack.syncedLyrics?.let {
+        val romanizedSynced = currentTrack.romanizedSyncedLyrics ?: currentTrack.syncedLyrics?.let {
             LyricsRomanizer.romanizeSyncedLyrics(it)
         }
-        val romanizedPlain = currentTrack.plainLyrics?.let {
+        val romanizedPlain = currentTrack.romanizedPlainLyrics ?: currentTrack.plainLyrics?.let {
             LyricsRomanizer.romanizeText(it)
         }
         romanizedTrack = currentTrack.copy(
-            syncedLyrics = romanizedSynced,
-            plainLyrics = romanizedPlain
+            syncedLyrics = romanizedSynced ?: currentTrack.syncedLyrics,
+            plainLyrics = romanizedPlain ?: currentTrack.plainLyrics,
+            romanizedSyncedLyrics = romanizedSynced,
+            romanizedPlainLyrics = romanizedPlain
         )
+
+        if (romanizedSynced != currentTrack.romanizedSyncedLyrics ||
+            romanizedPlain != currentTrack.romanizedPlainLyrics
+        ) {
+            musicViewModel.persistRomanizedLyrics(
+                track = currentTrack,
+                romanizedSyncedLyrics = romanizedSynced,
+                romanizedPlainLyrics = romanizedPlain
+            )
+        }
     }
 
     val displayTrack = if (romanizeLyrics) romanizedTrack ?: currentTrack else currentTrack

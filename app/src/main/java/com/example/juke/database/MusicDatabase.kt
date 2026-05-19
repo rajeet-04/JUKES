@@ -160,6 +160,17 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+/**
+ * Migration from version 8 to 9
+ * Adds persisted romanized lyrics columns to tracks table
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN romanized_synced_lyrics TEXT")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN romanized_plain_lyrics TEXT")
+    }
+}
+
 class Converters {
     @TypeConverter
     fun fromStringList(value: List<String>?): String? {
@@ -177,7 +188,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -203,7 +214,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_4_5,
                         MIGRATION_5_6,
                         MIGRATION_6_7,
-                        MIGRATION_7_8
+                        MIGRATION_7_8,
+                        MIGRATION_8_9
                     )
                     .fallbackToDestructiveMigration()
                     .build()
@@ -245,6 +257,12 @@ data class TrackEntity(
 
     @ColumnInfo(name = "plain_lyrics")
     val plainLyrics: String? = null,
+
+    @ColumnInfo(name = "romanized_synced_lyrics")
+    val romanizedSyncedLyrics: String? = null,
+
+    @ColumnInfo(name = "romanized_plain_lyrics")
+    val romanizedPlainLyrics: String? = null,
 
     @ColumnInfo(name = "is_favourite", defaultValue = "0")
     val isFavourite: Boolean = false,
@@ -289,6 +307,8 @@ fun TrackEntity.toTrack(): Track {
         ytVideoId = ytVideoId,
         syncedLyrics = syncedLyrics,
         plainLyrics = plainLyrics,
+        romanizedSyncedLyrics = romanizedSyncedLyrics,
+        romanizedPlainLyrics = romanizedPlainLyrics,
         isFavourite = isFavourite,
         playCount = playCount,
         lastPlayedAt = lastPlayedAt,
@@ -315,6 +335,8 @@ fun Track.toEntity(): TrackEntity {
         ytVideoId = ytVideoId,
         syncedLyrics = syncedLyrics,
         plainLyrics = plainLyrics,
+        romanizedSyncedLyrics = romanizedSyncedLyrics,
+        romanizedPlainLyrics = romanizedPlainLyrics,
         isFavourite = isFavourite,
         playCount = playCount,
         lastPlayedAt = lastPlayedAt,
@@ -343,7 +365,7 @@ interface TrackDao {
     suspend fun getAllTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_stream = 0 ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_stream = 0 ORDER BY last_played_at DESC")
     fun getAllTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
@@ -356,14 +378,14 @@ interface TrackDao {
     suspend fun getFavourites(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     fun getFavouritesFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC")
     suspend fun getDownloadedTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC")
     fun getDownloadedTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("UPDATE tracks SET lyrics_offset_ms = :offsetMs WHERE uuid = :uuid")

@@ -8,6 +8,7 @@ import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.Track
+import com.example.juke.models.withUpdatedLyrics
 import com.example.juke.network.ApiClient
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
@@ -264,24 +265,7 @@ class MusicService(private val context: Context) {
                     TAG,
                     "Track already exists in database with local file: ${song.title} by ${song.artist}"
                 )
-                return Track(
-                    uuid = existingTrack.uuid,
-                    title = existingTrack.title,
-                    artist = existingTrack.artist,
-                    thumbnailUri = existingTrack.thumbnailUri,
-                    durationSec = existingTrack.durationSec,
-                    localUri = existingTrack.localUri,
-                    ytVideoId = existingTrack.ytVideoId,
-                    syncedLyrics = existingTrack.syncedLyrics,
-                    plainLyrics = existingTrack.plainLyrics,
-                    isFavourite = existingTrack.isFavourite,
-                    playCount = existingTrack.playCount,
-                    lastPlayedAt = existingTrack.lastPlayedAt,
-                    downloadedAt = existingTrack.downloadedAt,
-                    spotifyId = existingTrack.spotifyId,
-                    albumSpotifyId = existingTrack.albumSpotifyId,
-                    artistSpotifyIds = existingTrack.artistSpotifyIds
-                )
+                return existingTrack.toTrack()
             } else if (existingTrack.isStream) {
                 // Existing stream entry: promote to a permanent local download
                 Log.d(
@@ -454,6 +438,9 @@ class MusicService(private val context: Context) {
                 }
             }
 
+            val syncedLyrics = lyricsResult?.syncedLyrics ?: existingTrack?.syncedLyrics
+            val plainLyrics = lyricsResult?.plainLyrics ?: existingTrack?.plainLyrics
+
             val track = Track(
                 uuid = uuid,
                 title = song.title,
@@ -464,8 +451,6 @@ class MusicService(private val context: Context) {
                 localUri = audioFile.absolutePath,
                 ytVideoId = ytVideoId
                     ?: existingTrack?.ytVideoId, // Keep existing YT ID if verify fails? (RecommenderApi might return null?)
-                syncedLyrics = lyricsResult?.syncedLyrics ?: existingTrack?.syncedLyrics,
-                plainLyrics = lyricsResult?.plainLyrics ?: existingTrack?.plainLyrics,
                 isFavourite = existingTrack?.isFavourite ?: false,
                 playCount = existingTrack?.playCount ?: 0,
                 lastPlayedAt = existingTrack?.lastPlayedAt,
@@ -474,6 +459,9 @@ class MusicService(private val context: Context) {
                 albumSpotifyId = song.albumSpotifyId,
                 artistSpotifyIds = song.artistSpotifyIds,
                 isStream = false
+            ).withUpdatedLyrics(
+                syncedLyrics = syncedLyrics,
+                plainLyrics = plainLyrics
             )
 
             trackDao.insertTrack(track.toEntity())
@@ -543,7 +531,15 @@ class MusicService(private val context: Context) {
             // Touch file to mark as recently used for LRU
             cachedFile.setLastModified(System.currentTimeMillis())
 
-            return Track(
+            return existing?.toTrack()?.copy(
+                thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else existing.thumbnailUri,
+                durationSec = durationSec,
+                localUri = cachedFile.absolutePath,
+                isStream = true,
+                spotifyId = song.spotifyId ?: existing.spotifyId,
+                albumSpotifyId = song.albumSpotifyId ?: existing.albumSpotifyId,
+                artistSpotifyIds = song.artistSpotifyIds ?: existing.artistSpotifyIds
+            ) ?: Track(
                 uuid = uuid,
                 title = song.title,
                 artist = song.artist,
@@ -582,6 +578,9 @@ class MusicService(private val context: Context) {
             existing?.ytVideoId
         }
 
+        val syncedLyrics = lyricsResult?.syncedLyrics ?: existing?.syncedLyrics
+        val plainLyrics = lyricsResult?.plainLyrics ?: existing?.plainLyrics
+
         val track = Track(
             uuid = uuid,
             title = song.title,
@@ -590,17 +589,18 @@ class MusicService(private val context: Context) {
             durationSec = durationSec,
             localUri = localFilePath,
             ytVideoId = ytVideoId,
-            syncedLyrics = lyricsResult?.syncedLyrics ?: existing?.syncedLyrics,
-            plainLyrics = lyricsResult?.plainLyrics ?: existing?.plainLyrics,
-            isFavourite = false,
-            playCount = 0,
-            lastPlayedAt = null,
-            downloadedAt = System.currentTimeMillis(),
+            isFavourite = existing?.isFavourite ?: false,
+            playCount = existing?.playCount ?: 0,
+            lastPlayedAt = existing?.lastPlayedAt,
+            downloadedAt = existing?.downloadedAt ?: System.currentTimeMillis(),
             spotifyId = song.spotifyId,
             albumSpotifyId = song.albumSpotifyId,
             artistSpotifyIds = song.artistSpotifyIds,
             isStream = true,
-            lyricsOffsetMs = 0L
+            lyricsOffsetMs = existing?.lyricsOffsetMs ?: 0L
+        ).withUpdatedLyrics(
+            syncedLyrics = syncedLyrics,
+            plainLyrics = plainLyrics
         )
 
         // Stream tracks are NOT inserted into DB here — the CALLER is responsible
@@ -706,8 +706,6 @@ class MusicService(private val context: Context) {
             localUri = permanentFile.absolutePath,
             ytVideoId = track.ytVideoId
                 ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}"),
-            syncedLyrics = syncedLyrics,
-            plainLyrics = plainLyrics,
             isFavourite = track.isFavourite,
             playCount = track.playCount,
             lastPlayedAt = track.lastPlayedAt,
@@ -717,6 +715,9 @@ class MusicService(private val context: Context) {
             artistSpotifyIds = track.artistSpotifyIds,
             isStream = false,
             lyricsOffsetMs = track.lyricsOffsetMs
+        ).withUpdatedLyrics(
+            syncedLyrics = syncedLyrics,
+            plainLyrics = plainLyrics
         )
 
         trackDao.insertTrack(promotedTrack.toEntity())

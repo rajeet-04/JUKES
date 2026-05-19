@@ -8,27 +8,11 @@
     <path
         android:fillColor="@android:color/white"
         android:pathData="
-            M7,5
-            Q6.5,5 6.5,5.5
-            V18.5
-            Q6.5,19 7,19
-            H9
-            Q9.5,19 9.5,18.5
-            V5.5
-            Q9.5,5 9,5
-            Z"/>
+            M7 5q-.5 0-.5.5v13q0 .5.5.5h2q.5 0 .5-.5v-13Q9.5 5 9 5Z"/>
 
     <!-- Right bar -->
     <path
         android:fillColor="@android:color/white"
         android:pathData="
-            M15,5
-            Q14.5,5 14.5,5.5
-            V18.5
-            Q14.5,19 15,19
-            H17
-            Q17.5,19 17.5,18.5
-            V5.5
-            Q17.5,5 17,5
-            Z"/>
+            M15 5q-.5 0-.5.5v13q0 .5.5.5h2q.5 0 .5-.5v-13q0-.5-.5-.5Z"/>
 </vector>
