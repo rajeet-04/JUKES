@@ -62,7 +62,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -340,12 +339,24 @@ class MainActivity : ComponentActivity() {
                     Screen.Library
                 )
 
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
+
+                var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
+
+                LaunchedEffect(currentRoute) {
+                    if (
+                        currentRoute == Screen.Home.route ||
+                        currentRoute == Screen.Search.route ||
+                        currentRoute == Screen.Library.route
+                    ) {
+                        currentMainTab = currentRoute
+                    }
+                }
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     bottomBar = {
-                        val navBackStackEntry by navController.currentBackStackEntryAsState()
-                        val currentRoute = navBackStackEntry?.destination?.route
-
                         if (currentRoute != "settings") {
                             Column {
                                 MiniPlayer(
@@ -370,33 +381,42 @@ class MainActivity : ComponentActivity() {
                                     NavigationBar(
                                         containerColor = Color.Transparent
                                     ) {
-                                        val navBackStackEntry by navController.currentBackStackEntryAsState()
-                                        val currentDestination = navBackStackEntry?.destination
-
                                         items.forEach { screen ->
                                             NavigationBarItem(
                                                 icon = {
-                                                    if (currentDestination?.hierarchy?.any { it.route == screen.route } == true) {
+                                                    if (currentMainTab == screen.route) {
                                                         screen.filledIcon()
                                                     } else {
                                                         screen.outlinedIcon()
                                                     }
                                                 },
                                                 label = { Text(screen.title) },
-                                                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                                                selected = currentMainTab == screen.route,
                                                 onClick = {
-                                                    // Check if already on the selected screen
-                                                    val isSelected =
-                                                        currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                                                    if (currentMainTab == screen.route) {
+                                                        if (currentRoute != screen.route) {
+                                                            navController.popBackStack(
+                                                                screen.route,
+                                                                inclusive = false
+                                                            )
 
-                                                    if (screen == Screen.Search && isSelected) {
-                                                        if (searchResetTrigger > 0 && searchFocusTrigger == searchResetTrigger) {
-                                                            // 3rd tap: already reset, now focus + show keyboard
-                                                            searchFocusTrigger++
-                                                        } else {
-                                                            // 2nd tap: reset the search
-                                                            searchResetTrigger++
-                                                            searchFocusTrigger = searchResetTrigger
+                                                            if (currentRoute?.startsWith("artist/") == true) {
+                                                                activityViewModelProvider[SearchViewModel::class.java]
+                                                                    .clearArtistDetail()
+                                                            } else if (currentRoute?.startsWith("album/") == true) {
+                                                                activityViewModelProvider[AlbumDetailViewModel::class.java]
+                                                                    .clearAlbumDetail()
+                                                            } else if (currentRoute?.startsWith("playlist/") == true) {
+                                                                activityViewModelProvider[PlaylistDetailViewModel::class.java]
+                                                                    .clearPlaylistDetail()
+                                                            }
+                                                        } else if (screen == Screen.Search) {
+                                                            if (searchResetTrigger > 0 && searchFocusTrigger == searchResetTrigger) {
+                                                                searchFocusTrigger++
+                                                            } else {
+                                                                searchResetTrigger++
+                                                                searchFocusTrigger = searchResetTrigger
+                                                            }
                                                         }
                                                     } else {
                                                         navController.navigate(screen.route) {
