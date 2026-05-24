@@ -13,6 +13,9 @@ import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.max
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * YouTube Music Recommender API Service.
@@ -90,7 +93,15 @@ object RecommenderApi {
         var score = 0.0
 
         OFFICIAL_KEYWORDS.forEach { keyword ->
-            if (lowerTitle.contains(keyword.lowercase())) {
+            val kwLower = keyword.lowercase()
+            // Use word boundaries to prevent substring matches (e.g. "ost" in "lost", "ep" in "deep")
+            val pattern = if (kwLower.all { it.isLetterOrDigit() }) {
+                Regex("\\b${Regex.escape(kwLower)}\\b")
+            } else {
+                // For keywords with special chars (like "ft.", "prod by"), match standalone
+                Regex("(?:^|\\s)${Regex.escape(kwLower)}(?:\\s|$)")
+            }
+            if (pattern.containsMatchIn(lowerTitle)) {
                 score += 1.0
             }
         }
@@ -105,11 +116,17 @@ object RecommenderApi {
     /**
      * Check if a song title contains spam/unwanted keywords.
      */
-    private fun isSpamOrVariant(title: String): Boolean {
+    private fun isSpamOrVariant(title: String): String? {
         val lowerTitle = title.lowercase()
-        return SPAM_KEYWORDS.any { keyword ->
-            lowerTitle.contains(keyword.lowercase())
+        for (keyword in SPAM_KEYWORDS) {
+            val kwLower = keyword.lowercase()
+            // Use word boundaries to prevent substring matches (e.g. "mix" in "mixed signals")
+            val pattern = Regex("\\b${Regex.escape(kwLower)}\\b")
+            if (pattern.containsMatchIn(lowerTitle)) {
+                return keyword
+            }
         }
+        return null
     }
 
     /**
@@ -358,7 +375,7 @@ object RecommenderApi {
                 val titleLower = item.title.lowercase()
 
                 // Step 1: Skip spam/variant content regardless of anything else
-                if (isSpamOrVariant(item.title)) {
+                if (isSpamOrVariant(item.title) != null) {
                     Log.d(TAG, "Skipping spam item: ${item.title}")
                     return@forEachIndexed
                 }
@@ -604,226 +621,238 @@ object RecommenderApi {
 
     /**
      * Validate and filter recommendations using Spotify search.
-     * 
-     * Smart artist-based prioritization:
-     * - Recommendations with matching artists are validated first
-     * - Higher priority given to recommendations featuring 1+ original artists
-     * 
-     * For each YouTube recommendation:
-     * 1. Check if it features any original track's artists (prioritized)
-     * 2. Search Spotify for the song
-     * 3. Check confidence score (title + artist + duration match)
-     * 4. Filter out spam/variant versions
-     * 5. Return top matches with valid Spotify links
-     * 
-     * @param recommendations List of YouTube recommendations
-     * @param originalArtists Artists from the original song (for artist-based prioritization)
+     *
+     * Batched async validation with composite scoring:
+     * 1. Pre-filter spam and negative songs (queue/recently played)
+     * 2. Validate in batches of 5 concurrent Spotify searches
+     * 3. Early return when enough tracks are validated (≥ maxResults)
+     * 4. Score using composite: 60% YouTube position + 40% Spotify confidence
+     * 5. Apply artist diversity caps (max 2 per seed artist, max 2 per other artist)
+     *
+     * @param recommendations List of YouTube recommendations (in YT order)
+     * @param originalArtists Artists from the original song (comma-separated)
      * @param maxResults Maximum number of validated results to return (default 10)
-     * @return List of validated recommendations with Spotify links
+     * @param negativeSongs Set of "title-artist" keys to exclude before validation
+     * @return List of validated recommendations sorted by composite score
      */
     suspend fun validateAndFilterWithSpotify(
         recommendations: List<YouTubeRecommendation>,
         originalArtists: String = "",
-        maxResults: Int = 10
+        maxResults: Int = 10,
+        negativeSongs: Set<String> = emptySet()
     ): List<ValidatedRecommendation> {
-        Log.d(TAG, "Validating ${recommendations.size} recommendations with Spotify")
+        Log.d(TAG, "Validating ${recommendations.size} recommendations with Spotify (batch mode)")
         Log.d(TAG, "Original track artists: $originalArtists")
+        Log.d(TAG, "Negative songs count: ${negativeSongs.size}")
 
-        val validated = mutableListOf<ValidatedRecommendation>()
+        // Parse original track's artists for diversity tracking
+        val seedArtistNames = parseArtists(originalArtists).map { it.lowercase() }
 
-        // Parse original track's artists for artist-based prioritization
-        val originalArtistsList = parseArtists(originalArtists)
-
-        // Create a scored list with artist match count
-        data class ScoredRecommendation(
-            val rec: YouTubeRecommendation,
-            val matchingArtistCount: Int
-        )
-
-        // Score recommendations by matching artists
-        val scoredRecs = recommendations.map { rec ->
-            val recArtists = parseArtists(rec.artist)
-            var matchCount = 0
-
-            // Count how many original artists appear in this recommendation
-            for (originalArtist in originalArtistsList) {
-                for (recArtist in recArtists) {
-                    if (similarity(originalArtist, recArtist) > 0.75) {
-                        matchCount++
-                        break // Count each original artist only once
-                    }
-                }
+        // ── Pre-filter: remove spam and negative songs before any API calls ──
+        val candidatesWithIndex = recommendations.mapIndexedNotNull { index, rec ->
+            // Skip spam/variants
+            val spamKeyword = isSpamOrVariant(rec.title)
+            if (spamKeyword != null) {
+                Log.d(TAG, "Pre-filter: skipping spam '${rec.title}' (matched: $spamKeyword)")
+                return@mapIndexedNotNull null
             }
-
-            ScoredRecommendation(rec, matchCount)
+            // Skip negative songs (already in queue / recently played / external downloads)
+            val negKey = "${rec.title.lowercase()}-${rec.artist.lowercase()}"
+            if (negativeSongs.contains(negKey)) {
+                Log.d(TAG, "Pre-filter: skipping negative song '${rec.title}' by '${rec.artist}'")
+                return@mapIndexedNotNull null
+            }
+            Pair(index, rec) // Preserve original YT index
         }
 
-        // Sort by matching artist count (descending), then by original order
-        val sortedByArtistMatch = scoredRecs.sortedByDescending { it.matchingArtistCount }
+        Log.d(TAG, "After pre-filter: ${candidatesWithIndex.size} candidates (from ${recommendations.size})")
 
-        // Validate in order of artist match priority
-        for (scored in sortedByArtistMatch) {
-            if (validated.size >= maxResults) break
+        if (candidatesWithIndex.isEmpty()) return emptyList()
 
-            val rec = scored.rec
-            val artistMatchCount = scored.matchingArtistCount
+        // ── Batched async validation ──
+        val BATCH_SIZE = 5
+        val allValidated = mutableListOf<ValidatedRecommendation>()
+        val batches = candidatesWithIndex.chunked(BATCH_SIZE)
 
-            try {
-                // Check for spam keywords first
-                if (isSpamOrVariant(rec.title)) {
-                    Log.d(TAG, "Skipping spam/variant: ${rec.title}")
-                    continue
-                }
-
-                // Log artist matching status
-                if (artistMatchCount > 0) {
-                    Log.d(
-                        TAG,
-                        "⭐ Found $artistMatchCount matching artist(s) in: ${rec.title} by ${rec.artist}"
-                    )
-                }
-
-                // Search Spotify
-                val query = "${rec.title} ${rec.artist}"
-                val searchResponse = try {
-                    SpotifyApi.search(query, listOf("track"))
-                } catch (offlineEx: OfflineException) {
-                    // Propagate offline exceptions up to caller
-                    Log.w(
-                        TAG,
-                        "Device offline while validating recommendations. Stopping validation."
-                    )
-                    throw offlineEx
-                }
-
-                val spotifyResults = searchResponse.tracks?.items ?: emptyList()
-
-                if (spotifyResults.isEmpty()) {
-                    Log.d(TAG, "No Spotify results for: $query")
-                    continue
-                }
-
-                // Try multiple Spotify results for better matching
-                var bestMatch: SpotifyTrack? = null
-                var bestConfidence = 0.0
-                var bestTitleSimilarity = 0.0
-                var bestDurationSimilarity = 0.0
-
-                for (spotifyTrack in spotifyResults.take(5)) { // Check top 5 results for better matching
-                    // Calculate match confidence with multiple factors
-                    val rawTitleSim = similarity(rec.title, spotifyTrack.name)
-                    val cleanTitleSim = similarity(cleanTitle(rec.title), cleanTitle(spotifyTrack.name))
-                    val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
-
-                    // Parse artists individually for better matching
-                    val spotifyArtists =
-                        parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
-                    val youtubeArtists = parseArtists(rec.artist)
-
-                    // Compare artists intelligently with multi-artist support
-                    val artistSimilarity = artistListSimilarity(spotifyArtists, youtubeArtists)
-
-                    // Parse durations
-                    val youtubeDurationSec = parseDurationToSeconds(rec.duration)
-                    val spotifyDurationSec = spotifyTrack.durationMs / 1000
-                    val durationSimilarity =
-                        durationSimilarity(youtubeDurationSec, spotifyDurationSec)
-
-                    // Calculate text confidence with higher weight on artist matches
-                    // Artist similarity gets 70% weight, title gets 30% weight
-                    val textConfidence = (titleSimilarity * 0.3) + (artistSimilarity * 0.7)
-
-                    // Special logic: if both title and duration match well, boost confidence significantly
-                    var overallConfidence = (textConfidence * 0.6) + (durationSimilarity * 0.4)
-
-                    // Additional boost for excellent artist matches (prioritize artist over title)
-                    if (artistSimilarity >= 0.9) {
-                        overallConfidence += 0.15 // Significant boost for near-perfect artist match
-                        Log.d(
-                            TAG,
-                            "🎯 Excellent artist match! Artists: Spotify${spotifyArtists.size} vs YouTube${youtubeArtists.size}, similarity: ${(artistSimilarity * 100).toInt()}%"
-                        )
-                    } else if (artistSimilarity >= 0.7) {
-                        overallConfidence += 0.1 // Good boost for strong artist match
-                        Log.d(
-                            TAG,
-                            "✓ Good artist match! Artists matched, similarity: ${(artistSimilarity * 100).toInt()}%"
-                        )
-                    } else if (artistSimilarity >= 0.5) {
-                        overallConfidence += 0.05 // Moderate boost for decent artist match
-                    }
-
-                    Log.d(
-                        TAG,
-                        "Comparing '${rec.title}' (${rec.duration ?: "unknown"}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs / 1000}s)"
-                    )
-                    Log.d(TAG, "  Spotify Artists: $spotifyArtists")
-                    Log.d(TAG, "  YouTube Artists: $youtubeArtists")
-                    Log.d(
-                        TAG,
-                        "  Title: ${(titleSimilarity * 100).toInt()}%, Artist: ${(artistSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%, Overall: ${(overallConfidence * 100).toInt()}%"
-                    )
-
-                    if (overallConfidence > bestConfidence) {
-                        bestConfidence = overallConfidence
-                        bestMatch = spotifyTrack
-                        bestTitleSimilarity = titleSimilarity
-                        bestDurationSimilarity = durationSimilarity
-                    }
-                }
-
-                // Stricter acceptance criteria based on match quality
-                val shouldAccept = when {
-                    // Excellent match: high confidence in both title and duration
-                    bestTitleSimilarity >= 0.8 && bestDurationSimilarity >= 0.8 && bestConfidence >= 0.75 -> true
-                    // Good match: reasonable confidence in both
-                    bestTitleSimilarity >= 0.7 && bestDurationSimilarity >= 0.6 && bestConfidence >= 0.65 -> true
-                    // Strong duration match: if duration is perfect, accept with lower overall threshold (handles cases where YouTube title has extra metadata)
-                    bestDurationSimilarity >= 0.95 && bestConfidence >= 0.5 && bestTitleSimilarity >= 0.05 -> true
-                    // Fallback: overall confidence is high enough
-                    bestConfidence >= 0.7 -> true
-                    else -> false
-                }
-
-                if (bestMatch != null && shouldAccept && bestMatch.externalUrls.spotify != null) {
-                    val officialScore = getOfficialScore(rec.title)
-
-                    validated.add(
-                        ValidatedRecommendation(
-                            youtubeVideoId = rec.id,
-                            title = bestMatch.name,
-                            artist = bestMatch.artists.joinToString(", ") { it.name },
-                            spotifyUrl = bestMatch.externalUrls.spotify!!,
-                            confidence = bestConfidence,
-                            isOfficial = officialScore > 0.0,
-                            durationSec = (bestMatch.durationMs / 1000).toInt()
-                        )
-                    )
-
-                    Log.d(
-                        TAG,
-                        "✓ Validated: ${bestMatch.name} by ${bestMatch.artists.first().name} (Title: ${(bestTitleSimilarity * 100).toInt()}%, Duration: ${(bestDurationSimilarity * 100).toInt()}%, Overall: ${(bestConfidence * 100).toInt()}%)"
-                    )
-                } else {
-                    Log.d(
-                        TAG,
-                        "✗ Rejected: ${rec.title} (Best: Title ${(bestTitleSimilarity * 100).toInt()}%, Duration ${(bestDurationSimilarity * 100).toInt()}%, Overall ${(bestConfidence * 100).toInt()}%)"
-                    )
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error validating ${rec.title}: ${e.message}", e)
+        for ((batchIdx, batch) in batches.withIndex()) {
+            if (allValidated.size >= maxResults) {
+                Log.d(TAG, "Early return: collected ${allValidated.size} validated (≥ $maxResults) after ${batchIdx} batches")
+                break
             }
+
+            Log.d(TAG, "[Batch ${batchIdx + 1}/${batches.size}] Validating ${batch.size} tracks concurrently")
+
+            val batchResults = coroutineScope {
+                batch.map { (ytIndex, rec) ->
+                    async {
+                        validateSingleRecommendation(rec, ytIndex, recommendations.size)
+                    }
+                }.awaitAll()
+            }
+
+            // Collect non-null results
+            val validInBatch = batchResults.filterNotNull()
+            allValidated.addAll(validInBatch)
+            Log.d(TAG, "[Batch ${batchIdx + 1}] Validated ${validInBatch.size} / ${batch.size}")
         }
 
-        Log.d(TAG, "Validated ${validated.size} out of ${recommendations.size} recommendations")
+        Log.d(TAG, "Total validated: ${allValidated.size} out of ${recommendations.size} recommendations")
 
-        // Sort by confidence and official status
-        return validated.sortedWith(
-            compareByDescending<ValidatedRecommendation> { it.isOfficial }
-                .thenByDescending { it.confidence }
-        )
+        if (allValidated.isEmpty()) return emptyList()
+
+        // ── Composite scoring: sort by (60% YT position + 40% confidence) ──
+        val scored = allValidated.map { rec ->
+            val ytPositionScore = 1.0 - (rec.ytIndex.toDouble() / recommendations.size.coerceAtLeast(1))
+            val normalizedConf = rec.confidence.coerceAtMost(1.15) // Cap boosted confidence
+            val composite = (ytPositionScore * 0.6) + (normalizedConf * 0.4)
+            rec.copy(composite = composite)
+        }.sortedByDescending { it.composite }
+
+        Log.d(TAG, "Composite scored & sorted. Top: '${scored.firstOrNull()?.title}' (composite=${scored.firstOrNull()?.composite?.let { "%.3f".format(it) }})")
+
+        // ── Artist diversity: cap per-artist representation ──
+        val MAX_PER_SEED_ARTIST = 2
+        val MAX_PER_OTHER_ARTIST = 2
+        val artistCounts = mutableMapOf<String, Int>()
+        val diverse = mutableListOf<ValidatedRecommendation>()
+
+        for (rec in scored) {
+            if (diverse.size >= maxResults) break
+
+            val recArtistKey = rec.artist.lowercase().trim()
+            val isSeedArtist = seedArtistNames.any { seed ->
+                similarity(seed, recArtistKey) > 0.75
+            }
+            val limit = if (isSeedArtist) MAX_PER_SEED_ARTIST else MAX_PER_OTHER_ARTIST
+            val currentCount = artistCounts.getOrDefault(recArtistKey, 0)
+
+            if (currentCount >= limit) {
+                Log.d(TAG, "Diversity cap: skipping '${rec.title}' by '${rec.artist}' (count=$currentCount/$limit)")
+                continue
+            }
+
+            artistCounts[recArtistKey] = currentCount + 1
+            diverse.add(rec)
+        }
+
+        Log.d(TAG, "After diversity filter: ${diverse.size} final recommendations")
+        diverse.forEachIndexed { i, rec ->
+            Log.d(TAG, "  [$i] '${rec.title}' by '${rec.artist}' (composite=${"%.3f".format(rec.composite)}, conf=${(rec.confidence * 100).toInt()}%, ytIdx=${rec.ytIndex})")
+        }
+
+        return diverse
     }
+
+    /**
+     * Validate a single YouTube recommendation against Spotify.
+     * Returns a ValidatedRecommendation if the match is accepted, null otherwise.
+     *
+     * @param rec The YouTube recommendation to validate
+     * @param ytIndex The original index in the YouTube recommendations list
+     * @param totalRecs Total number of recommendations (for logging context)
+     */
+    private suspend fun validateSingleRecommendation(
+        rec: YouTubeRecommendation,
+        ytIndex: Int,
+        totalRecs: Int
+    ): ValidatedRecommendation? {
+        try {
+            // Search Spotify
+            val query = "${rec.title} ${rec.artist}"
+            val searchResponse = try {
+                SpotifyApi.search(query, listOf("track"))
+            } catch (offlineEx: OfflineException) {
+                Log.w(TAG, "Device offline while validating '${rec.title}'. Stopping.")
+                throw offlineEx
+            }
+
+            val spotifyResults = searchResponse.tracks?.items ?: emptyList()
+            if (spotifyResults.isEmpty()) {
+                Log.d(TAG, "No Spotify results for: $query")
+                return null
+            }
+
+            // Try top 5 Spotify results for best matching
+            var bestMatch: SpotifyTrack? = null
+            var bestConfidence = 0.0
+            var bestTitleSimilarity = 0.0
+            var bestDurationSimilarity = 0.0
+
+            for (spotifyTrack in spotifyResults.take(5)) {
+                val rawTitleSim = similarity(rec.title, spotifyTrack.name)
+                val cleanTitleSim = similarity(cleanTitle(rec.title), cleanTitle(spotifyTrack.name))
+                val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
+
+                val spotifyArtists = parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
+                val youtubeArtists = parseArtists(rec.artist)
+                val artistSimilarity = artistListSimilarity(spotifyArtists, youtubeArtists)
+
+                val youtubeDurationSec = parseDurationToSeconds(rec.duration)
+                val spotifyDurationSec = spotifyTrack.durationMs / 1000
+                val durSim = durationSimilarity(youtubeDurationSec, spotifyDurationSec)
+
+                // Text confidence: 70% artist, 30% title
+                val textConfidence = (titleSimilarity * 0.3) + (artistSimilarity * 0.7)
+                var overallConfidence = (textConfidence * 0.6) + (durSim * 0.4)
+
+                // Boost for excellent artist matches
+                if (artistSimilarity >= 0.9) {
+                    overallConfidence += 0.15
+                } else if (artistSimilarity >= 0.7) {
+                    overallConfidence += 0.1
+                } else if (artistSimilarity >= 0.5) {
+                    overallConfidence += 0.05
+                }
+
+                if (overallConfidence > bestConfidence) {
+                    bestConfidence = overallConfidence
+                    bestMatch = spotifyTrack
+                    bestTitleSimilarity = titleSimilarity
+                    bestDurationSimilarity = durSim
+                }
+            }
+
+            // Acceptance criteria
+            val shouldAccept = when {
+                bestTitleSimilarity >= 0.8 && bestDurationSimilarity >= 0.8 && bestConfidence >= 0.75 -> true
+                bestTitleSimilarity >= 0.7 && bestDurationSimilarity >= 0.6 && bestConfidence >= 0.65 -> true
+                bestDurationSimilarity >= 0.95 && bestConfidence >= 0.5 && bestTitleSimilarity >= 0.05 -> true
+                bestConfidence >= 0.7 -> true
+                else -> false
+            }
+
+            if (bestMatch != null && shouldAccept && bestMatch.externalUrls.spotify != null) {
+                val officialScore = getOfficialScore(rec.title)
+
+                Log.d(
+                    TAG,
+                    "✓ Validated [$ytIndex]: ${bestMatch.name} by ${bestMatch.artists.first().name} (Title: ${(bestTitleSimilarity * 100).toInt()}%, Duration: ${(bestDurationSimilarity * 100).toInt()}%, Conf: ${(bestConfidence * 100).toInt()}%)"
+                )
+
+                return ValidatedRecommendation(
+                    youtubeVideoId = rec.id,
+                    title = bestMatch.name,
+                    artist = bestMatch.artists.joinToString(", ") { it.name },
+                    spotifyUrl = bestMatch.externalUrls.spotify!!,
+                    confidence = bestConfidence,
+                    isOfficial = officialScore > 0.0,
+                    durationSec = (bestMatch.durationMs / 1000).toInt(),
+                    ytIndex = ytIndex
+                )
+            } else {
+                Log.d(
+                    TAG,
+                    "✗ Rejected [$ytIndex]: ${rec.title} (Title ${(bestTitleSimilarity * 100).toInt()}%, Duration ${(bestDurationSimilarity * 100).toInt()}%, Conf ${(bestConfidence * 100).toInt()}%)"
+                )
+            }
+        } catch (e: OfflineException) {
+            throw e // Propagate offline to stop all batches
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating ${rec.title}: ${e.message}", e)
+        }
+        return null
+    }
+
 
     /**
      * Test method to debug video selection scoring.
@@ -848,7 +877,7 @@ object RecommenderApi {
                 val titleLower = item.title.lowercase()
 
                 // Skip spam content
-                if (isSpamOrVariant(item.title)) {
+                if (isSpamOrVariant(item.title) != null) {
                     return@mapIndexed Triple(item.id, item.title, -1.0)
                 }
 
@@ -918,7 +947,9 @@ object RecommenderApi {
         val spotifyUrl: String,
         val confidence: Double,
         val isOfficial: Boolean,
-        val durationSec: Int
+        val durationSec: Int,
+        val ytIndex: Int = 0,
+        val composite: Double = 0.0
     )
 
 }

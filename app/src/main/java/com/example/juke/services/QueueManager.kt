@@ -479,11 +479,22 @@ class QueueManager private constructor(private val context: Context) {
                             val targetCount = settingsPrefs.getInt("recommendation_count", 5)
                             Log.d(TAG, "Target recommendation count: $targetCount")
 
+                            // Build negative songs set: queue + seed + session history + external downloads
+                            val negativeSongs = mutableSetOf<String>()
+                            _currentQueue.value.forEach {
+                                negativeSongs.add("${it.title.lowercase()}-${it.artist.lowercase()}")
+                            }
+                            negativeSongs.add("${currentTrack.title.lowercase()}-${currentTrack.artist.lowercase()}")
+                            negativeSongs.addAll(sessionHistory)
+                            negativeSongs.addAll(_externalDownloads)
+                            Log.d(TAG, "Built negative songs set: ${negativeSongs.size} entries")
+
                             // Validate with Spotify - fetch 2x the target to allow for filtering duplicates
                             val validatedRecs = RecommenderApi.validateAndFilterWithSpotify(
                                 recommendations,
                                 originalArtists = contextArtists,
-                                maxResults = targetCount * 2
+                                maxResults = targetCount * 2,
+                                negativeSongs = negativeSongs
                             )
 
                             if (validatedRecs.isEmpty()) {
