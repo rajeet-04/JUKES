@@ -700,8 +700,24 @@ object RecommenderApi {
 
         if (allValidated.isEmpty()) return emptyList()
 
+        // ── Track-level dedup ──
+        // Ensemble seeds (current track + first played + history) frequently surface the same
+        // Spotify song under different YouTube video IDs (music video vs. lyric video vs. live cut),
+        // so YT-id grouping upstream does not catch them. Collapse here by normalized
+        // (title, artist), keeping the entry with the lowest ytIndex (highest YT priority).
+        val dedupedValidated = allValidated
+            .groupBy { "${it.title.lowercase().trim()}|${it.artist.lowercase().trim()}" }
+            .map { (_, group) -> group.minByOrNull { it.ytIndex } ?: group.first() }
+
+        if (dedupedValidated.size < allValidated.size) {
+            Log.d(
+                TAG,
+                "Track dedup: ${allValidated.size} -> ${dedupedValidated.size} (removed ${allValidated.size - dedupedValidated.size} same title+artist duplicates)"
+            )
+        }
+
         // ── Composite scoring: sort by (60% YT position + 40% confidence) ──
-        val scored = allValidated.map { rec ->
+        val scored = dedupedValidated.map { rec ->
             val ytPositionScore = 1.0 - (rec.ytIndex.toDouble() / recommendations.size.coerceAtLeast(1))
             val normalizedConf = rec.confidence.coerceAtMost(1.15) // Cap boosted confidence
             val composite = (ytPositionScore * 0.6) + (normalizedConf * 0.4)

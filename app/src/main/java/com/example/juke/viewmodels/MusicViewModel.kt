@@ -667,22 +667,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
 
-            // Initialize recommendation queue - check if we need more tracks
-            if (tracks.size <= 2) {
-                val currentTrack = tracks.getOrNull(startIndex)
-                currentTrack?.let {
-                    Log.d(
-                        "MusicViewModel",
-                        "Queue size ${tracks.size}, initializing recommendations for: ${it.title}"
-                    )
-                    // Initialize recommendations with correct history for ensemble context
-                    val remainingTracks = tracks.drop(startIndex)
-                    val historyTracks = tracks.take(startIndex)
-                    if (remainingTracks.isNotEmpty()) {
-                        queueManager.updateHistory(historyTracks)
-                        queueManager.initializeQueue(remainingTracks, isRadioMode = false, preserveHistory = true)
-                    }
-                }
+            // setQueue means starting a fresh listening session (user picked a song
+            // from search / artist / album / playlist / library / home). Always
+            // reinitialize QueueManager so the previous session's history,
+            // first-played track, and recent artists do not poison the new queue's
+            // recommendations. Without this, e.g. switching from Hindi to English
+            // rap leaves Hindi seeds in the ensemble and pollutes the new radio.
+            val remainingTracks = tracks.drop(startIndex)
+            if (remainingTracks.isNotEmpty()) {
+                Log.d(
+                    "MusicViewModel",
+                    "Resetting QueueManager for new session: ${remainingTracks.size} tracks, seed='${remainingTracks.first().title}'"
+                )
+                queueManager.initializeQueue(
+                    remainingTracks,
+                    isRadioMode = false,
+                    preserveHistory = false
+                )
             }
         }
     }

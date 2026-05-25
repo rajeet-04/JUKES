@@ -161,11 +161,18 @@ class QueueManager private constructor(private val context: Context) {
     /**
      * Initialize the queue with a list of tracks.
      * This should be called when a user selects a new song from search or another screen.
-     * 
+     *
      * IMPORTANT: This cancels all pending recommendation downloads from the previous song
-     * to prevent queue pollution with old recommendations.
-     * 
+     * to prevent queue pollution with old recommendations. When preserveHistory=false (the
+     * default), this also clears all session-scoped state (history, recent artists, session
+     * dedup set) so a fresh session does not get poisoned by the previous one. Pass
+     * preserveHistory=true ONLY when re-initializing within the same logical session
+     * (e.g. clicking a track in the existing queue to reseat the cursor).
+     *
      * @param tracks Initial queue
+     * @param isRadioMode If true, recommendations use only the seed track (no ensemble)
+     * @param preserveHistory If true, keep firstPlayedTrack / playedTracksHistory /
+     *                       recentArtists / sessionHistory across the call
      */
     fun initializeQueue(tracks: List<Track>, isRadioMode: Boolean = false, preserveHistory: Boolean = false) {
         // Cancel any pending downloads from the previous song
@@ -173,10 +180,15 @@ class QueueManager private constructor(private val context: Context) {
         cancelPendingRecommendationDownloads()
 
         _currentQueue.value = tracks.toMutableList()
-        
+
         if (!preserveHistory) {
             firstPlayedTrack = tracks.firstOrNull()
             playedTracksHistory.clear()
+            // A fresh session must also reset recency- and dedup-tracking, otherwise
+            // ensemble seeds, the offline scorer's "recently heard artist" penalty, and
+            // the session dedup set all reflect the previous session's tastes.
+            recentArtists.clear()
+            sessionHistory.clear()
         }
 
         Log.d(
@@ -216,20 +228,39 @@ class QueueManager private constructor(private val context: Context) {
     /**
      * Add a track to the end of the queue.
      *
-     * If another entry with the same `uuid` already exists, it is removed first so the track
-     * is effectively "moved to end" and remains unique within this queue.
-     * 
+     * Deduplication is two-layered:
+     * 1. By `uuid` — if the same track instance already exists, it is moved to the end.
+     * 2. By normalized (title, artist) — if a different UUID for the same song exists
+     *    (can happen when two parallel recommendation downloads of the same song race
+     *    each other before either one indexes into the DB), the existing entry stays
+     *    and the new one is dropped, preventing duplicate poisoning.
+     *
      * @param track Track to add
      */
     fun addToQueue(track: Track) {
         val currentList = _currentQueue.value.toMutableList()
 
-        // Check if track already exists (Move operation)
-        // We remove the old instance so the new one "moves" to the end
+        // Check if track already exists (Move operation by uuid)
         val existingIndex = currentList.indexOfFirst { it.uuid == track.uuid }
         if (existingIndex != -1) {
             currentList.removeAt(existingIndex)
+            currentList.add(track)
+            _currentQueue.value = currentList
             Log.d(TAG, "Moved existing track to end of queue: ${track.title}")
+            return
+        }
+
+        // Same song under a different UUID — drop to prevent duplicate poisoning.
+        val sameSongExists = currentList.any {
+            it.title.equals(track.title, ignoreCase = true) &&
+                    it.artist.equals(track.artist, ignoreCase = true)
+        }
+        if (sameSongExists) {
+            Log.d(
+                TAG,
+                "Skipping duplicate addToQueue for same title+artist: ${track.title} by ${track.artist}"
+            )
+            return
         }
 
         currentList.add(track)
@@ -572,10 +603,27 @@ class QueueManager private constructor(private val context: Context) {
                                         finalRecs.addAll(libraryRecs.take(remaining))
                                     }
 
-                                    Log.d(TAG, "Final online selection: ${finalRecs.size} tracks")
+                                    // Final-pass dedup against the live pending queue and within
+                                    // this batch. Defends against the same song surfacing twice
+                                    // when ensemble seeds return overlapping radios.
+                                    val pendingKeys = pendingRecommendations
+                                        .map { "${it.title.lowercase()}-${it.artist.lowercase()}" }
+                                        .toMutableSet()
+                                    val uniqueFinalRecs = finalRecs.filter { rec ->
+                                        val key = "${rec.title.lowercase()}-${rec.artist.lowercase()}"
+                                        if (pendingKeys.contains(key)) {
+                                            Log.d(TAG, "Filtered duplicate before queueing: ${rec.title}")
+                                            false
+                                        } else {
+                                            pendingKeys.add(key)
+                                            true
+                                        }
+                                    }
 
-                                    if (finalRecs.isNotEmpty()) {
-                                        finalRecs.forEach { rec ->
+                                    Log.d(TAG, "Final online selection: ${uniqueFinalRecs.size} tracks")
+
+                                    if (uniqueFinalRecs.isNotEmpty()) {
+                                        uniqueFinalRecs.forEach { rec ->
                                             pendingRecommendations.offer(rec)
                                             sessionHistory.add("${rec.title.lowercase()}-${rec.artist.lowercase()}")
                                             Log.d(
@@ -821,6 +869,7 @@ class QueueManager private constructor(private val context: Context) {
                 if (shouldStop) break
 
                 val rec = pendingRecommendations.poll() ?: break
+                val recKey = "${rec.title.lowercase()}-${rec.artist.lowercase()}"
 
                 // CHECK 1: Check if already in current queue (Prevent Duplicates)
                 if (_currentQueue.value.any {
@@ -845,7 +894,21 @@ class QueueManager private constructor(private val context: Context) {
                     continue
                 }
 
-                if (_downloadingTracks.value.any { it.title == rec.title && it.artist == rec.artist }) {
+                // CHECK 3 + reservation: atomically claim the title|artist slot in
+                // _downloadingTracks BEFORE launching, so the next loop iteration (or a
+                // re-entered processNextDownload) sees this song as in-flight immediately.
+                val downloadInfo = DownloadInfo(rec.title, rec.artist, "recommendation")
+                val claimed = synchronized(downloadJobs) {
+                    val isAlreadyDownloading = _downloadingTracks.value.any {
+                        it.title.equals(rec.title, ignoreCase = true) &&
+                                it.artist.equals(rec.artist, ignoreCase = true)
+                    } || downloadJobs.containsKey(recKey)
+                    if (!isAlreadyDownloading) {
+                        _downloadingTracks.value = _downloadingTracks.value + downloadInfo
+                        true
+                    } else false
+                }
+                if (!claimed) {
                     Log.d(TAG, "Track already downloading: ${rec.title}")
                     continue
                 }
@@ -854,9 +917,6 @@ class QueueManager private constructor(private val context: Context) {
                 val downloadJob = launch {
                     try {
                         Log.d(TAG, "Starting download: ${rec.title} by ${rec.artist}")
-
-                        val downloadInfo = DownloadInfo(rec.title, rec.artist, "recommendation")
-                        _downloadingTracks.value += downloadInfo
 
                         val trackId = rec.spotifyUrl.substringAfterLast("/").substringBefore("?")
                         val spotifyTrack = SpotifyApi.getTrack(trackId)
@@ -889,7 +949,7 @@ class QueueManager private constructor(private val context: Context) {
                         }
 
                         synchronized(downloadJobs) {
-                            downloadJobs.remove(rec.title)
+                            downloadJobs.remove(recKey)
                         }
 
                         // Process next batch of downloads
@@ -897,9 +957,10 @@ class QueueManager private constructor(private val context: Context) {
                     }
                 }
 
-                // Register job safely
+                // Register job safely under composite key (title|artist) to avoid
+                // title-only collisions clobbering active downloads.
                 synchronized(downloadJobs) {
-                    downloadJobs[rec.title] = downloadJob
+                    downloadJobs[recKey] = downloadJob
                 }
             }
         }
