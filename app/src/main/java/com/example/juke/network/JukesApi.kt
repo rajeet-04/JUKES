@@ -44,6 +44,8 @@ object JukesApi {
     const val PREPARE_BUDGET_MS = 120_000L
     private const val MAX_PREPARES = 3
     private val POLL_DELAYS_MS = longArrayOf(1_000, 2_000, 3_000) // then every 3 s
+    /** The server holds a job poll up to this long and answers the moment the job finishes. */
+    private const val LONG_POLL_SEC = 10
 
     @Serializable
     data class Prepared(
@@ -175,12 +177,14 @@ object JukesApi {
                 }
                 prepared.audioUrl?.takeIf { prepared.status == "ready" }?.let { return audio(it) }
 
-                // Poll the job; network errors (airplane mode, a cell handover) just mean "poll again".
+                // Long-poll the job; network errors (airplane mode, a cell handover) just mean "poll
+                // again". A server without long polls answers at once, so then back off 1 s, 2 s, 3 s.
                 var i = 0
+                suspend fun backOff() = delay(POLL_DELAYS_MS.getOrElse(i++) { 3_000L })
                 while (System.currentTimeMillis() < deadline) {
-                    delay(POLL_DELAYS_MS.getOrElse(i++) { 3_000L })
+                    val asked = System.currentTimeMillis()
                     val job = try {
-                        call<Job>(client, HttpMethod.Get, "/v1/jobs/${prepared.jobId}")
+                        call<Job>(client, HttpMethod.Get, "/v1/jobs/${prepared.jobId}?wait=$LONG_POLL_SEC")
                     } catch (e: JukesException) {
                         when {
                             // The job aged out; that is not "audio deleted". Prepare again (idempotent).
@@ -195,7 +199,7 @@ object JukesApi {
                     } catch (e: V1MissingException) {
                         throw e
                     } catch (_: Exception) {
-                        continue // offline for a moment: poll again on the next tick
+                        backOff(); continue // offline for a moment
                     }
                     when (job.status) {
                         "ready" -> job.audioUrl?.let { return audio(it) }
@@ -205,6 +209,7 @@ object JukesApi {
                             throw JukesException(422, err?.code ?: "job_failed", false, null)
                         }
                     }
+                    if (System.currentTimeMillis() - asked < 1_000) backOff()
                 }
                 error("Backend still preparing '$title'")
             }

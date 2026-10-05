@@ -72,8 +72,9 @@ class JukesApiTest {
     fun queued_pollsJobUntilReady() = runTest {
         val request = play(client(prepared("queued"), job("downloading"), job("downloading"), ready))
         assertEquals("$base/v1/audio/fsiPzT50ZiM", request.url)
-        assertEquals("$base/v1/jobs/j1", requests.last().url.toString())
-        assertEquals(1_000L + 2_000L + 3_000L, currentTime) // backoff 1 s, 2 s, 3 s
+        assertEquals("$base/v1/jobs/j1?wait=10", requests.last().url.toString())
+        // Polls at once; a server that answers instantly (no long poll) gets the 1 s, 2 s backoff.
+        assertEquals(1_000L + 2_000L, currentTime)
     }
 
     @Test
