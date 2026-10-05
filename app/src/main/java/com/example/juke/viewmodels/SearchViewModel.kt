@@ -77,6 +77,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     companion object {
         private const val LIVE_SUGGESTION_DEBOUNCE_MS = 100L
         private const val WARMUP_DEBOUNCE_MS = 400L
+        private const val SEARCH_WARMUP_COUNT = 3
         private const val MIN_SUGGESTION_QUERY_LENGTH = 2
         private const val SUGGESTION_CACHE_MAX_ENTRIES = 64
         private const val YT_SUGGESTIONS_URL =
@@ -452,17 +453,20 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                             key !in localTitles
                         }
 
-                    // Warm the single likeliest result on the backend once the results have settled
+                    // Warm the likeliest results on the backend once the results have settled
                     // (a newer search cancels it); the tap's prepare then finds it downloading.
                     warmupJob?.cancel()
-                    filteredSpotifyTracks.firstOrNull()?.let { top ->
+                    val likeliest = filteredSpotifyTracks.take(SEARCH_WARMUP_COUNT)
+                    if (likeliest.isNotEmpty()) {
                         warmupJob = viewModelScope.launch {
                             delay(WARMUP_DEBOUNCE_MS)
-                            JukesApi.warmup(
-                                title = top.name,
-                                artist = top.artists.joinToString(", ") { it.name },
-                                durationMs = top.durationMs.toLong()
-                            )
+                            likeliest.forEach { track ->
+                                JukesApi.warmup(
+                                    title = track.name,
+                                    artist = track.artists.joinToString(", ") { it.name },
+                                    durationMs = track.durationMs.toLong()
+                                )
+                            }
                         }
                     }
 

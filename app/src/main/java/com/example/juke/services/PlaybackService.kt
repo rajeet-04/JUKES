@@ -444,11 +444,14 @@ class PlaybackService : MediaLibraryService() {
                 currentPlayingTrackId = trackId
                 Log.d(TAG, "Media item transition: $trackId, reason: $reason")
 
-                // The next song streams from the backend: make sure the server still has it (its cache
-                // evicts) so the transition doesn't hit a "pending" file. Free when it is cached.
-                val nextIndex = player.nextMediaItemIndex
-                if (nextIndex != C.INDEX_UNSET) {
-                    player.getMediaItemAt(nextIndex).localConfiguration?.uri?.toString()
+                // The next songs stream from the backend: make sure the server still has them (its cache
+                // evicts) so a transition doesn't hit a "pending" file. Free when they are cached.
+                var upcoming = player.currentMediaItemIndex
+                for (step in 1..2) {
+                    if (upcoming == C.INDEX_UNSET || player.currentTimeline.isEmpty) break
+                    upcoming = player.currentTimeline.getNextWindowIndex(upcoming, player.repeatMode, player.shuffleModeEnabled)
+                    if (upcoming == C.INDEX_UNSET) break
+                    player.getMediaItemAt(upcoming).localConfiguration?.uri?.toString()
                         ?.let(com.example.juke.network.JukesApi::videoIdOf)
                         ?.let(com.example.juke.network.JukesApi::warmupVideo)
                 }

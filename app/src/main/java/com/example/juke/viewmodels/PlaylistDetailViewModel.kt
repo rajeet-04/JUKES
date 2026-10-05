@@ -10,6 +10,7 @@ import com.example.juke.database.PlaylistTrackEntity
 import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.QueueManager
 import kotlinx.coroutines.async
@@ -71,6 +72,10 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                     tracks = tracks,
                     isLoading = false
                 )
+                // Opening a playlist usually means playing it from the top: warm its first songs.
+                tracks.take(2).forEach { track ->
+                    JukesApi.warmup(track.name, track.artists.joinToString(", ") { it.name }, track.durationMs.toLong())
+                }
                 
                 Log.d("PlaylistDetailViewModel", "Loaded ${tracks.size} tracks for playlist ${playlist.name}")
             } catch (e: Exception) {

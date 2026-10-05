@@ -239,21 +239,52 @@ object JukesApi {
 
     /**
      * Speculative: the user will probably play this soon. The server starts downloading right away;
-     * a later prepare promotes it. Fire-and-forget: failures (429 included) are ignored.
+     * a later prepare promotes it. Fire-and-forget: failures are ignored, and a 429 pauses warmups
+     * for its Retry-After.
      */
     fun warmup(title: String, artist: String, durationMs: Long?) {
-        if (!AlexaBackendApi.isConfigured || !BuildConfig.JUKE_BACKEND_V1) return
-        val body = track(title, artist.split(", ").first(), durationMs)
-        warmScope.launch {
-            runCatching { call<Prepared>(ApiClient.httpClient, HttpMethod.Post, "/v1/warmup", body) }
-        }
+        val mainArtist = artist.split(", ").first()
+        warm("t:${title.trim().lowercase()}|${mainArtist.trim().lowercase()}", track(title, mainArtist, durationMs))
     }
 
-    fun warmupVideo(videoId: String) {
+    fun warmupVideo(videoId: String) = warm("v:$videoId", buildJsonObject { put("video_id", videoId) })
+
+    /** Server limit is 30 warmups/min per IP; stay well under it and never warm a song twice in a row. */
+    private const val WARMUPS_PER_MINUTE = 20
+    private const val REWARM_AFTER_MS = 30 * 60_000L
+    private val warmed = LinkedHashMap<String, Long>()
+    private val recentWarmups = ArrayDeque<Long>()
+    @Volatile private var warmPausedUntil = 0L
+
+    /** Whether a warmup for [key] may be sent now; records it when it may. */
+    @Synchronized
+    internal fun admitWarmup(key: String, now: Long = System.currentTimeMillis()): Boolean {
+        if (now < warmPausedUntil) return false
+        warmed[key]?.let { if (now - it < REWARM_AFTER_MS) return false }
+        while (recentWarmups.isNotEmpty() && now - recentWarmups.first() >= 60_000L) recentWarmups.removeFirst()
+        if (recentWarmups.size >= WARMUPS_PER_MINUTE) return false
+        recentWarmups.addLast(now)
+        warmed[key] = now
+        if (warmed.size > 500) warmed.remove(warmed.keys.first())
+        return true
+    }
+
+    @Synchronized
+    internal fun resetWarmups() {
+        warmed.clear(); recentWarmups.clear(); warmPausedUntil = 0L
+    }
+
+    private fun warm(key: String, body: JsonObject) {
         if (!AlexaBackendApi.isConfigured || !BuildConfig.JUKE_BACKEND_V1) return
+        if (!admitWarmup(key)) return
         warmScope.launch {
-            runCatching {
-                call<Prepared>(ApiClient.httpClient, HttpMethod.Post, "/v1/warmup", buildJsonObject { put("video_id", videoId) })
+            try {
+                call<Prepared>(ApiClient.httpClient, HttpMethod.Post, "/v1/warmup", body)
+            } catch (e: JukesException) {
+                if (e.http == 429) {
+                    warmPausedUntil = System.currentTimeMillis() + (e.retryAfterSec ?: 30).coerceIn(5, 120) * 1000L
+                }
+            } catch (_: Exception) {
             }
         }
     }

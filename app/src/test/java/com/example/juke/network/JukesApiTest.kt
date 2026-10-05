@@ -177,4 +177,17 @@ class JukesApiTest {
         assertTrue(JukesApi.isLengthOk(640, 600))   // 7 % of 600 s = 42 s
         assertTrue(JukesApi.isLengthOk(0, 262))     // unknown
     }
+
+    @Test
+    fun warmups_areDedupedAndRateLimited() {
+        JukesApi.resetWarmups()
+        val t0 = 1_000_000L
+        assertTrue(JukesApi.admitWarmup("a", t0))
+        assertTrue(!JukesApi.admitWarmup("a", t0 + 1_000))            // same song again: skipped
+        for (i in 1 until 20) assertTrue(JukesApi.admitWarmup("s$i", t0 + i))
+        assertTrue(!JukesApi.admitWarmup("over", t0 + 30_000))        // 20 per minute
+        assertTrue(JukesApi.admitWarmup("later", t0 + 61_000))        // window moved on
+        assertTrue(JukesApi.admitWarmup("a", t0 + 31 * 60_000L))      // re-warm after 30 min
+        JukesApi.resetWarmups()
+    }
 }
