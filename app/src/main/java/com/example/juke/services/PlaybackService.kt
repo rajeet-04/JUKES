@@ -28,7 +28,6 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -443,6 +442,18 @@ class PlaybackService : MediaLibraryService() {
                 }
                 currentPlayingTrackId = trackId
                 Log.d(TAG, "Media item transition: $trackId, reason: $reason")
+
+                // The next songs stream from the backend: make sure the server still has them (its cache
+                // evicts) so a transition doesn't hit a "pending" file. Free when they are cached.
+                var upcoming = player.currentMediaItemIndex
+                for (step in 1..2) {
+                    if (upcoming == C.INDEX_UNSET || player.currentTimeline.isEmpty) break
+                    upcoming = player.currentTimeline.getNextWindowIndex(upcoming, player.repeatMode, player.shuffleModeEnabled)
+                    if (upcoming == C.INDEX_UNSET) break
+                    player.getMediaItemAt(upcoming).localConfiguration?.uri?.toString()
+                        ?.let(com.example.juke.network.JukesApi::videoIdOf)
+                        ?.let(com.example.juke.network.JukesApi::warmupVideo)
+                }
                 // Note: Play count is now incremented only when track reaches 50% via checkPlayCountThreshold()
 
                 // Update custom layout (Notification Button)
@@ -591,10 +602,15 @@ class PlaybackService : MediaLibraryService() {
         // stream file is rewritten on a 403 refresh, which manifests as playback pausing
         // or reading corrupted/old data. FLAG_IGNORE_CACHE_FOR_UNRECOGNIZED_CONTENT_TYPE
         // combined with FLAG_IGNORE_CACHE_ON_ERROR ensures we fall-through cleanly.
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
-            .setAllowCrossProtocolRedirects(true)
+        // OkHttp on the app's shared connection pool: a backend stream reuses the connection the
+        // prepare/poll calls just warmed (no new TCP + TLS handshake before the first byte).
+        // Same User-Agent as before (the system one), so other providers see no change.
+        val httpDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(
+            com.example.juke.network.ApiClient.okHttp.newBuilder()
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        ).setUserAgent(System.getProperty("http.agent"))
         httpDataSourceFactory.setTransferListener(object : androidx.media3.datasource.TransferListener {
             private val starts = java.util.concurrent.ConcurrentHashMap<androidx.media3.datasource.DataSource, Long>()
             override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, network: Boolean) {
@@ -621,7 +637,9 @@ class PlaybackService : MediaLibraryService() {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
 
-        // Balanced LoadControl: 30s min buffer / 120s max buffer.
+        // Balanced LoadControl: 30s min buffer / 120s max buffer. Playback starts as soon as
+        // 250 ms of audio is decoded-ready (the first network bytes of a stream); after a mid-song
+        // stall it waits for 2 s so a slow link doesn't stutter on and off.
         // The previous 600s max was causing ExoPlayer to stall — it attempted to buffer
         // 10 minutes ahead but couldn't fill it from a local file fast enough, causing
         // the player to enter STATE_BUFFERING and appear to "pause" with no content.
@@ -630,8 +648,8 @@ class PlaybackService : MediaLibraryService() {
             .setBufferDurationsMs(
                 30_000,  // minBufferMs
                 120_000, // maxBufferMs (2 minutes ahead — enough without stalling)
-                1_500,   // bufferForPlaybackMs
-                3_000    // bufferForPlaybackAfterRebufferMs
+                250,     // bufferForPlaybackMs
+                2_000    // bufferForPlaybackAfterRebufferMs
             )
             .setBackBuffer(
                 30_000, // backBufferDurationMs: 30s back-buffer for smooth seeking

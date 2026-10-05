@@ -477,6 +477,8 @@ object RecommenderApi {
             Log.d(TAG, "Ranked ${ranked.size} matches; best: ${ranked.firstOrNull()?.first?.title}")
             ranked.map { it.first.id }
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // cancelled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Search Network error: ${e.message}", e)
             emptyList()
@@ -768,6 +770,8 @@ object RecommenderApi {
             }
         } catch (e: OfflineException) {
             throw e // Propagate offline to stop all batches
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // cancelled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error validating ${rec.title}: ${e.message}", e)
         }

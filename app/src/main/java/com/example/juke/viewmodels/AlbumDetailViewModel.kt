@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifySimplifiedTrack
+import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,10 @@ class AlbumDetailViewModel : ViewModel() {
                         tracks = tracksResponse.items,
                         isLoading = false
                     )
+                    // Opening an album usually means playing it from the top: warm its first songs.
+                    tracksResponse.items.take(2).forEach { track ->
+                        JukesApi.warmup(track.name, track.artists.joinToString(", ") { it.name }, track.durationMs.toLong())
+                    }
 
                     Log.d(
                         "AlbumDetailViewModel",

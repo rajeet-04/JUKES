@@ -20,10 +20,11 @@ import java.net.URLEncoder
 import kotlin.math.abs
 
 /**
- * Audio from the Alexa skill backend (youtube-music-alexa-skill): YouTube Music search plus a
- * yt-dlp download cache behind an API key.
+ * Audio from the JUKES backend (youtube-music-alexa-skill): YouTube Music search plus a yt-dlp
+ * download cache.
  *
- * Two server generations are supported:
+ * Current servers are used through [JukesApi] (`/v1` prepare + poll). Two older generations are
+ * still supported (and `/audio/` is the fallback while `/v1` rolls out, see `JUKE_BACKEND_V1`):
  * - `/audio/` (newer): side-effect-free search (`q` + `duration` picks the matching version) and
  *   audio; `wait=1` returns the finished file with Content-Length and byte ranges.
  * - Older servers without it: `/alexa/search/` to find the video, `/get_stream/` for its `/proxy/`
@@ -46,6 +47,9 @@ object AlexaBackendApi {
     /** null = not probed yet, false = server predates `/audio/` (use the older endpoints). */
     @Volatile private var hasAudioEndpoint: Boolean? = null
 
+    /** false = server predates `/v1` (use `/audio/`). */
+    @Volatile private var hasV1: Boolean? = null
+
     /** Uploads that are a different rendition of the song; skipped unless the title asks for them. */
     private val VARIANT_WORDS = listOf(
         "remix", "slowed", "reverb", "sped up", "speed up", "lofi", "lo-fi", "live", "karaoke",
@@ -66,6 +70,16 @@ object AlexaBackendApi {
         client: HttpClient = ApiClient.httpClient
     ): SpotifyApi.DirectDownloadRequest {
         check(isConfigured) { "Backend not configured" }
+        // `/v1` prepare + poll; the legacy `/audio/` below stays as the rollout fallback.
+        if (BuildConfig.JUKE_BACKEND_V1 && hasV1 != false) {
+            try {
+                return JukesApi.requestForPlayback(title, artist, durationSec, showPreparing = live, client = client)
+                    .also { hasV1 = true }
+            } catch (e: JukesApi.V1MissingException) {
+                Log.i(TAG, "Backend has no /v1 API; using /audio/")
+                hasV1 = false
+            }
+        }
         // Title + main artist: every featured artist in the query pulls in their other songs.
         val mainArtist = artist.split(", ").first()
         val query = "$title $mainArtist"
@@ -164,16 +178,22 @@ object AlexaBackendApi {
         return matches.firstOrNull { tolerance != null && seconds(it) > 0 } ?: matches.firstOrNull()
     }
 
-    /** Same title (ignoring "(feat. …)", "[…]" and punctuation) and at least one shared artist. */
-    internal fun isSameSong(song: JsonObject, title: String, artist: String): Boolean {
+    internal fun isSameSong(song: JsonObject, title: String, artist: String): Boolean =
+        isSameSong(song.string("title").orEmpty(), song.string("artist").orEmpty(), title, artist)
+
+    /**
+     * Whether a hit ([hitTitle] by [hitArtist]) is the song [title] by [artist]: same title (ignoring
+     * "(feat. …)", "[…]" and punctuation) and at least one shared artist.
+     */
+    internal fun isSameSong(hitTitle: String, hitArtist: String, title: String, artist: String): Boolean {
         // Spotify's " - Remastered 2011" / " - Radio Edit" suffix is not part of the name. (Only on
         // the Spotify side: uploads use "Artist - Song".)
         val coreTitle = words(stripExtras(title.substringBefore(" - "))).ifBlank { words(title) }
         if (coreTitle.isBlank()) return false
         // Uploads often put the artist in the title ("Artist - Song ft X"), so look at both.
-        val hitTitle = words(stripExtras(song.string("title").orEmpty()))
-        if (" $coreTitle " !in " $hitTitle ") return false
-        val credits = " " + words(song.string("artist").orEmpty() + " " + song.string("title").orEmpty()) + " "
+        val hitWords = words(stripExtras(hitTitle))
+        if (" $coreTitle " !in " $hitWords ") return false
+        val credits = " " + words("$hitArtist $hitTitle") + " "
         return artist.split(", ").map(::words).any { it.length >= 2 && " $it " in credits }
     }
 

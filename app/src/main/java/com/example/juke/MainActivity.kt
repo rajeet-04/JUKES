@@ -98,6 +98,13 @@ import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
+import androidx.compose.ui.Alignment
+import kotlin.math.roundToInt
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 
 sealed class Screen(
     val route: String,
@@ -343,6 +350,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val isExpanded = LocalConfiguration.current.screenWidthDp >= 600
+                // Scrolling down a list folds the tab bar into one button beside the mini player.
+                val chromeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+                val chrome = remember(chromeThresholdPx) { com.example.juke.ui.components.CollapsingChrome(chromeThresholdPx) }
+                LaunchedEffect(currentRoute) { chrome.expand() } // a new screen starts unfolded
+                val hasMiniPlayer = musicViewModel.uiState.collectAsStateWithLifecycle().value.currentTrack != null
+                val merged = chrome.collapsed && !isExpanded && hasMiniPlayer
                 // Artist/album/playlist are child screens: they can be opened on top of any tab
                 // (and on top of each other), so a tab tap must first dispose of all of them.
                 fun isDetailRoute(route: String?) =
@@ -393,23 +406,101 @@ class MainActivity : ComponentActivity() {
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     bottomBar = {
                         if (currentRoute != "settings") {
+                            // One progress value (0 = two rows, 1 = merged) drives every part of the
+                            // fold, read only in layout/draw: the tab button's width, scale and fade and
+                            // the tab bar's height (gap included) and fade move together and land on the
+                            // same frame. Nothing is clipped and no gap appears or vanishes in one frame.
+                            val foldProgress = androidx.compose.animation.core.animateFloatAsState(
+                                targetValue = if (merged) 1f else 0f,
+                                animationSpec = androidx.compose.animation.core.spring(
+                                    dampingRatio = 1f, // no overshoot: sizes never go negative
+                                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                ),
+                                label = "chromeFold"
+                            )
+                            val showTabButton by remember { derivedStateOf { foldProgress.value > 0f } }
+                            val showTabBar by remember { derivedStateOf { foldProgress.value < 1f } }
                             Column(
                                 modifier = Modifier
                                     .navigationBarsPadding()
                                     .padding(horizontal = 12.dp)
-                                    .padding(bottom = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    .padding(bottom = 8.dp)
                             ) {
-                                MiniPlayer(musicViewModel = musicViewModel, onExpand = { showPlayerModal = true })
-                                if (!isExpanded) {
-                                    GlassNavBar(items = navItems)
+                                // The backend is downloading the tapped song before it can play.
+                                val preparing by com.example.juke.network.JukesApi.preparing.collectAsStateWithLifecycle()
+                                androidx.compose.animation.AnimatedVisibility(visible = preparing != null) {
+                                    // The gap travels with the pill, so it never pops in or out.
+                                    Box(Modifier.padding(bottom = 8.dp)) { PreparingPill(title = preparing.orEmpty()) }
+                                }
+                                // One composable slot for the mini player in both layouts, so its state
+                                // (live lyric, swipe) carries through the fold.
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (showTabButton) {
+                                        val tab = items.firstOrNull { it.route == currentMainTab } ?: items.first()
+                                        Box(
+                                            Modifier.layout { measurable, _ ->
+                                                // Full size always (never squeezed or clipped); only the
+                                                // space it takes grows, button + 8 dp gap.
+                                                val size = 56.dp.roundToPx()
+                                                val placeable = measurable.measure(
+                                                    androidx.compose.ui.unit.Constraints.fixed(size, size)
+                                                )
+                                                val width = ((size + 8.dp.roundToPx()) * foldProgress.value).roundToInt()
+                                                layout(width, size) {
+                                                    placeable.placeRelativeWithLayer(0, 0) {
+                                                        val t = foldProgress.value
+                                                        // Grows from its left edge at the slot's rate,
+                                                        // so it always fits the space it is opening.
+                                                        alpha = t
+                                                        scaleX = t
+                                                        scaleY = t
+                                                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                                                    }
+                                                }
+                                            }
+                                        ) {
+                                            com.example.juke.ui.components.CollapsedTabButton(
+                                                label = tab.title,
+                                                onClick = { chrome.expand() },
+                                                icon = { tab.filledIcon() }
+                                            )
+                                        }
+                                    }
+                                    MiniPlayer(
+                                        musicViewModel = musicViewModel,
+                                        onExpand = { showPlayerModal = true },
+                                        modifier = Modifier.weight(1f),
+                                        compact = merged
+                                    )
+                                }
+                                if (!isExpanded && showTabBar) {
+                                    Box(
+                                        Modifier.layout { measurable, constraints ->
+                                            // The bar keeps its size and sinks while its slot (8 dp gap +
+                                            // bar) shrinks to nothing.
+                                            val gap = 8.dp.roundToPx()
+                                            val placeable = measurable.measure(constraints.copy(minHeight = 0))
+                                            val keep = 1f - foldProgress.value
+                                            val height = ((gap + placeable.height) * keep).roundToInt()
+                                            layout(placeable.width, height) {
+                                                placeable.placeRelativeWithLayer(0, gap) { alpha = keep }
+                                            }
+                                        }
+                                    ) {
+                                        GlassNavBar(items = navItems)
+                                    }
                                 }
                             }
                         }
                     }
                 ) { innerPadding ->
                     val layoutDirection = LocalLayoutDirection.current
-                    val bottomPadding = innerPadding.calculateBottomPadding()
+                    // While the chrome is folded, lists keep the unfolded padding: shrinking it would
+                    // resize every list mid-scroll (and could fold/unfold it back and forth).
+                    val barPadding = innerPadding.calculateBottomPadding()
+                    val unfolded = remember { arrayOf(barPadding) } // plain holder: no extra recomposition
+                    if (!merged) unfolded[0] = barPadding
+                    val bottomPadding = if (merged) maxOf(barPadding, unfolded[0]) else barPadding
                     val contentPadding = PaddingValues(
                         start = innerPadding.calculateStartPadding(layoutDirection),
                         top = 0.dp,
@@ -429,7 +520,10 @@ class MainActivity : ComponentActivity() {
                         NavHost(
                             navController = navController,
                             startDestination = Screen.Home.route,
-                            modifier = Modifier.weight(1f).padding(contentPadding)
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(contentPadding)
+                                .nestedScroll(chrome.connection)
                         ) {
                             composable(Screen.Home.route) {
                                 HomeScreen(
@@ -653,4 +747,31 @@ private fun UpdateReadyDialog(
             }
         }
     )
+}
+
+@Composable
+private fun PreparingPill(title: String) {
+    androidx.compose.material3.Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp
+            )
+            Text(
+                text = "Preparing $title…",
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
 }
