@@ -1,5 +1,8 @@
 package com.example.juke.ui.components
 
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.AnimatedContent
@@ -117,7 +120,9 @@ private fun computeAdaptiveLyricsGapThreshold(lyrics: List<LyricLine>): Long {
 fun MiniPlayer(
     musicViewModel: MusicViewModel,
     onExpand: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Sharing a row with the folded tab bar: one lyric line, play/pause as the only button. */
+    compact: Boolean = false
 ) {
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     val currentTrack = uiState.currentTrack
@@ -249,6 +254,21 @@ fun MiniPlayer(
             }
         }
 
+        // The progress poll runs every 300 ms; when the next line starts sooner than that, wake at
+        // its exact timestamp so the lyric changes on the beat rather than up to 0.3 s late.
+        val playbackSpeed by musicViewModel.playbackSpeed.collectAsStateWithLifecycle()
+        val nextLineAt = remember(currentPosition, parsedLyrics) {
+            parsedLyrics.firstOrNull { it.timeMs > currentPosition }?.timeMs
+        }
+        LaunchedEffect(nextLineAt, isPlaying, isMiniPlayerLyricsEnabled) {
+            if (nextLineAt == null || !isPlaying || !isMiniPlayerLyricsEnabled) return@LaunchedEffect
+            val waitMs = ((nextLineAt - currentPosition) / playbackSpeed.coerceAtLeast(0.25f)).toLong()
+            if (waitMs in 1..300) {
+                delay(waitMs)
+                musicViewModel.updateProgress()
+            }
+        }
+
         Box(
             modifier = modifier
                 .fillMaxWidth()
@@ -356,20 +376,29 @@ fun MiniPlayer(
 
                     AnimatedContent(
                         targetState = activeLyric,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).clipToBounds(),
                         transitionSpec = {
-                            fadeIn(animationSpec = tween(300)) togetherWith
-                                    fadeOut(animationSpec = tween(300))
+                            if (initialState != null && targetState != null) {
+                                // Line to line: the lyric moves forward, out the top, in from below.
+                                (slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it / 2 } +
+                                    fadeIn(tween(260))) togetherWith
+                                    (slideOutVertically(tween(220, easing = FastOutSlowInEasing)) { -it / 2 } +
+                                        fadeOut(tween(180)))
+                            } else {
+                                // Lyric to title (gap, pause) and back: a plain crossfade.
+                                fadeIn(animationSpec = tween(300)) togetherWith
+                                        fadeOut(animationSpec = tween(300))
+                            }
                         },
                         label = "MiniPlayer_Lyrics_Transition"
                     ) { currentLyric ->
                         if (currentLyric != null) {
                             Text(
                                 text = currentLyric,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
+                                maxLines = if (compact) 1 else 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         } else {
@@ -393,8 +422,9 @@ fun MiniPlayer(
                         }
                     }
 
-                    // Favourite button — tinted primary when hearted
-                    IconButton(
+                    // Favourite button — tinted primary when hearted. Hidden in the merged row, where
+                    // the title or lyric needs the width (long-press can still favourite).
+                    if (!compact) IconButton(
                         onClick = {
                             haptic.confirm()
                             musicViewModel.toggleFavorite(currentTrack)
@@ -413,7 +443,7 @@ fun MiniPlayer(
                     }
 
                     // Download button — only shown for streamed tracks
-                    if (currentTrack.isStream) {
+                    if (currentTrack.isStream && !compact) {
                         IconButton(
                             onClick = {
                                 haptic.click()

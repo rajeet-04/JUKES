@@ -99,7 +99,9 @@ import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 
 sealed class Screen(
     val route: String,
@@ -345,6 +347,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val isExpanded = LocalConfiguration.current.screenWidthDp >= 600
+                // Scrolling down a list folds the tab bar into one button beside the mini player.
+                val chromeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+                val chrome = remember(chromeThresholdPx) { com.example.juke.ui.components.CollapsingChrome(chromeThresholdPx) }
+                LaunchedEffect(currentRoute) { chrome.expand() } // a new screen starts unfolded
+                val hasMiniPlayer = musicViewModel.uiState.collectAsStateWithLifecycle().value.currentTrack != null
+                val merged = chrome.collapsed && !isExpanded && hasMiniPlayer
                 // Artist/album/playlist are child screens: they can be opened on top of any tab
                 // (and on top of each other), so a tab tap must first dispose of all of them.
                 fun isDetailRoute(route: String?) =
@@ -407,16 +415,60 @@ class MainActivity : ComponentActivity() {
                                 androidx.compose.animation.AnimatedVisibility(visible = preparing != null) {
                                     PreparingPill(title = preparing.orEmpty())
                                 }
-                                MiniPlayer(musicViewModel = musicViewModel, onExpand = { showPlayerModal = true })
+                                // One composable slot for the mini player in both layouts, so its state
+                                // (live lyric, swipe) carries through the fold.
+                                val fold = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntSize>(
+                                    dampingRatio = 1f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = merged,
+                                        enter = androidx.compose.animation.expandHorizontally(fold) +
+                                            androidx.compose.animation.fadeIn() +
+                                            androidx.compose.animation.scaleIn(initialScale = 0.6f),
+                                        exit = androidx.compose.animation.shrinkHorizontally(fold) +
+                                            androidx.compose.animation.fadeOut() +
+                                            androidx.compose.animation.scaleOut(targetScale = 0.6f)
+                                    ) {
+                                        val tab = items.firstOrNull { it.route == currentMainTab } ?: items.first()
+                                        Row {
+                                            com.example.juke.ui.components.CollapsedTabButton(
+                                                label = tab.title,
+                                                onClick = { chrome.expand() },
+                                                icon = { tab.filledIcon() }
+                                            )
+                                            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                                        }
+                                    }
+                                    MiniPlayer(
+                                        musicViewModel = musicViewModel,
+                                        onExpand = { showPlayerModal = true },
+                                        modifier = Modifier.weight(1f),
+                                        compact = merged
+                                    )
+                                }
                                 if (!isExpanded) {
-                                    GlassNavBar(items = navItems)
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = !merged,
+                                        enter = androidx.compose.animation.expandVertically(fold) +
+                                            androidx.compose.animation.fadeIn(),
+                                        exit = androidx.compose.animation.shrinkVertically(fold) +
+                                            androidx.compose.animation.fadeOut()
+                                    ) {
+                                        GlassNavBar(items = navItems)
+                                    }
                                 }
                             }
                         }
                     }
                 ) { innerPadding ->
                     val layoutDirection = LocalLayoutDirection.current
-                    val bottomPadding = innerPadding.calculateBottomPadding()
+                    // While the chrome is folded, lists keep the unfolded padding: shrinking it would
+                    // resize every list mid-scroll (and could fold/unfold it back and forth).
+                    val barPadding = innerPadding.calculateBottomPadding()
+                    val unfolded = remember { arrayOf(barPadding) } // plain holder: no extra recomposition
+                    if (!merged) unfolded[0] = barPadding
+                    val bottomPadding = if (merged) maxOf(barPadding, unfolded[0]) else barPadding
                     val contentPadding = PaddingValues(
                         start = innerPadding.calculateStartPadding(layoutDirection),
                         top = 0.dp,
@@ -436,7 +488,10 @@ class MainActivity : ComponentActivity() {
                         NavHost(
                             navController = navController,
                             startDestination = Screen.Home.route,
-                            modifier = Modifier.weight(1f).padding(contentPadding)
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(contentPadding)
+                                .nestedScroll(chrome.connection)
                         ) {
                             composable(Screen.Home.route) {
                                 HomeScreen(
