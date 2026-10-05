@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -225,38 +226,38 @@ half4 main(float2 fc) {
 """
 
 /**
- * The moving selection lens. On Android 13+ it blurs lightly and refracts the backdrop through an
- * AGSL shader so the content under it looks bent by a thick piece of glass; below that it falls
- * back to a tinted [glassPane]. [strength] (0..1) is read every frame, e.g. from lens speed.
+ * Liquid glass (after Apple's design): a clear pane that only lightly blurs what is behind it and
+ * bends it at the rim through an AGSL refraction shader (Android 13+), with a specular rim. Below
+ * Android 13, without a haze source, or in solid mode it falls back to a tinted pane.
+ * [strength] (0..1) is read every frame and swells the refraction, e.g. while the pane moves.
  */
 @Composable
-fun Modifier.glassLens(
-    shape: Shape = GlassShapes.Control,
-    tint: Color? = null,
+fun Modifier.liquidGlass(
+    shape: Shape,
+    fill: Color,
+    blur: Dp = 8.dp,
+    shadow: Dp = 0.dp,
+    rimAlpha: Float = 0.5f,
     source: HazeState? = LocalHazeState.current,
     strength: () -> Float = { 0f },
 ): Modifier {
     val dark = isGlassDark()
-    val spec = GlassLevel.Thick.spec(dark)
-    val base = glassBase(tint ?: LocalGlassAccent.current, dark)
-    // The lens sits inside a glass bar, so it has no outer shadow (it would smear past the bar's
-    // edge) and is a little brighter than the bar rather than a different material.
-    val fill = base.copy(alpha = (spec.fill + 0.06f).coerceAtMost(0.96f))
+    val lifted = if (shadow > 0.dp) glassShadow(shape, shadow, 0.34f) else this
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || source == null || GlassPrefs.solid) {
-        return this.clip(shape).background(fill).glassRim(shape, spec.rimAlpha, dark)
+        val solid = fill.copy(alpha = (fill.alpha + if (GlassPrefs.solid) 0.6f else 0.3f).coerceAtMost(0.96f))
+        return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
-    val style = remember(base, spec) {
+    val style = remember(fill, blur) {
         HazeStyle(
             backgroundColor = Color.Transparent,
             tint = HazeTint(fill),
-            // At least the bar's own blur: a sharper lens shows the artwork beneath as a bright blob.
-            blurRadius = spec.blur,
-            noiseFactor = 0.04f,
-            fallbackTint = HazeTint(base.copy(alpha = (spec.fill + 0.2f).coerceAtMost(0.96f)))
+            blurRadius = blur,
+            noiseFactor = 0.02f,
+            fallbackTint = HazeTint(fill.copy(alpha = (fill.alpha + 0.3f).coerceAtMost(0.96f)))
         )
     }
     val shader = remember { android.graphics.RuntimeShader(LENS_AGSL) }
-    return this
+    return lifted
         .graphicsLayer {
             val corner = (shape as? RoundedCornerShape)?.topStart?.toPx(size, this) ?: 0f
             shader.setFloatUniform("size", size.width, size.height)
@@ -268,7 +269,30 @@ fun Modifier.glassLens(
         }
         .clip(shape)
         .hazeEffect(source, style)
-        .glassRim(shape, spec.rimAlpha, dark)
+        .glassRim(shape, rimAlpha, dark)
+}
+
+/**
+ * The moving selection bubble: the same liquid glass as its bar, a little brighter, no shadow (it
+ * sits inside the bar). [strength] swells the refraction while it moves.
+ */
+@Composable
+fun Modifier.glassLens(
+    shape: Shape = CircleShape,
+    tint: Color? = null,
+    source: HazeState? = LocalHazeState.current,
+    strength: () -> Float = { 0f },
+): Modifier {
+    val dark = isGlassDark()
+    val base = glassBase(tint ?: LocalGlassAccent.current, dark)
+    return liquidGlass(
+        shape = shape,
+        fill = base.copy(alpha = if (dark) 0.16f else 0.55f),
+        blur = 6.dp,
+        rimAlpha = if (dark) 0.55f else 0.7f,
+        source = source,
+        strength = strength,
+    )
 }
 
 /** User opt-out of translucency (blur and see-through fills): surfaces become near-opaque. */

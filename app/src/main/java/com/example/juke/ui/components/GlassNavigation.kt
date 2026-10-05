@@ -48,6 +48,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.height
+import com.example.juke.ui.theme.liquidGlass
 import androidx.compose.ui.unit.dp
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
@@ -64,17 +68,38 @@ data class GlassNavItem(
 )
 
 /**
- * Floating glass tab bar. Same destinations and semantics as a Material navigation bar
- * (selectable tabs, one selected), drawn as a lens of blurred content instead of a slab.
+ * Floating liquid-glass tab bar (after Apple's Liquid Glass): a clear capsule that bends the content
+ * behind it at the rim, icons only, and a round glass bubble on the selected tab. Same destinations
+ * and semantics as a Material navigation bar (selectable tabs with labels for accessibility).
  */
 @Composable
 fun GlassNavBar(items: List<GlassNavItem>, modifier: Modifier = Modifier) {
-    GlassTabGroup(
-        items = items,
-        vertical = false,
-        // A pill with a pill lens inset by the padding: the lens follows the bar's curve.
-        modifier = modifier.fillMaxWidth().glassFloat(GlassShapes.Pill, GlassLevel.Thick).padding(6.dp)
-    )
+    LiquidBar(modifier.fillMaxWidth()) {
+        GlassTabGroup(items = items, vertical = false, modifier = Modifier.padding(6.dp))
+    }
+}
+
+/**
+ * The bar's glass is its own layer behind the tabs: the refraction shader bends everything in its
+ * layer, and the icons must stay crisp.
+ */
+@Composable
+private fun LiquidBar(modifier: Modifier, content: @Composable () -> Unit) {
+    val dark = com.example.juke.ui.theme.isGlassDark() // follows the app theme, not just the system
+    Box(modifier) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .liquidGlass(
+                    shape = GlassShapes.Pill,
+                    // Clear glass: a light smoke in dark mode, a light frost in light mode.
+                    fill = if (dark) Color(0xFF0E0E12).copy(alpha = 0.32f) else Color.White.copy(alpha = 0.38f),
+                    blur = 10.dp,
+                    shadow = 10.dp,
+                )
+        )
+        content()
+    }
 }
 
 /**
@@ -89,6 +114,7 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
     val scope = rememberCoroutineScope()
     val bounds = remember { mutableStateMapOf<Int, Pair<IntOffset, IntSize>>() }
     val selectedIndex = items.indexOfFirst { it.selected }
+    // The bubble is a circle as tall as a tab, centred on it (bounds are stored that way).
     val selected = bounds[selectedIndex]
     // Position along the travel axis, in px; velocity is read straight off the animation.
     val pos = remember { Animatable(0f) }
@@ -149,14 +175,18 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
                             scaleX = if (vertical) across else along
                             scaleY = if (vertical) along else across
                         }
-                        .glassLens(GlassShapes.Pill, accent) {
+                        .glassLens(androidx.compose.foundation.shape.CircleShape, accent) {
                             (kotlin.math.abs(pos.velocity) / 4000f).coerceIn(0f, 1f) + if (dragging) 0.4f else 0f
                         }
                 )
             }
         }
         val tabModifier = { i: Int ->
-            Modifier.onPlaced { bounds[i] = it.positionInParent().round() to it.size }
+            Modifier.onPlaced {
+                val at = it.positionInParent().round()
+                val d = minOf(it.size.width, it.size.height)
+                bounds[i] = IntOffset(at.x + (it.size.width - d) / 2, at.y + (it.size.height - d) / 2) to IntSize(d, d)
+            }
         }
         if (vertical) {
             Column(
@@ -176,15 +206,22 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
 @Composable
 private fun GlassNavTab(item: GlassNavItem, modifier: Modifier = Modifier) {
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val accent = LocalGlassAccent.current
     val tint by animateColorAsState(
-        targetValue = if (item.selected) onSurface else onSurface.copy(alpha = 0.72f),
+        targetValue = if (item.selected) accent else onSurface.copy(alpha = 0.78f),
         animationSpec = tween(180),
         label = "navTint"
     )
-    Column(
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (item.selected) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 400f),
+        label = "navScale"
+    )
+    // Icons only, like Liquid Glass tab bars; the label stays for TalkBack.
+    Box(
         modifier = modifier
-            .heightIn(min = 52.dp)
-            .clip(GlassShapes.Pill)
+            .height(52.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
             .selectable(
                 selected = item.selected,
                 role = Role.Tab,
@@ -192,17 +229,11 @@ private fun GlassNavTab(item: GlassNavItem, modifier: Modifier = Modifier) {
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             )
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .semantics { contentDescription = item.label },
+        contentAlignment = Alignment.Center
     ) {
         CompositionLocalProvider(LocalContentColor provides tint) {
-            item.icon()
-            Text(
-                text = item.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = tint
-            )
+            Box(Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) { item.icon() }
         }
     }
 }
@@ -211,13 +242,12 @@ private fun GlassNavTab(item: GlassNavItem, modifier: Modifier = Modifier) {
 @Composable
 fun GlassNavRail(items: List<GlassNavItem>, modifier: Modifier = Modifier) {
     Box(modifier = modifier.padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
-        GlassTabGroup(
-            items = items,
-            vertical = true,
-            modifier = Modifier
-                .width(80.dp)
-                .glassFloat(GlassShapes.Pill, GlassLevel.Thick)
-                .padding(vertical = 8.dp, horizontal = 6.dp)
-        )
+        LiquidBar(Modifier.width(68.dp)) {
+            GlassTabGroup(
+                items = items,
+                vertical = true,
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp)
+            )
+        }
     }
 }
