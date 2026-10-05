@@ -236,24 +236,27 @@ fun Modifier.glassLens(
     source: HazeState? = LocalHazeState.current,
     strength: () -> Float = { 0f },
 ): Modifier {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || source == null || GlassPrefs.solid) {
-        return glassPane(shape, GlassLevel.Thick, tint)
-    }
     val dark = isGlassDark()
     val spec = GlassLevel.Thick.spec(dark)
     val base = glassBase(tint ?: LocalGlassAccent.current, dark)
+    // The lens sits inside a glass bar, so it has no outer shadow (it would smear past the bar's
+    // edge) and is a little brighter than the bar rather than a different material.
+    val fill = base.copy(alpha = (spec.fill + 0.06f).coerceAtMost(0.96f))
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || source == null || GlassPrefs.solid) {
+        return this.clip(shape).background(fill).glassRim(shape, spec.rimAlpha, dark)
+    }
     val style = remember(base, spec) {
         HazeStyle(
             backgroundColor = Color.Transparent,
-            tint = HazeTint(base.copy(alpha = spec.fill * 0.7f)),
-            blurRadius = 6.dp,
-            noiseFactor = 0.02f,
-            fallbackTint = HazeTint(base.copy(alpha = spec.fill + 0.2f))
+            tint = HazeTint(fill),
+            // At least the bar's own blur: a sharper lens shows the artwork beneath as a bright blob.
+            blurRadius = spec.blur,
+            noiseFactor = 0.04f,
+            fallbackTint = HazeTint(base.copy(alpha = (spec.fill + 0.2f).coerceAtMost(0.96f)))
         )
     }
     val shader = remember { android.graphics.RuntimeShader(LENS_AGSL) }
     return this
-        .glassShadow(shape, 6.dp, 0.26f)
         .graphicsLayer {
             val corner = (shape as? RoundedCornerShape)?.topStart?.toPx(size, this) ?: 0f
             shader.setFloatUniform("size", size.width, size.height)

@@ -72,7 +72,8 @@ fun GlassNavBar(items: List<GlassNavItem>, modifier: Modifier = Modifier) {
     GlassTabGroup(
         items = items,
         vertical = false,
-        modifier = modifier.fillMaxWidth().glassFloat(GlassShapes.Bar, GlassLevel.Regular).padding(6.dp)
+        // A pill with a pill lens inset by the padding: the lens follows the bar's curve.
+        modifier = modifier.fillMaxWidth().glassFloat(GlassShapes.Pill, GlassLevel.Thick).padding(6.dp)
     )
 }
 
@@ -148,7 +149,7 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
                             scaleX = if (vertical) across else along
                             scaleY = if (vertical) along else across
                         }
-                        .glassLens(GlassShapes.Control, accent) {
+                        .glassLens(GlassShapes.Pill, accent) {
                             (kotlin.math.abs(pos.velocity) / 4000f).coerceIn(0f, 1f) + if (dragging) 0.4f else 0f
                         }
                 )
@@ -183,7 +184,7 @@ private fun GlassNavTab(item: GlassNavItem, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .heightIn(min = 52.dp)
-            .clip(GlassShapes.Control)
+            .clip(GlassShapes.Pill)
             .selectable(
                 selected = item.selected,
                 role = Role.Tab,
@@ -215,7 +216,7 @@ fun GlassNavRail(items: List<GlassNavItem>, modifier: Modifier = Modifier) {
             vertical = true,
             modifier = Modifier
                 .width(80.dp)
-                .glassFloat(GlassShapes.Bar, GlassLevel.Regular)
+                .glassFloat(GlassShapes.Pill, GlassLevel.Thick)
                 .padding(vertical = 8.dp, horizontal = 6.dp)
         )
     }
