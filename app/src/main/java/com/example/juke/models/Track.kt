@@ -78,7 +78,7 @@ data class LRCLibResult(
     val trackName: String,
     val artistName: String,
     val albumName: String,
-    val duration: Double,
+    val duration: Double? = null, // LRCLib sends null for some entries
     val instrumental: Boolean,
     val plainLyrics: String?,
     val syncedLyrics: String?

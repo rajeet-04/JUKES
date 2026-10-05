@@ -268,6 +268,8 @@ object SpotifyApi {
 
             return searchResponse
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // cancelled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error searching Spotify: ${e.message}", e)
             throw e
@@ -616,6 +618,8 @@ object SpotifyApi {
 
             return tracks
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // cancelled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error searching Spotify: ${e.message}", e)
             throw e
@@ -1027,7 +1031,7 @@ object SpotifyApi {
                     .map { result ->
                         val score = validateLyricsMatch(result, title, artist, duration)
                         val durationDiff =
-                            if (duration != null) abs(result.duration - duration) else Double.MAX_VALUE
+                            if (duration != null) result.duration?.let { abs(it - duration) } ?: Double.MAX_VALUE else Double.MAX_VALUE
                         !result.syncedLyrics.isNullOrBlank()
                         Triple(result, score, durationDiff)
                     }
@@ -1081,8 +1085,8 @@ object SpotifyApi {
 
                                     val durationMatch = if (duration != null && duration > 0) {
                                         val tolerance = duration * 0.05 // 5% tolerance
-                                        val diff = abs(result.duration - duration)
-                                        diff <= tolerance
+                                        // Unknown length: the title match decides.
+                                        result.duration?.let { abs(it - duration) <= tolerance } ?: true
                                     } else {
                                         true
                                     }
@@ -1091,7 +1095,7 @@ object SpotifyApi {
                                 }
                                 .sortedWith(
                                     compareByDescending<LRCLibResult> { !it.syncedLyrics.isNullOrBlank() } // 1. Has Synced Lyrics
-                                        .thenBy { if (duration != null) abs(it.duration - duration) else 0.0 } // 2. Closest Duration
+                                        .thenBy { r -> if (duration != null) r.duration?.let { abs(it - duration) } ?: Double.MAX_VALUE else 0.0 } // 2. Closest Duration
                                 )
                                 .firstOrNull()
 
@@ -1178,6 +1182,8 @@ object SpotifyApi {
 
             null
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // cancelled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error searching lyrics: ${e.message}", e)
             null
@@ -1405,7 +1411,7 @@ object SpotifyApi {
 
         // Duration match (1 point) - within 15 seconds tolerance
         if (expectedDuration != null) {
-            val durationDiff = abs(result.duration - expectedDuration)
+            val durationDiff = result.duration?.let { abs(it - expectedDuration) } ?: Double.MAX_VALUE
             if (durationDiff < 15) {
                 score += 1
             }
