@@ -12,6 +12,7 @@ import com.example.juke.models.withUpdatedLyrics
 import com.example.juke.network.ApiClient
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.AlexaBackendApi
+import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotsaverApi
 import com.example.juke.network.SpotifyApi
 import com.example.juke.utils.FastDownloader
@@ -38,6 +39,7 @@ import kotlin.math.abs
 class MusicService(private val context: Context) {
 
     private val TAG = "MusicService"
+    private val BACKEND_STREAM_TIMEOUT_MS = JukesApi.PREPARE_BUDGET_MS + 5_000L
     private val database = MusicDatabase.getDatabase(context)
     private val trackDao = database.trackDao()
     private val sourceMemory = SourceMemory(context)
@@ -70,9 +72,12 @@ class MusicService(private val context: Context) {
         }
     }
 
-    /** Per-source budget for a full download. The backend may run yt-dlp first (~10 s on its VPN). */
+    /**
+     * Per-source budget for a full download. The backend finishes the file first (prepare + poll, up
+     * to [JukesApi.PREPARE_BUDGET_MS]) and then serves it.
+     */
     private fun downloadTimeoutMs(source: Source) = when (source) {
-        Source.BACKEND -> 60_000L
+        Source.BACKEND -> JukesApi.PREPARE_BUDGET_MS + 60_000L
         Source.SPOTSAVER -> 45_000L
         else -> 90_000L
     }
@@ -620,7 +625,7 @@ class MusicService(private val context: Context) {
                         found = withTimeout(
                             when (source) {
                                 Source.SPOTSAVER -> 8_000L
-                                Source.BACKEND -> 10_000L
+                                Source.BACKEND -> BACKEND_STREAM_TIMEOUT_MS
                                 else -> 15_000L
                             }
                         ) {
@@ -635,9 +640,9 @@ class MusicService(private val context: Context) {
                 }
                 found ?: throw Exception("Stream unavailable: ${failures.joinToString(", ")}")
             } else (if (AlexaBackendApi.isConfigured) {
-                // The backend is the first source: one search + a ready-to-stream URL.
+                // The backend is the first source: the UI shows "preparing" while it finishes the file.
                 try {
-                    withTimeout(10_000L) { requestFor(Source.BACKEND, song, live = true) }
+                    withTimeout(BACKEND_STREAM_TIMEOUT_MS) { requestFor(Source.BACKEND, song, live = true) }
                         .also { resolvedSource = Source.BACKEND }
                 } catch (e: Exception) {
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -721,9 +726,12 @@ class MusicService(private val context: Context) {
                 val finalFile = File(streamDir, "${uuid}_stream.mp3")
                 val tempFile = File(streamDir, "${uuid}_stream.tmp")
 
-                // The backend's live URL has no length; ask for the finished file instead (the server
-                // waits for the stream that is already running, so yt-dlp doesn't run twice).
-                val bgRequest = if (resolvedSource == Source.BACKEND && "/audio/" in resolvedRequest.url) {
+                // A legacy `/audio/` live URL has no length; ask for the finished file instead (the
+                // server waits for the stream that is already running, so yt-dlp doesn't run twice).
+                // `/v1` audio URLs are finished files already.
+                val bgRequest = if (resolvedSource == Source.BACKEND && "/audio/?" in resolvedRequest.url &&
+                    "wait=1" !in resolvedRequest.url
+                ) {
                     resolvedRequest.copy(url = resolvedRequest.url + "&wait=1", probeRanges = true)
                 } else resolvedRequest
                 withTimeout(120_000L) {

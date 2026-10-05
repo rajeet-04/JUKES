@@ -10,6 +10,7 @@ import io.ktor.client.plugins.logging.DEFAULT
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -36,6 +37,12 @@ object ApiClient {
         install(Logging) {
             logger = Logger.DEFAULT
             level = if (BuildConfig.DEBUG) LogLevel.HEADERS else LogLevel.NONE
+            // Never log credentials (installation tokens, session cookies).
+            sanitizeHeader { name ->
+                name.equals(HttpHeaders.Authorization, ignoreCase = true) ||
+                    name.equals(HttpHeaders.Cookie, ignoreCase = true) ||
+                    name.equals(HttpHeaders.SetCookie, ignoreCase = true)
+            }
         }
 
         install(HttpTimeout) {

@@ -443,6 +443,15 @@ class PlaybackService : MediaLibraryService() {
                 }
                 currentPlayingTrackId = trackId
                 Log.d(TAG, "Media item transition: $trackId, reason: $reason")
+
+                // The next song streams from the backend: make sure the server still has it (its cache
+                // evicts) so the transition doesn't hit a "pending" file. Free when it is cached.
+                val nextIndex = player.nextMediaItemIndex
+                if (nextIndex != C.INDEX_UNSET) {
+                    player.getMediaItemAt(nextIndex).localConfiguration?.uri?.toString()
+                        ?.let(com.example.juke.network.JukesApi::videoIdOf)
+                        ?.let(com.example.juke.network.JukesApi::warmupVideo)
+                }
                 // Note: Play count is now incremented only when track reaches 50% via checkPlayCountThreshold()
 
                 // Update custom layout (Notification Button)

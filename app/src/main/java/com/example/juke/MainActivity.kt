@@ -98,6 +98,8 @@ import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.size
 
 sealed class Screen(
     val route: String,
@@ -400,6 +402,11 @@ class MainActivity : ComponentActivity() {
                                     .padding(bottom = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                // The backend is downloading the tapped song before it can play.
+                                val preparing by com.example.juke.network.JukesApi.preparing.collectAsStateWithLifecycle()
+                                androidx.compose.animation.AnimatedVisibility(visible = preparing != null) {
+                                    PreparingPill(title = preparing.orEmpty())
+                                }
                                 MiniPlayer(musicViewModel = musicViewModel, onExpand = { showPlayerModal = true })
                                 if (!isExpanded) {
                                     GlassNavBar(items = navItems)
@@ -653,4 +660,31 @@ private fun UpdateReadyDialog(
             }
         }
     )
+}
+
+@Composable
+private fun PreparingPill(title: String) {
+    androidx.compose.material3.Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp
+            )
+            Text(
+                text = "Preparing $title…",
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
 }

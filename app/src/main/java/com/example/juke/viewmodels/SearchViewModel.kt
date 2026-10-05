@@ -19,6 +19,7 @@ import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
+import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.QueueManager
 import io.ktor.client.request.header
@@ -75,6 +76,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     companion object {
         private const val LIVE_SUGGESTION_DEBOUNCE_MS = 100L
+        private const val WARMUP_DEBOUNCE_MS = 400L
         private const val MIN_SUGGESTION_QUERY_LENGTH = 2
         private const val SUGGESTION_CACHE_MAX_ENTRIES = 64
         private const val YT_SUGGESTIONS_URL =
@@ -119,6 +121,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private var searchJob: Job? = null
+    private var warmupJob: Job? = null
     private val suggestionRequestNonce = AtomicLong(0L)
     private val warmupRequestNonce = AtomicLong(0L)
     private val suggestionPrefixCache =
@@ -135,6 +138,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         )
 
         searchJob?.cancel()
+        warmupJob?.cancel()
         val requestNonce = suggestionRequestNonce.incrementAndGet()
 
         if (query.length >= MIN_SUGGESTION_QUERY_LENGTH) {
@@ -317,6 +321,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun search(query: String) {
         val trimmedQuery = query.trim()
         searchJob?.cancel() // Cancel any pending suggestion fetch
+        warmupJob?.cancel()
         // Flip out of suggestion mode immediately so results can render
         _uiState.value = _uiState.value.copy(
             isShowingSuggestions = false,
@@ -446,6 +451,20 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                     .orEmpty()
                             key !in localTitles
                         }
+
+                    // Warm the single likeliest result on the backend once the results have settled
+                    // (a newer search cancels it); the tap's prepare then finds it downloading.
+                    warmupJob?.cancel()
+                    filteredSpotifyTracks.firstOrNull()?.let { top ->
+                        warmupJob = viewModelScope.launch {
+                            delay(WARMUP_DEBOUNCE_MS)
+                            JukesApi.warmup(
+                                title = top.name,
+                                artist = top.artists.joinToString(", ") { it.name },
+                                durationMs = top.durationMs.toLong()
+                            )
+                        }
+                    }
 
                     _uiState.value = _uiState.value.copy(
                         tracks = filteredSpotifyTracks,

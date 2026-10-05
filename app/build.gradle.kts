@@ -49,16 +49,23 @@ android {
             "POSTHOG_HOST",
             "\"${properties.getProperty("POSTHOG_HOST", "")}\""
         )
-        // Alexa skill backend (youtube-music-alexa-skill): first audio source when both are set.
+        // JUKES backend (youtube-music-alexa-skill): first audio source when both are set. The URL
+        // is public. The server ignores the key now, but the app's gate still needs it non-blank.
         buildConfigField(
             "String",
             "JUKE_BACKEND_URL",
-            "\"${properties.getProperty("JUKE_BACKEND_URL", "")}\""
+            "\"${properties.getProperty("JUKE_BACKEND_URL", "https://ms.rajeet.in")}\""
         )
         buildConfigField(
             "String",
             "JUKE_BACKEND_KEY",
-            "\"${properties.getProperty("JUKE_BACKEND_KEY", "")}\""
+            "\"${properties.getProperty("JUKE_BACKEND_KEY", "unused")}\""
+        )
+        // Rollout flag: false = use only the legacy /audio/ endpoint instead of /v1 prepare + poll.
+        buildConfigField(
+            "boolean",
+            "JUKE_BACKEND_V1",
+            properties.getProperty("JUKE_BACKEND_V1", "true")
         )
     }
 
@@ -165,6 +172,8 @@ dependencies {
     implementation("com.posthog:posthog-android:3.40.2")
 
     testImplementation(libs.junit)
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
