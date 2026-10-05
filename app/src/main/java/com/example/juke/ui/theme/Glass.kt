@@ -16,7 +16,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -217,9 +216,10 @@ half4 main(float2 fc) {
     float2 dir = p / max(length(p), 1.0);
     float2 base = c + p * (1.0 - 0.06 * (0.4 + strength));
     float2 pull = -dir * bend * 16.0;
-    half4 g = content.eval(base + pull * 1.15);
-    half r = content.eval(base + pull).r;
-    half b = content.eval(base + pull * 1.35).b;
+    // Colour fringing only while the glass moves; at rest it is clear.
+    half4 g = content.eval(base + pull);
+    half r = content.eval(base + pull * (1.0 - 0.15 * strength)).r;
+    half b = content.eval(base + pull * (1.0 + 0.2 * strength)).b;
     half spec = half(edge * edge * 0.10 * (0.5 + strength));
     return half4(clamp(half3(r, g.g, b) + spec, 0.0, 1.0) * g.a, g.a);
 }
@@ -278,7 +278,7 @@ fun Modifier.liquidGlass(
  */
 @Composable
 fun Modifier.glassLens(
-    shape: Shape = CircleShape,
+    shape: Shape = GlassShapes.Pill,
     tint: Color? = null,
     source: HazeState? = LocalHazeState.current,
     strength: () -> Float = { 0f },
@@ -287,9 +287,9 @@ fun Modifier.glassLens(
     val base = glassBase(tint ?: LocalGlassAccent.current, dark)
     return liquidGlass(
         shape = shape,
-        fill = base.copy(alpha = if (dark) 0.16f else 0.55f),
+        fill = base.copy(alpha = if (dark) 0.13f else 0.5f),
         blur = 6.dp,
-        rimAlpha = if (dark) 0.55f else 0.7f,
+        rimAlpha = if (dark) 0.32f else 0.55f,
         source = source,
         strength = strength,
     )

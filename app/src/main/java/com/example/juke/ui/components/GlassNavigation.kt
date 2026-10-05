@@ -74,8 +74,12 @@ data class GlassNavItem(
  */
 @Composable
 fun GlassNavBar(items: List<GlassNavItem>, modifier: Modifier = Modifier) {
-    LiquidBar(modifier.fillMaxWidth()) {
-        GlassTabGroup(items = items, vertical = false, modifier = Modifier.padding(6.dp))
+    // The capsule hugs its icons and floats centred: a full-width bar around three icons is mostly
+    // empty glass, and its ends smear over whatever artwork scrolls beneath.
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        LiquidBar(Modifier) {
+            GlassTabGroup(items = items, vertical = false, modifier = Modifier.padding(6.dp))
+        }
     }
 }
 
@@ -95,7 +99,7 @@ private fun LiquidBar(modifier: Modifier, content: @Composable () -> Unit) {
                     // Clear glass: a light smoke in dark mode, a light frost in light mode.
                     fill = if (dark) Color(0xFF0E0E12).copy(alpha = 0.32f) else Color.White.copy(alpha = 0.38f),
                     blur = 10.dp,
-                    shadow = 10.dp,
+                    shadow = 6.dp,
                 )
         )
         content()
@@ -114,14 +118,13 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
     val scope = rememberCoroutineScope()
     val bounds = remember { mutableStateMapOf<Int, Pair<IntOffset, IntSize>>() }
     val selectedIndex = items.indexOfFirst { it.selected }
-    // The bubble is a circle as tall as a tab, centred on it (bounds are stored that way).
     val selected = bounds[selectedIndex]
     // Position along the travel axis, in px; velocity is read straight off the animation.
     val pos = remember { Animatable(0f) }
     var dragging by remember { mutableStateOf(false) }
     var placed by remember { mutableStateOf(false) }
     fun axis(o: IntOffset) = if (vertical) o.y.toFloat() else o.x.toFloat()
-    val lensSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 260f)
+    val lensSpring = spring<Float>(dampingRatio = 0.8f, stiffness = 300f) // a tap settles; only a drag release carries momentum
 
     LaunchedEffect(selected, dragging) {
         val target = selected?.first?.let(::axis) ?: return@LaunchedEffect
@@ -175,18 +178,14 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
                             scaleX = if (vertical) across else along
                             scaleY = if (vertical) along else across
                         }
-                        .glassLens(androidx.compose.foundation.shape.CircleShape, accent) {
+                        .glassLens(GlassShapes.Pill, accent) {
                             (kotlin.math.abs(pos.velocity) / 4000f).coerceIn(0f, 1f) + if (dragging) 0.4f else 0f
                         }
                 )
             }
         }
         val tabModifier = { i: Int ->
-            Modifier.onPlaced {
-                val at = it.positionInParent().round()
-                val d = minOf(it.size.width, it.size.height)
-                bounds[i] = IntOffset(at.x + (it.size.width - d) / 2, at.y + (it.size.height - d) / 2) to IntSize(d, d)
-            }
+            Modifier.onPlaced { bounds[i] = it.positionInParent().round() to it.size }
         }
         if (vertical) {
             Column(
@@ -197,7 +196,7 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                items.forEachIndexed { i, item -> GlassNavTab(item, tabModifier(i).weight(1f)) }
+                items.forEachIndexed { i, item -> GlassNavTab(item, tabModifier(i).width(64.dp)) }
             }
         }
     }
@@ -214,14 +213,14 @@ private fun GlassNavTab(item: GlassNavItem, modifier: Modifier = Modifier) {
     )
     val scale by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (item.selected) 1.08f else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = 400f),
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
         label = "navScale"
     )
     // Icons only, like Liquid Glass tab bars; the label stays for TalkBack.
     Box(
         modifier = modifier
             .height(52.dp)
-            .clip(androidx.compose.foundation.shape.CircleShape)
+            .clip(GlassShapes.Pill)
             .selectable(
                 selected = item.selected,
                 role = Role.Tab,
