@@ -1,5 +1,7 @@
 package com.example.juke.services
 
+import androidx.room.withTransaction
+
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.util.Log
@@ -1087,109 +1089,52 @@ class MusicService(private val context: Context) {
     }
 
     suspend fun deleteTrackAndFiles(track: Track) {
-        try {
-            // CRITICAL: Delete playlist_tracks entries FIRST to avoid FK constraint errors
-            // This is more reliable than relying on ON DELETE CASCADE
-            database.playlistDao().deletePlaylistTracksForTrack(track.uuid)
-            Log.d(TAG, "Deleted playlist_tracks for track: ${track.uuid}")
-
-            // Get playlists that contain this track before deleting (for updating counts)
-            val playlistsToUpdate =
-                database.playlistDao().getPlaylistsForTrack(track.uuid).map { it.id }
-
-            track.localUri?.let { uri ->
-                if (!uri.startsWith("http")) {
-                    File(uri).delete()
-                }
-            }
-
-            track.thumbnailUri?.let { uri ->
-                File(uri).delete()
-            }
-
-            trackDao.deleteTrack(track.uuid)
-
-            // Update track counts for affected playlists
-            playlistsToUpdate.forEach { playlistId ->
-                val newCount = database.playlistDao().getPlaylistTrackCount(playlistId)
-                database.playlistDao().updatePlaylistTrackCount(playlistId, newCount)
-                Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
-            }
-
-            // SAFETY: Remove from playback queue if present
-            try {
-                val playbackManager = PlaybackManager.getInstance(context)
-                playbackManager.removeDeletedTrackFromQueue(track.uuid)
-                Log.d(TAG, "Removed deleted track from playback queue: ${track.title}")
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not remove track from playback queue: ${e.message}")
-            }
-
-            Log.d(TAG, "Deleted track: ${track.title}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error deleting track: ${e.message}", e)
-        }
+        deleteTracksAndFiles(listOf(track))
     }
 
-    suspend fun deleteTracksAndFiles(tracks: List<Track>) {
+    /** Collect affected playlists before removing memberships; update counts in the same transaction. */
+    suspend fun deleteTracksAndFiles(tracks: List<Track>, reportErrors: Boolean = false) {
         if (tracks.isEmpty()) return
-
         try {
-            // CRITICAL: Delete playlist_tracks entries FIRST to avoid FK constraint errors
-            val trackUuids = tracks.map { it.uuid }
-            database.playlistDao().deletePlaylistTracksForTracks(trackUuids)
-            Log.d(TAG, "Deleted playlist_tracks for ${tracks.size} tracks")
-
-            // Delete files for all tracks
-            tracks.forEach { track ->
-                track.localUri?.let { uri ->
-                    if (!uri.startsWith("http")) {
-                        File(uri).delete()
+            val uniqueTracks = tracks.distinctBy { it.uuid }
+            val trackUuids = uniqueTracks.map { it.uuid }
+            // Resolve imported file:// URIs as well as the absolute paths used by downloads.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uniqueTracks.forEach { track ->
+                    listOfNotNull(track.localUri, track.thumbnailUri).forEach { uri ->
+                        val file = when {
+                            uri.startsWith("file:") -> File(java.net.URI(uri))
+                            uri.startsWith("/") -> File(uri)
+                            else -> null // Remote/content resources are not owned files.
+                        }
+                        if (file != null && file.exists() && !file.delete()) {
+                            throw java.io.IOException("Could not remove a downloaded file")
+                        }
                     }
                 }
-                track.thumbnailUri?.let { uri ->
-                    File(uri).delete()
+            }
+            database.withTransaction {
+                val playlistDao = database.playlistDao()
+                val affected = uniqueTracks.flatMap { playlistDao.getPlaylistsForTrack(it.uuid) }
+                    .map { it.id }.toSet()
+                playlistDao.deletePlaylistTracksForTracks(trackUuids)
+                trackDao.deleteTracks(trackUuids)
+                affected.forEach { id ->
+                    playlistDao.updatePlaylistTrackCount(id, playlistDao.getPlaylistTrackCount(id))
                 }
             }
-
-            // Collect all Playlist IDs involved
-            val playlistDao = database.playlistDao()
-
-            // Get all unique playlist IDs that contain ANY of these tracks
-            val affectedPlaylistIds = mutableSetOf<String>()
-            tracks.forEach { track ->
-                try {
-                    val playlists = playlistDao.getPlaylistsForTrack(track.uuid)
-                    affectedPlaylistIds.addAll(playlists.map { it.id })
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error fetching playlists for track ${track.uuid}", e)
-                }
+            val playbackManager = PlaybackManager.getInstance(context)
+            val queueManager = QueueManager.getInstance(context)
+            trackUuids.forEach { uuid ->
+                playbackManager.removeDeletedTrackFromQueue(uuid)
+                // The recommendation queue also feeds the player; stale entries could reappear later.
+                if (queueManager.currentQueue.value.any { it.uuid == uuid }) queueManager.removeFromQueue(uuid)
             }
-
-            // Bulk delete from DB to prevent multiple invalidations and Cursor leaks
-            trackDao.deleteTracks(trackUuids)
-            Log.d(TAG, "Bulk deleted ${tracks.size} tracks from database")
-
-            // Update track counts for affected playlists
-            affectedPlaylistIds.forEach { playlistId ->
-                val newCount = playlistDao.getPlaylistTrackCount(playlistId)
-                playlistDao.updatePlaylistTrackCount(playlistId, newCount)
-                Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
-            }
-
-            // SAFETY: Remove all deleted tracks from playback queue
-            try {
-                val playbackManager = PlaybackManager.getInstance(context)
-                trackUuids.forEach { uuid ->
-                    playbackManager.removeDeletedTrackFromQueue(uuid)
-                }
-                Log.d(TAG, "Removed ${trackUuids.size} deleted tracks from playback queue")
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not remove tracks from playback queue: ${e.message}")
-            }
-
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Error in bulk delete: ${e.message}", e)
+            Log.e(TAG, "Error deleting tracks: ${e.message}", e)
+            if (reportErrors) throw e
         }
     }
 

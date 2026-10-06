@@ -174,13 +174,11 @@ fun LibraryTrackItem(
                 IconButton(onClick = onTrailingIconClick) {
                     Icon(
                         imageVector = trailingIcon,
-                        contentDescription = "Action",
+                        contentDescription = "More actions for ${track.title}",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.size(20.dp)
                     )
                 }
-            } else {
-                Spacer(modifier = Modifier.width(96.dp))
             }
         }
         HorizontalDivider(

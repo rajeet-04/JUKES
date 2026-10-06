@@ -1984,6 +1984,30 @@ class PlaybackManager private constructor(private val context: Context) {
         return false
     }
 
+    /** Moves or inserts library songs using the timeline API without clearing cache or resuming pause. */
+    fun placeLibraryTracks(tracks: List<Track>, next: Boolean): Boolean {
+        val ctrl = controller ?: return false
+        val incoming = tracks.distinctBy { it.uuid }.filterNot { it.uuid == ctrl.currentMediaItem?.mediaId }
+        val items = incoming.map { createValidatedMediaItem(it) ?: return false }
+        if (items.isEmpty()) return false
+        incoming.zip(items).forEachIndexed { placed, (track, item) ->
+            val matches = (0 until ctrl.mediaItemCount).filter { ctrl.getMediaItemAt(it).mediaId == track.uuid }
+            // Clean up duplicates left by earlier queue insertions without touching the current item.
+            matches.drop(1).asReversed().forEach { ctrl.removeMediaItem(it) }
+            val existing = (0 until ctrl.mediaItemCount).firstOrNull { ctrl.getMediaItemAt(it).mediaId == track.uuid }
+            val target = if (next) (ctrl.currentMediaItemIndex + 1 + placed).coerceIn(0, ctrl.mediaItemCount)
+                else ctrl.mediaItemCount
+            if (existing == null) ctrl.addMediaItem(target, item)
+            else {
+                val destination = (if (existing < target) target - 1 else target)
+                    .coerceIn(0, ctrl.mediaItemCount - 1)
+                if (existing != destination) ctrl.moveMediaItem(existing, destination)
+            }
+        }
+        scope.launch { saveQueueStructure() }
+        return true
+    }
+
     fun setPlaybackSpeed(speed: Float) {
         controller?.setPlaybackSpeed(speed)
     }

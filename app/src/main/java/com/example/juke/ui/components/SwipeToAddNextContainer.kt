@@ -49,6 +49,7 @@ fun SwipeToAddNextContainer(
     onAddNext: () -> Unit,
     onDelete: (() -> Unit)? = null,
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
     val haptic = rememberJukeHaptics()
@@ -62,6 +63,7 @@ fun SwipeToAddNextContainer(
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { distance -> distance * 0.65f },
         confirmValueChange = { value ->
+            if (!enabled) return@rememberSwipeToDismissBoxState false
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
                     if (!actionFired.value) {
@@ -96,7 +98,8 @@ fun SwipeToAddNextContainer(
 
     SwipeToDismissBox(
         state = dismissState,
-        enableDismissFromEndToStart = onDelete != null,
+        enableDismissFromStartToEnd = enabled,
+        enableDismissFromEndToStart = enabled && onDelete != null,
         backgroundContent = {
             // No opaque fill: a tinted glow that lights up from behind the sliding glass card.
             val direction = dismissState.dismissDirection

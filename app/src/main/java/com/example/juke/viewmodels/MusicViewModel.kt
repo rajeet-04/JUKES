@@ -740,159 +740,49 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         addNext(listOf(track))
     }
 
-    /**
-     * Insert a list of tracks so they play immediately after the current track.
-     *
-     * Incoming tracks are deduplicated by `uuid` against the existing queue (except the
-     * currently playing item), using a set-based filter to avoid repeated linear scans.
-     */
-    fun addNext(tracks: List<Track>) {
-        if (tracks.isEmpty()) return
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isQueueOperationInProgress = true) }
-
-            try {
-                val currentState = _uiState.value
-                val currentQueue = currentState.queue.toMutableList()
-                val currentTrack = currentState.currentTrack
-                val currentPosition = playbackManager.getCurrentPosition()
-
-                // Maintain single entry per track UUID while preserving the currently playing track
-                if (tracks.isNotEmpty()) {
-                    val incomingUuids = tracks.map { it.uuid }.toSet()
-                    currentQueue.removeAll { item ->
-                        incomingUuids.contains(item.uuid) && item.uuid != currentTrack?.uuid
-                    }
-                }
-
-                if (currentQueue.isEmpty() || currentState.queueIndex < 0) {
-                    // Nothing playing yet; start a queue with these tracks
-                    setQueue(tracks, 0)
-                } else {
-                    val currentQueueIndex = currentState.queueIndex
-
-                    // Simple insert for batch to avoid complex index shifting with moves
-                    // We just insert them right after current
-
-                    val insertIndex = (currentQueueIndex + 1).coerceAtMost(currentQueue.size)
-                    currentQueue.addAll(insertIndex, tracks)
-
-                    Log.d(
-                        "MusicViewModel",
-                        "Inserting ${tracks.size} tracks at index $insertIndex"
-                    )
-
-                    val inserted = playbackManager.addToQueueAt(tracks, insertIndex)
-                    if (inserted) {
-                        // Also insert into QueueManager if it's within the range it cares about
-                        val queueManagerIndex = insertIndex - currentQueueIndex
-                        if (queueManagerIndex >= 0) {
-                            // QueueManager might not support batch insert yet?
-                            // It does not seem to have batch insert based on previous reads, but we can loop.
-                            // Actually QueueManager logic in addNext(Track) calls insertQueueItem.
-                            // We should probably add batch support there too or loop.
-                            // looping is fine for small batches.
-                            tracks.forEachIndexed { i, track ->
-                                queueManager.insertQueueItem(queueManagerIndex + i, track)
-                            }
-                        }
-                    } else {
-                        // Fallback: reset full queue to keep UI and player in sync.
-                        // keepShuffleMode=false: ExoPlayer's native shuffle is always off;
-                        // shuffle ordering is handled by pre-shuffling before calling setQueue.
-                        playbackManager.setQueue(
-                            currentQueue,
-                            currentState.queueIndex,
-                            currentPosition,
-                            keepShuffleMode = false
-                        )
-                    }
-
-                    _uiState.update {
-                        it.copy(
-                            queue = currentQueue
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("MusicViewModel", "Failed to add next batch: ${e.message}", e)
-            } finally {
-                _uiState.update { it.copy(isQueueOperationInProgress = false) }
-            }
-        }
+    /** Insert selected songs after the current song, preserving pause, position and incoming order. */
+    fun addNext(tracks: List<Track>, onComplete: ((Boolean) -> Unit)? = null) {
+        placeLibraryTracks(tracks, next = true, onComplete = onComplete)
     }
 
-    /**
-     * Appends tracks to the queue while preserving current playback position.
-     *
-     * Incoming tracks are de-duplicated by UUID and the currently playing item is retained
-     * exactly once to avoid playback jumps after queue mutation.
-     * Deduplication uses a UUID set (`trackUuidsToAdd`) so queue cleanup is O(q + n)
-     * rather than repeated O(q * n) membership checks (q queue size, n incoming size).
-     */
-    fun addToQueue(tracks: List<Track>) {
-        if (tracks.isEmpty()) return
+    /** Move selected songs to the queue end, keeping one entry per UUID. */
+    fun addToQueue(tracks: List<Track>, onComplete: ((Boolean) -> Unit)? = null) {
+        placeLibraryTracks(tracks, next = false, onComplete = onComplete)
+    }
 
+    private fun placeLibraryTracks(tracks: List<Track>, next: Boolean, onComplete: ((Boolean) -> Unit)?) {
         viewModelScope.launch {
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
-            try {
-                // Update local UI state
-                val currentState = _uiState.value
-                val currentQueue = currentState.queue.toMutableList()
-                val currentTrack = currentState.currentTrack
-                val currentTrackUuid = currentTrack?.uuid
-
-                // Get current position before modification to maintain playback continuity
-                val currentPosition = playbackManager.getCurrentPosition()
-                // Use current index from simple calculation or reliable flow source if needed
-                // But since we are modifying structure, we must rely on UUID to find playing track location
-
-                // 1. Filter out the currently playing track from the incoming list
-                val tracksToAdd = tracks.filter { track ->
-                    currentTrackUuid == null || track.uuid != currentTrackUuid
-                }
-
-                if (tracksToAdd.isEmpty()) return@launch
-
-                // 2. Remove existing instances of these tracks from the current queue
-                // User requirement: "keep single entry of each song uuid not repetation"
-                val trackUuidsToAdd = tracksToAdd.map { it.uuid }.toSet()
-                currentQueue.removeAll { it.uuid in trackUuidsToAdd }
-
-                // 3. Add the tracks to the end of the queue
-                currentQueue.addAll(tracksToAdd)
-
-                // 4. Update UI State immediately
-                _uiState.update { it.copy(queue = currentQueue) }
-
-                // 5. Update PlaybackManager
-                // Calculate new index of the currently playing track in the modified queue
-                val newIndex = if (currentTrackUuid != null) {
-                    val index = currentQueue.indexOfFirst { it.uuid == currentTrackUuid }
-                    if (index != -1) index else currentState.queueIndex.coerceIn(
-                        0,
-                        currentQueue.size.coerceAtLeast(1) - 1
-                    )
+            val success = try {
+                val state = _uiState.value
+                val incoming = tracks.distinctBy { it.uuid }.filterNot { it.uuid == state.currentTrack?.uuid }
+                if (incoming.isEmpty()) false
+                else if (state.currentTrack == null || state.queue.isEmpty()) {
+                    playbackManager.setQueue(incoming, 0)
+                    _uiState.update { it.copy(queue = incoming, queueIndex = 0, currentTrack = incoming.first(), isPlaying = true) }
+                    queueManager.initializeQueue(incoming)
+                    true
                 } else {
-                    currentState.queueIndex
+                    val updated = com.example.juke.services.LibraryQueueOrder.arrange(
+                        state.queue, state.currentTrack.uuid, incoming, next
+                    )
+                    if (!playbackManager.placeLibraryTracks(incoming, next)) false
+                    else {
+                        val index = updated.indexOfFirst { it.uuid == state.currentTrack.uuid }
+                        _uiState.update { it.copy(queue = updated, queueIndex = index) }
+                        if (index >= 0) queueManager.initializeQueue(updated.drop(index), preserveHistory = true)
+                        true
+                    }
                 }
-
-                // Use setQueue with explicit position maintenance to prevent restarts or random jumps.
-                // keepShuffleMode=false: ExoPlayer's native shuffle is always off;
-                // shuffle ordering is handled by pre-shuffling before calling setQueue.
-                playbackManager.setQueue(
-                    currentQueue,
-                    newIndex,
-                    currentPosition,
-                    keepShuffleMode = false
-                )
-
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e("MusicViewModel", "Failed to add to queue batch: ${e.message}", e)
+                Log.e("MusicViewModel", "Could not update library queue: ${e.message}", e)
+                false
             } finally {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
             }
+            onComplete?.invoke(success)
         }
     }
 

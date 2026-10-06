@@ -149,6 +149,9 @@ interface PlaylistDao {
     )
     suspend fun getPlaylistTracks(playlistId: String): List<TrackEntity>
 
+    @Query("SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = :playlistId")
+    suspend fun getNextPlaylistPosition(playlistId: String): Int
+
     @Query(
         """
         SELECT t.* FROM tracks t
