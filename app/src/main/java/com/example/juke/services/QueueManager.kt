@@ -582,9 +582,11 @@ class QueueManager private constructor(private val context: Context) {
     /** One radio for [seedId] into the reserve, skipping everything already seen or queued. */
     private suspend fun pullRadio(seedId: String, current: Track, blacklist: Set<String>): Int {
         seen.add("yt:$seedId")
-        // The backend's radio (anonymous, en-IN); YouTube Music's own endpoint when it can't answer.
-        val radio = com.example.juke.network.JukesApi.radio(seedId)
-            ?: RecommenderApi.fetchFullRadioQueue(seedId)
+        // Prefer direct YouTube Music radio; use the shared backend only when it returns nothing.
+        // If neither source supplies usable tracks, fillWindow falls back to the local library.
+        val radio = RecommenderApi.fetchFullRadioQueue(seedId).takeIf { it.isNotEmpty() }
+            ?: com.example.juke.network.JukesApi.radio(seedId)
+            ?: emptyList()
         val blocked = queuedKeys(current)
         var added = 0
         for (rec in radio) {
