@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -30,7 +29,7 @@ private val titleWidths = listOf(0.72f, 0.58f, 0.81f, 0.66f, 0.76f, 0.63f)
 private val subtitleWidths = listOf(0.36f, 0.49f, 0.42f, 0.31f, 0.53f, 0.39f)
 
 @Composable
-private fun ShapedSkeletonBlock(
+fun ShapedSkeletonBlock(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(12.dp)
 ) {
@@ -73,7 +72,9 @@ private fun TrackRowSkeleton(index: Int) {
         }
         Spacer(modifier = Modifier.width(16.dp))
         ShapedSkeletonBlock(
-            modifier = Modifier.width(28.dp).height(10.dp),
+            modifier = Modifier
+                .width(28.dp)
+                .height(10.dp),
             shape = RoundedCornerShape(5.dp)
         )
     }
@@ -81,8 +82,8 @@ private fun TrackRowSkeleton(index: Int) {
 
 @Composable
 fun TrackListSkeleton(
-    count: Int = 8,
     modifier: Modifier = Modifier,
+    count: Int = 8,
     contentPadding: PaddingValues = PaddingValues(top = 16.dp, bottom = 100.dp)
 ) {
     LazyColumn(
@@ -98,8 +99,8 @@ fun TrackListSkeleton(
 
 @Composable
 fun MediaDetailSkeleton(
-    count: Int = 6,
     modifier: Modifier = Modifier,
+    count: Int = 6,
     contentPadding: PaddingValues = PaddingValues(
         start = 20.dp,
         top = 16.dp,

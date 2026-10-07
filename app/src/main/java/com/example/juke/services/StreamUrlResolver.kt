@@ -6,6 +6,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.milliseconds
 
 /** First successful provider wins; failures do not cancel a healthy provider. */
 internal suspend fun <T> resolveStreamUrl(primary: suspend () -> T, fallback: suspend () -> T): T = coroutineScope {
@@ -13,7 +14,7 @@ internal suspend fun <T> resolveStreamUrl(primary: suspend () -> T, fallback: su
     val jobs = listOf(primary, fallback).map { provider ->
         launch {
             val result = try {
-                Result.success(withTimeout(10_000L) { provider() })
+                Result.success(withTimeout(10_000L.milliseconds) { provider() })
             } catch (e: CancellationException) {
                 // A provider timeout is a failure; caller cancellation must propagate.
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()

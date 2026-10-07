@@ -1,43 +1,33 @@
 package com.example.juke
 
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Search
-import com.example.juke.ui.components.GlassAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -46,20 +36,27 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -70,21 +67,14 @@ import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.models.GithubRelease
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.DownloadedUpdate
-import com.example.juke.services.UpdateManager
 import com.example.juke.services.UpdateDownloadState
+import com.example.juke.services.UpdateManager
+import com.example.juke.ui.components.GlassAlertDialog
 import com.example.juke.ui.components.GlassNavBar
 import com.example.juke.ui.components.GlassNavItem
 import com.example.juke.ui.components.GlassNavRail
 import com.example.juke.ui.components.MiniPlayer
-import com.example.juke.ui.theme.GlassBackdrop
-import com.example.juke.ui.theme.isGlassDark
-import com.example.juke.ui.theme.LocalHazeState
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.runtime.CompositionLocalProvider
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.AlbumDetailScreen
 import com.example.juke.ui.screens.ArtistDetailScreen
 import com.example.juke.ui.screens.AudioSettingsScreen
@@ -93,18 +83,18 @@ import com.example.juke.ui.screens.LibraryScreen
 import com.example.juke.ui.screens.PlayerScreen
 import com.example.juke.ui.screens.PlaylistDetailScreen
 import com.example.juke.ui.screens.SearchScreen
+import com.example.juke.ui.theme.GlassBackdrop
 import com.example.juke.ui.theme.JUKETheme
+import com.example.juke.ui.theme.LocalHazeState
+import com.example.juke.ui.theme.isGlassDark
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
-import androidx.compose.ui.Alignment
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import kotlin.math.roundToInt
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 
 sealed class Screen(
     val route: String,
@@ -115,28 +105,27 @@ sealed class Screen(
     object Home : Screen(
         "home",
         "Home",
-        { Icon(Icons.Filled.Home, contentDescription = "Home") },
-        { Icon(Icons.Outlined.Home, contentDescription = "Home") })
+        { Icon(JukeIcons.HomeSelected, contentDescription = "Home") },
+        { Icon(JukeIcons.Home, contentDescription = "Home") })
 
     object Search : Screen(
         "search",
         "Search",
-        { Icon(Icons.Filled.Search, contentDescription = "Search") },
-        { Icon(Icons.Outlined.Search, contentDescription = "Search") })
+        { Icon(JukeIcons.Search, contentDescription = "Search") },
+        { Icon(JukeIcons.Search, contentDescription = "Search") })
 
     object Library : Screen(
         "library",
         "Library",
         {
             Icon(
-                painter = painterResource(R.drawable.library_outlined),
+                imageVector = JukeIcons.LibrarySelected,
                 contentDescription = "Library"
             )
         },
-        { Icon(painter = painterResource(R.drawable.library), contentDescription = "Library") })
+        { Icon(imageVector = JukeIcons.Library, contentDescription = "Library") })
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
 
     private val showPlayerOnLaunch = mutableStateOf(false)
@@ -170,7 +159,6 @@ class MainActivity : ComponentActivity() {
                 }
                 val context = LocalContext.current
                 var showPlayerModal by remember { mutableStateOf(false) }
-                var searchResetTrigger by remember { mutableIntStateOf(0) }
                 var searchFocusTrigger by remember { mutableIntStateOf(0) }
 
                 // --- UPDATE CHECK LOGIC ---
@@ -207,15 +195,15 @@ class MainActivity : ComponentActivity() {
 
                     GlassAlertDialog(
                         onDismissRequest = {
-                            // Only allow dismiss if not emergency
+                            // Allow dismissal only for non-emergency updates.
                             if (!isEmergency) {
                                 updateAvailable = null
                             }
                         },
                         title = {
-                            androidx.compose.foundation.layout.Row(
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = if (isEmergency) Icons.Filled.Warning else Icons.Filled.SystemUpdate,
@@ -349,9 +337,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val isExpanded = LocalConfiguration.current.screenWidthDp >= 600
+                val windowWidth = with(LocalDensity.current) {
+                    LocalWindowInfo.current.containerSize.width.toDp()
+                }
+                val isExpanded = windowWidth >= 600.dp
                 // Scrolling down a list folds the tab bar into one button beside the mini player.
-                val chromeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+                val chromeThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
                 val chrome = remember(chromeThresholdPx) { com.example.juke.ui.components.CollapsingChrome(chromeThresholdPx) }
                 LaunchedEffect(currentRoute) { chrome.expand() } // a new screen starts unfolded
                 val hasMiniPlayer = musicViewModel.uiState.collectAsStateWithLifecycle().value.currentTrack != null
@@ -390,15 +381,17 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val hazeState = remember { HazeState() }
+                val haptic = rememberJukeHaptics()
                 val navItems = items.map { screen ->
                     GlassNavItem(
                         label = screen.title,
                         selected = currentMainTab == screen.route,
-                        onClick = { onNavigate(screen) },
+                        onClick = { haptic.nav(); onNavigate(screen) },
                         icon = { if (currentMainTab == screen.route) screen.filledIcon() else screen.outlinedIcon() }
                     )
                 }
 
+                com.example.juke.ui.components.PlayerTransitionHost(expanded = showPlayerModal, musicViewModel = musicViewModel) {
                 CompositionLocalProvider(LocalHazeState provides hazeState) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -539,6 +532,11 @@ class MainActivity : ComponentActivity() {
                                             restoreState = true
                                         }
                                     },
+                                    onAlbumClick = { album ->
+                                        activityViewModelProvider[AlbumDetailViewModel::class.java]
+                                            .loadAlbumDetails(album)
+                                        navController.navigate("album/${album.id}")
+                                    },
                                     bottomPadding = bottomPadding
                                 )
                             }
@@ -548,7 +546,6 @@ class MainActivity : ComponentActivity() {
                                 SearchScreen(
                                     musicViewModel = musicViewModel,
                                     searchViewModel = searchViewModel,
-                                    searchResetTrigger = searchResetTrigger,
                                     searchFocusTrigger = searchFocusTrigger,
                                     onNavigateToArtist = { artist ->
                                         searchViewModel.loadArtistDetails(artist)
@@ -570,7 +567,11 @@ class MainActivity : ComponentActivity() {
                             composable(Screen.Library.route) {
                                 LibraryScreen(
                                     musicViewModel = musicViewModel,
-                                    bottomPadding = bottomPadding
+                                    bottomPadding = bottomPadding,
+                                    onAlbumClick = { album ->
+                                        activityViewModelProvider[AlbumDetailViewModel::class.java].loadAlbumDetails(album)
+                                        navController.navigate("album/${album.id}")
+                                    }
                                 )
                             }
                             composable("settings") {
@@ -653,7 +654,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Player Modal
-                if (showPlayerModal) {
+                com.example.juke.ui.components.PlayerTransitionContent(onDismiss = { showPlayerModal = false }) {
                     PlayerScreen(
                         musicViewModel = musicViewModel,
                         onDismiss = { showPlayerModal = false },
@@ -682,6 +683,7 @@ class MainActivity : ComponentActivity() {
                             context.startActivity(shareIntent)
                         }
                     )
+                }
                 }
             }
         }
@@ -751,8 +753,8 @@ private fun UpdateReadyDialog(
 
 @Composable
 private fun PreparingPill(title: String) {
-    androidx.compose.material3.Surface(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+    Surface(
+        shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         modifier = Modifier.fillMaxWidth()

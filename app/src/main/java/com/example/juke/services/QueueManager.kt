@@ -11,30 +11,28 @@ import com.example.juke.models.Track
 import com.example.juke.network.OfflineException
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
-import com.example.juke.network.isOffline
 import com.example.juke.utils.ArtistUtils
 import com.example.juke.utils.BlacklistManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import java.io.File
-import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Download information for UI display
@@ -73,7 +71,7 @@ class QueueManager private constructor(private val context: Context) {
         }
     }
 
-    private val TAG = "QueueManager"
+    private val tag = "QueueManager"
     private val database = MusicDatabase.getDatabase(context)
     private val trackDao = database.trackDao()
     private val musicService = MusicService(context)
@@ -91,7 +89,7 @@ class QueueManager private constructor(private val context: Context) {
         set(value) {
             _isStreamMode = value
             settingsPrefs.edit { putBoolean("stream_mode", value) }
-            Log.d(TAG, "Stream mode set to: $value")
+            Log.d(tag, "Stream mode set to: $value")
         }
 
     // Coroutine scope for background tasks
@@ -116,7 +114,7 @@ class QueueManager private constructor(private val context: Context) {
     private val dailyPrefs = context.getSharedPreferences("daily_plays", Context.MODE_PRIVATE)
 
     /** Plays per day after which a song counts as "on repeat" (Power tools → Advanced). */
-    private val INDULGE_PLAYS: Int
+    private val indulgePlays: Int
         get() = settingsPrefs.getInt("repeat_threshold", DEFAULT_INDULGE_PLAYS).coerceIn(2, 6)
 
     private fun today(): String = java.time.LocalDate.now().toString()
@@ -153,7 +151,7 @@ class QueueManager private constructor(private val context: Context) {
     fun notifyDownloadStarted(track: Track, addToUi: Boolean = true) {
         val key = "${track.title.lowercase()}-${track.artist.lowercase()}"
         _externalDownloads.add(key)
-        Log.d(TAG, "Notified of external download: ${track.title} (Key: $key)")
+        Log.d(tag, "Notified of external download: ${track.title} (Key: $key)")
 
         // Also add to download tracking for UI if requested
         if (addToUi) {
@@ -162,20 +160,9 @@ class QueueManager private constructor(private val context: Context) {
 
         // Auto-remove after 5 minutes to prevent permanent blocking in case of failure
         serviceScope.launch {
-            kotlinx.coroutines.delay(5 * 60 * 1000L)
+            kotlinx.coroutines.delay((5 * 60 * 1000L).milliseconds)
             _externalDownloads.remove(key)
         }
-    }
-
-    /**
-     * Check if we need to fetch recommendations and start downloading if queue is low.
-     * This should be called whenever playback starts or resumes.
-     */
-    fun checkAndFetchRecommendations() {
-        val currentQueueSize = _currentQueue.value.size
-        Log.d(TAG, "Checking recommendations: queue size = $currentQueueSize")
-
-        _currentQueue.value.firstOrNull()?.let { requestFill(it, currentQueueSize - 1) }
     }
 
     /**
@@ -210,7 +197,7 @@ class QueueManager private constructor(private val context: Context) {
         }
 
         Log.d(
-            TAG,
+            tag,
             "Queue initialized with ${tracks.size} tracks (cancelled previous recommendations, preserveHistory: $preserveHistory)"
         )
 
@@ -261,7 +248,7 @@ class QueueManager private constructor(private val context: Context) {
             currentList.removeAt(existingIndex)
             currentList.add(track)
             _currentQueue.value = currentList
-            Log.d(TAG, "Moved existing track to end of queue: ${track.title}")
+            Log.d(tag, "Moved existing track to end of queue: ${track.title}")
             return
         }
 
@@ -272,7 +259,7 @@ class QueueManager private constructor(private val context: Context) {
         }
         if (sameSongExists) {
             Log.d(
-                TAG,
+                tag,
                 "Skipping duplicate addToQueue for same title+artist: ${track.title} by ${track.artist}"
             )
             return
@@ -280,26 +267,7 @@ class QueueManager private constructor(private val context: Context) {
 
         currentList.add(track)
         _currentQueue.value = currentList
-        Log.d(TAG, "Added to queue: ${track.title}")
-    }
-
-    /**
-     * Insert a track at a specific index in the queue.
-     *
-     * @param index Index to insert at (0-based)
-     * @param track Track to insert
-     */
-    fun insertQueueItem(index: Int, track: Track) {
-        val currentList = _currentQueue.value.toMutableList()
-        val safeIndex = index.coerceIn(0, currentList.size)
-        currentList.add(safeIndex, track)
-        _currentQueue.value = currentList
-        Log.d(TAG, "Inserted track into queue at index $safeIndex: ${track.title}")
-
-        // Ensure next 3 songs are downloaded/validated if we modified near the top
-        if (safeIndex <= 3) {
-            ensureUpcomingTracksReady() // <-- Updated from ensureNext2Ready()
-        }
+        Log.d(tag, "Added to queue: ${track.title}")
     }
 
     /**
@@ -311,7 +279,7 @@ class QueueManager private constructor(private val context: Context) {
         val currentList = _currentQueue.value.toMutableList()
         currentList.removeAll { it.uuid == trackId }
         _currentQueue.value = currentList
-        Log.d(TAG, "Removed from queue: $trackId")
+        Log.d(tag, "Removed from queue: $trackId")
 
         // The window refill is single-flight and a no-op when the lookahead is already satisfied.
         currentList.firstOrNull()?.let { requestFill(it, currentList.size - 1) }
@@ -330,15 +298,10 @@ class QueueManager private constructor(private val context: Context) {
         if (index != -1) {
             currentList[index] = updatedTrack
             _currentQueue.value = currentList
-            Log.d(TAG, "Replaced track in queue at index $index: ${updatedTrack.title}")
+            Log.d(tag, "Replaced track in queue at index $index: ${updatedTrack.title}")
         }
     }
 
-    /**
-     * Move to the next track in queue.
-     * 
-     * @return Next track or null if queue is empty
-     */
     // Recent artists tracking for recommendation variety
     private val recentArtists = java.util.LinkedList<String>()
 
@@ -368,7 +331,7 @@ class QueueManager private constructor(private val context: Context) {
         currentList.removeAt(0)
         _currentQueue.value = currentList
 
-        Log.d(TAG, "Moved to next track. Queue size: ${currentList.size}")
+        Log.d(tag, "Moved to next track. Queue size: ${currentList.size}")
 
         currentList.firstOrNull()?.let { requestFill(it, currentList.size - 1) }
 
@@ -390,7 +353,7 @@ class QueueManager private constructor(private val context: Context) {
             if (recentArtists.size > 50) {
                 recentArtists.removeFirst()
             }
-            Log.d(TAG, "Updated recent artists. Count: ${recentArtists.size}. Latest: $artist")
+            Log.d(tag, "Updated recent artists. Count: ${recentArtists.size}. Latest: $artist")
         }
     }
 
@@ -442,7 +405,7 @@ class QueueManager private constructor(private val context: Context) {
         val keys = (_currentQueue.value + current).mapTo(HashSet()) { songKey(it) }
         playedTracksHistory.toList().forEach {
             val key = songKey(it)
-            if (dailyPlayCount(key) < INDULGE_PLAYS) keys += key
+            if (dailyPlayCount(key) < indulgePlays) keys += key
         }
         return keys
     }
@@ -484,7 +447,7 @@ class QueueManager private constructor(private val context: Context) {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error filling recommendation window: ${e.message}", e)
+                    Log.e(tag, "Error filling recommendation window: ${e.message}", e)
                 }
             }
         }
@@ -513,7 +476,7 @@ class QueueManager private constructor(private val context: Context) {
                 val key = RecommenderApi.songKey(rec.title, rec.artist)
                 if (key in queued) continue
                 // Heard once earlier today: hold it back, use it only if nothing fresh is left.
-                if (dailyPlayCount(key) in 1 until INDULGE_PLAYS) { heardToday += rec; continue }
+                if (dailyPlayCount(key) in 1 until indulgePlays) { heardToday += rec; continue }
                 if (!batchKeys.add(key)) continue
                 batch += rec
             }
@@ -523,7 +486,7 @@ class QueueManager private constructor(private val context: Context) {
             }
             if (batch.isEmpty()) continue // reserve drained by duplicates → refill next round
 
-            Log.d(TAG, "Resolving ${batch.size} of $target lookahead (reserve left: ${reserve.size})")
+            Log.d(tag, "Resolving ${batch.size} of $target lookahead (reserve left: ${reserve.size})")
             _recStatus.value = RecStatus(batch.size, reserve.size)
             val resolved = try {
                 coroutineScope {
@@ -544,7 +507,7 @@ class QueueManager private constructor(private val context: Context) {
         }
 
         if (added == 0 && gen == sessionGen.get() && target - upcomingAfter(current, reported) > 0) {
-            Log.d(TAG, "Online radio produced nothing. Falling back to offline library.")
+            Log.d(tag, "Online radio produced nothing. Falling back to offline library.")
             fetchOfflineRecommendations(current, target - upcomingAfter(current, reported))
         }
     }
@@ -575,16 +538,18 @@ class QueueManager private constructor(private val context: Context) {
             if (!usedSeeds.add(id)) continue
             added += pullRadio(id, current, blacklist)
         }
-        Log.d(TAG, "Reserve refill: $added new songs → reserve ${reserve.size}")
+        Log.d(tag, "Reserve refill: $added new songs → reserve ${reserve.size}")
         return added
     }
 
     /** One radio for [seedId] into the reserve, skipping everything already seen or queued. */
     private suspend fun pullRadio(seedId: String, current: Track, blacklist: Set<String>): Int {
         seen.add("yt:$seedId")
-        // The backend's radio (anonymous, en-IN); YouTube Music's own endpoint when it can't answer.
-        val radio = com.example.juke.network.JukesApi.radio(seedId)
-            ?: RecommenderApi.fetchFullRadioQueue(seedId)
+        // Prefer direct YouTube Music radio; use the shared backend only when it returns nothing.
+        // If neither source supplies usable tracks, fillWindow falls back to the local library.
+        val radio = RecommenderApi.fetchFullRadioQueue(seedId).takeIf { it.isNotEmpty() }
+            ?: com.example.juke.network.JukesApi.radio(seedId)
+            ?: emptyList()
         val blocked = queuedKeys(current)
         var added = 0
         for (rec in radio) {
@@ -597,7 +562,7 @@ class QueueManager private constructor(private val context: Context) {
             // Songs replayed today are on repeat, so the session's seen-set no longer blocks them
             // (the queue itself still does, via queuedKeys).
             val key = RecommenderApi.songKey(rec.title, rec.artist)
-            val onRepeat = dailyPlayCount(key) >= INDULGE_PLAYS
+            val onRepeat = dailyPlayCount(key) >= indulgePlays
             val newVideo = seen.add("yt:${rec.id}")
             val newSong = seen.add("k:$key")
             if ((!newVideo || !newSong) && !onRepeat) continue
@@ -605,7 +570,7 @@ class QueueManager private constructor(private val context: Context) {
             reserve.addLast(rec)
             added++
         }
-        Log.d(TAG, "Radio for seed $seedId: ${radio.size} items, $added new")
+        Log.d(tag, "Radio for seed $seedId: ${radio.size} items, $added new")
         return added
     }
 
@@ -616,7 +581,7 @@ class QueueManager private constructor(private val context: Context) {
     ): Track? {
         val validated = try {
             RecommenderApi.matchOnSpotify(rec)
-        } catch (e: OfflineException) {
+        } catch (_: OfflineException) {
             return null
         } ?: return null
 
@@ -624,7 +589,7 @@ class QueueManager private constructor(private val context: Context) {
         val spotifyId = validated.spotifyUrl.substringAfterLast("/").substringBefore("?")
         val inQueue = _currentQueue.value.any { it.spotifyId == spotifyId } || key in queuedKeys(current)
         if (inQueue || !claimed.add(key)) {
-            Log.d(TAG, "Skipping already-queued song: ${validated.title}")
+            Log.d(tag, "Skipping already-queued song: ${validated.title}")
             return null
         }
 
@@ -650,7 +615,7 @@ class QueueManager private constructor(private val context: Context) {
             claimed.remove(key)
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Error resolving ${validated.title}: ${e.message}", e)
+            Log.e(tag, "Error resolving ${validated.title}: ${e.message}", e)
             claimed.remove(key)
             return null
         } finally {
@@ -683,11 +648,10 @@ class QueueManager private constructor(private val context: Context) {
      */
     private suspend fun fetchOfflineRecommendations(currentTrack: Track, limit: Int) {
         try {
-            val targetCount = limit
             val allDownloaded = trackDao.getDownloadedTracks()
 
             if (allDownloaded.isEmpty()) {
-                Log.d(TAG, "Offline fallback: library is empty, nothing to queue")
+                Log.d(tag, "Offline fallback: library is empty, nothing to queue")
                 return
             }
 
@@ -791,7 +755,7 @@ class QueueManager private constructor(private val context: Context) {
                     // Replayed today (on repeat): +5. Otherwise -10 if heard today or in the last 24 hours.
                     val playsToday = dailyPlayCount(songKey(track))
                     val lastPlayedMs = track.lastPlayedAt?.toLongOrNull()
-                    if (playsToday >= INDULGE_PLAYS) {
+                    if (playsToday >= indulgePlays) {
                         score += 5
                     } else if (playsToday > 0 || (lastPlayedMs != null && (now - lastPlayedMs) < oneDayMs)) {
                         score -= 10
@@ -810,7 +774,7 @@ class QueueManager private constructor(private val context: Context) {
                 .sortedByDescending { it.score }
 
             Log.d(
-                TAG,
+                tag,
                 "Offline fallback: scored ${scored.size} candidates from ${allDownloaded.size} library tracks"
             )
 
@@ -818,7 +782,7 @@ class QueueManager private constructor(private val context: Context) {
                 // Greedy pick: each song already chosen by the same artist costs 8 points.
                 val pool = scored.toMutableList()
                 val picked = mutableListOf<Track>()
-                while (picked.size < targetCount && pool.isNotEmpty()) {
+                while (picked.size < limit && pool.isNotEmpty()) {
                     val best = pool.maxByOrNull { c ->
                         c.score - 8 * picked.count { ArtistUtils.areArtistsEqual(it.artist, c.track.artist) }
                     }!!
@@ -828,7 +792,7 @@ class QueueManager private constructor(private val context: Context) {
                 picked
             } else {
                 // Last resort: favourites first, then most played
-                Log.d(TAG, "Offline fallback: no scored candidates, using favourites/most-played")
+                Log.d(tag, "Offline fallback: no scored candidates, using favourites/most-played")
                 allDownloaded
                     .filter {
                         it.uuid != currentTrack.uuid && !currentQueueUuids.contains(it.uuid) && isLocalFilePlayable(
@@ -842,22 +806,22 @@ class QueueManager private constructor(private val context: Context) {
                     }
                     .map { it.toTrack() }
                     .sortedWith(compareByDescending<Track> { it.isFavourite }.thenByDescending { it.playCount })
-                    .take(targetCount)
+                    .take(limit)
             }
 
             if (selected.isEmpty()) {
-                Log.d(TAG, "Offline fallback: no tracks available to queue")
+                Log.d(tag, "Offline fallback: no tracks available to queue")
                 return
             }
 
-            Log.d(TAG, "Offline fallback: queuing ${selected.size} tracks")
+            Log.d(tag, "Offline fallback: queuing ${selected.size} tracks")
             selected.forEach { track ->
                 addToQueue(track)
-                Log.d(TAG, "Offline queued: ${track.title} by ${track.artist}")
+                Log.d(tag, "Offline queued: ${track.title} by ${track.artist}")
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error in offline fallback: ${e.message}", e)
+            Log.e(tag, "Error in offline fallback: ${e.message}", e)
         }
     }
 
@@ -870,7 +834,7 @@ class QueueManager private constructor(private val context: Context) {
             val file = File(uri)
             file.exists() && file.canRead() && file.length() > 0
         } catch (e: Exception) {
-            Log.e(TAG, "isLocalFilePlayable failed for uri=$uri", e)
+            Log.e(tag, "isLocalFilePlayable failed for uri=$uri", e)
             false
         }
     }
@@ -901,6 +865,7 @@ class QueueManager private constructor(private val context: Context) {
      * Validates local file existence and stream URL expiry.
      * Removes tracks if offline and unavailable to prevent playback stoppage.
      */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun ensureUpcomingTracksReady() {
         serviceScope.launch {
             val queue = _currentQueue.value
@@ -923,7 +888,7 @@ class QueueManager private constructor(private val context: Context) {
                     // Local file validation
                     val file = File(track.localUri)
                     if (!file.exists() || file.length() <= 0) {
-                        Log.e(TAG, "File missing or empty for ${track.title}: ${track.localUri}")
+                        Log.e(tag, "File missing or empty for ${track.title}: ${track.localUri}")
                         needsRefresh = true
                     }
                 } else if (track.localUri.startsWith("http")) {
@@ -937,7 +902,7 @@ class QueueManager private constructor(private val context: Context) {
                             // Refresh if expiring within 15 minutes (900 seconds) or already expired
                             if (expiryTimeSec - currentTimeSec < 900) {
                                 Log.d(
-                                    TAG,
+                                    tag,
                                     "Stream URL for ${track.title} is expiring soon, scheduling refresh."
                                 )
                                 needsRefresh = true
@@ -947,7 +912,7 @@ class QueueManager private constructor(private val context: Context) {
                             needsRefresh = true
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Error checking stream expiry for ${track.title}: ${e.message}")
+                        Log.w(tag, "Error checking stream expiry for ${track.title}: ${e.message}")
                     }
                 }
 
@@ -955,7 +920,7 @@ class QueueManager private constructor(private val context: Context) {
                     if (isOffline) {
                         // Offline and missing file or needing refresh -> remove from queue to prevent playback stoppage
                         Log.w(
-                            TAG,
+                            tag,
                             "Device is offline and track ${track.title} is unavailable. Removing from queue."
                         )
                         removeFromQueue(track.uuid)
@@ -965,7 +930,7 @@ class QueueManager private constructor(private val context: Context) {
                     } else {
                         // Online -> Prepare/Refresh
                         Log.d(
-                            TAG,
+                            tag,
                             "Track not ready/expired: ${track.title}, triggering preparation/refresh"
                         )
                         try {
@@ -1003,7 +968,7 @@ class QueueManager private constructor(private val context: Context) {
                                 }
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error emergency preparing ${track.title}: ${e.message}", e)
+                            Log.e(tag, "Error emergency preparing ${track.title}: ${e.message}", e)
                             // Remove from queue if recovery completely fails to avoid blocking playback
                             removeFromQueue(track.uuid)
                             withContext(Dispatchers.Main) {
@@ -1030,7 +995,7 @@ class QueueManager private constructor(private val context: Context) {
         val timeRemaining = durationMs - positionMs
         if (timeRemaining in 1..<15000) { // 15 seconds
             lastPreFetchTime = now
-            Log.d(TAG, "Pre-fetch triggered (Time remaining: ${timeRemaining}ms)")
+            Log.d(tag, "Pre-fetch triggered (Time remaining: ${timeRemaining}ms)")
             ensureUpcomingTracksReady() // <-- Updated from ensureNext2Ready()
         }
     }
@@ -1045,21 +1010,12 @@ class QueueManager private constructor(private val context: Context) {
     }
 
     /**
-     * Get the next track without removing it.
-     * 
-     * @return Next track or null
-     */
-    fun peekNext(): Track? {
-        return _currentQueue.value.firstOrNull()
-    }
-
-    /**
      * Clear the entire queue.
      */
     fun clearQueue() {
         _currentQueue.value = emptyList()
         cancelPendingRecommendationDownloads()
-        Log.d(TAG, "Queue cleared")
+        Log.d(tag, "Queue cleared")
     }
 
     /**
@@ -1074,7 +1030,7 @@ class QueueManager private constructor(private val context: Context) {
      */
     private fun cancelPendingRecommendationDownloads() {
         resetRecommendationSession()
-        Log.d(TAG, "Recommendation session reset (reserve, seen-set and in-flight resolves cleared)")
+        Log.d(tag, "Recommendation session reset (reserve, seen-set and in-flight resolves cleared)")
     }
 
     /**
@@ -1095,15 +1051,6 @@ class QueueManager private constructor(private val context: Context) {
     }
 
     /**
-     * Get current queue as a list.
-     * 
-     * @return Copy of current queue
-     */
-    fun getCurrentQueueList(): List<Track> {
-        return _currentQueue.value.toList()
-    }
-
-    /**
      * Manually trigger recommendation fetch for a specific track.
      * 
      * @param track Track to base recommendations on
@@ -1120,6 +1067,6 @@ class QueueManager private constructor(private val context: Context) {
         sessionScope.cancel()
         serviceScope.cancel()
         instance = null
-        Log.d(TAG, "QueueManager cleaned up and instance reset")
+        Log.d(tag, "QueueManager cleaned up and instance reset")
     }
 }

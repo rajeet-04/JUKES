@@ -1,9 +1,8 @@
 package com.example.juke.ui.components.player
 
-import com.example.juke.ui.theme.GlassCard
-import androidx.compose.animation.animateColorAsState
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -27,11 +26,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,9 +56,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.juke.R
+import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.rememberJukeHaptics
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QueueBottomSheetContent(
     currentTrack: com.example.juke.models.Track,
@@ -98,7 +92,7 @@ fun QueueBottomSheetContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close")
+                Icon(JukeIcons.Back, "Close")
             }
             Text(
                 "Up Next",
@@ -109,7 +103,7 @@ fun QueueBottomSheetContent(
             var showTools by remember { mutableStateOf(false) }
             Box {
                 IconButton(onClick = { haptic.click(); showTools = true }) {
-                    Icon(Icons.Filled.MoreVert, "Queue tools")
+                    Icon(JukeIcons.More, "Queue tools")
                 }
                 androidx.compose.material3.DropdownMenu(expanded = showTools, onDismissRequest = { showTools = false }) {
                     androidx.compose.material3.DropdownMenuItem(
@@ -193,7 +187,7 @@ fun QueueBottomSheetContent(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.Filled.PlayArrow,
+                                    imageVector = JukeIcons.Play,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -255,7 +249,7 @@ fun QueueBottomSheetContent(
 
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { dismissValue ->
-                            // Only allow dismiss when not dragging
+                            // Allow swipe dismissal only when the item is not being reordered.
                             if (!isDragging && dismissValue == SwipeToDismissBoxValue.EndToStart) {
                                 haptic.reject()
                                 onRemoveTrack(track.uuid)
@@ -298,7 +292,7 @@ fun QueueBottomSheetContent(
                                     contentAlignment = Alignment.CenterEnd
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Filled.Delete,
+                                        imageVector = JukeIcons.Delete,
                                         contentDescription = "Remove",
                                         tint = Color.White,
                                         modifier = Modifier.padding(end = 16.dp)
@@ -350,7 +344,7 @@ fun QueueBottomSheetContent(
                                         )
                                     } else {
                                         Icon(
-                                            imageVector = Icons.Filled.PlayArrow,
+                                            imageVector = JukeIcons.Play,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -379,7 +373,7 @@ fun QueueBottomSheetContent(
 
                                 // Drag handle
                                 Icon(
-                                    imageVector = Icons.Filled.Menu,
+                                    imageVector = JukeIcons.List,
                                     contentDescription = "Drag to reorder",
                                     tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(
                                         alpha = 0.5f

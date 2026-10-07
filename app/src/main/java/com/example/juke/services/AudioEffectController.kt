@@ -2,9 +2,9 @@ package com.example.juke.services
 
 import android.content.Context
 import android.media.audiofx.Equalizer
-import android.os.Build
 import android.util.Log
 import androidx.core.content.edit
+import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,7 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * Controls audio effects (Equalizer and Volume Booster) for media playback.
  * Attaches to ExoPlayer via audio session ID.
  */
-class AudioEffectController private constructor(private val context: Context) {
+@androidx.annotation.OptIn(UnstableApi::class)
+class AudioEffectController private constructor(context: Context) {
 
     companion object {
         @Volatile private var instance: AudioEffectController? = null
@@ -26,7 +27,7 @@ class AudioEffectController private constructor(private val context: Context) {
     }
 
 
-    private val TAG = "AudioEffectController"
+    private val tag = "AudioEffectController"
     private val prefs = context.getSharedPreferences("audio_effects_prefs", Context.MODE_PRIVATE)
 
     private var equalizer: Equalizer? = null
@@ -107,12 +108,12 @@ class AudioEffectController private constructor(private val context: Context) {
                     val levelRange = bandLevelRange
                     val minLevel = levelRange[0]
                     val maxLevel = levelRange[1]
-                    Log.d(TAG, "Equalizer initialized: $numBands bands, Range: $minLevel to $maxLevel mB")
+                    Log.d(tag, "Equalizer initialized: $numBands bands, Range: $minLevel to $maxLevel mB")
 
                     // Log frequencies for debugging
                     for (i in 0 until numBands) {
                         val centerFreq = getCenterFreq(i.toShort()) / 1000
-                        Log.d(TAG, "  Band $i: ${centerFreq}Hz")
+                        Log.d(tag, "  Band $i: ${centerFreq}Hz")
                     }
 
                     // Apply saved band levels (up to available bands)
@@ -120,7 +121,7 @@ class AudioEffectController private constructor(private val context: Context) {
                         if (index < numBands) {
                             val safeLevel = level.coerceIn(minLevel.toInt(), maxLevel.toInt())
                             setBandLevel(index.toShort(), safeLevel.toShort())
-                            Log.d(TAG, "  Applied Band $index: $safeLevel mB")
+                            Log.d(tag, "  Applied Band $index: $safeLevel mB")
                         }
                     }
                     
@@ -128,12 +129,12 @@ class AudioEffectController private constructor(private val context: Context) {
                     enabled = _isEqualizerEnabled.value
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Equalizer not available on this device: ${e.message}")
+                Log.w(tag, "Equalizer not available on this device: ${e.message}")
             }
 
-            Log.d(TAG, "Audio effects attached to session $audioSessionId")
+            Log.d(tag, "Audio effects attached to session $audioSessionId")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize audio effects: ${e.message}", e)
+            Log.e(tag, "Failed to initialize audio effects: ${e.message}", e)
         }
     }
 
@@ -152,14 +153,14 @@ class AudioEffectController private constructor(private val context: Context) {
 
         val numBands = eq.numberOfBands.toInt()
         if (bandIndex !in 0 until numBands) {
-            Log.w(TAG, "Invalid band index $bandIndex (max $numBands)")
+            Log.w(tag, "Invalid band index $bandIndex (max $numBands)")
             return
         }
 
         // Clamp level to valid range reported by engine
         val range = try {
             eq.bandLevelRange
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ShortArray(2).apply {
                 this[0] = -1500
                 this[1] = 1500
@@ -174,9 +175,9 @@ class AudioEffectController private constructor(private val context: Context) {
 
         try {
             eq.setBandLevel(bandIndex.toShort(), clampedLevel.toShort())
-            Log.d(TAG, "Set equalizer band $bandIndex to $clampedLevel")
+            Log.d(tag, "Set equalizer band $bandIndex to $clampedLevel")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to set equalizer band: ${e.message}")
+            Log.e(tag, "Failed to set equalizer band: ${e.message}")
         }
     }
 
@@ -198,9 +199,9 @@ class AudioEffectController private constructor(private val context: Context) {
         prefs.edit { putBoolean("equalizer_enabled", enabled) }
         try {
             equalizer?.enabled = enabled
-            Log.d(TAG, "Equalizer enabled: $enabled")
+            Log.d(tag, "Equalizer enabled: $enabled")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to toggle equalizer: ${e.message}")
+            Log.e(tag, "Failed to toggle equalizer: ${e.message}")
         }
     }
 
@@ -244,7 +245,7 @@ class AudioEffectController private constructor(private val context: Context) {
             val range = equalizer?.bandLevelRange
             (range?.get(0)?.toInt() ?: -5000) to (range?.get(1)?.toInt() ?: 5000)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to get level range: ${e.message}")
+            Log.e(tag, "Failed to get level range: ${e.message}")
             -5000 to 5000
         }
     }
@@ -268,9 +269,9 @@ class AudioEffectController private constructor(private val context: Context) {
             for (i in 0 until minOf(10, numBands)) {
                 equalizer?.setBandLevel(i.toShort(), 0)
             }
-            Log.d(TAG, "Equalizer reset to flat")
+            Log.d(tag, "Equalizer reset to flat")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to reset equalizer: ${e.message}")
+            Log.e(tag, "Failed to reset equalizer: ${e.message}")
         }
     }
 
@@ -296,7 +297,7 @@ class AudioEffectController private constructor(private val context: Context) {
         }
         _equalizerBands.value = loadedBands
         
-        Log.d(TAG, "Loaded preferences: EqEnabled=${_isEqualizerEnabled.value}, BoosterEnabled=${_isBoosterEnabled.value}, Level=${_boosterLevel.value}")
+        Log.d(tag, "Loaded preferences: EqEnabled=${_isEqualizerEnabled.value}, BoosterEnabled=${_isBoosterEnabled.value}, Level=${_boosterLevel.value}")
     }
 
     /**
@@ -306,9 +307,9 @@ class AudioEffectController private constructor(private val context: Context) {
         try {
             equalizer?.release()
             equalizer = null
-            Log.d(TAG, "Audio effects keys released")
+            Log.d(tag, "Audio effects keys released")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to release audio effects: ${e.message}")
+            Log.e(tag, "Failed to release audio effects: ${e.message}")
         }
     }
 
@@ -319,9 +320,9 @@ class AudioEffectController private constructor(private val context: Context) {
         try {
             releaseEffects()
             currentAudioSessionId = 0
-            Log.d(TAG, "Audio effects fully released")
+            Log.d(tag, "Audio effects fully released")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to release audio effects: ${e.message}")
+            Log.e(tag, "Failed to release audio effects: ${e.message}")
         }
     }
 }

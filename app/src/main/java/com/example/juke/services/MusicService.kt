@@ -1,5 +1,7 @@
 package com.example.juke.services
 
+import androidx.room.withTransaction
+
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.util.Log
@@ -21,6 +23,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.head
 import io.ktor.client.request.header
 import io.ktor.http.contentLength
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,14 +36,15 @@ import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.UUID
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Music Service for downloading and indexing tracks.
  */
 class MusicService(private val context: Context) {
 
-    private val TAG = "MusicService"
-    private val BACKEND_STREAM_TIMEOUT_MS = JukesApi.PREPARE_BUDGET_MS + 5_000L
+    private val tag = "MusicService"
+    private val backendStreamTimeoutMs = JukesApi.PREPARE_BUDGET_MS + 5_000L
     private val database = MusicDatabase.getDatabase(context)
     private val trackDao = database.trackDao()
     private val sourceMemory = SourceMemory(context)
@@ -65,7 +70,7 @@ class MusicService(private val context: Context) {
             Source.SPOTMATE -> try {
                 SpotifyApi.getSpotmateDownloadRequest(song.url)
             } catch (e: SpotifyApi.SpotmateQueuedException) {
-                Log.w(TAG, "Spotmate conversion queued (taskId=${e.taskId}), trying alternate source")
+                Log.w(tag, "Spotmate conversion queued (taskId=${e.taskId}), trying alternate source")
                 onSpotmateQueued(e.taskId)
                 throw e
             }
@@ -106,12 +111,12 @@ class MusicService(private val context: Context) {
                 if (attempt < maxRetries && isRetryable) {
                     val delayMs = minOf(1000L * (1 shl (attempt - 1)), 10000L)
                     Log.d(
-                        TAG,
+                        tag,
                         "[Retry $attempt/$maxRetries] $operationName failed, retrying in ${delayMs}ms..."
                     )
-                    delay(delayMs)
+                    delay(delayMs.milliseconds)
                 } else if (attempt >= maxRetries) {
-                    Log.e(TAG, "[Retry] $operationName failed after $maxRetries attempts")
+                    Log.e(tag, "[Retry] $operationName failed after $maxRetries attempts")
                     break
                 } else {
                     throw e
@@ -139,8 +144,7 @@ class MusicService(private val context: Context) {
         val tempFile = File(streamDir, "${stableUuid}_stream.tmp")
 
         // Spotsaver is primary; keep the existing legacy provider preference for fallback.
-        val useGamepvzFirst = if (forceSpotmateFirst) false
-            else (System.currentTimeMillis() % 2L) == 0L
+        val useGamepvzFirst = !forceSpotmateFirst && (System.currentTimeMillis() % 2L) == 0L
         var queuedSpotmateTaskId: String? = null
 
         suspend fun downloadToTempFile(source: Source, lastSource: Boolean) {
@@ -170,7 +174,7 @@ class MusicService(private val context: Context) {
         var fetched = false
         for (source in order) {
             try {
-                withTimeout(if (source == Source.SPOTSAVER) 30_000L else downloadTimeoutMs(source)) {
+                withTimeout((if (source == Source.SPOTSAVER) 30_000L else downloadTimeoutMs(source)).milliseconds) {
                     downloadToTempFile(source, lastSource = source == order.last())
                 }
                 sourceMemory.recordUsed(stableUuid, source)
@@ -179,7 +183,7 @@ class MusicService(private val context: Context) {
             } catch (e: Exception) {
                 // Provider timeouts fall through to the next source; cancellation of playback propagates.
                 currentCoroutineContext().ensureActive()
-                Log.w(TAG, "$source stream fetch failed (${e.message}), trying next source")
+                Log.w(tag, "$source stream fetch failed (${e.message}), trying next source")
                 failures += "$source=${e.message}"
                 // A preview clip or wrong version: remember, so later pulls of this song skip this source.
                 if (e is WrongLengthException) sourceMemory.avoid(streamKey, source)
@@ -188,12 +192,12 @@ class MusicService(private val context: Context) {
         if (!fetched) {
             val queuedTaskId = queuedSpotmateTaskId
             if (queuedTaskId.isNullOrBlank()) {
-                Log.e(TAG, "All stream sources failed: $failures")
+                Log.e(tag, "All stream sources failed: $failures")
                 throw Exception("Stream unavailable: ${failures.joinToString(", ")}")
             }
-            Log.w(TAG, "All direct stream sources failed; polling queued Spotmate task: $queuedTaskId")
+            Log.w(tag, "All direct stream sources failed; polling queued Spotmate task: $queuedTaskId")
             try {
-                val queuedData = withTimeout(120_000L) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
+                val queuedData = withTimeout(120_000L.milliseconds) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
                 if (queuedData.isEmpty() || queuedData.size < 100_000) {
                     throw Exception("Queued Spotmate stream payload is too small")
                 }
@@ -202,7 +206,7 @@ class MusicService(private val context: Context) {
                 verifyLength(tempFile, SpotifyApi.parseDuration(song.duration), lenient = true)
                 sourceMemory.recordUsed(stableUuid, Source.SPOTMATE)
             } catch (queuedTaskEx: Exception) {
-                Log.e(TAG, "Queued Spotmate task failed: ${queuedTaskEx.message}")
+                Log.e(tag, "Queued Spotmate task failed: ${queuedTaskEx.message}")
                 throw Exception("Stream unavailable: ${failures.joinToString(", ")}, queued=${queuedTaskEx.message}")
             }
         }
@@ -232,13 +236,13 @@ class MusicService(private val context: Context) {
     private suspend fun looksLikePreview(request: SpotifyApi.DirectDownloadRequest, expectedSec: Int): Boolean {
         if (expectedSec < 60) return false
         return try {
-            val bytes = withTimeout(4_000L) {
+            val bytes = withTimeout(4_000L.milliseconds) {
                 ApiClient.httpClient.head(request.url) {
                     request.headers.forEach { (k, v) -> header(k, v) }
                 }.contentLength()
             }
             bytes != null && bytes > 0 && bytes < expectedSec * 8_000L
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (_: CancellationException) {
             currentCoroutineContext().ensureActive()
             false
         } catch (_: Exception) {
@@ -271,7 +275,7 @@ class MusicService(private val context: Context) {
         val actual = fileDurationSec(file) ?: return
         val truncated = actual < expectedSec * 0.85 - 3
         val different = abs(actual - expectedSec) > maxOf(8, expectedSec * 7 / 100)
-        Log.d(TAG, "Length check: got ${actual}s, expected ${expectedSec}s (truncated=$truncated, different=$different)")
+        Log.d(tag, "Length check: got ${actual}s, expected ${expectedSec}s (truncated=$truncated, different=$different)")
         if (truncated || (different && !lenient)) {
             throw WrongLengthException("got ${actual}s, expected ${expectedSec}s")
         }
@@ -351,27 +355,27 @@ class MusicService(private val context: Context) {
         }
 
         // If track exists with a remote/streaming URL, we'll update it with the downloaded file
-        // Otherwise if it has a local file, just return it
+        // Otherwise, if it has a local file, just return it
         if (existingTrack != null && existingTrack.localUri != null) {
             val isRemoteUri = existingTrack.localUri.startsWith("http", ignoreCase = true)
 
             if (!isRemoteUri && !existingTrack.isStream) {
                 // Already has a local file, return it
                 Log.d(
-                    TAG,
+                    tag,
                     "Track already exists in database with local file: ${song.title} by ${song.artist}"
                 )
                 return existingTrack.toTrack()
             } else if (existingTrack.isStream) {
                 // Existing stream entry: promote to a permanent local download
                 Log.d(
-                    TAG,
+                    tag,
                     "Found stream track in database, promoting to full download: ${song.title}"
                 )
             } else {
                 // Has remote URL, we'll download and update this same record
                 Log.d(
-                    TAG,
+                    tag,
                     "Found streaming track in database, will update with downloaded file: ${song.title}"
                 )
             }
@@ -385,7 +389,7 @@ class MusicService(private val context: Context) {
         val audioFile = File(musicDir, "$uuid.mp3")
 
         try {
-            Log.d(TAG, "Validating Spotify URL: ${song.url}")
+            Log.d(tag, "Validating Spotify URL: ${song.url}")
             if (!song.url.startsWith("https://open.spotify.com/track/")) {
                 throw Exception("Invalid Spotify URL format")
             }
@@ -393,7 +397,7 @@ class MusicService(private val context: Context) {
             // Backend (when configured), then Spotsaver; preserve the legacy fallback order.
             val useGamepvzFirst = (System.currentTimeMillis() % 2L) == 0L
             Log.d(
-                TAG,
+                tag,
                 "Downloading '${song.title}' — primary: ${if (AlexaBackendApi.isConfigured) "backend" else "Spotsaver"}"
             )
             var queuedSpotmateTaskId: String? = null
@@ -425,14 +429,14 @@ class MusicService(private val context: Context) {
             var usedSource: Source? = null
             for (source in order) {
                 try {
-                    withTimeout(downloadTimeoutMs(source)) {
+                    withTimeout(downloadTimeoutMs(source).milliseconds) {
                         trySource(source, lastSource = source == order.last())
                     }
                     usedSource = source
                     break
                 } catch (e: Exception) {
                     currentCoroutineContext().ensureActive()
-                    Log.w(TAG, "$source download failed (${e.message}), trying next source")
+                    Log.w(tag, "$source download failed (${e.message}), trying next source")
                     failures += "$source=${e.message}"
                     if (e is WrongLengthException) sourceMemory.avoid(songKey, source)
                 }
@@ -442,8 +446,8 @@ class MusicService(private val context: Context) {
                 if (queuedTaskId.isNullOrBlank()) {
                     throw Exception("All sources failed: ${failures.joinToString(", ")}")
                 }
-                Log.w(TAG, "All direct sources failed; polling queued Spotmate task: $queuedTaskId")
-                val queuedData = withTimeout(120_000L) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
+                Log.w(tag, "All direct sources failed; polling queued Spotmate task: $queuedTaskId")
+                val queuedData = withTimeout(120_000L.milliseconds) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
                 if (queuedData.isEmpty() || queuedData.size < 100_000) {
                     throw Exception("Queued Spotmate download is too small")
                 }
@@ -454,7 +458,7 @@ class MusicService(private val context: Context) {
             }
             sourceMemory.recordUsed(uuid, usedSource)
 
-            Log.d(TAG, "Downloaded ${audioFile.length()} bytes — wrote to ${audioFile.absolutePath}")
+            Log.d(tag, "Downloaded ${audioFile.length()} bytes — wrote to ${audioFile.absolutePath}")
 
             if (!audioFile.exists() || audioFile.length() == 0L) {
                 throw Exception("Failed to write audio file")
@@ -475,19 +479,19 @@ class MusicService(private val context: Context) {
                             ApiClient.httpClient.get(song.thumbnail).body()
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Thumbnail download failed: ${e.message}", e)
+                        Log.e(tag, "Thumbnail download failed: ${e.message}", e)
                         ByteArray(0)
                     }
 
                     if (imageBytes.isNotEmpty()) {
                         thumbnailFile.writeBytes(imageBytes)
                         thumbnailUri = thumbnailFile.absolutePath
-                        Log.d(TAG, "Thumbnail saved to: ${thumbnailFile.absolutePath}")
+                        Log.d(tag, "Thumbnail saved to: ${thumbnailFile.absolutePath}")
                     } else {
-                        Log.d(TAG, "No thumbnail bytes downloaded for ${song.title}")
+                        Log.d(tag, "No thumbnail bytes downloaded for ${song.title}")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error saving thumbnail: ${e.message}", e)
+                    Log.e(tag, "Error saving thumbnail: ${e.message}", e)
                 }
             }
 
@@ -519,14 +523,14 @@ class MusicService(private val context: Context) {
 
             trackDao.insertTrack(track.toEntity())
 
-            Log.d(TAG, "Successfully downloaded and indexed: ${track.title}")
+            Log.d(tag, "Successfully downloaded and indexed: ${track.title}")
             return track
 
         } catch (e: Exception) {
             if (audioFile.exists()) {
                 audioFile.delete()
             }
-            Log.e(TAG, "Error in smartDownloadAndIndex: ${e.message}", e)
+            Log.e(tag, "Error in smartDownloadAndIndex: ${e.message}", e)
             throw e
         }
     }
@@ -547,7 +551,7 @@ class MusicService(private val context: Context) {
      * @param onLocalFileReady Called on [Dispatchers.Main] once the background download
      *                         finishes. Receives the updated Track with a local file URI.
      *                         Will NOT be called if the download fails.
-     * @return A Track with [localUri] set to the direct HTTP URL, ready for immediate playback.
+     * @return A Track with [Track.localUri] set to the direct HTTP URL, ready for immediate playback.
      */
     suspend fun streamTrackInstant(
         song: SpotdownSong,
@@ -578,17 +582,17 @@ class MusicService(private val context: Context) {
         val streamDir = File(context.filesDir, "stream_files")
         val cachedFile = File(streamDir, "${uuid}_stream.mp3")
         if (cachedFile.exists() && isHealthyExistingStreamFile(cachedFile.absolutePath, durationSec)) {
-            Log.d(TAG, "streamTrackInstant: reusing cached stream file for '${song.title}'")
+            Log.d(tag, "streamTrackInstant: reusing cached stream file for '${song.title}'")
             cachedFile.setLastModified(System.currentTimeMillis())
             val cachedTrack = existing?.toTrack()?.copy(
                 localUri = cachedFile.absolutePath,
                 isStream = true,
-                thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else existing.thumbnailUri
+                thumbnailUri = song.thumbnail.ifBlank { existing.thumbnailUri }
             ) ?: Track(
                 uuid = uuid,
                 title = song.title,
                 artist = song.artist,
-                thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else null,
+                thumbnailUri = song.thumbnail.ifBlank { null },
                 durationSec = durationSec,
                 localUri = cachedFile.absolutePath,
                 isStream = true,
@@ -605,7 +609,7 @@ class MusicService(private val context: Context) {
         var resolvedSource = Source.SPOTSAVER
         fun trackFromLocalFile(localPath: String) = Track(
             uuid = uuid, title = song.title, artist = song.artist,
-            thumbnailUri = song.thumbnail.takeIf { it.isNotBlank() },
+            thumbnailUri = song.thumbnail.ifBlank { null },
             durationSec = durationSec, localUri = localPath, isStream = true,
             isFavourite = existing?.isFavourite ?: false,
             playCount = existing?.playCount ?: 0,
@@ -625,16 +629,16 @@ class MusicService(private val context: Context) {
                         found = withTimeout(
                             when (source) {
                                 Source.SPOTSAVER -> 8_000L
-                                Source.BACKEND -> BACKEND_STREAM_TIMEOUT_MS
+                                Source.BACKEND -> backendStreamTimeoutMs
                                 else -> 15_000L
-                            }
+                            }.milliseconds
                         ) {
                             requestFor(source, song, live = true) { queuedSpotmateTaskId = it }
                         }
                         resolvedSource = source
                         break
                     } catch (e: Exception) {
-                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        currentCoroutineContext().ensureActive()
                         failures += "$source=${e.message}"
                     }
                 }
@@ -642,16 +646,16 @@ class MusicService(private val context: Context) {
             } else (if (AlexaBackendApi.isConfigured) {
                 // The backend is the first source: the UI shows "preparing" while it finishes the file.
                 try {
-                    withTimeout(BACKEND_STREAM_TIMEOUT_MS) { requestFor(Source.BACKEND, song, live = true) }
+                    withTimeout(backendStreamTimeoutMs.milliseconds) { requestFor(Source.BACKEND, song, live = true) }
                         .also { resolvedSource = Source.BACKEND }
                 } catch (e: Exception) {
-                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                    Log.w(TAG, "Backend stream lookup failed (${e.message}); falling back to Spotsaver")
+                    currentCoroutineContext().ensureActive()
+                    Log.w(tag, "Backend stream lookup failed (${e.message}); falling back to Spotsaver")
                     null
                 }
             } else null) ?: preferNewProvider(
                 primary = {
-                    withTimeout(8_000L) { SpotsaverApi.getDownloadRequest(song.title, song.artist, SpotifyApi.parseDuration(song.duration)) }
+                    withTimeout(8_000L.milliseconds) { SpotsaverApi.getDownloadRequest(song.title, song.artist, SpotifyApi.parseDuration(song.duration)) }
                         .also { resolvedSource = Source.SPOTSAVER }
                 },
                 fallback = {
@@ -672,7 +676,7 @@ class MusicService(private val context: Context) {
                     )
                 }
             )
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             if (queuedSpotmateTaskId.isNullOrBlank()) throw e
@@ -684,11 +688,11 @@ class MusicService(private val context: Context) {
         if (resolvedSource != Source.BACKEND && looksLikePreview(resolvedRequest, durationSec)) {
             // This source serves a ~30 s preview: remember that, and fetch a verified full file from the
             // remaining sources instead of streaming the clip.
-            Log.w(TAG, "$resolvedSource returned a preview-sized file for '${song.title}'; switching source")
+            Log.w(tag, "$resolvedSource returned a preview-sized file for '${song.title}'; switching source")
             sourceMemory.avoid(songKey, resolvedSource)
             return trackFromLocalFile(resolveStreamToLocalFile(song, uuid, forceSpotmateFirst))
         }
-        Log.d(TAG, "Stream URL resolved in ${android.os.SystemClock.elapsedRealtime() - resolveStarted}ms via $resolvedSource")
+        Log.d(tag, "Stream URL resolved in ${android.os.SystemClock.elapsedRealtime() - resolveStarted}ms via $resolvedSource")
         sourceMemory.recordUsed(uuid, resolvedSource)
 
         // Build a Track with the HTTP URL as localUri — ExoPlayer's CacheDataSource
@@ -698,7 +702,7 @@ class MusicService(private val context: Context) {
             uuid = uuid,
             title = song.title,
             artist = song.artist,
-            thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else null,
+            thumbnailUri = song.thumbnail.ifBlank { null },
             durationSec = durationSec,
             localUri = resolvedRequest.url,   // <-- HTTP URL, not a file path
             isStream = true,
@@ -720,8 +724,8 @@ class MusicService(private val context: Context) {
         bgScope.launch {
             try {
                 // Give the player's initial HTTP connection exclusive access to this URL.
-                withTimeout(60_000L) { awaitPlaybackStarted(uuid) }
-                Log.d(TAG, "streamTrackInstant: background download started for '${song.title}'")
+                withTimeout(60_000L.milliseconds) { awaitPlaybackStarted(uuid) }
+                Log.d(tag, "streamTrackInstant: background download started for '${song.title}'")
                 if (!streamDir.exists()) streamDir.mkdirs()
                 val finalFile = File(streamDir, "${uuid}_stream.mp3")
                 val tempFile = File(streamDir, "${uuid}_stream.tmp")
@@ -734,7 +738,7 @@ class MusicService(private val context: Context) {
                 ) {
                     resolvedRequest.copy(url = resolvedRequest.url + "&wait=1", probeRanges = true)
                 } else resolvedRequest
-                withTimeout(120_000L) {
+                withTimeout(120_000L.milliseconds) {
                     FastDownloader.downloadSegmented(
                         url = bgRequest.url,
                         outputFile = tempFile,
@@ -745,14 +749,14 @@ class MusicService(private val context: Context) {
                 }
 
                 if (!tempFile.exists() || tempFile.length() < 100_000L || !isValidAudioHeader(tempFile)) {
-                    Log.w(TAG, "streamTrackInstant: background download invalid or too small, discarding")
+                    Log.w(tag, "streamTrackInstant: background download invalid or too small, discarding")
                     tempFile.delete()
                     return@launch
                 }
                 try {
                     verifyLength(tempFile, durationSec, lenient = true)
                 } catch (e: WrongLengthException) {
-                    Log.w(TAG, "streamTrackInstant: ${e.message} from $resolvedSource, discarding and avoiding it")
+                    Log.w(tag, "streamTrackInstant: ${e.message} from $resolvedSource, discarding and avoiding it")
                     tempFile.delete()
                     sourceMemory.avoid(songKey, resolvedSource)
                     return@launch
@@ -766,11 +770,11 @@ class MusicService(private val context: Context) {
                 }
 
                 if (!finalFile.exists() || finalFile.length() <= 0L) {
-                    Log.w(TAG, "streamTrackInstant: failed to persist background download")
+                    Log.w(tag, "streamTrackInstant: failed to persist background download")
                     return@launch
                 }
 
-                Log.d(TAG, "streamTrackInstant: background download complete for '${song.title}' (${finalFile.length() / 1024}KB)")
+                Log.d(tag, "streamTrackInstant: background download complete for '${song.title}' (${finalFile.length() / 1024}KB)")
 
                 // Evict old stream files now that we have a new one
                 evictStreamCache(pinnedUuids = pinnedUuids + uuid)
@@ -778,11 +782,11 @@ class MusicService(private val context: Context) {
                 val localTrack = httpTrack.copy(localUri = finalFile.absolutePath)
 
                 // Notify caller on Main so they can swap ExoPlayer source
-                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                withContext(Dispatchers.Main) {
                     onLocalFileReady(localTrack)
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "streamTrackInstant: background download failed for '${song.title}': ${e.message}")
+                Log.w(tag, "streamTrackInstant: background download failed for '${song.title}': ${e.message}")
                 // Non-fatal — ExoPlayer continues streaming from the HTTP URL via its cache
             }
         }
@@ -846,7 +850,7 @@ class MusicService(private val context: Context) {
      * @param song Source song metadata
      * @param preferredUuid Reuse an existing UUID (e.g. for queue re-validation)
      * @param forceSpotmateFirst If true, Spotmate is tried first (faster for instant search plays).
-     *                           Otherwise each call randomly picks primary/fallback (50/50).
+     *                           Otherwise, each call randomly picks primary/fallback (50/50).
      * @param pinnedUuids UUIDs that must NOT be evicted by LRU (e.g., the active queue's tracks).
      * @param fetchLyricsSynchronously If true, lyrics are fetched on the critical path.
      *                                 Set false for instant playback and hydrate lyrics later.
@@ -888,12 +892,12 @@ class MusicService(private val context: Context) {
                 durationSec
             )
         ) {
-            Log.d(TAG, "Reusing cached stream file for '${song.title}'")
+            Log.d(tag, "Reusing cached stream file for '${song.title}'")
             // Touch file to mark as recently used for LRU
             cachedFile.setLastModified(System.currentTimeMillis())
 
             return existing?.toTrack()?.copy(
-                thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else existing.thumbnailUri,
+                thumbnailUri = song.thumbnail.ifBlank { existing.thumbnailUri },
                 durationSec = durationSec,
                 localUri = cachedFile.absolutePath,
                 isStream = true,
@@ -904,7 +908,7 @@ class MusicService(private val context: Context) {
                 uuid = uuid,
                 title = song.title,
                 artist = song.artist,
-                thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else null,
+                thumbnailUri = song.thumbnail.ifBlank { null },
                 durationSec = durationSec,
                 localUri = cachedFile.absolutePath,
                 isStream = true,
@@ -918,7 +922,7 @@ class MusicService(private val context: Context) {
         val localFilePath = try {
             resolveStreamToLocalFile(song, uuid, forceSpotmateFirst)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to prepare stream file", e)
+            Log.e(tag, "Failed to prepare stream file", e)
             throw e
         }
 
@@ -929,13 +933,13 @@ class MusicService(private val context: Context) {
         val lyricsResult = if (fetchLyricsSynchronously) {
             SpotifyApi.searchLyrics(song.title, song.artist, song.album, durationSec)
         } else {
-            Log.d(TAG, "Skipping synchronous lyrics fetch for instant stream: ${song.title}")
+            Log.d(tag, "Skipping synchronous lyrics fetch for instant stream: ${song.title}")
             null
         }
         val ytVideoId = if (fetchYtVideoIdSynchronously) {
             RecommenderApi.getBestVideoMatch("${song.title} ${song.artist}", SpotifyApi.parseDuration(song.duration), song.artist)
         } else {
-            Log.d(TAG, "Skipping synchronous YT video ID fetch for instant stream: ${song.title}")
+            Log.d(tag, "Skipping synchronous YT video ID fetch for instant stream: ${song.title}")
             existing?.ytVideoId
         }
 
@@ -946,7 +950,7 @@ class MusicService(private val context: Context) {
             uuid = uuid,
             title = song.title,
             artist = song.artist,
-            thumbnailUri = if (song.thumbnail.isNotBlank()) song.thumbnail else null,
+            thumbnailUri = song.thumbnail.ifBlank { null },
             durationSec = durationSec,
             localUri = localFilePath,
             ytVideoId = ytVideoId,
@@ -968,14 +972,14 @@ class MusicService(private val context: Context) {
         // for persisting via trackDao.insertTrack() when the track should survive
         // a restart (e.g. queue retention). promoteStreamToDownload() upgrades
         // a stream entry to a permanent local download.
-        Log.d(TAG, "Stream track prepared (caller must persist to DB): ${track.title}")
+        Log.d(tag, "Stream track prepared (caller must persist to DB): ${track.title}")
         return track
     }
 
     suspend fun promoteStreamToDownload(track: Track): Track {
         if (!track.isStream) return track
 
-        Log.d(TAG, "Promoting stream to permanent download: ${track.title}")
+        Log.d(tag, "Promoting stream to permanent download: ${track.title}")
 
         val musicDir = File(context.filesDir, "music")
         if (!musicDir.exists()) musicDir.mkdirs()
@@ -992,25 +996,25 @@ class MusicService(private val context: Context) {
                     // COMMENT OUT THIS LINE to prevent playback crashes:
                     // streamFile.delete()
                     Log.d(
-                        TAG,
+                        tag,
                         "Moved stream file to permanent storage: ${permanentFile.absolutePath}"
                     )
                     true
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to move stream file locally: ${e.message}")
+                    Log.w(tag, "Failed to move stream file locally: ${e.message}")
                     false
                 }
             } else {
-                Log.w(TAG, "Stream file missing or too small, will re-download")
+                Log.w(tag, "Stream file missing or too small, will re-download")
                 false
             }
         } ?: false
 
         // Fall back to full network download only if moving failed
         if (!streamFileUsable) {
-            Log.d(TAG, "Falling back to network download for: ${track.title}")
+            Log.d(tag, "Falling back to network download for: ${track.title}")
             val spotifyUrl =
-                if (track.spotifyId != null) "https://open.spotify.com/track/${track.spotifyId}" else null
+                track.spotifyId?.let { "https://open.spotify.com/track/$it" }
             if (spotifyUrl == null) throw Exception("Cannot download: Missing Spotify info")
 
             val song = SpotdownSong(
@@ -1038,10 +1042,10 @@ class MusicService(private val context: Context) {
                 if (imageBytes.isNotEmpty()) {
                     thumbnailFile.writeBytes(imageBytes)
                     localThumbnailUri = thumbnailFile.absolutePath
-                    Log.d(TAG, "Thumbnail saved locally: ${thumbnailFile.absolutePath}")
+                    Log.d(tag, "Thumbnail saved locally: ${thumbnailFile.absolutePath}")
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Thumbnail download failed, keeping URL: ${e.message}")
+                Log.w(tag, "Thumbnail download failed, keeping URL: ${e.message}")
             }
         }
 
@@ -1082,182 +1086,54 @@ class MusicService(private val context: Context) {
         )
 
         trackDao.insertTrack(promotedTrack.toEntity())
-        Log.d(TAG, "Stream promoted to permanent download (local move): ${track.title}")
+        Log.d(tag, "Stream promoted to permanent download (local move): ${track.title}")
         return promotedTrack
     }
 
-    suspend fun deleteTrackAndFiles(track: Track) {
-        try {
-            // CRITICAL: Delete playlist_tracks entries FIRST to avoid FK constraint errors
-            // This is more reliable than relying on ON DELETE CASCADE
-            database.playlistDao().deletePlaylistTracksForTrack(track.uuid)
-            Log.d(TAG, "Deleted playlist_tracks for track: ${track.uuid}")
-
-            // Get playlists that contain this track before deleting (for updating counts)
-            val playlistsToUpdate =
-                database.playlistDao().getPlaylistsForTrack(track.uuid).map { it.id }
-
-            track.localUri?.let { uri ->
-                if (!uri.startsWith("http")) {
-                    File(uri).delete()
-                }
-            }
-
-            track.thumbnailUri?.let { uri ->
-                File(uri).delete()
-            }
-
-            trackDao.deleteTrack(track.uuid)
-
-            // Update track counts for affected playlists
-            playlistsToUpdate.forEach { playlistId ->
-                val newCount = database.playlistDao().getPlaylistTrackCount(playlistId)
-                database.playlistDao().updatePlaylistTrackCount(playlistId, newCount)
-                Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
-            }
-
-            // SAFETY: Remove from playback queue if present
-            try {
-                val playbackManager = PlaybackManager.getInstance(context)
-                playbackManager.removeDeletedTrackFromQueue(track.uuid)
-                Log.d(TAG, "Removed deleted track from playback queue: ${track.title}")
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not remove track from playback queue: ${e.message}")
-            }
-
-            Log.d(TAG, "Deleted track: ${track.title}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error deleting track: ${e.message}", e)
-        }
-    }
-
-    suspend fun deleteTracksAndFiles(tracks: List<Track>) {
+    /** Collect affected playlists before removing memberships; update counts in the same transaction. */
+    suspend fun deleteTracksAndFiles(tracks: List<Track>, reportErrors: Boolean = false) {
         if (tracks.isEmpty()) return
-
         try {
-            // CRITICAL: Delete playlist_tracks entries FIRST to avoid FK constraint errors
-            val trackUuids = tracks.map { it.uuid }
-            database.playlistDao().deletePlaylistTracksForTracks(trackUuids)
-            Log.d(TAG, "Deleted playlist_tracks for ${tracks.size} tracks")
-
-            // Delete files for all tracks
-            tracks.forEach { track ->
-                track.localUri?.let { uri ->
-                    if (!uri.startsWith("http")) {
-                        File(uri).delete()
+            val uniqueTracks = tracks.distinctBy { it.uuid }
+            val trackUuids = uniqueTracks.map { it.uuid }
+            // Resolve imported file:// URIs as well as the absolute paths used by downloads.
+            withContext(Dispatchers.IO) {
+                uniqueTracks.forEach { track ->
+                    listOfNotNull(track.localUri, track.thumbnailUri).forEach { uri ->
+                        val file = when {
+                            uri.startsWith("file:") -> File(java.net.URI(uri))
+                            uri.startsWith("/") -> File(uri)
+                            else -> null // Remote/content resources are not owned files.
+                        }
+                        if (file != null && file.exists() && !file.delete()) {
+                            throw java.io.IOException("Could not remove a downloaded file")
+                        }
                     }
                 }
-                track.thumbnailUri?.let { uri ->
-                    File(uri).delete()
+            }
+            database.withTransaction {
+                val playlistDao = database.playlistDao()
+                val affected = uniqueTracks.flatMap { playlistDao.getPlaylistsForTrack(it.uuid) }
+                    .map { it.id }.toSet()
+                playlistDao.deletePlaylistTracksForTracks(trackUuids)
+                trackDao.deleteTracks(trackUuids)
+                affected.forEach { id ->
+                    playlistDao.updatePlaylistTrackCount(id, playlistDao.getPlaylistTrackCount(id))
                 }
             }
-
-            // Collect all Playlist IDs involved
-            val playlistDao = database.playlistDao()
-
-            // Get all unique playlist IDs that contain ANY of these tracks
-            val affectedPlaylistIds = mutableSetOf<String>()
-            tracks.forEach { track ->
-                try {
-                    val playlists = playlistDao.getPlaylistsForTrack(track.uuid)
-                    affectedPlaylistIds.addAll(playlists.map { it.id })
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error fetching playlists for track ${track.uuid}", e)
-                }
+            val playbackManager = PlaybackManager.getInstance(context)
+            val queueManager = QueueManager.getInstance(context)
+            trackUuids.forEach { uuid ->
+                playbackManager.removeDeletedTrackFromQueue(uuid)
+                // The recommendation queue also feeds the player; stale entries could reappear later.
+                if (queueManager.currentQueue.value.any { it.uuid == uuid }) queueManager.removeFromQueue(uuid)
             }
-
-            // Bulk delete from DB to prevent multiple invalidations and Cursor leaks
-            trackDao.deleteTracks(trackUuids)
-            Log.d(TAG, "Bulk deleted ${tracks.size} tracks from database")
-
-            // Update track counts for affected playlists
-            affectedPlaylistIds.forEach { playlistId ->
-                val newCount = playlistDao.getPlaylistTrackCount(playlistId)
-                playlistDao.updatePlaylistTrackCount(playlistId, newCount)
-                Log.d(TAG, "Updated track count for playlist $playlistId to $newCount")
-            }
-
-            // SAFETY: Remove all deleted tracks from playback queue
-            try {
-                val playbackManager = PlaybackManager.getInstance(context)
-                trackUuids.forEach { uuid ->
-                    playbackManager.removeDeletedTrackFromQueue(uuid)
-                }
-                Log.d(TAG, "Removed ${trackUuids.size} deleted tracks from playback queue")
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not remove tracks from playback queue: ${e.message}")
-            }
-
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Error in bulk delete: ${e.message}", e)
+            Log.e(tag, "Error deleting tracks: ${e.message}", e)
+            if (reportErrors) throw e
         }
-    }
-
-    /**
-     * Clean up old cache files that are no longer referenced in database.
-     * Call this periodically (e.g., on app startup) to keep cache under control.
-     * 
-     * @param maxAgeDays Files older than this many days will be deleted (default 7)
-     * @return Pair of (filesDeleted, bytesFreed)
-     */
-    suspend fun cleanupOrphanedCacheFiles(maxAgeDays: Int = 7): Pair<Int, Long> {        val musicDir = File(context.filesDir, "music")
-        if (!musicDir.exists()) {
-            Log.d(TAG, "Music directory doesn't exist, nothing to clean")
-            return Pair(0, 0L)
-        }
-
-        val allTracks = trackDao.getAllTracks()
-        val validUris = allTracks.mapNotNull { it.localUri }.toSet()
-        val validThumbnails = allTracks.mapNotNull { it.thumbnailUri }.toSet()
-
-        val cutoffTime = System.currentTimeMillis() - (maxAgeDays * 24 * 60 * 60 * 1000L)
-        var filesDeleted = 0
-        var bytesFreed = 0L
-
-        musicDir.listFiles()?.forEach { file ->
-            val absolutePath = file.absolutePath
-
-            // Check if this file is referenced in database
-            val isOrphaned = !validUris.contains(absolutePath) &&
-                    !validThumbnails.contains(absolutePath)
-
-            // Only delete files that are NOT in the database AND are old.
-            // BUG FIX: The previous logic deleted ANY file older than maxAgeDays,
-            // including DB-referenced stream files for favourite tracks. Now we only
-            // use age as a secondary guard for truly orphaned files (e.g. from a
-            // crash mid-write). DB-referenced files are lifetime-managed explicitly.
-            val isOld = file.lastModified() < cutoffTime
-
-            if (isOrphaned && isOld) {
-                val size = file.length()
-                if (file.delete()) {
-                    filesDeleted++
-                    bytesFreed += size
-                    Log.d(
-                        TAG,
-                        "Deleted orphaned cache file: ${file.name} (${size} bytes, ${maxAgeDays}d+ old)"
-                    )
-                } else {
-                    Log.w(TAG, "Failed to delete orphaned cache file: ${file.name}")
-                }
-            }
-        }
-
-        Log.d(
-            TAG,
-            "Cache cleanup complete: $filesDeleted files deleted, ${bytesFreed / 1024 / 1024}MB freed"
-        )
-        return Pair(filesDeleted, bytesFreed)
-    }
-
-    /**
-     * Get current cache size in bytes.
-     */
-    fun getCacheSizeBytes(): Long {
-        val musicDir = File(context.filesDir, "music")
-        if (!musicDir.exists()) return 0L
-
-        return musicDir.listFiles()?.sumOf { it.length() } ?: 0L
     }
 
     /**
@@ -1298,26 +1174,17 @@ class MusicService(private val context: Context) {
                 val size = file.length()
                 if (file.delete()) {
                     bytesFreed += size
-                    Log.d(TAG, "LRU evicted stream file: ${file.name} (${size / 1024}KB)")
+                    Log.d(tag, "LRU evicted stream file: ${file.name} (${size / 1024}KB)")
                 }
             }
             Log.d(
-                TAG,
+                tag,
                 "Stream cache eviction: removed ${toDelete.size} files, freed ${bytesFreed / 1024 / 1024}MB "
                     + "(${pinned.size} pinned, ${evictable.size - toDelete.size} kept)"
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error during stream cache eviction: ${e.message}", e)
+            Log.e(tag, "Error during stream cache eviction: ${e.message}", e)
         }
-    }
-
-    /**
-     * Get current stream cache size in bytes.
-     */
-    fun getStreamCacheSizeBytes(): Long {
-        val streamDir = File(context.filesDir, "stream_files")
-        if (!streamDir.exists()) return 0L
-        return streamDir.listFiles()?.sumOf { it.length() } ?: 0L
     }
 
     /**
@@ -1333,7 +1200,7 @@ class MusicService(private val context: Context) {
         if (toDelete.isNotEmpty()) {
             trackDao.deleteTracks(toDelete.map { it.uuid })
             Log.d(
-                TAG,
+                tag,
                 "Purged ${toDelete.size} stale stream entries (preserved ${allStreams.size - toDelete.size} queue tracks)"
             )
         }

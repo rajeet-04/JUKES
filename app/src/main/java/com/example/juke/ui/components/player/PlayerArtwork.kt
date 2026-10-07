@@ -1,5 +1,7 @@
 package com.example.juke.ui.components.player
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -12,24 +14,22 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.example.juke.ui.theme.GlassLevel
-import com.example.juke.ui.theme.glassPane
 import coil.request.ImageRequest
 import com.example.juke.models.Track
+import com.example.juke.ui.components.playerArtworkEndpoint
+import com.example.juke.ui.theme.GlassLevel
+import com.example.juke.ui.theme.glassPane
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import kotlin.math.absoluteValue
@@ -80,6 +80,7 @@ fun PlayerArtwork(
         // Fallback if queue is empty for some reason
         ArtworkCard(
             track = currentTrack,
+            isCurrentTrack = true,
             showLyrics = showLyrics,
             currentPosition = currentPosition,
             musicViewModel = musicViewModel,
@@ -93,10 +94,6 @@ fun PlayerArtwork(
             contentPadding = PaddingValues(horizontal = 0.dp),
             modifier = artworkModifier
         ) { page ->
-            // Calculate scale/alpha for smooth parallax transition
-            val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-            val scale = 1f - (0.15f * pageOffset.absoluteValue.coerceIn(0f, 1f))
-            val alpha = 1f - (0.5f * pageOffset.absoluteValue.coerceIn(0f, 1f))
             val pageTrack = if (page == queueIndex) {
                 currentTrack
             } else {
@@ -105,6 +102,7 @@ fun PlayerArtwork(
 
             ArtworkCard(
                 track = pageTrack,
+                isCurrentTrack = pageTrack.uuid == currentTrack.uuid,
                 // Only show lyrics on the active page
                 showLyrics = showLyrics && page == pagerState.currentPage,
                 currentPosition = currentPosition,
@@ -112,9 +110,12 @@ fun PlayerArtwork(
                 isTablet = isTablet,
                 onToggleLyrics = onToggleLyrics,
                 modifier = Modifier.graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    this.alpha = alpha
+                    // Read continuous pager motion in the draw phase, avoiding recomposition every frame.
+                    val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                    val distance = pageOffset.absoluteValue.coerceIn(0f, 1f)
+                    scaleX = 1f - 0.15f * distance
+                    scaleY = scaleX
+                    alpha = 1f - 0.5f * distance
                 }
             )
         }
@@ -124,6 +125,7 @@ fun PlayerArtwork(
 @Composable
 private fun ArtworkCard(
     track: Track,
+    isCurrentTrack: Boolean,
     showLyrics: Boolean,
     currentPosition: Long,
     musicViewModel: MusicViewModel,
@@ -137,6 +139,7 @@ private fun ArtworkCard(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .playerArtworkEndpoint(expanded = true, enabled = !showLyrics && isCurrentTrack)
             .glassPane(RoundedCornerShape(32.dp), GlassLevel.Thick)
             .clickable {
                 haptic.click()
@@ -167,7 +170,7 @@ private fun ArtworkCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Filled.PlayArrow,
+                    imageVector = JukeIcons.Play,
                     contentDescription = null,
                     modifier = Modifier.size(80.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant

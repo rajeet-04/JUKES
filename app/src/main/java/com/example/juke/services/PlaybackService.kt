@@ -1,15 +1,14 @@
 package com.example.juke.services
 
+import kotlin.time.Duration.Companion.milliseconds
+import androidx.core.content.edit
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -33,9 +32,9 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -81,7 +80,7 @@ import java.util.Locale
 @UnstableApi
 class PlaybackService : MediaLibraryService() {
 
-    private val TAG = "PlaybackService"
+    private val tag = "PlaybackService"
 
     companion object {
         /** Audio prefs that decide whether offloaded (battery saver) playback can engage. */
@@ -118,7 +117,7 @@ class PlaybackService : MediaLibraryService() {
                     }
 
                     artworkUri?.let(metadataBuilder::setArtworkUri)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Silently ignore artwork errors — notification will just show no art
                 }
             }
@@ -224,7 +223,7 @@ class PlaybackService : MediaLibraryService() {
                 val isEnabled = prefs.getBoolean("skip_silence_enabled", false)
                 // Edge-only skipping (own processor); ExoPlayer's skipSilenceEnabled would cut mid-song gaps.
                 audioEffectController.edgeSilence.enabled = isEnabled
-                Log.d(TAG, "Skip silence (edges) enabled: $isEnabled")
+                Log.d(tag, "Skip silence (edges) enabled: $isEnabled")
             }
             if (key in OFFLOAD_KEYS) applyOffloadPreference(prefs)
         }
@@ -253,7 +252,7 @@ class PlaybackService : MediaLibraryService() {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setAudioOffloadPreferences(offload)
             .build()
-        Log.d(TAG, "Audio offload ${if (allowed) "enabled" else "disabled"}")
+        Log.d(tag, "Audio offload ${if (allowed) "enabled" else "disabled"}")
     }
 
     private lateinit var audioManager: AudioManager
@@ -293,7 +292,7 @@ class PlaybackService : MediaLibraryService() {
 
         if (player.currentMediaItemIndex != previousIndex) {
             player.play()
-            Log.d(TAG, "Started playback after manual next/previous track change")
+            Log.d(tag, "Started playback after manual next/previous track change")
         }
     }
 
@@ -310,7 +309,7 @@ class PlaybackService : MediaLibraryService() {
             if (inCall()) mainHandler.postDelayed(this, 1_500)
             else {
                 player.play()
-                Log.d(TAG, "Call ended - resumed")
+                Log.d(tag, "Call ended - resumed")
             }
         }
     }
@@ -321,7 +320,7 @@ class PlaybackService : MediaLibraryService() {
                 player.pause()
                 mainHandler.removeCallbacks(resumeAfterCall)
                 mainHandler.postDelayed(resumeAfterCall, 500)
-                Log.d(TAG, "Focus returned during a call - held")
+                Log.d(tag, "Focus returned during a call - held")
             }
         }
     }
@@ -340,12 +339,12 @@ class PlaybackService : MediaLibraryService() {
                     currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
                 if (!isAppInForeground) {
                     Log.w(
-                        TAG,
+                        tag,
                         "App is in background, suppressing initial startForeground to avoid crash"
                     )
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to check app lifecycle state: ${e.message}")
+                Log.w(tag, "Failed to check app lifecycle state: ${e.message}")
             }
         }
 
@@ -356,7 +355,7 @@ class PlaybackService : MediaLibraryService() {
         return try {
             super.onStartCommand(intent, flags, startId)
         } catch (e: Exception) {
-            Log.e(TAG, "Error in super.onStartCommand: ${e.message}", e)
+            Log.e(tag, "Error in super.onStartCommand: ${e.message}", e)
             START_STICKY
         }
     }
@@ -382,7 +381,7 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Error validating local file: ${e.message}")
+                Log.w(tag, "Error validating local file: ${e.message}")
             }
         }
 
@@ -407,15 +406,15 @@ class PlaybackService : MediaLibraryService() {
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_ENDED -> Log.d(TAG, "Playback ended")
-                Player.STATE_READY -> Log.d(TAG, "Player ready")
-                Player.STATE_BUFFERING -> Log.d(TAG, "Buffering...")
-                Player.STATE_IDLE -> Log.d(TAG, "Player idle")
+                Player.STATE_ENDED -> Log.d(tag, "Playback ended")
+                Player.STATE_READY -> Log.d(tag, "Player ready")
+                Player.STATE_BUFFERING -> Log.d(tag, "Buffering...")
+                Player.STATE_IDLE -> Log.d(tag, "Player idle")
             }
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            Log.e(TAG, "Player error: ${error.message}", error)
+            Log.e(tag, "Player error: ${error.message}", error)
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -434,22 +433,22 @@ class PlaybackService : MediaLibraryService() {
                 if (audioEffectController.isNormalizationEnabled.value) {
                     val gains = getSharedPreferences("agc_gains", MODE_PRIVATE)
                     currentPlayingTrackId?.let { prev ->
-                        gains.edit().putFloat(prev, audioEffectController.boostProcessor.currentAgcGain).apply()
+                        gains.edit { putFloat(prev, audioEffectController.boostProcessor.currentAgcGain) }
                     }
                     if (gains.contains(trackId)) {
                         audioEffectController.boostProcessor.seedAgc(gains.getFloat(trackId, 1f))
                     }
                 }
                 currentPlayingTrackId = trackId
-                Log.d(TAG, "Media item transition: $trackId, reason: $reason")
+                Log.d(tag, "Media item transition: $trackId, reason: $reason")
 
                 // The next songs stream from the backend: make sure the server still has them (its cache
                 // evicts) so a transition doesn't hit a "pending" file. Free when they are cached.
                 var upcoming = player.currentMediaItemIndex
-                for (step in 1..2) {
-                    if (upcoming == C.INDEX_UNSET || player.currentTimeline.isEmpty) break
+                repeat(2) {
+                    if (upcoming == C.INDEX_UNSET || player.currentTimeline.isEmpty) return@repeat
                     upcoming = player.currentTimeline.getNextWindowIndex(upcoming, player.repeatMode, player.shuffleModeEnabled)
-                    if (upcoming == C.INDEX_UNSET) break
+                    if (upcoming == C.INDEX_UNSET) return@repeat
                     player.getMediaItemAt(upcoming).localConfiguration?.uri?.toString()
                         ?.let(com.example.juke.network.JukesApi::videoIdOf)
                         ?.let(com.example.juke.network.JukesApi::warmupVideo)
@@ -464,7 +463,7 @@ class PlaybackService : MediaLibraryService() {
                             updateCustomLayout(track.isFavourite, track.isStream)
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error updating custom layout: ${e.message}")
+                        Log.e(tag, "Error updating custom layout: ${e.message}")
                     }
                 }
 
@@ -477,7 +476,7 @@ class PlaybackService : MediaLibraryService() {
                 // correct thumbnail once it's available.
                 serviceScope.launch {
                     try {
-                        kotlinx.coroutines.delay(3_000L)
+                        kotlinx.coroutines.delay(3_000L.milliseconds)
                         // Only refresh if this track is still playing (user hasn't skipped)
                         if (currentPlayingTrackId != trackId) return@launch
                         val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
@@ -488,9 +487,9 @@ class PlaybackService : MediaLibraryService() {
                         val refreshedItem = createValidatedMediaItem(track) ?: return@launch
                         // replaceMediaItem triggers onTimelineChanged → notification redraw
                         player.replaceMediaItem(index, refreshedItem)
-                        Log.d(TAG, "Refreshed notification metadata for: ${track.title}")
+                        Log.d(tag, "Refreshed notification metadata for: ${track.title}")
                     } catch (e: Exception) {
-                        Log.w(TAG, "Delayed metadata refresh failed: ${e.message}")
+                        Log.w(tag, "Delayed metadata refresh failed: ${e.message}")
                     }
                 }
 
@@ -510,18 +509,18 @@ class PlaybackService : MediaLibraryService() {
                                 // Wait 3 seconds before cleaning up the finished stream file.
                                 // ExoPlayer's CacheDataSource may still be draining its read
                                 // handle on the old file (closing buffers) at transition time.
-                                kotlinx.coroutines.delay(3_000L)
+                                kotlinx.coroutines.delay(3_000L.milliseconds)
 
                                 // Clear ExoPlayer's overlay cache entry for this URI
                                 StreamCacheManager.removeTrackCache(oldTrack.localUri)
                                 Log.d(
-                                    TAG,
+                                    tag,
                                     "Cleared ExoPlayer cache for finished stream: ${oldTrack.title}"
                                 )
                                 // Note: Stream file deletion is handled by LRU eviction in MusicService
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error cleaning up stream track: ${e.message}")
+                            Log.e(tag, "Error cleaning up stream track: ${e.message}")
                         }
                     }
                 }
@@ -529,7 +528,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            Log.d(TAG, "Is playing: $isPlaying")
+            Log.d(tag, "Is playing: $isPlaying")
             if (isPlaying) {
                 progressHandler.post(progressRunnable)
             } else {
@@ -556,18 +555,17 @@ class PlaybackService : MediaLibraryService() {
 
         // Create notification channel for Android 8+
         // IMPORTANT: Must be created before Media3 initializes to avoid notification conflicts
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "media_playback",
-                "Media Playback",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Media playback controls"
-                setShowBadge(false)
-            }
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            "media_playback",
+            "Media Playback",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Media playback controls"
+            setShowBadge(false)
         }
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
+
 
         // Configure Media3 to use the same Notification ID and Channel
         // This prevents notification conflicts on Samsung and other devices
@@ -618,11 +616,11 @@ class PlaybackService : MediaLibraryService() {
             }
             override fun onTransferStart(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, network: Boolean) {
                 val start = starts[source] ?: return
-                Log.d(TAG, "Stream HTTP connected in ${android.os.SystemClock.elapsedRealtime() - start}ms (${spec.uri.host})")
+                Log.d(tag, "Stream HTTP connected in ${android.os.SystemClock.elapsedRealtime() - start}ms (${spec.uri.host})")
             }
             override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, network: Boolean, bytes: Int) {
                 val start = starts.remove(source) ?: return
-                Log.d(TAG, "Stream first bytes in ${android.os.SystemClock.elapsedRealtime() - start}ms")
+                Log.d(tag, "Stream first bytes in ${android.os.SystemClock.elapsedRealtime() - start}ms")
             }
             override fun onTransferEnd(source: androidx.media3.datasource.DataSource, spec: androidx.media3.datasource.DataSpec, network: Boolean) {
                 starts.remove(source)
@@ -680,7 +678,7 @@ class PlaybackService : MediaLibraryService() {
                 eventTime: AnalyticsListener.EventTime,
                 audioSessionId: Int
             ) {
-                Log.d(TAG, "Audio session ID changed: $audioSessionId")
+                Log.d(tag, "Audio session ID changed: $audioSessionId")
                 audioEffectController.attachToAudioSession(audioSessionId)
             }
         })
@@ -717,7 +715,7 @@ class PlaybackService : MediaLibraryService() {
             .setShowPlayButtonIfPlaybackIsSuppressed(true)
             .build()
 
-        Log.d(TAG, "PlaybackService created")
+        Log.d(tag, "PlaybackService created")
 
         // Collect favourite changes from the shared bus and update the notification icon.
         // This fires whether the toggle came from the notification itself OR from the player UI.
@@ -753,7 +751,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.d(TAG, "App removed from recents, stopping service and playback")
+        Log.d(tag, "App removed from recents, stopping service and playback")
         player.pause()
         player.stop()
         stopSelf()
@@ -781,13 +779,13 @@ class PlaybackService : MediaLibraryService() {
 
                 if (!isAppInForeground) {
                     Log.w(
-                        TAG,
+                        tag,
                         "App is in background — skipping onUpdateNotification to prevent ForegroundServiceStartNotAllowedException"
                     )
                     return
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to check app lifecycle state: ${e.message}")
+                Log.w(tag, "Failed to check app lifecycle state: ${e.message}")
             }
         }
 
@@ -798,11 +796,11 @@ class PlaybackService : MediaLibraryService() {
                 e is android.app.ForegroundServiceStartNotAllowedException
             ) {
                 Log.w(
-                    TAG,
+                    tag,
                     "Caught ForegroundServiceStartNotAllowedException in onUpdateNotification — suppressing"
                 )
             } else {
-                Log.w(TAG, "Failed to update notification: ${e.message}")
+                Log.w(tag, "Failed to update notification: ${e.message}")
             }
         }
     }
@@ -823,7 +821,7 @@ class PlaybackService : MediaLibraryService() {
         StreamCacheManager.release()
 
         super.onDestroy()
-        Log.d(TAG, "PlaybackService destroyed")
+        Log.d(tag, "PlaybackService destroyed")
     }
 
     override fun startForegroundService(service: Intent?): ComponentName? {
@@ -834,7 +832,7 @@ class PlaybackService : MediaLibraryService() {
                 e is android.app.ForegroundServiceStartNotAllowedException
             ) {
                 Log.e(
-                    TAG,
+                    tag,
                     "Caught ForegroundServiceStartNotAllowedException in startForegroundService",
                     e
                 )
@@ -852,10 +850,10 @@ class PlaybackService : MediaLibraryService() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 e is android.app.ForegroundServiceStartNotAllowedException
             ) {
-                Log.e(TAG, "Caught ForegroundServiceStartNotAllowedException in startService", e)
+                Log.e(tag, "Caught ForegroundServiceStartNotAllowedException in startService", e)
                 null
-            } else if (e is IllegalStateException && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Log.e(TAG, "Caught IllegalStateException in startService (background app)", e)
+            } else if (e is IllegalStateException) {
+                Log.e(tag, "Caught IllegalStateException in startService (background app)", e)
                 null
             } else {
                 throw e
@@ -919,9 +917,9 @@ class PlaybackService : MediaLibraryService() {
                     ).format(Date())
                     database.trackDao().incrementPlayCount(trackId, now)
                     queueManager.recordQualifiedPlay(trackId)
-                    Log.d(TAG, "Play count incremented at 50% threshold for track: $trackId")
+                    Log.d(tag, "Play count incremented at 50% threshold for track: $trackId")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error incrementing play count at 50% threshold: ${e.message}", e)
+                    Log.e(tag, "Error incrementing play count at 50% threshold: ${e.message}", e)
                 }
             }
         }
@@ -979,10 +977,10 @@ class PlaybackService : MediaLibraryService() {
                                 // MusicViewModel UI state are updated in real time.
                                 PlaybackManager.getInstance(applicationContext)
                                     .emitFavouriteChanged(track.uuid, newStatus)
-                                Log.d(TAG, "Toggled favorite via notification: $newStatus")
+                                Log.d(tag, "Toggled favorite via notification: $newStatus")
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error processing favorite command: ${e.message}")
+                            Log.e(tag, "Error processing favorite command: ${e.message}")
                         }
                     }
                 }
@@ -1006,10 +1004,10 @@ class PlaybackService : MediaLibraryService() {
                                 // Signal MusicViewModel so it re-fetches from DB and updates _uiState
                                 PlaybackManager.getInstance(applicationContext)
                                     .emitTrackPromoted(track.uuid)
-                                Log.d(TAG, "Promoted stream to download from notification: ${promotedTrack.title}")
+                                Log.d(tag, "Promoted stream to download from notification: ${promotedTrack.title}")
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error promoting track from notification: ${e.message}")
+                            Log.e(tag, "Error promoting track from notification: ${e.message}")
                         }
                     }
                 }
@@ -1128,7 +1126,7 @@ class PlaybackService : MediaLibraryService() {
                         LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error getting item: ${e.message}")
+                    Log.e(tag, "Error getting item: ${e.message}")
                     LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
@@ -1171,7 +1169,7 @@ class PlaybackService : MediaLibraryService() {
                     val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
                     LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error loading recent tracks: ${e.message}")
+                    Log.e(tag, "Error loading recent tracks: ${e.message}")
                     LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
@@ -1185,7 +1183,7 @@ class PlaybackService : MediaLibraryService() {
                     val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
                     LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error loading favorites: ${e.message}")
+                    Log.e(tag, "Error loading favorites: ${e.message}")
                     LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
@@ -1199,7 +1197,7 @@ class PlaybackService : MediaLibraryService() {
                     val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
                     LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error loading all tracks: ${e.message}")
+                    Log.e(tag, "Error loading all tracks: ${e.message}")
                     LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                 }
             }.asListenableFuture()
@@ -1231,6 +1229,7 @@ class PlaybackService : MediaLibraryService() {
  * Playback Manager for controlling media playback.
  * This connects to PlaybackService via MediaController to enable notification controls.
  */
+@OptIn(UnstableApi::class)
 class PlaybackManager private constructor(private val context: Context) {
 
     companion object {
@@ -1246,7 +1245,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     private val streamSeekHandoff = StreamSeekHandoff()
-    private val TAG = "PlaybackManager"
+    private val tag = "PlaybackManager"
     private val prefs = context.getSharedPreferences("playback_state_prefs", Context.MODE_PRIVATE)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
@@ -1344,7 +1343,7 @@ class PlaybackManager private constructor(private val context: Context) {
             controllerFuture?.addListener(
                 {
                     controller = controllerFuture?.get()
-                    Log.d(TAG, "MediaController connected to PlaybackService")
+                    Log.d(tag, "MediaController connected to PlaybackService")
 
                     // Immediately sync UI with current background state
                     controller?.let { ctrl ->
@@ -1379,7 +1378,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                 }
 
                                 Log.d(
-                                    TAG,
+                                    tag,
                                     "Timeline changed (reason=$reason), updated queue flow with ${newScan.size} items"
                                 )
                             }
@@ -1387,11 +1386,11 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onIsPlayingChanged(isPlaying: Boolean) {
                             _isPlaying.value = isPlaying
-                            Log.d(TAG, "PlayerListener onIsPlayingChanged: $isPlaying")
+                            Log.d(tag, "PlayerListener onIsPlayingChanged: $isPlaying")
                         }
 
                         override fun onPlaybackStateChanged(playbackState: Int) {
-                            Log.d(TAG, "PlayerListener playbackStateChanged: $playbackState")
+                            Log.d(tag, "PlayerListener playbackStateChanged: $playbackState")
                             if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
                                 savePlaybackState()
                             }
@@ -1399,7 +1398,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) {
                             if (error != null) {
-                                Log.e(TAG, "Player error: ${error.message}", error)
+                                Log.e(tag, "Player error: ${error.message}", error)
 
                                 // Check if it's a file not found error (deleted track)
                                 val errorMessage = error.message ?: ""
@@ -1414,7 +1413,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                 ) {
 
                                     Log.w(
-                                        TAG,
+                                        tag,
                                         "Track file not found (likely deleted), skipping to next track"
                                     )
 
@@ -1427,7 +1426,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                         } else {
                                             // No next track, stop playback
                                             ctrl.stop()
-                                            Log.d(TAG, "No next track available, stopping playback")
+                                            Log.d(tag, "No next track available, stopping playback")
                                         }
                                     }
 
@@ -1437,7 +1436,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                 ) {
                                     val trackId = controller?.currentMediaItem?.mediaId ?: return
                                     Log.w(
-                                        TAG,
+                                        tag,
                                         "Stream URL expired (403) for track $trackId, refreshing..."
                                     )
 
@@ -1449,7 +1448,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                             if (track == null) {
                                                 Log.w(
-                                                    TAG,
+                                                    tag,
                                                     "Cannot handle 403: track $trackId not found in DB — skipping"
                                                 )
                                                 withContext(Dispatchers.Main) {
@@ -1471,7 +1470,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 // expired). Re-fetch from Spotify if online, else skip.
                                                 // ──────────────────────────────────────────────────────────
                                                 Log.w(
-                                                    TAG,
+                                                    tag,
                                                     "Non-stream track '${track.title}' got 403 (file missing?). " +
                                                             "spotifyId=${track.spotifyId}"
                                                 )
@@ -1490,7 +1489,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 if (isOffline) {
                                                     // Offline — can't re-download, skip gracefully
                                                     Log.w(
-                                                        TAG,
+                                                        tag,
                                                         "Device offline — skipping '${track.title}'"
                                                     )
                                                     withContext(Dispatchers.Main) {
@@ -1507,7 +1506,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                                 if (track.spotifyId == null) {
                                                     Log.w(
-                                                        TAG,
+                                                        tag,
                                                         "No spotifyId for '${track.title}' — skipping"
                                                     )
                                                     withContext(Dispatchers.Main) {
@@ -1524,7 +1523,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                                 try {
                                                     Log.d(
-                                                        TAG,
+                                                        tag,
                                                         "Re-downloading '${track.title}' (spotifyId=${track.spotifyId})"
                                                     )
                                                     val song = SpotifyApi.spotifyTrackToSong(
@@ -1533,7 +1532,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                     val redownloadedTrack =
                                                         musicService.smartDownloadAndIndex(song)
                                                     Log.d(
-                                                        TAG,
+                                                        tag,
                                                         "Re-downloaded '${track.title}' successfully"
                                                     )
 
@@ -1547,7 +1546,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                     }
                                                 } catch (downloadEx: Exception) {
                                                     Log.e(
-                                                        TAG,
+                                                        tag,
                                                         "Re-download failed for '${track.title}': ${downloadEx.message}"
                                                     )
                                                     withContext(Dispatchers.Main) {
@@ -1569,7 +1568,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                             // ──────────────────────────────────────────────────────────
                                             if (track.spotifyId == null) {
                                                 Log.w(
-                                                    TAG,
+                                                    tag,
                                                     "Cannot refresh stream: missing spotifyId for '${track.title}' — skipping"
                                                 )
                                                 withContext(Dispatchers.Main) {
@@ -1592,7 +1591,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 preferredUuid = track.uuid
                                             )
                                             Log.d(
-                                                TAG,
+                                                tag,
                                                 "Rebuilt Spotmate stream file for ${track.title}"
                                             )
 
@@ -1609,7 +1608,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 .getPlaylistsForTrack(track.uuid)
                                             if (playlists.isNotEmpty()) {
                                                 Log.d(
-                                                    TAG,
+                                                    tag,
                                                     "Track is in ${playlists.size} playlist(s) — scheduling background download"
                                                 )
                                                 scope.launch {
@@ -1625,12 +1624,12 @@ class PlaybackManager private constructor(private val context: Context) {
                                                             )
                                                         }
                                                         Log.d(
-                                                            TAG,
+                                                            tag,
                                                             "Promoted stream to download: ${downloadedTrack.title}"
                                                         )
                                                     } catch (e: Exception) {
                                                         Log.e(
-                                                            TAG,
+                                                            tag,
                                                             "Background download after stream refresh failed: ${e.message}"
                                                         )
                                                     }
@@ -1638,7 +1637,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                             }
                                         } catch (e: Exception) {
                                             Log.e(
-                                                TAG,
+                                                tag,
                                                 "Failed to handle 403 for track $trackId: ${e.message}",
                                                 e
                                             )
@@ -1657,8 +1656,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                         }
                                     }
                                 } else {
-                                    val trackId = controller?.currentMediaItem?.mediaId
-                                    if (trackId == null) return
+                                    val trackId = controller?.currentMediaItem?.mediaId ?: return
 
                                     scope.launch {
                                         try {
@@ -1674,7 +1672,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 (streamRecoveryAttempts[trackId] ?: 0) + 1
                                             if (attempts > maxStreamRecoveryAttempts) {
                                                 Log.w(
-                                                    TAG,
+                                                    tag,
                                                     "Stream recovery exceeded for ${track.title}, skipping to next"
                                                 )
                                                 withContext(Dispatchers.Main) {
@@ -1693,7 +1691,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                             streamRecoveryAttempts[trackId] = attempts
                                             Log.w(
-                                                TAG,
+                                                tag,
                                                 "Recovering stream after source error for ${track.title} (attempt $attempts/$maxStreamRecoveryAttempts)"
                                             )
 
@@ -1712,7 +1710,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                             }
                                         } catch (recoveryEx: Exception) {
                                             Log.e(
-                                                TAG,
+                                                tag,
                                                 "Generic stream recovery failed: ${recoveryEx.message}",
                                                 recoveryEx
                                             )
@@ -1733,7 +1731,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                 val currentIndex = controller?.currentMediaItemIndex ?: 0
                                 _currentQueueIndex.value = currentIndex
 
-                                Log.d(TAG, "Media item transition: $trackId at index $currentIndex")
+                                Log.d(tag, "Media item transition: $trackId at index $currentIndex")
                                 savePlaybackState()
 
                                 // Save queue structure to persist auto-added songs
@@ -1745,12 +1743,12 @@ class PlaybackManager private constructor(private val context: Context) {
                                 // Track song play in analytics
                                 scope.launch {
                                     try {
-                                        Log.d(TAG, "Analytics: Looking up track with ID: $trackId")
+                                        Log.d(tag, "Analytics: Looking up track with ID: $trackId")
                                         val track =
                                             database.trackDao().getTrackByUuid(trackId)?.toTrack()
                                         if (track != null) {
                                             Log.d(
-                                                TAG,
+                                                tag,
                                                 "Analytics: Found track '${track.title}' by ${track.artist}, calling trackSongPlayed"
                                             )
                                             AnalyticsManager.getInstance(context).trackSongPlayed(
@@ -1762,12 +1760,12 @@ class PlaybackManager private constructor(private val context: Context) {
                                             )
                                         } else {
                                             Log.w(
-                                                TAG,
+                                                tag,
                                                 "Analytics: Track not found in database for ID: $trackId"
                                             )
                                         }
                                     } catch (e: Exception) {
-                                        Log.e(TAG, "Error tracking song play: ${e.message}", e)
+                                        Log.e(tag, "Error tracking song play: ${e.message}", e)
                                     }
                                 }
                             }
@@ -1776,18 +1774,18 @@ class PlaybackManager private constructor(private val context: Context) {
                         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                             // ExoPlayer's native shuffle is never intentionally enabled.
                             // Shuffle is handled by pre-shuffling the track list before setQueue.
-                            Log.d(TAG, "Shuffle mode changed (internal): $shuffleModeEnabled")
+                            Log.d(tag, "Shuffle mode changed (internal): $shuffleModeEnabled")
                         }
 
                         override fun onRepeatModeChanged(repeatMode: Int) {
                             _repeatMode.value = repeatMode
-                            Log.d(TAG, "Repeat mode changed: $repeatMode")
+                            Log.d(tag, "Repeat mode changed: $repeatMode")
                         }
                     }
                     try {
                         controller?.addListener(playerListener!!)
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to add player listener: ${e.message}")
+                        Log.w(tag, "Failed to add player listener: ${e.message}")
                     }
 
                     // Start a small polling loop as a fallback to ensure external changes
@@ -1801,7 +1799,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                 if (playing != last) {
                                     _isPlaying.value = playing
-                                    Log.d(TAG, "Polled controller isPlaying: $playing")
+                                    Log.d(tag, "Polled controller isPlaying: $playing")
                                     last = playing
                                 }
 
@@ -1811,7 +1809,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                 }
                                 if (currentIndex != _currentQueueIndex.value) {
                                     _currentQueueIndex.value = currentIndex
-                                    Log.d(TAG, "Polled controller index updated: $currentIndex")
+                                    Log.d(tag, "Polled controller index updated: $currentIndex")
                                 }
 
                                 // Save position every 5 seconds when playing
@@ -1820,9 +1818,9 @@ class PlaybackManager private constructor(private val context: Context) {
                                         savePlaybackState()
                                     }
                                 }
-                                kotlinx.coroutines.delay(5000)
+                                kotlinx.coroutines.delay(5000.milliseconds)
                             } catch (e: Exception) {
-                                Log.w(TAG, "Polling loop error: ${e.message}")
+                                Log.w(tag, "Polling loop error: ${e.message}")
                                 break
                             }
                         }
@@ -1836,14 +1834,14 @@ class PlaybackManager private constructor(private val context: Context) {
                 MoreExecutors.directExecutor()
             )
 
-            Log.d(TAG, "PlaybackManager initialized")
+            Log.d(tag, "PlaybackManager initialized")
         }
     }
 
     fun playTrack(track: Track) {
         val mediaItem = createValidatedMediaItem(track)
         if (mediaItem == null) {
-            Log.e(TAG, "Cannot play track without local URI")
+            Log.e(tag, "Cannot play track without local URI")
             return
         }
 
@@ -1860,7 +1858,7 @@ class PlaybackManager private constructor(private val context: Context) {
         _currentTrackId.value = track.uuid
         _currentQueueIndex.value = 0
 
-        Log.d(TAG, "Playing track: ${track.title}")
+        Log.d(tag, "Playing track: ${track.title}")
     }
 
     @OptIn(UnstableApi::class)
@@ -1876,7 +1874,7 @@ class PlaybackManager private constructor(private val context: Context) {
             _isShuffleEnabled.value = false
         }
 
-        // Clear all disk cache when a brand new queue/song is played
+        // Clear all disk cache when a brand-new queue/song is played
         PlaybackService.StreamCacheManager.clearAllCache()
 
         val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
@@ -1902,7 +1900,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
 
         Log.d(
-            TAG,
+            tag,
             "Queue set with ${mediaItems.size} tracks, starting at index $startIndex pos $startPositionMs"
         )
 
@@ -1924,7 +1922,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
         if (mediaItems.isNotEmpty()) {
             controller?.addMediaItems(mediaItems)
-            Log.d(TAG, "Added ${mediaItems.size} tracks to queue")
+            Log.d(tag, "Added ${mediaItems.size} tracks to queue")
 
             // Save updated queue structure
             scope.launch {
@@ -1933,55 +1931,28 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    /**
-     * Insert a track at a specific position in the current queue without interrupting playback.
-     */
-    fun addToQueueAt(track: Track, index: Int): Boolean {
-        val mediaItem = createValidatedMediaItem(track)
-        if (mediaItem == null) {
-            Log.w(TAG, "Cannot enqueue track without local URI: ${track.title}")
-            return false
-        }
-
-        initialize()
-
-        controller?.let { ctrl ->
-            val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
-            ctrl.addMediaItem(targetIndex, mediaItem)
-            Log.d(TAG, "Inserted track ${track.title} at index $targetIndex")
-
-            // Save updated queue structure
-            scope.launch {
-                saveQueueStructure()
+    /** Moves or inserts library songs using the timeline API without clearing cache or resuming pause. */
+    fun placeLibraryTracks(tracks: List<Track>, next: Boolean): Boolean {
+        val ctrl = controller ?: return false
+        val incoming = tracks.distinctBy { it.uuid }.filterNot { it.uuid == ctrl.currentMediaItem?.mediaId }
+        val items = incoming.map { createValidatedMediaItem(it) ?: return false }
+        if (items.isEmpty()) return false
+        incoming.zip(items).forEachIndexed { placed, (track, item) ->
+            val matches = (0 until ctrl.mediaItemCount).filter { ctrl.getMediaItemAt(it).mediaId == track.uuid }
+            // Clean up duplicates left by earlier queue insertions without touching the current item.
+            matches.drop(1).asReversed().forEach { ctrl.removeMediaItem(it) }
+            val existing = (0 until ctrl.mediaItemCount).firstOrNull { ctrl.getMediaItemAt(it).mediaId == track.uuid }
+            val target = if (next) (ctrl.currentMediaItemIndex + 1 + placed).coerceIn(0, ctrl.mediaItemCount)
+                else ctrl.mediaItemCount
+            if (existing == null) ctrl.addMediaItem(target, item)
+            else {
+                val destination = (if (existing < target) target - 1 else target)
+                    .coerceIn(0, ctrl.mediaItemCount - 1)
+                if (existing != destination) ctrl.moveMediaItem(existing, destination)
             }
-            return true
         }
-
-        return false
-    }
-
-    /**
-     * Insert a list of tracks at a specific position in the current queue without interrupting playback.
-     */
-    fun addToQueueAt(tracks: List<Track>, index: Int): Boolean {
-        val mediaItems = tracks.mapNotNull { createValidatedMediaItem(it) }
-        if (mediaItems.isEmpty()) return false
-
-        initialize()
-
-        controller?.let { ctrl ->
-            val targetIndex = index.coerceIn(0, ctrl.mediaItemCount)
-            ctrl.addMediaItems(targetIndex, mediaItems)
-            Log.d(TAG, "Inserted ${mediaItems.size} tracks at index $targetIndex")
-
-            // Save updated queue structure
-            scope.launch {
-                saveQueueStructure()
-            }
-            return true
-        }
-
-        return false
+        scope.launch { saveQueueStructure() }
+        return true
     }
 
     fun setPlaybackSpeed(speed: Float) {
@@ -1992,10 +1963,10 @@ class PlaybackManager private constructor(private val context: Context) {
         controller?.let {
             if (it.isPlaying) {
                 it.pause()
-                Log.d(TAG, "Paused")
+                Log.d(tag, "Paused")
             } else {
                 it.play()
-                Log.d(TAG, "Playing")
+                Log.d(tag, "Playing")
             }
         }
     }
@@ -2024,7 +1995,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun skipToNext() {
         runTrackChangeStartingPlaybackIfTrackChanged { it.seekToNext() }
-        Log.d(TAG, "Skip to next")
+        Log.d(tag, "Skip to next")
     }
 
     fun skipToPrevious() {
@@ -2035,7 +2006,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 it.seekToPrevious()
             }
         }
-        Log.d(TAG, "Skip to previous")
+        Log.d(tag, "Skip to previous")
     }
 
     fun toggleShuffle() {
@@ -2043,7 +2014,7 @@ class PlaybackManager private constructor(private val context: Context) {
         _isShuffleEnabled.value = isNowEnabled
 
         if (!isNowEnabled) {
-            Log.d(TAG, "Shuffle disabled")
+            Log.d(tag, "Shuffle disabled")
             return
         }
 
@@ -2082,7 +2053,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
         }
 
-        Log.d(TAG, if (reordered) "Shuffle enabled" else "Shuffle enabled (nothing to reorder)")
+        Log.d(tag, if (reordered) "Shuffle enabled" else "Shuffle enabled (nothing to reorder)")
     }
 
     fun toggleRepeatMode() {
@@ -2095,7 +2066,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
             it.repeatMode = nextMode
             _repeatMode.value = nextMode
-            Log.d(TAG, "Repeat mode toggled to: $nextMode")
+            Log.d(tag, "Repeat mode toggled to: $nextMode")
         }
     }
 
@@ -2109,12 +2080,12 @@ class PlaybackManager private constructor(private val context: Context) {
             if (local != null && seekUsingLocalFile(ctrl, local, target)) return
             if (!ctrl.isCurrentMediaItemSeekable) {
                 streamSeekHandoff.defer(item.mediaId, target)
-                Log.d(TAG, "Waiting for local stream file to seek to $target ms")
+                Log.d(tag, "Waiting for local stream file to seek to $target ms")
                 return
             }
         }
         ctrl.seekTo(target)
-        Log.d(TAG, "Seeked to $target ms")
+        Log.d(tag, "Seeked to $target ms")
     }
 
     private fun seekUsingLocalFile(ctrl: MediaController, track: Track, positionMs: Long): Boolean {
@@ -2131,13 +2102,13 @@ class PlaybackManager private constructor(private val context: Context) {
         ctrl.setMediaItems(items, index, positionMs)
         ctrl.prepare()
         ctrl.playWhenReady = shouldPlay
-        Log.d(TAG, "Switched stream to local file for seek to $positionMs ms")
+        Log.d(tag, "Switched stream to local file for seek to $positionMs ms")
         return true
     }
 
     fun seekToIndex(index: Int) {
         runTrackChangePreservingPlayState { it.seekTo(index, 0L) }
-        Log.d(TAG, "Seeked to index $index")
+        Log.d(tag, "Seeked to index $index")
     }
 
     fun getCurrentPosition(): Long {
@@ -2176,7 +2147,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 ctrl.removeMediaItem(i)
             }
 
-            Log.d(TAG, "Kept only current track at original index $currentIndex")
+            Log.d(tag, "Kept only current track at original index $currentIndex")
 
             // Update local state flows to reflect the new state immediately
             if (_currentQueueIndex.value != 0) {
@@ -2187,19 +2158,6 @@ class PlaybackManager private constructor(private val context: Context) {
                 saveQueueStructure()
             }
         }
-    }
-
-    /**
-     * Correctly calculates remaining tracks in the current playback functionality.
-     * Returns how many tracks remain after the current one in the queue.
-     * ExoPlayer's native shuffle is always disabled (pre-shuffled lists are used instead),
-     * so remaining tracks = total − current − 1.
-     */
-    fun getRemainingTracksCount(): Int {
-        val ctrl = controller ?: return 0
-        val current = ctrl.currentMediaItemIndex
-        val total = ctrl.mediaItemCount
-        return if (current in 0 until total) total - current - 1 else 0
     }
 
     /**
@@ -2220,7 +2178,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
             // Use playlist API to avoid full re-prepare and reduce playback hiccup
             ctrl.removeMediaItem(index)
-            Log.d(TAG, "Removed track $mediaId from queue at index $index")
+            Log.d(tag, "Removed track $mediaId from queue at index $index")
 
             // Save updated queue structure
             scope.launch {
@@ -2251,7 +2209,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
             val newMediaItem = createValidatedMediaItem(newTrack)
             if (newMediaItem == null) {
-                Log.w(TAG, "Cannot replace track without valid media item: ${newTrack.title}")
+                Log.w(tag, "Cannot replace track without valid media item: ${newTrack.title}")
                 return false
             }
 
@@ -2264,7 +2222,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (pendingPosition != null) {
                     seekUsingLocalFile(ctrl, newTrack, pendingPosition)
                 } else {
-                    Log.d(TAG, "Deferred local stream handoff until user seeks: $oldMediaId")
+                    Log.d(tag, "Deferred local stream handoff until user seeks: $oldMediaId")
                 }
             } else {
                 // Atomic replacement prevents the timeline "blip" that causes queue duplication
@@ -2276,7 +2234,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 }
             }
 
-            Log.d(TAG, "Replaced track $oldMediaId with ${newTrack.uuid} at index $index")
+            Log.d(tag, "Replaced track $oldMediaId with ${newTrack.uuid} at index $index")
 
             // Save updated queue structure
             scope.launch {
@@ -2287,13 +2245,6 @@ class PlaybackManager private constructor(private val context: Context) {
         return false
     }
 
-    /**
-     * Move a track to a new position in the queue.
-     *
-     * @param fromIndex Current index of the track
-     * @param toIndex New index for the track
-     * @return true if the move was successful, false otherwise
-     */
     /**
      * Remove a deleted track from the queue to prevent playback errors.
      * Should be called when a track is deleted from the library.
@@ -2322,19 +2273,19 @@ class PlaybackManager private constructor(private val context: Context) {
             indicesToRemove.sortedDescending().forEach { index ->
                 PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(index).localConfiguration?.uri?.toString())
                 ctrl.removeMediaItem(index)
-                Log.d(TAG, "Removed deleted track from queue at index $index")
+                Log.d(tag, "Removed deleted track from queue at index $index")
             }
 
             // If the deleted track was playing, skip to next
             if (isCurrentTrack) {
-                Log.w(TAG, "Deleted track was currently playing, skipping to next")
+                Log.w(tag, "Deleted track was currently playing, skipping to next")
                 if (ctrl.hasNextMediaItem()) {
                     ctrl.prepare()
                     ctrl.play()
                 } else {
                     ctrl.stop()
                     _currentTrackId.value = null
-                    Log.d(TAG, "No next track available after deletion, stopping playback")
+                    Log.d(tag, "No next track available after deletion, stopping playback")
                 }
             }
 
@@ -2345,6 +2296,13 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Move a track to a new position in the queue.
+     *
+     * @param fromIndex Current index of the track
+     * @param toIndex New index for the track
+     * @return true if the move was successful, false otherwise
+     */
     fun moveInQueue(fromIndex: Int, toIndex: Int): Boolean {
         controller?.let { ctrl ->
             if (fromIndex < 0 || fromIndex >= ctrl.mediaItemCount ||
@@ -2355,7 +2313,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
             // Use playlist move to minimize playback interruption
             ctrl.moveMediaItem(fromIndex, toIndex)
-            Log.d(TAG, "Moved track from index $fromIndex to $toIndex via playlist API")
+            Log.d(tag, "Moved track from index $fromIndex to $toIndex via playlist API")
 
             // Save updated queue structure
             scope.launch {
@@ -2378,17 +2336,17 @@ class PlaybackManager private constructor(private val context: Context) {
             var remaining = durationMs
             while (remaining > 0) {
                 _sleepTimerRemaining.value = remaining
-                kotlinx.coroutines.delay(1000)
+                kotlinx.coroutines.delay(1000.milliseconds)
                 remaining -= 1000
             }
 
             // Timer finished - pause playback
             _sleepTimerRemaining.value = null
             controller?.pause()
-            Log.d(TAG, "Sleep timer finished - paused playback")
+            Log.d(tag, "Sleep timer finished - paused playback")
         }
 
-        Log.d(TAG, "Sleep timer started for $minutes minutes")
+        Log.d(tag, "Sleep timer started for $minutes minutes")
     }
 
     /**
@@ -2398,7 +2356,7 @@ class PlaybackManager private constructor(private val context: Context) {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         _sleepTimerRemaining.value = null
-        Log.d(TAG, "Sleep timer cancelled")
+        Log.d(tag, "Sleep timer cancelled")
     }
 
     fun release() {
@@ -2413,7 +2371,7 @@ class PlaybackManager private constructor(private val context: Context) {
         playerListener = null
         controller = null
         controllerFuture = null
-        Log.d(TAG, "PlaybackManager released")
+        Log.d(tag, "PlaybackManager released")
     }
 
     private fun savePlaybackState() {
@@ -2421,21 +2379,20 @@ class PlaybackManager private constructor(private val context: Context) {
             val position = controller?.currentPosition ?: 0L
             val currentIndex = controller?.currentMediaItemIndex ?: -1
 
-            prefs.edit().apply {
+            prefs.edit {
                 putLong("playback_position", position)
                 putInt("queue_start_index", currentIndex)
-                apply()
             }
-            Log.d(TAG, "Saved playback state: position=$position, index=$currentIndex")
+            Log.d(tag, "Saved playback state: position=$position, index=$currentIndex")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save playback state: ${e.message}")
+            Log.e(tag, "Failed to save playback state: ${e.message}")
         }
     }
 
     private suspend fun saveQueueStructure() {
         try {
             val trackIds = withContext(Dispatchers.Main) {
-                val ctrl = controller ?: return@withContext emptyList<String>()
+                val ctrl = controller ?: return@withContext emptyList()
                 val count = ctrl.mediaItemCount
                 (0 until count).map { i ->
                     ctrl.getMediaItemAt(i).mediaId
@@ -2450,29 +2407,28 @@ class PlaybackManager private constructor(private val context: Context) {
             val currentPosition =
                 withContext(Dispatchers.Main) { controller?.currentPosition ?: 0L }
 
-            prefs.edit().apply {
+            prefs.edit {
                 putString("queue_track_ids", idsString)
                 putInt("queue_start_index", currentIndex)
                 putLong("playback_position", currentPosition)
                 putBoolean("has_saved_state", true)
-                apply()
             }
-            Log.d(TAG, "Saved queue structure: ${trackIds.size} tracks")
+            Log.d(tag, "Saved queue structure: ${trackIds.size} tracks")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save queue structure: ${e.message}")
+            Log.e(tag, "Failed to save queue structure: ${e.message}")
         }
     }
 
     private suspend fun restorePlaybackState() {
         try {
             if (!prefs.getBoolean("has_saved_state", false)) {
-                Log.d(TAG, "No saved playback state found")
+                Log.d(tag, "No saved playback state found")
                 return
             }
 
             val trackIds = prefs.getString("queue_track_ids", "") ?: ""
             if (trackIds.isEmpty()) {
-                Log.d(TAG, "No saved queue found")
+                Log.d(tag, "No saved queue found")
                 return
             }
 
@@ -2500,22 +2456,21 @@ class PlaybackManager private constructor(private val context: Context) {
 
                             if (!fileExists) {
                                 Log.d(
-                                    TAG,
+                                    tag,
                                     "Stream file missing for '${track.title}', re-resolving..."
                                 )
                                 try {
-                                    "https://open.spotify.com/track/${track.spotifyId}"
                                     val song =
-                                        SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId!!))
+                                        SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId))
                                     val refreshed =
                                         musicService.streamTrack(song, preferredUuid = track.uuid)
                                     // Update DB with new localUri
                                     database.trackDao().insertTrack(refreshed.toEntity())
                                     track = refreshed
-                                    Log.d(TAG, "Re-resolved stream for '${track.title}'")
+                                    Log.d(tag, "Re-resolved stream for '${track.title}'")
                                 } catch (e: Exception) {
                                     Log.w(
-                                        TAG,
+                                        tag,
                                         "Failed to re-resolve stream for '${track.title}': ${e.message}"
                                     )
                                     // Keep the track in the queue anyway for metadata display;
@@ -2527,19 +2482,19 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         track
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to load track $id: ${e.message}")
+                        Log.e(tag, "Failed to load track $id: ${e.message}")
                         null
                     }
                 }
             }
 
             if (tracks.isEmpty()) {
-                Log.d(TAG, "No tracks found in database for saved queue")
+                Log.d(tag, "No tracks found in database for saved queue")
                 return
             }
 
             Log.d(
-                TAG,
+                tag,
                 "Restoring playback state: ${tracks.size} tracks, index=$savedIndex, position=$savedPosition"
             )
 
@@ -2548,7 +2503,7 @@ class PlaybackManager private constructor(private val context: Context) {
             val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
 
             if (mediaItems.isEmpty()) {
-                Log.d(TAG, "No playable media items could be created from saved queue")
+                Log.d(tag, "No playable media items could be created from saved queue")
                 return
             }
 
@@ -2580,11 +2535,11 @@ class PlaybackManager private constructor(private val context: Context) {
                 }
 
                 _hasRestoredState.value = true
-                Log.d(TAG, "Playback state restored successfully")
+                Log.d(tag, "Playback state restored successfully")
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to restore playback state: ${e.message}", e)
+            Log.e(tag, "Failed to restore playback state: ${e.message}", e)
         }
     }
 }

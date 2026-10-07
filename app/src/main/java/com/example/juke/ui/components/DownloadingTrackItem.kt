@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -26,10 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -142,7 +140,7 @@ fun CompactDownloadBanner(
 
                 Spacer(modifier = Modifier.width(8.dp))
                 Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    imageVector = if (expanded) JukeIcons.ChevronUp else JukeIcons.ChevronDown,
                     contentDescription = if (expanded) "Collapse" else "Expand",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
@@ -181,7 +179,7 @@ fun CompactDownloadBanner(
                             onAction = if (it.status == DownloadStatus.FAILED) {
                                 { onRetryDownload(it) }
                             } else null,
-                            actionIcon = if (it.status == DownloadStatus.FAILED) Icons.Default.Refresh else null
+                            actionIcon = if (it.status == DownloadStatus.FAILED) JukeIcons.Refresh else null
                         )
                     }
 
@@ -194,7 +192,7 @@ fun CompactDownloadBanner(
                             status = item.status,
                             statusLabel = "Queued",
                             onAction = { onCancelDownload(item.id) },
-                            actionIcon = Icons.Default.Close
+                            actionIcon = JukeIcons.Close
                         )
                     }
 
@@ -311,37 +309,4 @@ private fun CompactDownloadRow(
             }
         }
     }
-}
-
-// ── Legacy single-item composable kept for any other call sites ──────────────
-@Composable
-fun DownloadingTrackItem(
-    downloadItem: DownloadItem,
-    onCancel: () -> Unit = {},
-    onRetry: () -> Unit = {},
-    @SuppressLint("ModifierParameter") modifier: Modifier = Modifier
-) {
-    LocalHapticFeedback.current
-    CompactDownloadRow(
-        title = downloadItem.song.title,
-        artist = downloadItem.song.artist,
-        thumbnail = downloadItem.song.thumbnail,
-        status = downloadItem.status,
-        statusLabel = when (downloadItem.status) {
-            DownloadStatus.DOWNLOADING -> "Downloading…"
-            DownloadStatus.QUEUED -> "Queued"
-            DownloadStatus.FAILED -> downloadItem.error ?: "Failed"
-            DownloadStatus.COMPLETED -> "Done"
-        },
-        onAction = when (downloadItem.status) {
-            DownloadStatus.FAILED -> onRetry
-            DownloadStatus.QUEUED -> onCancel
-            else -> null
-        },
-        actionIcon = when (downloadItem.status) {
-            DownloadStatus.FAILED -> Icons.Default.Refresh
-            DownloadStatus.QUEUED -> Icons.Default.Close
-            else -> null
-        }
-    )
 }

@@ -1,13 +1,10 @@
 package com.example.juke.ui.components
 
-import com.example.juke.ui.theme.GlassShapes
-import com.example.juke.ui.theme.GlassCard
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,15 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material3.Icon
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.draw.clip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,26 +29,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
 import com.example.juke.utils.rememberJukeHaptics
+import kotlin.time.Duration.Companion.milliseconds
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LibraryTrackItem(
     track: Track,
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    modifier: Modifier = Modifier,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
-    onPlay: () -> Unit,
     onLongClick: () -> Unit = {},
-    onToggleFavorite: () -> Unit,
     onTrailingIconClick: () -> Unit = {},
-    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.MoreVert,
-    modifier: Modifier = Modifier
+    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = JukeIcons.More
 ) {
     var isFavoritePressed by remember { mutableStateOf(false) }
     val favoriteScale by animateFloatAsState(
@@ -102,7 +94,7 @@ fun LibraryTrackItem(
                     )
                 } else {
                     Icon(
-                        Icons.Default.PlayArrow,
+                        JukeIcons.Play,
                         contentDescription = null,
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -122,7 +114,7 @@ fun LibraryTrackItem(
                     ) {
                         if (isSelected) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                imageVector = JukeIcons.Check,
                                 contentDescription = "Selected",
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(26.dp)
@@ -164,7 +156,7 @@ fun LibraryTrackItem(
                     modifier = Modifier.scale(favoriteScale)
                 ) {
                     Icon(
-                        if (track.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
                         contentDescription = if (track.isFavourite) "Remove from favorites" else "Add to favorites",
                         tint = if (track.isFavourite) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -174,13 +166,11 @@ fun LibraryTrackItem(
                 IconButton(onClick = onTrailingIconClick) {
                     Icon(
                         imageVector = trailingIcon,
-                        contentDescription = "Action",
+                        contentDescription = "More actions for ${track.title}",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.size(20.dp)
                     )
                 }
-            } else {
-                Spacer(modifier = Modifier.width(96.dp))
             }
         }
         HorizontalDivider(
@@ -192,7 +182,7 @@ fun LibraryTrackItem(
 
     LaunchedEffect(isFavoritePressed) {
         if (isFavoritePressed) {
-            kotlinx.coroutines.delay(150)
+            kotlinx.coroutines.delay(150.milliseconds)
             isFavoritePressed = false
         }
     }

@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.annotation.SuppressLint
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -16,9 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
@@ -43,12 +42,12 @@ import com.example.juke.ui.theme.LocalGlassAccent
 import com.example.juke.ui.theme.isGlassDark
 import com.example.juke.utils.rememberJukeHaptics
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeToAddNextContainer(
     onAddNext: () -> Unit,
     onDelete: (() -> Unit)? = null,
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
     val haptic = rememberJukeHaptics()
@@ -62,6 +61,7 @@ fun SwipeToAddNextContainer(
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { distance -> distance * 0.65f },
         confirmValueChange = { value ->
+            if (!enabled) return@rememberSwipeToDismissBoxState false
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
                     if (!actionFired.value) {
@@ -96,7 +96,8 @@ fun SwipeToAddNextContainer(
 
     SwipeToDismissBox(
         state = dismissState,
-        enableDismissFromEndToStart = onDelete != null,
+        enableDismissFromStartToEnd = enabled,
+        enableDismissFromEndToStart = enabled && onDelete != null,
         backgroundContent = {
             // No opaque fill: a tinted glow that lights up from behind the sliding glass card.
             val direction = dismissState.dismissDirection
@@ -142,11 +143,11 @@ fun SwipeToAddNextContainer(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             if (toEnd) {
-                                Icon(Icons.Filled.PlayArrow, contentDescription = "Add next", tint = onGlow)
+                                Icon(JukeIcons.Play, contentDescription = "Add next", tint = onGlow)
                                 Text("Add to queue next", style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
                             } else {
                                 Text("Delete", style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = onGlow)
+                                Icon(JukeIcons.Delete, contentDescription = "Delete", tint = onGlow)
                             }
                         }
                     }

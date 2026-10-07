@@ -42,7 +42,7 @@
 **Critical:**
 - Kotlin Coroutines [1.8.1] - Asynchronous programming (`gradle/libs.versions.toml` line 11, used extensively in `AnalyticsManager.kt`)
 - Ktor Client [3.0.0] - HTTP client for network requests (`gradle/libs.versions.toml` lines 13, 50-55, used in `ApiClient.kt`)
-- Room Database [2.6.1] - SQLite object mapping library (`gradle/libs.versions.toml` line 14, used in `MusicDatabase.kt`)
+- Room Database [2.8.5] - SQLite object mapping library (`gradle/libs.versions.toml` line 14, used in `MusicDatabase.kt`)
 - Media3 [1.5.0] - Media playback library (`gradle/libs.versions.toml` line 15, used for audio playback)
 - Coil [2.7.0] - Image loading library (`gradle/libs.versions.toml` line 16, used for album art)
 - Gson [2.10.1] - JSON serialization (`gradle/libs.versions.toml` line 18, used in `AnalyticsManager.kt`)

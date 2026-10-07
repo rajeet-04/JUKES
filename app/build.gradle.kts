@@ -3,7 +3,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
@@ -93,11 +92,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
-        }
-    }
     packaging {
         resources {
             // Build metadata the app never reads at runtime.
@@ -170,7 +164,7 @@ dependencies {
     implementation(libs.gson)
 
     // PostHog
-    implementation("com.posthog:posthog-android:3.40.2")
+    implementation("com.posthog:posthog-android:3.71.4")
 
     testImplementation(libs.junit)
     testImplementation(libs.ktor.client.mock)

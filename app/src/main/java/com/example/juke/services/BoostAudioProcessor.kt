@@ -13,6 +13,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tanh
+import kotlin.math.withSign
 
 /**
  * Volume + bass boost applied to the PCM inside ExoPlayer's own audio sink, so it works on every
@@ -135,7 +136,7 @@ class BoostAudioProcessor : BaseAudioProcessor() {
             for (ch in 0 until channels) {
                 var x = frame[ch] * gain
                 val ax = abs(x)
-                if (ax > 0.8f) x = Math.copySign(0.8f + 0.2f * tanh((ax - 0.8f) / 0.2f), x)
+                if (ax > 0.8f) x = (0.8f + 0.2f * tanh((ax - 0.8f) / 0.2f)).withSign(x)
                 out.putShort((x * 32767f).toInt().coerceIn(-32768, 32767).toShort())
             }
         }

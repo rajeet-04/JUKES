@@ -2,8 +2,12 @@ name: Android CI
 
 on:
   push:
-    branches: [beta, main]
+    branches: [beta, main, library_screen-revamp]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -13,11 +17,43 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # Use the JDK installed above rather than downloading the pinned daemon JDK.
+      - name: Use installed CI JDK
+        run: rm gradle/gradle-daemon-jvm.properties
       # The build reads these from local.properties; CI only needs placeholders to compile.
       - name: Placeholder secrets
         run: |
           echo "SPOTIFY_CLIENT_ID=ci" >> local.properties
           echo "SPOTIFY_CLIENT_SECRET=ci" >> local.properties
       - run: sh ./gradlew test assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JUKES-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  publish-testing-apk:
+    if: github.ref == 'refs/heads/library_screen-revamp' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: JUKES-debug-${{ github.sha }}
+      - name: Publish Android download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          cp app-debug.apk JUKES-library-screen-revamp-debug.apk
+          gh release create "library-screen-revamp-test-${RUN_NUMBER}" \
+            JUKES-library-screen-revamp-debug.apk \
+            --target "$COMMIT_SHA" --prerelease --latest=false \
+            --title "Library screen revamp — test build ${RUN_NUMBER}" \
+            --notes "Debug APK for library_screen-revamp at ${COMMIT_SHA}. Unit tests passed before publishing. Spotify credentials are CI placeholders; Spotify features are limited."

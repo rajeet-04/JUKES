@@ -13,9 +13,6 @@ import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.max
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 
 /**
  * YouTube Music Recommender API Service.
@@ -241,7 +238,7 @@ object RecommenderApi {
      * e.g., "Song Name (feat. Artist)" -> "Song Name"
      */
     private fun cleanTitle(title: String): String {
-        return title.replace(Regex("\\s*[\\(\\[].*?[\\)\\]]"), "").trim()
+        return title.replace(Regex("\\s*[(\\[].*?[)\\]]"), "").trim()
     }
 
     /**
@@ -307,7 +304,7 @@ object RecommenderApi {
 
                 else -> null
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Log.w(TAG, "Failed to parse duration: $durationStr")
             null
         }
@@ -321,11 +318,6 @@ object RecommenderApi {
         if (youtubeDuration == null || spotifyDuration == null) return 0.3 // Lower neutral score
 
         val diff = abs(youtubeDuration - spotifyDuration)
-        val maxDuration = maxOf(youtubeDuration, spotifyDuration)
-
-        // Calculate similarity as percentage difference
-        1.0 - (diff.toDouble() / maxDuration.toDouble())
-
         // Apply stricter thresholds
         return when {
             diff <= 15 -> 1.0    // Within 15 seconds = perfect match
@@ -478,7 +470,7 @@ object RecommenderApi {
             ranked.map { it.first.id }
 
         } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e // cancelled (e.g. a new song started), not a failure
+            throw e // canceled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Search Network error: ${e.message}", e)
             emptyList()
@@ -500,7 +492,7 @@ object RecommenderApi {
 
     /** Match one YouTube Music item to its Spotify track (null if no confident match). */
     suspend fun matchOnSpotify(rec: YouTubeRecommendation): ValidatedRecommendation? =
-        validateSingleRecommendation(rec, ytIndex = 0, totalRecs = 1)
+        validateSingleRecommendation(rec, ytIndex = 0)
 
     /**
      * Fetch full radio queue recommendations from YouTube Music.
@@ -670,12 +662,10 @@ object RecommenderApi {
      *
      * @param rec The YouTube recommendation to validate
      * @param ytIndex The original index in the YouTube recommendations list
-     * @param totalRecs Total number of recommendations (for logging context)
      */
     private suspend fun validateSingleRecommendation(
         rec: YouTubeRecommendation,
-        ytIndex: Int,
-        totalRecs: Int
+        ytIndex: Int
     ): ValidatedRecommendation? {
         try {
             // Search Spotify
@@ -756,7 +746,7 @@ object RecommenderApi {
                     youtubeVideoId = rec.id,
                     title = bestMatch.name,
                     artist = bestMatch.artists.joinToString(", ") { it.name },
-                    spotifyUrl = bestMatch.externalUrls.spotify!!,
+                    spotifyUrl = bestMatch.externalUrls.spotify,
                     confidence = bestConfidence,
                     isOfficial = officialScore > 0.0,
                     durationSec = (bestMatch.durationMs / 1000).toInt(),
@@ -771,95 +761,13 @@ object RecommenderApi {
         } catch (e: OfflineException) {
             throw e // Propagate offline to stop all batches
         } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e // cancelled (e.g. a new song started), not a failure
+            throw e // canceled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error validating ${rec.title}: ${e.message}", e)
         }
         return null
     }
 
-
-    /**
-     * Test method to debug video selection scoring.
-     * Returns all items with their scores for analysis.
-     */
-    suspend fun debugVideoSelection(songName: String): List<Triple<String, String, Double>> {
-        Log.d(TAG, "debugVideoSelection called with songName: \"$songName\"")
-
-        return try {
-            val response = ApiClient.httpClient.post(SEARCH_URL) {
-                contentType(ContentType.Application.Json)
-                setBody(SearchRequest(query = songName))
-            }
-
-            val searchResponse: SearchResponse = response.body()
-            val items = searchResponse.items
-
-            val queryLower = songName.lowercase()
-            val queryWords = queryLower.split("\\s+".toRegex()).filter { it.length > 1 }
-
-            val scoredItems = items.mapIndexed { index, item ->
-                val titleLower = item.title.lowercase()
-
-                // Skip spam content
-                if (isSpamOrVariant(item.title) != null) {
-                    return@mapIndexed Triple(item.id, item.title, -1.0)
-                }
-
-                // Calculate comprehensive score
-                var score = 0.0
-
-                // Position bonus (earlier results are better)
-                val positionBonus = maxOf(0.0, 10.0 - index * 0.5)
-                score += positionBonus
-
-                // Title similarity
-                val rawTitleSim = similarity(queryLower, titleLower)
-                val cleanTitleSim = similarity(cleanTitle(queryLower), cleanTitle(titleLower))
-                val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
-                score += titleSimilarity * 30.0
-
-                // Word match bonus
-                var wordMatches = 0
-                queryWords.forEach { word ->
-                    if (titleLower.contains(word)) {
-                        wordMatches++
-                    }
-                }
-                score += wordMatches * 5.0
-
-                // Length similarity bonus
-                val titleWords = titleLower.split("\\s+".toRegex()).size
-                val lengthDiff = abs(queryWords.size - titleWords)
-                score += maxOf(0.0, 5.0 - lengthDiff)
-
-                // Prefer titles that look like official music videos
-                if (titleLower.contains("official") || titleLower.contains("music video") ||
-                    titleLower.contains("prod by") || titleLower.contains("ft.")
-                ) {
-                    score += 10.0
-                }
-
-                // Prefer titles without extra qualifiers
-                val badIndicators = listOf(
-                    "lyrics", "remix", "cover", "live", "acoustic",
-                    "slowed", "reverb", "8d", "reaction", "tutorial"
-                )
-                val hasBadIndicator = badIndicators.any { titleLower.contains(it) }
-                if (!hasBadIndicator) {
-                    score += 5.0
-                }
-
-                Triple(item.id, item.title, score)
-            }
-
-            scoredItems.sortedByDescending { it.third }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Debug search error: ${e.message}", e)
-            emptyList()
-        }
-    }
 
     /**
      * Validated recommendation with Spotify link.

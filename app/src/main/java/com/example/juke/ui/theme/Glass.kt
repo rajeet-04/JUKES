@@ -1,21 +1,10 @@
 package com.example.juke.ui.theme
 
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
 import android.os.Build
 import android.view.WindowManager
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -24,23 +13,25 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.ClipOp
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
@@ -51,9 +42,6 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Liquid glass design system for JUKE.
@@ -192,8 +180,8 @@ fun Modifier.glassPane(
 
 /**
  * AGSL lens refraction (Android 13+). Content near the lens edge is pulled in from further toward
- * the centre (magnifying rim), split slightly per colour channel, and the effect swells with
- * [strength] while the lens is moving.
+ * the center (magnifying rim), split slightly per color channel, and the effect swells with
+ * the `strength` uniform while the lens is moving.
  */
 private const val LENS_AGSL = """
 uniform shader content;
@@ -216,7 +204,7 @@ half4 main(float2 fc) {
     float2 dir = p / max(length(p), 1.0);
     float2 base = c + p * (1.0 - 0.06 * (0.4 + strength));
     float2 pull = -dir * bend * 16.0;
-    // Colour fringing only while the glass moves; at rest it is clear.
+    // Color fringing only while the glass moves; at rest it is clear.
     half4 g = content.eval(base + pull);
     half r = content.eval(base + pull * (1.0 - 0.15 * strength)).r;
     half b = content.eval(base + pull * (1.0 + 0.2 * strength)).b;
@@ -311,7 +299,6 @@ fun Modifier.glassFloat(
     val dark = isGlassDark()
     val spec = level.spec(dark)
     val base = glassBase(tint ?: LocalGlassAccent.current, dark)
-    val hazeState = source
     val style = remember(base, spec) {
         HazeStyle(
             backgroundColor = Color.Transparent,
@@ -325,29 +312,13 @@ fun Modifier.glassFloat(
         .glassShadow(shape, spec.elevation, 0.36f)
         .clip(shape)
         .then(
-            if (hazeState != null && !GlassPrefs.solid) Modifier.hazeEffect(hazeState, style)
+            if (source != null && !GlassPrefs.solid) Modifier.hazeEffect(source, style)
             else Modifier.background(
                 if (GlassPrefs.solid) solidBase(base, tint ?: LocalGlassAccent.current, dark).copy(alpha = 0.96f)
                 else base.copy(alpha = (spec.fill + 0.30f).coerceAtMost(0.9f))
             )
         )
         .glassRim(shape, spec.rimAlpha, dark)
-}
-
-/** A glass container. Content color follows the scheme so text keeps AA contrast on the field. */
-@Composable
-fun GlassSurface(
-    modifier: Modifier = Modifier,
-    shape: Shape = GlassShapes.Card,
-    level: GlassLevel = GlassLevel.Regular,
-    floating: Boolean = false,
-    tint: Color? = null,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    val m = if (floating) Modifier.glassFloat(shape, level, tint) else Modifier.glassPane(shape, level, tint)
-    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-        Box(modifier = modifier.then(m), content = content)
-    }
 }
 
 /** The one app backdrop: true black in dark, a soft off-white in light. No gradients, no motion. */

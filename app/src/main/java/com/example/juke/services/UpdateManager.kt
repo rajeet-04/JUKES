@@ -5,12 +5,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.core.content.FileProvider
 import com.example.juke.BuildConfig
 import com.example.juke.models.GithubRelease
@@ -74,10 +74,9 @@ object UpdateManager {
             val latestRelease = releases.first()
 
             // Clean up version strings (remove 'v' prefix)
-            val currentVersion = BuildConfig.VERSION_NAME // e.g., "1.0.1-beta"
             val latestVersionTag = latestRelease.tagName.removePrefix("v") // e.g., "1.0.2"
 
-            if (isNewer(currentVersion, latestVersionTag)) {
+            if (isNewer(latestVersionTag)) {
                 return@withContext latestRelease
             }
         } catch (e: Exception) {
@@ -102,7 +101,7 @@ object UpdateManager {
         return try {
             val appContext = context.applicationContext
             val fileName = resolveDownloadFileName(asset.name, release.tagName)
-            val request = DownloadManager.Request(Uri.parse(asset.browserDownloadUrl)).apply {
+            val request = DownloadManager.Request(asset.browserDownloadUrl.toUri()).apply {
                 setTitle("Downloading JUKE Update")
                 setDescription("Fetching ${release.tagName}...")
                 setMimeType(APK_MIME_TYPE)
@@ -144,10 +143,7 @@ object UpdateManager {
             return false
         }
 
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !context.packageManager.canRequestPackageInstalls()
-        ) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
             Toast.makeText(
                 context,
                 "Allow installs from JUKE to continue.",
@@ -155,7 +151,7 @@ object UpdateManager {
             ).show()
             val settingsIntent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${context.packageName}")
+                "package:${context.packageName}".toUri()
             ).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -205,11 +201,11 @@ object UpdateManager {
     }
 
     /**
-     * Compares two version strings.
-     * Returns true if [remote] is newer than [current].
+     * Returns true if [remote] is newer than the installed [BuildConfig.VERSION_NAME].
      * Handles standard SemVer (1.0.0 vs 1.0.1) and basic suffixes.
      */
-    private fun isNewer(current: String, remote: String): Boolean {
+    private fun isNewer(remote: String): Boolean {
+        val current = BuildConfig.VERSION_NAME
         // Simple normalization: ignore suffixes for the main number check
         // Real implementation might need complex SemVer parsing if you mix betas and stable often
         val currClean = current.split("-")[0]
@@ -261,12 +257,9 @@ object UpdateManager {
         }
 
         val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            context.registerReceiver(downloadReceiver, filter)
-        }
+        // DownloadManager broadcasts originate outside this app. Only the active download ID is
+        // accepted, and its completion status is verified through DownloadManager before use.
+        ContextCompat.registerReceiver(context, downloadReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
     private fun handleDownloadComplete(context: Context, downloadId: Long) {

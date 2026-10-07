@@ -5,8 +5,6 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
-import androidx.room.Insert
-import androidx.room.Upsert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RawQuery
@@ -14,6 +12,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.Upsert
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteQuery
@@ -230,7 +229,7 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10
                     )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
                 INSTANCE = instance
                 instance

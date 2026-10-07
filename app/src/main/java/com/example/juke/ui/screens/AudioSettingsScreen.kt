@@ -1,16 +1,11 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.components.GlassButton
-import com.example.juke.ui.components.GlassTopAppBar
-import com.example.juke.ui.components.GlassAlertDialog
-import com.example.juke.ui.theme.GlassCard
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
+import com.example.juke.ui.icons.JukeIcons
+
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,74 +13,62 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatterySaver
-import androidx.core.content.edit
 import androidx.compose.material.icons.rounded.CloudSync
-import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Lyrics
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.ui.draw.alpha
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juke.network.SpotifyApi
+import com.example.juke.ui.components.GlassAlertDialog
+import com.example.juke.ui.components.GlassButton
+import com.example.juke.ui.components.GlassTopAppBar
+import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.BlacklistManager
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioSettingsScreen(
     musicViewModel: MusicViewModel,
@@ -103,7 +86,7 @@ fun AudioSettingsScreen(
     val recommendationCount by musicViewModel.recommendationCount.collectAsStateWithLifecycle()
     val haptic = rememberJukeHaptics()
     // Power Tools stay locked until the version line is tapped 7 times (like Android's developer options).
-    val powerCtx = androidx.compose.ui.platform.LocalContext.current
+    val powerCtx = LocalContext.current
     val powerPrefs = remember { powerCtx.getSharedPreferences("power_prefs", android.content.Context.MODE_PRIVATE) }
     var powerUnlocked by remember { mutableStateOf(powerPrefs.getBoolean("power_tools_unlocked", false)) }
     val audioPrefs = remember { powerCtx.getSharedPreferences("audio_effects_prefs", android.content.Context.MODE_PRIVATE) }
@@ -128,7 +111,7 @@ fun AudioSettingsScreen(
                 title = { Text("Audio Control", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(JukeIcons.Back, "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 })
 
@@ -167,10 +150,7 @@ fun AudioSettingsScreen(
                                             musicViewModel.toggleStreamMode(it)
                                         }
                                     )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.Transparent
-                                )
+                                }
                             )
 
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
@@ -187,7 +167,7 @@ fun AudioSettingsScreen(
                                     Text("Keep loudness steady across tracks")
                                 },
                                 leadingContent = {
-                                    Icon(Icons.Rounded.GraphicEq, contentDescription = null)
+                                    Icon(JukeIcons.Equalizer, contentDescription = null)
                                 },
                                 trailingContent = {
                                     Switch(
@@ -197,10 +177,7 @@ fun AudioSettingsScreen(
                                             musicViewModel.toggleVolumeNormalization(it)
                                         }
                                     )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.Transparent
-                                )
+                                }
                             )
 
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
@@ -217,7 +194,7 @@ fun AudioSettingsScreen(
                                     Text("Trim quiet intros and outros")
                                 },
                                 leadingContent = {
-                                    Icon(Icons.Rounded.SkipNext, contentDescription = null)
+                                    Icon(JukeIcons.Next, contentDescription = null)
                                 },
                                 trailingContent = {
                                     Switch(
@@ -227,10 +204,7 @@ fun AudioSettingsScreen(
                                             musicViewModel.toggleSkipSilence(it)
                                         }
                                     )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.Transparent
-                                )
+                                }
                             )
 
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
@@ -264,10 +238,7 @@ fun AudioSettingsScreen(
                                             audioPrefs.edit { putBoolean("battery_saver_playback", it) }
                                         }
                                     )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.Transparent
-                                )
+                                }
                             )
 
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
@@ -284,7 +255,7 @@ fun AudioSettingsScreen(
                                     Text("Show synced lyrics directly in the mini-player")
                                 },
                                 leadingContent = {
-                                    Icon(Icons.Rounded.Lyrics, contentDescription = null)
+                                    Icon(JukeIcons.Lyrics, contentDescription = null)
                                 },
                                 trailingContent = {
                                     Switch(
@@ -294,10 +265,7 @@ fun AudioSettingsScreen(
                                             musicViewModel.toggleMiniPlayerLyrics(it)
                                         }
                                     )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.Transparent
-                                )
+                                }
                             )
                         }
                     }
@@ -329,10 +297,7 @@ fun AudioSettingsScreen(
                                             musicViewModel.toggleVolumeBooster(it)
                                         }
                                     )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.Transparent
-                                )
+                                }
                             )
 
                             AnimatedVisibility(
@@ -382,7 +347,7 @@ fun AudioSettingsScreen(
                 }
 
                 item {
-                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    val ctx = LocalContext.current
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         CompactItem(
                             headlineContent = {
@@ -393,7 +358,7 @@ fun AudioSettingsScreen(
                                 )
                             },
                             supportingContent = { Text("Turn off blur and transparency") },
-                            leadingContent = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
+                            leadingContent = { Icon(JukeIcons.Equalizer, contentDescription = null) },
                             trailingContent = {
                                 Switch(
                                     checked = com.example.juke.ui.theme.GlassPrefs.solid,
@@ -401,7 +366,7 @@ fun AudioSettingsScreen(
                                         haptic.toggle()
                                         com.example.juke.ui.theme.GlassPrefs.solid = it
                                         ctx.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE)
-                                            .edit().putBoolean("solid_surfaces", it).apply()
+                                            .edit { putBoolean("solid_surfaces", it) }
                                     }
                                 )
                             }
@@ -426,10 +391,7 @@ fun AudioSettingsScreen(
                                 },
                                 leadingContent = {
                                     Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.Transparent
-                                )
+                                }
                             )
 
                             Column(
@@ -616,7 +578,7 @@ fun AudioSettingsScreen(
                                             modifier = Modifier.size(36.dp)
                                         ) {
                                             Icon(
-                                                Icons.Default.Close,
+                                                JukeIcons.Close,
                                                 contentDescription = "Unblock $artist",
                                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                                 modifier = Modifier.size(18.dp)
@@ -647,7 +609,7 @@ fun AudioSettingsScreen(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(
-                                    Icons.Default.Delete,
+                                    JukeIcons.Delete,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(24.dp)
@@ -667,7 +629,7 @@ fun AudioSettingsScreen(
                                 }
                             }
                             Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
+                                JukeIcons.Forward,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -711,7 +673,7 @@ fun AudioSettingsScreen(
                             },
                             trailingContent = {
                                 if (powerUnlocked) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Icon(JukeIcons.Forward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         )
@@ -747,7 +709,7 @@ fun AudioSettingsScreen(
                                     val left = 7 - versionTaps
                                     if (left <= 0) {
                                         powerUnlocked = true
-                                        powerPrefs.edit().putBoolean("power_tools_unlocked", true).apply()
+                                        powerPrefs.edit { putBoolean("power_tools_unlocked", true) }
                                         haptic.confirm()
                                         android.widget.Toast.makeText(powerCtx, "Power Tools unlocked", android.widget.Toast.LENGTH_SHORT).show()
                                     } else if (versionTaps >= 3) {
@@ -815,6 +777,9 @@ private fun MarketCodeDialog(
     var searchQuery by remember { mutableStateOf("") }
     val haptic = rememberJukeHaptics()
 
+    val windowHeight = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.height.toDp()
+    }
     GlassAlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -837,7 +802,7 @@ private fun MarketCodeDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                LazyColumn(modifier = Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.4f).dp)) {
+                LazyColumn(modifier = Modifier.heightIn(max = windowHeight * 0.4f)) {
                     val filtered = popularMarkets.filter {
                         it.first.contains(searchQuery, ignoreCase = true) ||
                                 it.second.contains(searchQuery, ignoreCase = true)
@@ -923,8 +888,7 @@ private fun CompactItem(
     headlineContent: @Composable () -> Unit,
     supportingContent: (@Composable () -> Unit)? = null,
     leadingContent: (@Composable () -> Unit)? = null,
-    trailingContent: (@Composable () -> Unit)? = null,
-    colors: androidx.compose.material3.ListItemColors? = null
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
