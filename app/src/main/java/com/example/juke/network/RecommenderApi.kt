@@ -749,7 +749,7 @@ object RecommenderApi {
                     spotifyUrl = bestMatch.externalUrls.spotify,
                     confidence = bestConfidence,
                     isOfficial = officialScore > 0.0,
-                    durationSec = (bestMatch.durationMs / 1000).toInt(),
+                    durationSec = bestMatch.durationMs / 1000,
                     ytIndex = ytIndex
                 )
             } else {

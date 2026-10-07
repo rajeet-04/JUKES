@@ -20,21 +20,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -66,15 +57,13 @@ import androidx.navigation.compose.rememberNavController
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.models.GithubRelease
 import com.example.juke.network.SpotifyApi
-import com.example.juke.services.DownloadedUpdate
 import com.example.juke.services.UpdateDownloadState
 import com.example.juke.services.UpdateManager
-import com.example.juke.ui.components.GlassAlertDialog
-import com.example.juke.ui.components.UpdateSheet
 import com.example.juke.ui.components.GlassNavBar
 import com.example.juke.ui.components.GlassNavItem
 import com.example.juke.ui.components.GlassNavRail
 import com.example.juke.ui.components.MiniPlayer
+import com.example.juke.ui.components.UpdateSheet
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.AlbumDetailScreen
 import com.example.juke.ui.screens.ArtistDetailScreen
@@ -165,7 +154,6 @@ class MainActivity : ComponentActivity() {
                 // --- UPDATE CHECK LOGIC ---
                 var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
                 val updateDownloadState by UpdateManager.downloadState.collectAsStateWithLifecycle()
-                val isUpdateDownloading = updateDownloadState is UpdateDownloadState.Downloading
 
                 LaunchedEffect(Unit) {
                     // Yield the first frame before optional launch work.

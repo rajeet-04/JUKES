@@ -1,7 +1,5 @@
 package com.example.juke.ui.components
 
-import com.example.juke.ui.icons.JukeIcons
-
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -28,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +62,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.juke.models.Track
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.LyricLine
 import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.ui.theme.GlassLevel

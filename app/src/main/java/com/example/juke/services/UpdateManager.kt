@@ -10,6 +10,8 @@ import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import kotlin.time.Duration.Companion.seconds
 import androidx.core.net.toUri
 import androidx.core.content.FileProvider
 import com.example.juke.BuildConfig
@@ -87,7 +89,7 @@ object UpdateManager {
                 it.contains("beta", true) || it.contains("alpha", true)
             }
             val release = try {
-                withTimeout(8_000) {
+                withTimeout(8.seconds) {
                     val releases: List<GithubRelease> = ApiClient.httpClient.get(GITHUB_API_URL).body()
                     releases.firstOrNull { !it.isDraft && (includePre || !it.isPrerelease) && it.assets.any(::isApkAsset) }
                 }
@@ -100,7 +102,7 @@ object UpdateManager {
 
             val newer = release?.takeIf { isNewer(it.tagName.removePrefix("v")) }
             if (newer == null) {
-                prefs.edit().putLong("last_clean_check", now).apply()
+                prefs.edit { putLong("last_clean_check", now) }
                 return@withContext null
             }
             val snoozed = prefs.getString("snoozed_tag", null) == newer.tagName &&
@@ -110,9 +112,10 @@ object UpdateManager {
 
     /** "Not now": stay quiet about this version for a day. */
     fun snooze(context: Context, release: GithubRelease) {
-        context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE).edit()
-            .putString("snoozed_tag", release.tagName)
-            .putLong("snoozed_at", System.currentTimeMillis()).apply()
+        context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE).edit {
+            putString("snoozed_tag", release.tagName)
+            putLong("snoozed_at", System.currentTimeMillis())
+        }
     }
 
     /** Refreshes byte counts of the active download for the progress bar. */

@@ -1,9 +1,8 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.icons.JukeIcons
-
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,14 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.core.content.edit
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,11 +29,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import com.example.juke.services.Source
 import com.example.juke.services.SourceMemory
 import com.example.juke.ui.components.GlassButton
 import com.example.juke.ui.components.GlassFilterChip
 import com.example.juke.ui.components.GlassTopAppBar
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.Diagnostics
 import com.example.juke.utils.ListeningStats

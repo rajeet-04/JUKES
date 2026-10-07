@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -34,13 +34,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.juke.BuildConfig
 import com.example.juke.models.GithubRelease
-import com.example.juke.services.DownloadedUpdate
 import com.example.juke.services.UpdateDownloadState
 import com.example.juke.services.UpdateManager
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.glassPane
 import com.example.juke.utils.rememberJukeHaptics
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -66,7 +66,7 @@ fun UpdateSheet(
     LaunchedEffect(downloading != null) {
         while (downloading != null) {
             UpdateManager.pollProgress(context)
-            delay(500)
+            delay(500.milliseconds)
         }
     }
 
@@ -81,7 +81,7 @@ fun UpdateSheet(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Header(critical = critical, ready = ready != null, from = BuildConfig.VERSION_NAME, to = tag)
+            Header(critical = critical, ready = ready != null, to = tag)
 
             release?.let { Meta(it) }
 
@@ -147,7 +147,7 @@ fun UpdateSheet(
 }
 
 @Composable
-private fun Header(critical: Boolean, ready: Boolean, from: String, to: String) {
+private fun Header(critical: Boolean, ready: Boolean, to: String) {
     val tint = if (critical) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.size(48.dp).glassPane(CircleShape, GlassLevel.Thick), contentAlignment = Alignment.Center) {
@@ -164,7 +164,7 @@ private fun Header(critical: Boolean, ready: Boolean, from: String, to: String) 
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                "$from  →  $to",
+                "${BuildConfig.VERSION_NAME}  →  $to",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

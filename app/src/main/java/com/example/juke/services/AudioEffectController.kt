@@ -38,10 +38,8 @@ class AudioEffectController private constructor(context: Context) {
 
     // Equalizer state (10 bands)
     private val _equalizerBands = MutableStateFlow(loadEqualizerBands())
-    val equalizerBands: StateFlow<List<Int>> = _equalizerBands.asStateFlow()
 
     private val _isEqualizerEnabled = MutableStateFlow(prefs.getBoolean("equalizer_enabled", false))
-    val isEqualizerEnabled: StateFlow<Boolean> = _isEqualizerEnabled.asStateFlow()
 
     // Volume booster state (0-100%)
     private val _boosterLevel = MutableStateFlow(prefs.getInt("booster_level", 0))
@@ -138,49 +136,6 @@ class AudioEffectController private constructor(context: Context) {
         }
     }
 
-    /**
-     * Set equalizer band level.
-     * @param bandIndex Band index (0-9)
-     * @param level Level in millibels (-5000 to 5000)
-     */
-    fun setEqualizerBandLevel(bandIndex: Int, level: Int) {
-        val eq = equalizer
-        if (eq == null) {
-            // Save pref even if eq not ready, so it applies later
-            saveEqualizerBandPref(bandIndex, level)
-            return
-        }
-
-        val numBands = eq.numberOfBands.toInt()
-        if (bandIndex !in 0 until numBands) {
-            Log.w(tag, "Invalid band index $bandIndex (max $numBands)")
-            return
-        }
-
-        // Clamp level to valid range reported by engine
-        val range = try {
-            eq.bandLevelRange
-        } catch (_: Exception) {
-            ShortArray(2).apply {
-                this[0] = -1500
-                this[1] = 1500
-            }
-        }
-
-        val minLevel = range[0].toInt()
-        val maxLevel = range[1].toInt()
-        val clampedLevel = level.coerceIn(minLevel, maxLevel)
-
-        saveEqualizerBandPref(bandIndex, clampedLevel)
-
-        try {
-            eq.setBandLevel(bandIndex.toShort(), clampedLevel.toShort())
-            Log.d(tag, "Set equalizer band $bandIndex to $clampedLevel")
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to set equalizer band: ${e.message}")
-        }
-    }
-
     private fun saveEqualizerBandPref(bandIndex: Int, level: Int) {
         val currentBands = _equalizerBands.value.toMutableList()
         // Ensure list is large enough (should be 10)
@@ -188,20 +143,6 @@ class AudioEffectController private constructor(context: Context) {
             currentBands[bandIndex] = level
             _equalizerBands.value = currentBands
             prefs.edit { putInt("eq_band_$bandIndex", level) }
-        }
-    }
-
-    /**
-     * Toggle equalizer on/off.
-     */
-    fun setEqualizerEnabled(enabled: Boolean) {
-        _isEqualizerEnabled.value = enabled
-        prefs.edit { putBoolean("equalizer_enabled", enabled) }
-        try {
-            equalizer?.enabled = enabled
-            Log.d(tag, "Equalizer enabled: $enabled")
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to toggle equalizer: ${e.message}")
         }
     }
 
@@ -235,44 +176,6 @@ class AudioEffectController private constructor(context: Context) {
         _isNormalizationEnabled.value = enabled
         prefs.edit { putBoolean("normalization_enabled", enabled) }
         applyBoost()
-    }
-
-    /**
-     * Get equalizer band level range.
-     */
-    fun getEqualizerBandLevelRange(): Pair<Int, Int> {
-        return try {
-            val range = equalizer?.bandLevelRange
-            (range?.get(0)?.toInt() ?: -5000) to (range?.get(1)?.toInt() ?: 5000)
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to get level range: ${e.message}")
-            -5000 to 5000
-        }
-    }
-
-    /**
-     * Reset all equalizer bands to 0.
-     */
-    fun resetEqualizer() {
-        _equalizerBands.value = List(10) { 0 }
-
-        // Save to preferences
-        prefs.edit().apply {
-            for (i in 0 until 10) {
-                putInt("eq_band_$i", 0)
-            }
-            apply()
-        }
-
-        try {
-            val numBands = equalizer?.numberOfBands?.toInt() ?: 0
-            for (i in 0 until minOf(10, numBands)) {
-                equalizer?.setBandLevel(i.toShort(), 0)
-            }
-            Log.d(tag, "Equalizer reset to flat")
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to reset equalizer: ${e.message}")
-        }
     }
 
     init {

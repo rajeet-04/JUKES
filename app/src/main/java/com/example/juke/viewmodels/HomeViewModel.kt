@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDate
 import java.util.Calendar
+import kotlin.time.Duration.Companion.seconds
 
 /** Songs recommended from one played [seed]; [tracks] are already matched to Spotify. */
 data class RadioSection(val seed: Track, val tracks: List<SpotifyTrack>)
@@ -68,7 +69,7 @@ private object DiscoveryCache {
     @Volatile
     var snapshot: Snapshot? = null
     const val FRESH_MS = 30 * 60_000L
-    const val SECTION_TIMEOUT_MS = 15_000L
+    val SECTION_TIMEOUT = 15.seconds
 }
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -213,11 +214,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        val because = Array<RadioSection?>(seeds.size) { cached?.because?.getOrNull(it) }
+        val because = Array(seeds.size) { cached?.because?.getOrNull(it) }
         val becauseDone = BooleanArray(seeds.size)
-        fun publishBecause() = _uiState.update {
+        fun publishBecause() = _uiState.update { state ->
             val pending = if (cached == null) becauseDone.count { !it } else 0
-            it.copy(becauseYouPlayed = because.filterNotNull(), becausePending = pending)
+            state.copy(becauseYouPlayed = because.filterNotNull(), becausePending = pending)
         }
 
         var releasesFinal: List<SpotifyAlbum> = cached?.releases.orEmpty()
@@ -225,13 +226,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val jobs = mutableListOf<Job>()
         jobs += launch {
-            val r = withTimeoutOrNull(DiscoveryCache.SECTION_TIMEOUT_MS) { newReleasesFor(known) }
+            val r = withTimeoutOrNull(DiscoveryCache.SECTION_TIMEOUT) { newReleasesFor(known) }
             if (r != null) releasesFinal = r
             _uiState.update { it.copy(newReleases = r ?: it.newReleases, releasesPending = false) }
         }
         seeds.forEachIndexed { i, seed ->
             jobs += launch {
-                val s = withTimeoutOrNull(DiscoveryCache.SECTION_TIMEOUT_MS) {
+                val s = withTimeoutOrNull(DiscoveryCache.SECTION_TIMEOUT) {
                     radioSection(
                         seed,
                         knownKeys
@@ -244,7 +245,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (favSeed != null) {
             jobs += launch {
-                val s = withTimeoutOrNull(DiscoveryCache.SECTION_TIMEOUT_MS) {
+                val s = withTimeoutOrNull(DiscoveryCache.SECTION_TIMEOUT) {
                     radioSection(
                         favSeed,
                         knownKeys

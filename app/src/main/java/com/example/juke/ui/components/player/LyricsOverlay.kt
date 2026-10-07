@@ -1,7 +1,5 @@
 package com.example.juke.ui.components.player
 
-import com.example.juke.ui.icons.JukeIcons
-
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -25,7 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.rememberJukeHaptics
