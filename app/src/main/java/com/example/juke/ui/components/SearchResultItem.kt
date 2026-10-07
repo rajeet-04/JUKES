@@ -11,6 +11,15 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.example.juke.ui.icons.JukeIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,10 +38,12 @@ import com.example.juke.utils.rememberJukeHaptics
 fun SearchResultItemM3(
     track: SpotifyTrack,
     isDownloading: Boolean,
+    onPlayNext: () -> Unit,
     onClick: () -> Unit
 ) {
     val haptic = rememberJukeHaptics()
     val context = LocalContext.current
+    var menuOpen by remember { mutableStateOf(false) }
     // Prefer the smallest image that is still at least 64px wide so the 48dp slot
     // doesn't upscale a tiny thumbnail. Fall back to the last entry if none qualify.
     val thumbnailUrl = track.album.images
@@ -111,14 +122,15 @@ fun SearchResultItemM3(
                     color = MaterialTheme.colorScheme.primary
                 )
             } else {
-                val totalSeconds = track.durationMs / 1000
-                val minutes = totalSeconds / 60
-                val seconds = totalSeconds % 60
-                Text(
-                    text = "%d:%02d".format(minutes, seconds),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(JukeIcons.More, "Options for ${track.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Play now") }, onClick = { menuOpen = false; onClick() })
+                        DropdownMenuItem(text = { Text("Play next") }, onClick = { menuOpen = false; onPlayNext() })
+                    }
+                }
             }
         }
     )
