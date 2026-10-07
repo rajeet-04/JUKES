@@ -561,7 +561,11 @@ class MainActivity : ComponentActivity() {
                             composable(Screen.Library.route) {
                                 LibraryScreen(
                                     musicViewModel = musicViewModel,
-                                    bottomPadding = bottomPadding
+                                    bottomPadding = bottomPadding,
+                                    onAlbumClick = { album ->
+                                        activityViewModelProvider[AlbumDetailViewModel::class.java].loadAlbumDetails(album)
+                                        navController.navigate("album/${album.id}")
+                                    }
                                 )
                             }
                             composable("settings") {

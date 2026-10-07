@@ -353,7 +353,8 @@ object SpotifyApi {
     suspend fun getAlbumTracks(
         albumId: String,
         market: String = defaultMarket,
-        limit: Int = 50
+        limit: Int = 50,
+        offset: Int = 0
     ): SpotifyAlbumTracksResponse {
         Log.d(TAG, "Fetching album tracks: $albumId")
 
@@ -367,6 +368,7 @@ object SpotifyApi {
                 header("Authorization", "Bearer $token")
                 parameter("market", market)
                 parameter("limit", actualLimit)
+                parameter("offset", offset)
             }
 
             val statusCode = response.status.value

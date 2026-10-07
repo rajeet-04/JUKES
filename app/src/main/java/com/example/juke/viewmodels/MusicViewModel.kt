@@ -50,6 +50,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import com.example.juke.models.findOfflineTrack
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1120,6 +1123,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playInstant(song)
     }
 
+    val offlineAlbums = com.example.juke.repositories.OfflineAlbumStore.get(application)
+    val offlineTracks = trackDao.getDownloadedTracksFlow().map { entities ->
+        entities.map { it.toTrack() }.filter { track ->
+            track.localUri?.let { File(it).isFile } == true
+        }
+    }.flowOn(Dispatchers.IO).stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun saveAlbumOffline(album: SpotifyAlbum, tracks: List<SpotifySimplifiedTrack>) {
+        if (tracks.isEmpty()) return
+        offlineAlbums.save(album, tracks)
+        tracks.filter { it.findOfflineTrack(offlineTracks.value) == null }
+            .forEach { addToDownloadQueue(SpotifyApi.simplifiedTrackToSong(it, album)) }
+    }
+
     suspend fun downloadSong(song: SpotdownSong): Track {
         // Check if already exists
         val durationSec = SpotifyApi.parseDuration(song.duration)
@@ -1175,7 +1192,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val existingTrack = candidates.find {
                 ArtistUtils.areArtistsEqual(it.artist, song.artist)
             }
-            if (existingTrack?.localUri != null) {
+            if (existingTrack != null && !existingTrack.isStream &&
+                existingTrack.localUri?.let { File(it).isFile } == true) {
                 Log.d("MusicViewModel", "Song already downloaded: ${song.title}")
                 if (shouldPlayAfterDownload) {
                     playTrack(existingTrack.toTrack())
@@ -1233,9 +1251,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        isProcessingQueue = true
         viewModelScope.launch {
-            isProcessingQueue = true
-
             while (_uiState.value.downloadQueue.isNotEmpty()) {
                 val nextItem = _uiState.value.downloadQueue.first()
 

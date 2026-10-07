@@ -1,6 +1,7 @@
 package com.example.juke.ui.screens
 
 import com.example.juke.ui.icons.JukeIcons
+import androidx.compose.foundation.layout.widthIn
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -92,9 +93,11 @@ import kotlinx.coroutines.flow.map
 fun LibraryScreen(
     musicViewModel: MusicViewModel,
     libraryViewModel: LibraryViewModel = viewModel(),
-    bottomPadding: Dp = 0.dp
+    bottomPadding: Dp = 0.dp,
+    onAlbumClick: (com.example.juke.models.SpotifyAlbum) -> Unit = {}
 ) {
     val uiState by libraryViewModel.uiState.collectAsStateWithLifecycle()
+    val offlineAlbums by musicViewModel.offlineAlbums.albums.collectAsStateWithLifecycle()
     val libraryDownloadBannerState by remember(musicViewModel) {
         musicViewModel.uiState
             .map { state ->
@@ -293,6 +296,23 @@ fun LibraryScreen(
                 .padding(paddingValues)
         ) {
 
+
+            if (offlineAlbums.isNotEmpty() && uiState.selectedPlaylist == null && !uiState.isSelectionMode) {
+                Text("Saved albums", style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(offlineAlbums) { saved ->
+                        androidx.compose.material3.AssistChip(
+                            onClick = { onAlbumClick(saved.album) },
+                            label = { Text(saved.album.name, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 200.dp)) },
+                            leadingIcon = { Icon(JukeIcons.Album, null, Modifier.size(18.dp)) }
+                        )
+                    }
+                }
+            }
 
             // Enhanced Filter Row
             LazyRow(

@@ -15,7 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import com.example.juke.models.findOfflineTrack
+import com.example.juke.viewmodels.DownloadStatus
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +57,15 @@ fun AlbumDetailScreen(
     val uiState by albumDetailViewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val album = uiState.album
+    val offlineTracks by musicViewModel.offlineTracks.collectAsStateWithLifecycle()
+    val downloads by musicViewModel.uiState.collectAsStateWithLifecycle()
+    val savedAlbums by musicViewModel.offlineAlbums.albums.collectAsStateWithLifecycle()
+    val savedCount = uiState.tracks.count { it.findOfflineTrack(offlineTracks) != null }
+    val allSaved = uiState.tracks.isNotEmpty() && savedCount == uiState.tracks.size
+    val isSaving = album != null && (downloads.downloadQueue + listOfNotNull(downloads.currentDownload))
+        .any { it.song.albumSpotifyId == album.id && it.status in listOf(DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING) }
+    val wasRequested = savedAlbums.any { it.album.id == album?.id }
+
 
     Scaffold(
         topBar = {
@@ -74,7 +86,7 @@ fun AlbumDetailScreen(
         },
         containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) { paddingValues ->
-        if (uiState.isLoading || album == null) {
+        if (uiState.isLoading || (album == null && uiState.error == null)) {
             MediaDetailSkeleton(
                 modifier = Modifier.padding(paddingValues),
                 contentPadding = PaddingValues(
@@ -84,6 +96,10 @@ fun AlbumDetailScreen(
                     bottom = 16.dp + bottomPadding
                 )
             )
+        } else if (album == null) {
+            Column(Modifier.padding(paddingValues).padding(20.dp)) {
+                Text(uiState.error ?: "Unable to load album", color = MaterialTheme.colorScheme.error)
+            }
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -166,6 +182,41 @@ fun AlbumDetailScreen(
                     }
                 }
 
+                item {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        uiState.error?.let { error ->
+                            Text(error, color = MaterialTheme.colorScheme.error)
+                            Button(onClick = { albumDetailViewModel.loadAlbumDetails(album) }) { Text("Retry loading tracks") }
+                        }
+                        Button(
+                            onClick = { musicViewModel.saveAlbumOffline(album, uiState.tracks) },
+                            enabled = uiState.tracks.isNotEmpty() && !(allSaved && wasRequested) && !isSaving,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(if (allSaved) JukeIcons.Check else JukeIcons.Download, null,
+                                Modifier.size(20.dp))
+                            Text(
+                                when {
+                                    allSaved && wasRequested -> "Saved offline"
+                                    isSaving -> "Saving offline…"
+                                    wasRequested -> "Retry missing tracks"
+                                    else -> "Save offline"
+                                }, Modifier.padding(start = 8.dp)
+                            )
+                        }
+                        if (isSaving) LinearProgressIndicator(
+                            progress = { savedCount.toFloat() / uiState.tracks.size.coerceAtLeast(1) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (wasRequested || savedCount > 0) Text(
+                            "$savedCount of ${uiState.tracks.size} tracks available offline",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 // Tracks Section
                 if (uiState.tracks.isNotEmpty()) {
                     item {
@@ -179,21 +230,26 @@ fun AlbumDetailScreen(
                         SwipeToAddNextContainer(
                             onAddNext = {
                                 scope.launch {
-                                    musicViewModel.queueSimplifiedTrackNext(track, album)
+                                    val local = track.findOfflineTrack(offlineTracks)
+                                    if (local != null) musicViewModel.addNext(local)
+                                    else musicViewModel.queueSimplifiedTrackNext(track, album)
                                 }
                             }
                         ) {
                             TrackItem(
                                 track = track,
                                 album = album,
+                                isOffline = track.findOfflineTrack(offlineTracks) != null,
                                 onClick = {
                                     scope.launch {
                                         // Queue this track and all tracks below it from the album
-                                        musicViewModel.setQueueFromSimplifiedTracks(
-                                            uiState.tracks,
-                                            album,
-                                            uiState.tracks.indexOf(track)
-                                        )
+                                        val index = uiState.tracks.indexOf(track)
+                                        if (track.findOfflineTrack(offlineTracks) != null) {
+                                            musicViewModel.setQueue(uiState.tracks.drop(index)
+                                                .mapNotNull { it.findOfflineTrack(offlineTracks) })
+                                        } else {
+                                            musicViewModel.setQueueFromSimplifiedTracks(uiState.tracks, album, index)
+                                        }
                                     }
                                 }
                             )
@@ -209,12 +265,13 @@ fun AlbumDetailScreen(
 private fun TrackItem(
     track: SpotifySimplifiedTrack,
     album: SpotifyAlbum,
+    isOffline: Boolean,
     onClick: () -> Unit
 ) {
     FlatTrackRow(
         imageUrl = album.images.lastOrNull()?.url,
         title = track.name,
-        subtitle = track.artists.joinToString(", ") { it.name },
+        subtitle = track.artists.joinToString(", ") { it.name } + if (isOffline) " • Offline" else "",
         duration = formatDuration(track.durationMs),
         onClick = onClick
     )
