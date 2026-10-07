@@ -314,7 +314,7 @@ fun LyricsOverlay(
                     offsetMs = localOffsetMs,
                     onOffsetChange = { value ->
                         val step = (value / 100f).roundToInt()
-                        if (step != lastTick) { haptic.tick(); lastTick = step }
+                        if (step != lastTick) lastTick = step
                         localOffsetMs = (step * 100f).coerceIn(-60000f, 60000f)
                     },
                     onSave = { musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong()) },

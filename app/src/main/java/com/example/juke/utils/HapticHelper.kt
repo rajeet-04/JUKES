@@ -35,20 +35,26 @@ class JukeHaptics(private val view: View, context: Context) {
         }.isSuccess
     }
 
-    /** Light, crisp tap for list items and minor interactions */
+    /** Very mild tap for any button or row press. */
     fun click() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            hasPremiumVibration() && tryVibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
+            hasPremiumVibration() && tryVibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
         ) {
             return
         }
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
     }
 
-    /** Substantive, deep feel for main play/pause or major state changes */
+    /** Barely-there tap for switching tabs/screens. */
+    fun nav() {
+        if (hasPremiumVibration() && tryVibrate(VibrationEffect.createOneShot(8, 45))) return
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    /** One firm-but-soft tap for primary buttons such as play/pause. */
     fun heavyClick() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            hasPremiumVibration() && tryVibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
+            hasPremiumVibration() && tryVibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
         ) {
             return
         }
@@ -77,31 +83,20 @@ class JukeHaptics(private val view: View, context: Context) {
         view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
     }
 
-    /** Double-bump success feeling for adding to queue and favorites */
+    /** A single clean tap: something was done (added to queue, favourited, saved). */
     fun confirm() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-            return
-        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            hasPremiumVibration() && tryVibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK))
+            hasPremiumVibration() && tryVibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
         ) {
             return
         }
         view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
     }
 
-    /** Heavy warning feel for deleting/removing */
+    /** One slight, long buzz for delete/remove. */
     fun reject() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            view.performHapticFeedback(HapticFeedbackConstants.REJECT)
-            return
-        }
-        val timings = longArrayOf(0, 40, 20, 40)
-        val amplitudes = intArrayOf(0, 255, 0, 255)
-        if (tryVibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))) {
-            return
-        }
+        val amp = if (hasPremiumVibration()) 90 else VibrationEffect.DEFAULT_AMPLITUDE
+        if (tryVibrate(VibrationEffect.createOneShot(110, amp))) return
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
 
