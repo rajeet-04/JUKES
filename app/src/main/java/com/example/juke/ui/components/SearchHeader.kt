@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,9 +16,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -110,7 +109,7 @@ fun SearchHeader(
                         keyboard?.hide()
                         onQueryChange("")
                         onOpenChange(false)
-                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search") }
+                    }) { Icon(JukeIcons.Back, "Close search") }
                     BasicTextField(
                         value = field,
                         onValueChange = {
@@ -141,7 +140,7 @@ fun SearchHeader(
                     )
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { haptic.click(); onQueryChange("") }) {
-                            Icon(Icons.Default.Clear, "Clear search")
+                            Icon(JukeIcons.Close, "Clear search")
                         }
                     }
                 }
@@ -154,7 +153,7 @@ fun SearchHeader(
                         modifier = Modifier.weight(1f).padding(start = 14.dp)
                     )
                     IconButton(onClick = { haptic.click(); onOpenChange(true) }) {
-                        Icon(Icons.Default.Search, "Search")
+                        Icon(JukeIcons.Search, "Search")
                     }
                     actions()
                 }

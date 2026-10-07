@@ -1,5 +1,7 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.annotation.SuppressLint
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -23,18 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Lyrics
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Translate
@@ -397,7 +388,7 @@ fun PlayerScreen(
                                     modifier = Modifier.size(actionBtnSize)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Download,
+                                        imageVector = JukeIcons.Download,
                                         contentDescription = "Download",
                                         tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(actionIconSize)
@@ -409,7 +400,7 @@ fun PlayerScreen(
                                 modifier = Modifier.size(actionBtnSize)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.AddCircle,
+                                    imageVector = JukeIcons.AddCircle,
                                     contentDescription = "Add to Playlist",
                                     tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(actionIconSize)
@@ -423,7 +414,7 @@ fun PlayerScreen(
                                 modifier = Modifier.size(actionBtnSize)
                             ) {
                                 Icon(
-                                    imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    imageVector = if (currentTrack.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
                                     contentDescription = if (currentTrack.isFavourite) "Unfavorite" else "Favorite",
                                     tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(actionIconSize)
@@ -470,13 +461,13 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
                         PlayerAction(
-                            icon = rememberVectorPainter(Icons.Outlined.Lyrics),
+                            icon = rememberVectorPainter(JukeIcons.Lyrics),
                             label = "Lyrics",
                             active = showLyrics,
                             iconSize = actionBarIconSize
                         ) { haptic.click(); showLyrics = !showLyrics }
                         PlayerAction(
-                            icon = rememberVectorPainter(Icons.AutoMirrored.Filled.List),
+                            icon = rememberVectorPainter(JukeIcons.List),
                             label = "Queue",
                             iconSize = actionBarIconSize
                         ) { haptic.click(); showQueue = true }
@@ -487,7 +478,7 @@ fun PlayerScreen(
                         ) { haptic.click(); musicViewModel.startRadio() }
                         if (currentTrack.spotifyId != null) {
                             PlayerAction(
-                                icon = rememberVectorPainter(Icons.Filled.Share),
+                                icon = rememberVectorPainter(JukeIcons.Share),
                                 label = "Share",
                                 iconSize = actionBarIconSize
                             ) { haptic.click(); onShareTrack(currentTrack.spotifyId) }
@@ -636,7 +627,7 @@ fun PlayerHeader(
     ) {
         GlassIconButton(onClick = onDismiss, contentDescription = "Close") {
             Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
+                imageVector = JukeIcons.ChevronDown,
                 contentDescription = null,
                 modifier = Modifier.size(28.dp)
             )
@@ -652,7 +643,7 @@ fun PlayerHeader(
             var showMenu by remember { mutableStateOf(false) }
             Box {
                 GlassIconButton(onClick = { showMenu = true }, contentDescription = "Menu") {
-                    Icon(Icons.Default.MoreVert, contentDescription = null)
+                    Icon(JukeIcons.More, contentDescription = null)
                 }
                 DropdownMenu(
                     expanded = showMenu,
@@ -683,7 +674,7 @@ fun PlayerHeader(
                         DropdownMenuItem(
                             text = { Text("Go to Album") },
                             leadingIcon = {
-                                Icon(Icons.Outlined.Album, contentDescription = null)
+                                Icon(JukeIcons.Album, contentDescription = null)
                             },
                             onClick = {
                                 showMenu = false
@@ -694,7 +685,7 @@ fun PlayerHeader(
                     DropdownMenuItem(
                         text = { Text("Refresh Lyrics") },
                         leadingIcon = {
-                            Icon(Icons.Outlined.Refresh, contentDescription = null)
+                            Icon(JukeIcons.Refresh, contentDescription = null)
                         },
                         onClick = {
                             showMenu = false
@@ -705,7 +696,7 @@ fun PlayerHeader(
                         DropdownMenuItem(
                             text = { Text("Wrong song? Refetch") },
                             leadingIcon = {
-                                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                                Icon(JukeIcons.Refresh, contentDescription = null)
                             },
                             onClick = {
                                 showMenu = false

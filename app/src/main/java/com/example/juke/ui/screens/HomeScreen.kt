@@ -1,5 +1,7 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.os.Build
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.animation.animateColorAsState
@@ -34,11 +36,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -319,7 +316,7 @@ private fun RecentlyPlayedSection(
                     },
                     contentDescription = "Previous recently played track"
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                    Icon(JukeIcons.Back, contentDescription = null)
                 }
             }
 
@@ -366,7 +363,7 @@ private fun RecentlyPlayedSection(
                     },
                     contentDescription = "Next recently played track"
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                    Icon(JukeIcons.Forward, contentDescription = null)
                 }
             }
         }
@@ -504,7 +501,7 @@ private fun MusicCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.MusicNote,
+                    JukeIcons.MusicNote,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -558,7 +555,7 @@ private fun MusicCard(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(
-                    Icons.Filled.PlayArrow,
+                    JukeIcons.Play,
                     contentDescription = null,
                     modifier = Modifier.size(12.dp),
                     tint = Color.White
@@ -626,7 +623,7 @@ private fun FavoriteCard(
                 )
             } else {
                 Icon(
-                    Icons.Filled.MusicNote,
+                    JukeIcons.MusicNote,
                     contentDescription = null,
                     modifier = Modifier.size(32.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -645,7 +642,7 @@ private fun FavoriteCard(
             )
 
             Icon(
-                Icons.Filled.Favorite,
+                JukeIcons.HeartSelected,
                 contentDescription = null,
                 modifier = Modifier
                     .size(24.dp),
@@ -690,7 +687,7 @@ private fun EmptyHomeState(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.MusicNote,
+                    JukeIcons.MusicNote,
                     contentDescription = null,
                     modifier = Modifier.size(if (isShort) 28.dp else 40.dp),
                     tint = MaterialTheme.colorScheme.primary

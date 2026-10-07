@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -17,10 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -90,7 +89,7 @@ fun AddToPlaylistDialog(
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = JukeIcons.Close,
                             contentDescription = "Close",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -111,7 +110,7 @@ fun AddToPlaylistDialog(
                     item {
                         PlaylistActionRow(
                             title = "New Playlist",
-                            icon = Icons.Default.Add,
+                            icon = JukeIcons.Add,
                             iconBgColor = MaterialTheme.colorScheme.primary,
                             iconTintColor = MaterialTheme.colorScheme.onPrimary,
                             onClick = onCreatePlaylist
@@ -216,7 +215,7 @@ private fun PlaylistItemRow(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                imageVector = JukeIcons.Queue,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
@@ -252,7 +251,7 @@ private fun PlaylistItemRow(
             )
         } else {
             Icon(
-                imageVector = Icons.Default.Add,
+                imageVector = JukeIcons.Add,
                 contentDescription = "Add",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.size(24.dp)

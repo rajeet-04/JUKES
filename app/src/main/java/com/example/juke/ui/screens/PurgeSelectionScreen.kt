@@ -1,5 +1,7 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,9 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -87,7 +86,7 @@ fun PurgeSelectionScreen(
                 title = { Text("Purge Redundant", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(JukeIcons.Back, "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 },
                 actions = {
@@ -162,7 +161,7 @@ fun PurgeSelectionScreen(
                             GlassButton(
                                 onClick = { showConfirmation = true },
                                 enabled = selectedTracks.isNotEmpty()) {
-                                Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp))
+                                Icon(JukeIcons.Delete, null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Delete")
                             }
@@ -280,7 +279,7 @@ private fun PurgeTrackItem(
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Default.MusicNote,
+                        imageVector = JukeIcons.MusicNote,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.annotation.SuppressLint
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -16,8 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
@@ -143,11 +143,11 @@ fun SwipeToAddNextContainer(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             if (toEnd) {
-                                Icon(Icons.Filled.PlayArrow, contentDescription = "Add next", tint = onGlow)
+                                Icon(JukeIcons.Play, contentDescription = "Add next", tint = onGlow)
                                 Text("Add to queue next", style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
                             } else {
                                 Text("Delete", style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = onGlow)
+                                Icon(JukeIcons.Delete, contentDescription = "Delete", tint = onGlow)
                             }
                         }
                     }

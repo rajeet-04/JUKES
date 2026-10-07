@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -14,11 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,7 +50,7 @@ fun LibraryTrackItem(
     isSelected: Boolean = false,
     onLongClick: () -> Unit = {},
     onTrailingIconClick: () -> Unit = {},
-    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.MoreVert
+    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = JukeIcons.More
 ) {
     var isFavoritePressed by remember { mutableStateOf(false) }
     val favoriteScale by animateFloatAsState(
@@ -97,7 +94,7 @@ fun LibraryTrackItem(
                     )
                 } else {
                     Icon(
-                        Icons.Default.PlayArrow,
+                        JukeIcons.Play,
                         contentDescription = null,
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -117,7 +114,7 @@ fun LibraryTrackItem(
                     ) {
                         if (isSelected) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                imageVector = JukeIcons.Check,
                                 contentDescription = "Selected",
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(26.dp)
@@ -159,7 +156,7 @@ fun LibraryTrackItem(
                     modifier = Modifier.scale(favoriteScale)
                 ) {
                     Icon(
-                        if (track.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
                         contentDescription = if (track.isFavourite) "Remove from favorites" else "Add to favorites",
                         tint = if (track.isFavourite) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),

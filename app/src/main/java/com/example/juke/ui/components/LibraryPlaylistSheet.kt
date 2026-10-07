@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
@@ -13,10 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -121,7 +119,7 @@ fun LibraryPlaylistSheet(
                     OutlinedTextField(
                         value = query, onValueChange = { query = it }, enabled = !busy,
                         label = { Text("Search playlists") }, singleLine = true,
-                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        leadingIcon = { Icon(JukeIcons.Search, null) },
                         shape = GlassShapes.Control, modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(8.dp))
@@ -141,7 +139,7 @@ fun LibraryPlaylistSheet(
                         }
                     } else {
                         TextButton(onClick = { creating = true }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Icon(Icons.Default.Add, null)
+                            Icon(JukeIcons.Add, null)
                             Text("New playlist", Modifier.padding(start = 8.dp))
                         }
                     }
@@ -180,7 +178,7 @@ fun LibraryPlaylistSheet(
                     if (playlist.thumbnailUri != null) {
                         AsyncImage(playlist.thumbnailUri, null,
                             Modifier.size(44.dp).clip(GlassShapes.Control), contentScale = ContentScale.Crop)
-                    } else Icon(Icons.AutoMirrored.Filled.QueueMusic, null, Modifier.size(44.dp))
+                    } else Icon(JukeIcons.Queue, null, Modifier.size(44.dp))
                     Column(Modifier.weight(1f)) {
                         Text(playlist.name, style = MaterialTheme.typography.titleMedium,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -193,7 +191,7 @@ fun LibraryPlaylistSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (complete && !loading) Icon(Icons.Default.Check, "Already added", tint = MaterialTheme.colorScheme.primary)
+                    if (complete && !loading) Icon(JukeIcons.Check, "Already added", tint = MaterialTheme.colorScheme.primary)
                     else TextButton(
                         onClick = { save(playlist.name) { onAdd(playlist) } },
                         enabled = !busy && !loading && error == null,

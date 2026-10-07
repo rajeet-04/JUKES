@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -27,9 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +54,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -365,7 +363,7 @@ fun MiniPlayer(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                painter = painterResource(com.example.juke.R.drawable.baseline_play_24),
+                                imageVector = JukeIcons.Play,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
                                 tint = MaterialTheme.colorScheme.onSurface
@@ -433,8 +431,8 @@ fun MiniPlayer(
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite
-                            else Icons.Outlined.FavoriteBorder,
+                            imageVector = if (currentTrack.isFavourite) JukeIcons.HeartSelected
+                            else JukeIcons.Heart,
                             contentDescription = if (currentTrack.isFavourite) "Remove from favorites"
                             else "Add to favorites",
                             tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary
@@ -453,7 +451,7 @@ fun MiniPlayer(
                             modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Download,
+                                imageVector = JukeIcons.Download,
                                 contentDescription = "Download track",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
                                 modifier = Modifier.size(20.dp)
@@ -485,10 +483,7 @@ fun MiniPlayer(
                             label = "miniPlayPauseIcon"
                         ) { isPlaying ->
                             Icon(
-                                painter = painterResource(
-                                    if (isPlaying) com.example.juke.R.drawable.baseline_pause_24
-                                    else com.example.juke.R.drawable.baseline_play_24
-                                ),
+                                imageVector = if (isPlaying) JukeIcons.Pause else JukeIcons.Play,
                                 contentDescription = if (isPlaying) "Pause" else "Play",
                                 modifier = Modifier.size(24.dp),
                                 tint = MaterialTheme.colorScheme.onSurface
@@ -585,17 +580,14 @@ private fun MiniPlayerGlideCard(track: Track, isPlaying: Boolean, modifier: Modi
             )
         }
         Icon(
-            imageVector = if (track.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+            imageVector = if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
             contentDescription = null,
             tint = if (track.isFavourite) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
             modifier = Modifier.padding(10.dp).size(20.dp)
         )
         Icon(
-            painter = painterResource(
-                if (isPlaying) com.example.juke.R.drawable.baseline_pause_24
-                else com.example.juke.R.drawable.baseline_play_24
-            ),
+            imageVector = if (isPlaying) JukeIcons.Pause else JukeIcons.Play,
             contentDescription = null,
             modifier = Modifier.padding(8.dp).size(24.dp),
             tint = MaterialTheme.colorScheme.onSurface

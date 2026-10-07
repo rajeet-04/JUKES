@@ -1,5 +1,7 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,21 +22,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -246,7 +235,7 @@ fun LibraryScreen(
                     GlassIconButton(
                         onClick = { libraryViewModel.clearSelection() },
                         contentDescription = "Close selection", enabled = actionsEnabled
-                    ) { Icon(Icons.Default.Clear, null) }
+                    ) { Icon(JukeIcons.Close, null) }
                     Text("${uiState.selectedTrackUuids.size} selected",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite })
@@ -320,7 +309,7 @@ fun LibraryScreen(
                         leadingIcon = if (uiState.selectedPlaylist == null && !uiState.showFavoritesOnly) {
                             {
                                 Icon(
-                                    Icons.Default.LibraryMusic,
+                                    JukeIcons.Library,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -338,7 +327,7 @@ fun LibraryScreen(
                         leadingIcon = if (uiState.showFavoritesOnly) {
                             {
                                 Icon(
-                                    Icons.Filled.Favorite,
+                                    JukeIcons.HeartSelected,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -346,7 +335,7 @@ fun LibraryScreen(
                         } else {
                             {
                                 Icon(
-                                    Icons.Outlined.FavoriteBorder,
+                                    JukeIcons.Heart,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -372,7 +361,7 @@ fun LibraryScreen(
                         leadingIcon = if (uiState.selectedPlaylist?.id == playlist.id) {
                             {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.QueueMusic,
+                                    JukeIcons.Queue,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -385,7 +374,7 @@ fun LibraryScreen(
                                     modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(
-                                        Icons.Default.MoreVert,
+                                        JukeIcons.More,
                                         contentDescription = "Options",
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -405,7 +394,7 @@ fun LibraryScreen(
                                         },
                                         leadingIcon = {
                                             Icon(
-                                                Icons.AutoMirrored.Filled.QueueMusic,
+                                                JukeIcons.Queue,
                                                 contentDescription = null
                                             )
                                         }
@@ -418,7 +407,7 @@ fun LibraryScreen(
                                         },
                                         leadingIcon = {
                                             Icon(
-                                                Icons.Default.Delete,
+                                                JukeIcons.Delete,
                                                 contentDescription = null
                                             )
                                         }
@@ -461,7 +450,7 @@ fun LibraryScreen(
                         label = { Text("Import") },
                         leadingIcon = {
                             Icon(
-                                Icons.Default.AddCircle,
+                                JukeIcons.AddCircle,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -476,7 +465,7 @@ fun LibraryScreen(
                         label = { Text("New") },
                         leadingIcon = {
                             Icon(
-                                Icons.Default.Add,
+                                JukeIcons.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -609,8 +598,8 @@ fun LibraryScreen(
                         ) {
                             Icon(
                                 imageVector = if (uiState.searchQuery.isNotEmpty()) Icons.Outlined.SearchOff
-                                else if (uiState.showFavoritesOnly) Icons.Outlined.FavoriteBorder
-                                else Icons.Outlined.LibraryMusic,
+                                else if (uiState.showFavoritesOnly) JukeIcons.Heart
+                                else JukeIcons.Library,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -708,7 +697,7 @@ fun LibraryScreen(
                                 onToggleFavorite = {
                                     libraryViewModel.toggleFavorite(track.uuid)
                                 },
-                                trailingIcon = Icons.Default.MoreVert,
+                                trailingIcon = JukeIcons.More,
                                 onTrailingIconClick = { tracksForActions = listOf(track) }
 
                             )
@@ -830,7 +819,7 @@ private fun LibraryPlaybackActions(
             onClick = onToggleShuffle
         ) {
             Icon(
-                imageVector = Icons.Default.Shuffle,
+                imageVector = JukeIcons.Shuffle,
                 contentDescription = "Shuffle",
                 tint = if (isShufflePrepared) {
                     MaterialTheme.colorScheme.primary
@@ -849,7 +838,7 @@ private fun LibraryPlaybackActions(
             enabled = tracks.isNotEmpty()
         ) {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                imageVector = JukeIcons.Queue,
                 contentDescription = "Add all to Queue",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -864,7 +853,7 @@ private fun LibraryPlaybackActions(
             enabled = tracks.isNotEmpty()
         ) {
             Icon(
-                imageVector = Icons.Default.PlayArrow,
+                imageVector = JukeIcons.Play,
                 contentDescription = "Play all",
                 modifier = Modifier.size(18.dp)
             )
@@ -922,7 +911,7 @@ private fun SortBottomSheet(
                     trailingContent = {
                         if (isSelected) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                imageVector = JukeIcons.Check,
                                 contentDescription = "Selected",
                                 tint = MaterialTheme.colorScheme.primary
                             )
@@ -995,7 +984,7 @@ private fun PlaylistHeader(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        imageVector = JukeIcons.Queue,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant

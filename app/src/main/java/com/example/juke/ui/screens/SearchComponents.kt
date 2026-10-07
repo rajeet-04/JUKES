@@ -1,5 +1,7 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,10 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -117,7 +116,7 @@ internal fun ImportPlaylistCard(
             )
             Spacer(modifier = Modifier.height(24.dp))
             GlassButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, modifier = Modifier.size(20.dp))
+                Icon(JukeIcons.PlaylistAdd, null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Import playlist", fontWeight = FontWeight.SemiBold)
             }
@@ -421,7 +420,7 @@ internal fun EmptySearchState(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 40.dp)
         ) {
-            val icon = if (isQueryEmpty) Icons.Default.MusicNote else Icons.Outlined.SearchOff
+            val icon = if (isQueryEmpty) JukeIcons.MusicNote else Icons.Outlined.SearchOff
             val title = if (isQueryEmpty) "Find your next song" else "No results found"
             val subtitle = if (isQueryEmpty) "Search for songs, artists, playlists or albums"
             else "Try a different spelling or keyword"
@@ -514,7 +513,7 @@ internal fun RecentSearches(
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = JukeIcons.Close,
                         contentDescription = "Remove",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.size(16.dp)

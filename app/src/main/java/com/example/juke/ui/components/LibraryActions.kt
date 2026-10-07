@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,12 +17,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -61,9 +57,9 @@ fun LibrarySelectionActions(
             modifier = Modifier.padding(6.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
         ) {
-            LabelledLibraryAction("Play next", Icons.Default.PlayArrow, enabled, onPlayNext, emphasized = true)
-            LabelledLibraryAction("Playlist", Icons.AutoMirrored.Filled.PlaylistAdd, enabled, onPlaylist)
-            LabelledLibraryAction("More", Icons.Default.MoreHoriz, enabled, onMore)
+            LabelledLibraryAction("Play next", JukeIcons.Play, enabled, onPlayNext, emphasized = true)
+            LabelledLibraryAction("Playlist", JukeIcons.PlaylistAdd, enabled, onPlaylist)
+            LabelledLibraryAction("More", JukeIcons.MoreHorizontal, enabled, onMore)
         }
     }
 }
@@ -97,14 +93,14 @@ fun LibraryTrackActionsSheet(
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             LibrarySheetHeader(title, subtitle, onDismiss, enabled = enabled)
-            LibraryActionRow("Play next", "Immediately after the current song", Icons.Default.PlayArrow, enabled, onPlayNext)
-            LibraryActionRow("Add to queue end", "After the songs already queued", Icons.AutoMirrored.Filled.QueueMusic, enabled, onQueueEnd)
-            LibraryActionRow("Add to playlist", "Choose an existing playlist or create one", Icons.AutoMirrored.Filled.PlaylistAdd, enabled, onPlaylist)
+            LibraryActionRow("Play next", "Immediately after the current song", JukeIcons.Play, enabled, onPlayNext)
+            LibraryActionRow("Add to queue end", "After the songs already queued", JukeIcons.Queue, enabled, onQueueEnd)
+            LibraryActionRow("Add to playlist", "Choose an existing playlist or create one", JukeIcons.PlaylistAdd, enabled, onPlaylist)
             HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
             if (playlistName != null) {
                 LibraryActionRow("Remove from this playlist", "From $playlistName; keep downloads and library songs", Icons.Default.RemoveCircleOutline, enabled, onRemoveFromPlaylist)
             }
-            LibraryActionRow("Delete from library", "Remove downloads and all playlist entries", Icons.Default.DeleteOutline, enabled, onDelete, destructive = true)
+            LibraryActionRow("Delete from library", "Remove downloads and all playlist entries", JukeIcons.Delete, enabled, onDelete, destructive = true)
         }
     }
 }
@@ -118,7 +114,7 @@ fun LibrarySheetHeader(title: String, subtitle: String, onDismiss: () -> Unit, e
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         GlassIconButton(onClick = onDismiss, contentDescription = "Close", enabled = enabled) {
-            Icon(Icons.Default.Close, null)
+            Icon(JukeIcons.Close, null)
         }
     }
 }

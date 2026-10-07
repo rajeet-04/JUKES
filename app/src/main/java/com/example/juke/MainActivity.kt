@@ -1,5 +1,7 @@
 package com.example.juke
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -24,12 +26,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -58,7 +56,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -108,25 +105,25 @@ sealed class Screen(
     object Home : Screen(
         "home",
         "Home",
-        { Icon(Icons.Filled.Home, contentDescription = "Home") },
-        { Icon(Icons.Outlined.Home, contentDescription = "Home") })
+        { Icon(JukeIcons.HomeSelected, contentDescription = "Home") },
+        { Icon(JukeIcons.Home, contentDescription = "Home") })
 
     object Search : Screen(
         "search",
         "Search",
-        { Icon(Icons.Filled.Search, contentDescription = "Search") },
-        { Icon(Icons.Outlined.Search, contentDescription = "Search") })
+        { Icon(JukeIcons.Search, contentDescription = "Search") },
+        { Icon(JukeIcons.Search, contentDescription = "Search") })
 
     object Library : Screen(
         "library",
         "Library",
         {
             Icon(
-                painter = painterResource(R.drawable.library_outlined),
+                imageVector = JukeIcons.LibrarySelected,
                 contentDescription = "Library"
             )
         },
-        { Icon(painter = painterResource(R.drawable.library), contentDescription = "Library") })
+        { Icon(imageVector = JukeIcons.Library, contentDescription = "Library") })
 }
 
 class MainActivity : ComponentActivity() {

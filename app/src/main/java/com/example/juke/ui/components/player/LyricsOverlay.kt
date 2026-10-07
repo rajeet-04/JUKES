@@ -1,5 +1,7 @@
 package com.example.juke.ui.components.player
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -24,8 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -358,7 +358,7 @@ fun LyricsOverlay(
                                 .border(1.dp, Color.White.copy(alpha = 0.04f), CircleShape)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Tune,
+                                imageVector = JukeIcons.Equalizer,
                                 contentDescription = "Toggle Sync Controls",
                                 tint = Color.White.copy(alpha = 0.9f)
                             )
@@ -377,7 +377,7 @@ fun LyricsOverlay(
                         .border(1.dp, Color.White.copy(alpha = 0.04f), CircleShape)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = JukeIcons.Close,
                         contentDescription = "Close Lyrics",
                         tint = Color.White.copy(alpha = 0.9f)
                     )

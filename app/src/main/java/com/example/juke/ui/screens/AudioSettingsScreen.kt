@@ -1,5 +1,7 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -21,20 +23,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatterySaver
 import androidx.compose.material.icons.rounded.CloudSync
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.Lyrics
-import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -116,7 +111,7 @@ fun AudioSettingsScreen(
                 title = { Text("Audio Control", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(JukeIcons.Back, "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 })
 
@@ -172,7 +167,7 @@ fun AudioSettingsScreen(
                                     Text("Keep loudness steady across tracks")
                                 },
                                 leadingContent = {
-                                    Icon(Icons.Rounded.GraphicEq, contentDescription = null)
+                                    Icon(JukeIcons.Equalizer, contentDescription = null)
                                 },
                                 trailingContent = {
                                     Switch(
@@ -199,7 +194,7 @@ fun AudioSettingsScreen(
                                     Text("Trim quiet intros and outros")
                                 },
                                 leadingContent = {
-                                    Icon(Icons.Rounded.SkipNext, contentDescription = null)
+                                    Icon(JukeIcons.Next, contentDescription = null)
                                 },
                                 trailingContent = {
                                     Switch(
@@ -260,7 +255,7 @@ fun AudioSettingsScreen(
                                     Text("Show synced lyrics directly in the mini-player")
                                 },
                                 leadingContent = {
-                                    Icon(Icons.Rounded.Lyrics, contentDescription = null)
+                                    Icon(JukeIcons.Lyrics, contentDescription = null)
                                 },
                                 trailingContent = {
                                     Switch(
@@ -363,7 +358,7 @@ fun AudioSettingsScreen(
                                 )
                             },
                             supportingContent = { Text("Turn off blur and transparency") },
-                            leadingContent = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
+                            leadingContent = { Icon(JukeIcons.Equalizer, contentDescription = null) },
                             trailingContent = {
                                 Switch(
                                     checked = com.example.juke.ui.theme.GlassPrefs.solid,
@@ -583,7 +578,7 @@ fun AudioSettingsScreen(
                                             modifier = Modifier.size(36.dp)
                                         ) {
                                             Icon(
-                                                Icons.Default.Close,
+                                                JukeIcons.Close,
                                                 contentDescription = "Unblock $artist",
                                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                                 modifier = Modifier.size(18.dp)
@@ -614,7 +609,7 @@ fun AudioSettingsScreen(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(
-                                    Icons.Default.Delete,
+                                    JukeIcons.Delete,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(24.dp)
@@ -634,7 +629,7 @@ fun AudioSettingsScreen(
                                 }
                             }
                             Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
+                                JukeIcons.Forward,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -678,7 +673,7 @@ fun AudioSettingsScreen(
                             },
                             trailingContent = {
                                 if (powerUnlocked) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Icon(JukeIcons.Forward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         )

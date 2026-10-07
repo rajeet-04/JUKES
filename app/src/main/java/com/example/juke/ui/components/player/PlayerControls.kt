@@ -1,5 +1,7 @@
 package com.example.juke.ui.components.player
 
+import com.example.juke.ui.icons.JukeIcons
+
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -14,9 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -26,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -35,7 +33,6 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
-import com.example.juke.R
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.glassPane
 import com.example.juke.utils.rememberJukeHaptics
@@ -79,7 +76,7 @@ fun PlayerControls(
             }
         ) {
             Icon(
-                imageVector = Icons.Default.Shuffle,
+                imageVector = JukeIcons.Shuffle,
                 contentDescription = "Shuffle",
                 tint = if (uiState.isShuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
                     alpha = 0.7f
@@ -95,7 +92,7 @@ fun PlayerControls(
             modifier = Modifier.size(resolvedButtonSize)
         ) {
             Icon(
-                painter = painterResource(R.drawable.prev_svgrepo_com),
+                imageVector = JukeIcons.Previous,
                 contentDescription = "Previous",
                 modifier = Modifier.size(resolvedIconSize),
                 tint = MaterialTheme.colorScheme.onSurface
@@ -127,10 +124,7 @@ fun PlayerControls(
                 label = "playPauseIcon"
             ) { isPlaying ->
                 Icon(
-                    painter = painterResource(
-                        if (isPlaying) R.drawable.baseline_pause_24
-                        else R.drawable.baseline_play_24
-                    ),
+                    imageVector = if (isPlaying) JukeIcons.Pause else JukeIcons.Play,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(resolvedIconSize)
@@ -146,7 +140,7 @@ fun PlayerControls(
             modifier = Modifier.size(resolvedButtonSize)
         ) {
             Icon(
-                painter = painterResource(R.drawable.next_svgrepo_com),
+                imageVector = JukeIcons.Next,
                 contentDescription = "Next",
                 modifier = Modifier.size(resolvedIconSize),
                 tint = MaterialTheme.colorScheme.onSurface
@@ -168,9 +162,9 @@ fun PlayerControls(
             }
         ) {
             val (icon, tint) = when (uiState.repeatMode) {
-                Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne to MaterialTheme.colorScheme.primary
-                Player.REPEAT_MODE_ALL -> Icons.Default.Repeat to MaterialTheme.colorScheme.primary
-                else -> Icons.Default.Repeat to MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                Player.REPEAT_MODE_ONE -> JukeIcons.RepeatOne to MaterialTheme.colorScheme.primary
+                Player.REPEAT_MODE_ALL -> JukeIcons.Repeat to MaterialTheme.colorScheme.primary
+                else -> JukeIcons.Repeat to MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             }
 
             Icon(
