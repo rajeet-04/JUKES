@@ -1,9 +1,6 @@
 package com.example.juke.ui.components.player
 
-import com.example.juke.ui.theme.GlassCard
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -62,9 +59,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.juke.R
+import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.rememberJukeHaptics
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QueueBottomSheetContent(
     currentTrack: com.example.juke.models.Track,
@@ -255,7 +252,7 @@ fun QueueBottomSheetContent(
 
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { dismissValue ->
-                            // Only allow dismiss when not dragging
+                            // Allow swipe dismissal only when the item is not being reordered.
                             if (!isDragging && dismissValue == SwipeToDismissBoxValue.EndToStart) {
                                 haptic.reject()
                                 onRemoveTrack(track.uuid)

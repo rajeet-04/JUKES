@@ -3,6 +3,7 @@
     <words>
       <w>english</w>
       <w>enoent</w>
+      <w>fileprovider</w>
       <w>gamepvz</w>
       <w>innertube</w>
       <w>jukes</w>
@@ -11,6 +12,7 @@
       <w>lofi</w>
       <w>lrclib</w>
       <w>millibels</w>
+      <w>rajeet</w>
       <w>reactionplus</w>
       <w>romanized</w>
       <w>seeked</w>
@@ -24,8 +26,6 @@
       <w>vevo</w>
       <w>xing</w>
       <w>xsrf</w>
-      <w>fileprovider</w>
-      <w>rajeet</w>
     </words>
   </dictionary>
 </component>
