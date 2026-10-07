@@ -27,6 +27,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The JUKES backend's `/v1` API (docs: API_handbook/JUKES_API.md and JUKES_APP_HANDBOOK.md).
@@ -125,7 +126,7 @@ object JukesApi {
         throw JukesException(
             http = status,
             code = error?.code ?: "http_$status",
-            retryable = error?.retryable ?: false,
+            retryable = error?.retryable == true,
             retryAfterSec = response.headers[HttpHeaders.RetryAfter]?.toIntOrNull(),
         )
     }
@@ -180,7 +181,7 @@ object JukesApi {
                 // Long-poll the job; network errors (airplane mode, a cell handover) just mean "poll
                 // again". A server without long polls answers at once, so then back off 1 s, 2 s, 3 s.
                 var i = 0
-                suspend fun backOff() = delay(POLL_DELAYS_MS.getOrElse(i++) { 3_000L })
+                suspend fun backOff() = delay(POLL_DELAYS_MS.getOrElse(i++) { 3_000L }.milliseconds)
                 while (System.currentTimeMillis() < deadline) {
                     val asked = System.currentTimeMillis()
                     val job = try {
@@ -223,18 +224,17 @@ object JukesApi {
         probeRanges = true, // a finished file: Content-Length and byte ranges
     )
 
-    /** Honour Retry-After (1–30 s), never past the deadline. */
+    /** Honor Retry-After (1–30 s), never past the deadline. */
     private suspend fun waitBefore(retryAfterSec: Int?, deadline: Long) {
         val ms = (retryAfterSec ?: 2).coerceIn(1, 30) * 1000L
         val left = deadline - System.currentTimeMillis()
         if (left <= 0) return
-        delay(minOf(ms, left))
+        delay(minOf(ms, left).milliseconds)
     }
 
     /** Same tolerance as the server: within max(8 s, 7 %). 0 or unknown = can't tell, accept. */
     internal fun isLengthOk(foundSec: Int, expectedSec: Int?): Boolean {
-        if (expectedSec == null || expectedSec <= 0 || foundSec <= 0) return true
-        return abs(foundSec - expectedSec) <= maxOf(8, expectedSec * 7 / 100)
+        return expectedSec == null || expectedSec <= 0 || foundSec <= 0 || abs(foundSec - expectedSec) <= maxOf(8, expectedSec * 7 / 100)
     }
 
     /**

@@ -11,30 +11,28 @@ import com.example.juke.models.Track
 import com.example.juke.network.OfflineException
 import com.example.juke.network.RecommenderApi
 import com.example.juke.network.SpotifyApi
-import com.example.juke.network.isOffline
 import com.example.juke.utils.ArtistUtils
 import com.example.juke.utils.BlacklistManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import java.io.File
-import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Download information for UI display
@@ -162,7 +160,7 @@ class QueueManager private constructor(private val context: Context) {
 
         // Auto-remove after 5 minutes to prevent permanent blocking in case of failure
         serviceScope.launch {
-            kotlinx.coroutines.delay(5 * 60 * 1000L)
+            kotlinx.coroutines.delay((5 * 60 * 1000L).milliseconds)
             _externalDownloads.remove(key)
         }
     }
@@ -901,6 +899,7 @@ class QueueManager private constructor(private val context: Context) {
      * Validates local file existence and stream URL expiry.
      * Removes tracks if offline and unavailable to prevent playback stoppage.
      */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun ensureUpcomingTracksReady() {
         serviceScope.launch {
             val queue = _currentQueue.value

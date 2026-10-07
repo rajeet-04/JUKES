@@ -121,6 +121,9 @@ data class LyricLine(
     val text: String
 )
 
+// Global render lead applies to existing and new tracks, in addition to per-track sync adjustments.
+const val DEFAULT_LYRICS_RENDER_OFFSET_MS = -500L
+
 // Helper moved to top level or util file, keeping here for now to avoid breaking changes if used elsewhere
 fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine> {
     val lines = mutableListOf<LyricLine>()
@@ -144,7 +147,7 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
             }
 
             val timeMs = (minutes * 60 * 1000) + (seconds * 1000) + millisFromFrac
-            val adjustedTimeMs = (timeMs + offsetMs).coerceAtLeast(0L)
+            val adjustedTimeMs = (timeMs + DEFAULT_LYRICS_RENDER_OFFSET_MS + offsetMs).coerceAtLeast(0L)
             if (text.isNotBlank()) {
                 lines.add(LyricLine(adjustedTimeMs, text))
             }

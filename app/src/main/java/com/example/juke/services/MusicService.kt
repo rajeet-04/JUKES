@@ -34,6 +34,7 @@ import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.UUID
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Music Service for downloading and indexing tracks.
@@ -111,7 +112,7 @@ class MusicService(private val context: Context) {
                         TAG,
                         "[Retry $attempt/$maxRetries] $operationName failed, retrying in ${delayMs}ms..."
                     )
-                    delay(delayMs)
+                    delay(delayMs.milliseconds)
                 } else if (attempt >= maxRetries) {
                     Log.e(TAG, "[Retry] $operationName failed after $maxRetries attempts")
                     break
@@ -172,7 +173,7 @@ class MusicService(private val context: Context) {
         var fetched = false
         for (source in order) {
             try {
-                withTimeout(if (source == Source.SPOTSAVER) 30_000L else downloadTimeoutMs(source)) {
+                withTimeout((if (source == Source.SPOTSAVER) 30_000L else downloadTimeoutMs(source)).milliseconds) {
                     downloadToTempFile(source, lastSource = source == order.last())
                 }
                 sourceMemory.recordUsed(stableUuid, source)
@@ -195,7 +196,7 @@ class MusicService(private val context: Context) {
             }
             Log.w(TAG, "All direct stream sources failed; polling queued Spotmate task: $queuedTaskId")
             try {
-                val queuedData = withTimeout(120_000L) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
+                val queuedData = withTimeout(120_000L.milliseconds) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
                 if (queuedData.isEmpty() || queuedData.size < 100_000) {
                     throw Exception("Queued Spotmate stream payload is too small")
                 }
@@ -234,7 +235,7 @@ class MusicService(private val context: Context) {
     private suspend fun looksLikePreview(request: SpotifyApi.DirectDownloadRequest, expectedSec: Int): Boolean {
         if (expectedSec < 60) return false
         return try {
-            val bytes = withTimeout(4_000L) {
+            val bytes = withTimeout(4_000L.milliseconds) {
                 ApiClient.httpClient.head(request.url) {
                     request.headers.forEach { (k, v) -> header(k, v) }
                 }.contentLength()
@@ -427,7 +428,7 @@ class MusicService(private val context: Context) {
             var usedSource: Source? = null
             for (source in order) {
                 try {
-                    withTimeout(downloadTimeoutMs(source)) {
+                    withTimeout(downloadTimeoutMs(source).milliseconds) {
                         trySource(source, lastSource = source == order.last())
                     }
                     usedSource = source
@@ -445,7 +446,7 @@ class MusicService(private val context: Context) {
                     throw Exception("All sources failed: ${failures.joinToString(", ")}")
                 }
                 Log.w(TAG, "All direct sources failed; polling queued Spotmate task: $queuedTaskId")
-                val queuedData = withTimeout(120_000L) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
+                val queuedData = withTimeout(120_000L.milliseconds) { SpotifyApi.downloadSongFromSpotmateTask(queuedTaskId) }
                 if (queuedData.isEmpty() || queuedData.size < 100_000) {
                     throw Exception("Queued Spotmate download is too small")
                 }
@@ -629,7 +630,7 @@ class MusicService(private val context: Context) {
                                 Source.SPOTSAVER -> 8_000L
                                 Source.BACKEND -> BACKEND_STREAM_TIMEOUT_MS
                                 else -> 15_000L
-                            }
+                            }.milliseconds
                         ) {
                             requestFor(source, song, live = true) { queuedSpotmateTaskId = it }
                         }
@@ -644,7 +645,7 @@ class MusicService(private val context: Context) {
             } else (if (AlexaBackendApi.isConfigured) {
                 // The backend is the first source: the UI shows "preparing" while it finishes the file.
                 try {
-                    withTimeout(BACKEND_STREAM_TIMEOUT_MS) { requestFor(Source.BACKEND, song, live = true) }
+                    withTimeout(BACKEND_STREAM_TIMEOUT_MS.milliseconds) { requestFor(Source.BACKEND, song, live = true) }
                         .also { resolvedSource = Source.BACKEND }
                 } catch (e: Exception) {
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -653,7 +654,7 @@ class MusicService(private val context: Context) {
                 }
             } else null) ?: preferNewProvider(
                 primary = {
-                    withTimeout(8_000L) { SpotsaverApi.getDownloadRequest(song.title, song.artist, SpotifyApi.parseDuration(song.duration)) }
+                    withTimeout(8_000L.milliseconds) { SpotsaverApi.getDownloadRequest(song.title, song.artist, SpotifyApi.parseDuration(song.duration)) }
                         .also { resolvedSource = Source.SPOTSAVER }
                 },
                 fallback = {
@@ -722,7 +723,7 @@ class MusicService(private val context: Context) {
         bgScope.launch {
             try {
                 // Give the player's initial HTTP connection exclusive access to this URL.
-                withTimeout(60_000L) { awaitPlaybackStarted(uuid) }
+                withTimeout(60_000L.milliseconds) { awaitPlaybackStarted(uuid) }
                 Log.d(TAG, "streamTrackInstant: background download started for '${song.title}'")
                 if (!streamDir.exists()) streamDir.mkdirs()
                 val finalFile = File(streamDir, "${uuid}_stream.mp3")
@@ -736,7 +737,7 @@ class MusicService(private val context: Context) {
                 ) {
                     resolvedRequest.copy(url = resolvedRequest.url + "&wait=1", probeRanges = true)
                 } else resolvedRequest
-                withTimeout(120_000L) {
+                withTimeout(120_000L.milliseconds) {
                     FastDownloader.downloadSegmented(
                         url = bgRequest.url,
                         outputFile = tempFile,

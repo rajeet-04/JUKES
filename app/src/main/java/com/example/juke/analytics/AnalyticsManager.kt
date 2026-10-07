@@ -26,7 +26,7 @@ import kotlinx.serialization.json.Json
 import java.util.TimeZone
 import java.util.UUID
 
-class AnalyticsManager private constructor(private val context: Context) {
+class AnalyticsManager private constructor(context: Context) {
 
     companion object {
         private const val TAG = "AnalyticsManager"
@@ -227,19 +227,19 @@ class AnalyticsManager private constructor(private val context: Context) {
         val properties = mutableMapOf<String, Any>(
             EventProperty.USER_ID to userId,
             EventProperty.TIMESTAMP to sessionStartTime,
-            "from_background" to isAppFromBackground,
-            "is_new_user" to isNewUser,
-            "device_manufacturer" to deviceInfo.manufacturer,
-            "device_model" to deviceInfo.model,
-            "device_name" to deviceInfo.deviceName,
-            "device_type" to deviceInfo.deviceType,
-            "os" to deviceInfo.os,
-            "os_name" to deviceInfo.osName,
-            "os_version" to deviceInfo.osVersion,
-            "timezone" to getDeviceTimezone(),
-            "network_carrier" to networkInfo.carrier,
-            "network_cellular" to networkInfo.cellular,
-            "network_wifi" to networkInfo.wifi
+            EventProperty.FROM_BACKGROUND to isAppFromBackground,
+            EventProperty.IS_NEW_USER to isNewUser,
+            EventProperty.DEVICE_MANUFACTURER to deviceInfo.manufacturer,
+            EventProperty.DEVICE_MODEL to deviceInfo.model,
+            EventProperty.DEVICE_NAME to deviceInfo.deviceName,
+            EventProperty.DEVICE_TYPE to deviceInfo.deviceType,
+            EventProperty.OS to deviceInfo.os,
+            EventProperty.OS_NAME to deviceInfo.osName,
+            EventProperty.OS_VERSION to deviceInfo.osVersion,
+            EventProperty.TIMEZONE to getDeviceTimezone(),
+            EventProperty.NETWORK_CARRIER to networkInfo.carrier,
+            EventProperty.NETWORK_CELLULAR to networkInfo.cellular,
+            EventProperty.NETWORK_WIFI to networkInfo.wifi
         )
 
         trackEvent(EventType.SESSION_START, properties)
@@ -261,7 +261,7 @@ class AnalyticsManager private constructor(private val context: Context) {
             EventType.SESSION_END, mapOf(
                 EventProperty.USER_ID to userId,
                 EventProperty.SESSION_LENGTH to sessionLength,
-                "duration_seconds" to sessionLengthSeconds
+                EventProperty.DURATION_SECONDS to sessionLengthSeconds
             )
         )
         syncEvents()
@@ -330,8 +330,8 @@ class AnalyticsManager private constructor(private val context: Context) {
                 EventProperty.PLAY_DURATION to playDuration,
                 EventProperty.SONG_DURATION to songDuration,
                 EventProperty.COMPLETION_PERCENTAGE to completionPercentage,
-                "skipped" to isSkipped,
-                "duration_seconds" to (playDuration / 1000)
+                EventProperty.SKIPPED to isSkipped,
+                EventProperty.DURATION_SECONDS to (playDuration / 1000)
             )
         )
 

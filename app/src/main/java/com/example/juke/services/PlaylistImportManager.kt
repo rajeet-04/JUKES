@@ -33,6 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.IOException
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Progress of one import, for the greyed-out playlist in Library and the Search progress card. */
 data class ImportStatus(
@@ -130,7 +131,7 @@ class PlaylistImportManager private constructor(context: Context) {
     /** Wait for the network, re-checking now and then in case a connectivity callback never comes. */
     private suspend fun awaitOnline() {
         while (!online.value) {
-            withTimeoutOrNull(15_000L) { online.first { it } }
+            withTimeoutOrNull(15_000L.milliseconds) { online.first { it } }
             if (!online.value) online.value = isOnlineNow()
         }
     }
@@ -155,7 +156,7 @@ class PlaylistImportManager private constructor(context: Context) {
                 }.awaitAll()
             }
             failures = if (failed) failures + 1 else 0
-            if (failed) delay(3_000L * minOf(failures, 5)) // backoff, then retry what is left
+            if (failed) delay((3_000L * minOf(failures, 5)).milliseconds) // backoff, then retry what is left
         }
         touched.forEach { dao.updatePlaylistTrackCount(it, dao.getPlaylistTrackCount(it)) }
     }

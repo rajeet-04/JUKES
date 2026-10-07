@@ -1,6 +1,7 @@
 package com.example.juke.models
 
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 internal suspend fun fetchLyricsWithRetry(fetch: suspend () -> LRCLibResult?): LRCLibResult? {
     repeat(2) { attempt ->
@@ -8,7 +9,7 @@ internal suspend fun fetchLyricsWithRetry(fetch: suspend () -> LRCLibResult?): L
         if (result != null && (!result.syncedLyrics.isNullOrBlank() || !result.plainLyrics.isNullOrBlank() || result.instrumental)) {
             return result
         }
-        if (attempt == 0) delay(1_500L)
+        if (attempt == 0) delay(1_500L.milliseconds)
     }
     return null
 }

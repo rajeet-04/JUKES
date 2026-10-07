@@ -295,9 +295,9 @@ fun MiniPlayer(
                             swipeScope.launch {
                                 val w = cardWidthPx
                                 val x = offsetX.value
-                                val commit = abs(x) > maxOf(100f, w * 0.25f)
+                                val commit = abs(x) > maxOf(72f, w * 0.18f)
                                 if (!commit) {
-                                    offsetX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
+                                    offsetX.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 200f))
                                     return@launch
                                 }
                                 val toNext = x < 0f
@@ -306,7 +306,7 @@ fun MiniPlayer(
                                 if (neighbor == null) {
                                     // Nothing to glide to (queue edge): act, then settle back.
                                     if (toNext) musicViewModel.skipToNext() else musicViewModel.skipToPrevious()
-                                    offsetX.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 400f))
+                                    offsetX.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 200f))
                                     return@launch
                                 }
                                 // Glide the current card out; the neighbour card glides in behind it.
@@ -318,13 +318,13 @@ fun MiniPlayer(
                                 offsetX.snapTo(0f)
                             }
                         },
-                        onDragCancel = { swipeScope.launch { offsetX.animateTo(0f) } },
+                        onDragCancel = { swipeScope.launch { offsetX.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 200f)) } },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
                             // Rubber-band when there is no track on that side.
                             val toNext = offsetX.value + dragAmount < 0f
                             val hasNeighbor = if (toNext) nextTrack != null else prevTrack != null
-                            val amount = if (hasNeighbor) dragAmount else dragAmount * 0.35f
+                            val amount = if (hasNeighbor) dragAmount else dragAmount * 0.55f
                             swipeScope.launch { offsetX.snapTo(offsetX.value + amount) }
                         }
                     )

@@ -59,7 +59,7 @@ object AlexaBackendApi {
 
     /**
      * A download request for the song. [live] = for immediate playback: a cache miss is streamed
-     * as yt-dlp produces it (fast first byte, no length). Otherwise the server finishes the file
+     * as yt-dlp produces it (fast first byte, no length). Otherwise, the server finishes the file
      * first so the download has a length and can be fetched in parallel ranges.
      */
     suspend fun getDownloadRequest(
@@ -75,7 +75,7 @@ object AlexaBackendApi {
             try {
                 return JukesApi.requestForPlayback(title, artist, durationSec, showPreparing = live, client = client)
                     .also { hasV1 = true }
-            } catch (e: JukesApi.V1MissingException) {
+            } catch (_: JukesApi.V1MissingException) {
                 Log.i(TAG, "Backend has no /v1 API; using /audio/")
                 hasV1 = false
             }
@@ -94,8 +94,10 @@ object AlexaBackendApi {
             }
             val body = response.bodyAsText()
             val isJson = response.contentType()?.match(ContentType.Application.Json) == true
-            when {
-                response.status.value == 200 && isJson -> {
+            fun invalidResponse(): Nothing = error("Backend /audio/ HTTP ${response.status.value}: ${body.take(120)}")
+            when (response.status.value) {
+                200 -> {
+                    if (!isJson) invalidResponse()
                     hasAudioEndpoint = true
                     val info = json.parseToJsonElement(body).jsonObject
                     val videoId = info.string("video_id") ?: error("Backend returned no video_id")
@@ -108,11 +110,12 @@ object AlexaBackendApi {
                     return audioRequest(videoId, live)
                 }
                 // A route the server doesn't have comes back as its HTML "Page not found" page.
-                response.status.value == 404 && !isJson -> {
+                404 -> {
+                    if (isJson) invalidResponse()
                     Log.i(TAG, "Backend has no /audio/ endpoint; using /alexa/search + /proxy")
                     hasAudioEndpoint = false
                 }
-                else -> error("Backend /audio/ HTTP ${response.status.value}: ${body.take(120)}")
+                else -> invalidResponse()
             }
         }
         return legacyRequest(query, title, artist, expected, client)
@@ -140,7 +143,7 @@ object AlexaBackendApi {
         }
         check(search.status.value == 200) { "Backend search HTTP ${search.status.value}" }
         val songs = json.parseToJsonElement(search.bodyAsText()).jsonObject["songs"]?.jsonArray
-            ?.mapNotNull { it as? JsonObject }.orEmpty()
+            ?.filterIsInstance<JsonObject>().orEmpty()
         val pick = pickSong(songs.take(20), title, artist, expected)
             ?: error("Backend search has no '$title' by $artist") // next source takes over
         val videoId = pick.string("video_id")!!

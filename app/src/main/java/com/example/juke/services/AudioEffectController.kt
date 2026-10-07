@@ -2,9 +2,9 @@ package com.example.juke.services
 
 import android.content.Context
 import android.media.audiofx.Equalizer
-import android.os.Build
 import android.util.Log
 import androidx.core.content.edit
+import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Controls audio effects (Equalizer and Volume Booster) for media playback.
  * Attaches to ExoPlayer via audio session ID.
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 class AudioEffectController private constructor(private val context: Context) {
 
     companion object {

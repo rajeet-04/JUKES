@@ -18,8 +18,8 @@ import com.example.juke.models.SpotifyTokenResponse
 import com.example.juke.models.SpotifyTopTracksResponse
 import com.example.juke.models.SpotifyTrack
 import io.ktor.client.call.body
-import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -33,11 +33,11 @@ import io.ktor.http.contentType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.time.Duration.Companion.milliseconds
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -138,11 +138,7 @@ object SpotifyApi {
         Log.d(TAG, "Default market set to: $defaultMarket")
     }
 
-    private var json: Json
-        get() = Json { ignoreUnknownKeys = true }
-        set(value) {
-            TODO()
-        }
+    private val json = Json { ignoreUnknownKeys = true }
 
     /**
      * Get a valid OAuth access token.
@@ -269,7 +265,7 @@ object SpotifyApi {
             return searchResponse
 
         } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e // cancelled (e.g. a new song started), not a failure
+            throw e // canceled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error searching Spotify: ${e.message}", e)
             throw e
@@ -619,7 +615,7 @@ object SpotifyApi {
             return tracks
 
         } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e // cancelled (e.g. a new song started), not a failure
+            throw e // canceled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error searching Spotify: ${e.message}", e)
             throw e
@@ -791,39 +787,6 @@ object SpotifyApi {
     }
 
     /**
-     * Download from Spotmate (Fallback Source).
-     *
-     * @param spotifyUrl Spotify track URL
-     * @return ByteArray of MP3 file data
-     */
-    suspend fun downloadSongFromSpotmate(spotifyUrl: String): ByteArray {
-        Log.d(TAG, "Attempting fallback download from Spotmate for: $spotifyUrl")
-
-        try {
-            val request = getSpotmateDownloadRequest(spotifyUrl)
-            Log.d(TAG, "Extracted Spotmate download URL: ${request.url}")
-
-            // Download the file
-            val response: HttpResponse = ApiClient.httpClient.get(request.url) {
-                request.headers.forEach { (name, value) ->
-                    header(name, value)
-                }
-            }
-            val audioData: ByteArray = response.body()
-
-            if (audioData.size < 100_000) {
-                throw Exception("Spotmate download too small")
-            }
-
-            return audioData
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error downloading from Spotmate: ${e.message}", e)
-            throw e
-        }
-    }
-
-    /**
      * Poll Spotmate queued conversion task until a downloadable URL is available.
      *
      * @param taskId Spotmate task identifier returned by /convert.
@@ -879,7 +842,7 @@ object SpotifyApi {
             }
 
             if (attempt < maxAttempts - 1) {
-                delay(pollDelayMs)
+                delay(pollDelayMs.milliseconds)
             }
         }
 
@@ -899,43 +862,6 @@ object SpotifyApi {
         }
 
         return audioData
-    }
-
-    /**
-     * Download an MP3 from gamepvz.com using a Spotify track URL.
-     *
-     * Flow:
-     *   1. POST /api/download/get-url  → JSON with `originalVideoUrl` (relative path)
-     *   2. GET  /api/download/dl?url=<base64>  → raw MP3 bytes
-     *
-     * @param spotifyUrl Spotify track URL (https://open.spotify.com/track/...)
-     * @return ByteArray of MP3 file data
-     * @throws Exception if either step fails or the payload is too small
-     */
-    suspend fun downloadSongFromGamepvz(spotifyUrl: String): ByteArray {
-        Log.d(TAG, "Attempting Gamepvz download for: $spotifyUrl")
-        try {
-            val request = getGamepvzDownloadRequest(spotifyUrl)
-
-            // Step 2: Download the MP3
-            val audioResponse: HttpResponse = ApiClient.httpClient.get(request.url) {
-                request.headers.forEach { (name, value) ->
-                    header(name, value)
-                }
-            }
-            val audioData: ByteArray = audioResponse.body()
-
-            if (audioData.size < 100_000) {
-                throw Exception("Gamepvz download too small (${audioData.size} bytes)")
-            }
-
-            Log.d(TAG, "Gamepvz download succeeded: ${audioData.size} bytes")
-            return audioData
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Gamepvz download failed: ${e.message}", e)
-            throw e
-        }
     }
 
     @kotlinx.serialization.Serializable
@@ -1183,7 +1109,7 @@ object SpotifyApi {
             null
 
         } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e // cancelled (e.g. a new song started), not a failure
+            throw e // canceled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Error searching lyrics: ${e.message}", e)
             null
@@ -1344,12 +1270,12 @@ object SpotifyApi {
             for (i in 0 until events.length()) {
                 val event = events.getJSONObject(i)
                 val tStartMs = event.optLong("tStartMs", -1L)
-                val segs = event.optJSONArray("segs") ?: continue
+                val segments = event.optJSONArray("segs") ?: continue
 
                 val lineText = buildString {
-                    for (j in 0 until segs.length()) {
-                        val seg = segs.getJSONObject(j).optString("utf8", "")
-                        if (seg != "\n") append(seg)
+                    for (j in 0 until segments.length()) {
+                        val segment = segments.getJSONObject(j).optString("utf8", "")
+                        if (segment != "\n") append(segment)
                     }
                 }.trim()
 
@@ -1368,7 +1294,7 @@ object SpotifyApi {
 
             val result = lrcSb.toString().trim()
             Log.d(TAG, "YT Captions: hasTimestamps=$hasTimestamps, lines=${result.lines().size}")
-            if (result.isBlank()) null else result
+            result.ifBlank { null }
         } catch (e: Exception) {
             Log.w(TAG, "getYoutubeCaptions failed: ${e.message}")
             null
