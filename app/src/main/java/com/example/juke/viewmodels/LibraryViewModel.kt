@@ -205,7 +205,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     pendingRemoval = pending,
                     isRemovalCommitting = committing,
                     tracks = state.tracks.filterNot { pending?.hides(it.uuid, state.selectedPlaylist?.id) == true },
-                    isSelectionMode = if (pending != null && !committing) false else state.isSelectionMode,
+                    isSelectionMode = state.isSelectionMode && (pending == null || committing),
                     selectedTrackUuids = if (pending != null && !committing) emptySet() else state.selectedTrackUuids
                 )
             }
@@ -230,11 +230,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { if (it.actionMessage == message) it.copy(actionMessage = null) else it }
     }
 
-    fun deleteTrack(trackUuid: String) {
-        val track = _uiState.value.tracks.find { it.uuid == trackUuid } ?: return
-        stageRemoval(listOf(track))
-    }
-
     fun stageRemoval(tracks: List<Track>, playlist: PlaylistEntity? = null) {
         viewModelScope.launch {
             if (!removalUndo.stage(PendingLibraryRemoval(tracks.distinctBy { it.uuid }, playlist))) {
@@ -255,11 +250,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateSearchQuery(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
-        refreshVisibleTracks()
-    }
-
-    fun clearSearch() {
-        _uiState.value = _uiState.value.copy(searchQuery = "")
         refreshVisibleTracks()
     }
 
@@ -352,7 +342,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     } catch (e: Exception) {
                         e.printStackTrace()
                         // On error, fallback to null or keep original if valid? 
-                        // For now we keep what was passed, but it might fail to load later if permission lost.
+                        // For now, we keep what was passed, but it might fail to load later if permission lost.
                     }
                 }
             }
@@ -401,11 +391,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         if (_uiState.value.selectedPlaylist?.id == playlist.id) refreshVisibleTracks()
     }
 
-    fun shufflePlay(tracks: List<Track>, musicViewModel: MusicViewModel) {
-        val shuffled = tracks.shuffled()
-        musicViewModel.setQueue(shuffled, 0)
-    }
-
     suspend fun getPlaylistsForTrack(trackUuid: String): List<PlaylistEntity> {
         return playlistDao.getPlaylistsForTrack(trackUuid)
     }
@@ -432,7 +417,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         } else {
             currentSelection.add(trackUuid)
             // Enable selection mode if not already enabled (e.g. on long press first item)
-            _uiState.value.isSelectionMode
             _uiState.value = _uiState.value.copy(
                 selectedTrackUuids = currentSelection,
                 isSelectionMode = true
@@ -450,11 +434,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             selectedTrackUuids = allTrackIds,
             isSelectionMode = true
         )
-    }
-
-    fun deleteSelectedTracks() {
-        val state = _uiState.value
-        stageRemoval(state.tracks.filter { it.uuid in state.selectedTrackUuids })
     }
 
     /** Membership counts let the picker distinguish partial and complete batch additions. */
@@ -521,18 +500,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             uris.forEach { uri ->
                 try {
                     // 1. Copy file to internal storage
-                    val returnCursor = context.contentResolver.query(uri, null, null, null, null)
-                    val nameIndex =
-                        returnCursor?.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    returnCursor?.moveToFirst()
-                    val fileName = returnCursor?.getString(nameIndex ?: 0)
-                        ?: "imported_${System.currentTimeMillis()}.mp3"
-                    returnCursor?.close()
+                    val fileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
+                    } ?: "Imported audio"
 
                     val importDir = java.io.File(context.filesDir, "imported_music")
                     if (!importDir.exists()) importDir.mkdirs()
 
-                    val destFile = java.io.File(importDir, fileName)
+                    // Provider names are display metadata, never paths. Keep only a safe extension.
+                    val extension = fileName.substringAfterLast('.', "").takeIf {
+                        it.matches(Regex("[A-Za-z0-9]{1,10}"))
+                    } ?: "mp3"
+                    val destFile = java.io.File(importDir, "${java.util.UUID.randomUUID()}.$extension")
 
                     // Copy stream
                     context.contentResolver.openInputStream(uri)?.use { input ->

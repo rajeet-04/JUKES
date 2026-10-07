@@ -11,7 +11,6 @@ import coil.request.ImageRequest
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
-import com.example.juke.database.PlaylistTrackEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
@@ -21,7 +20,7 @@ import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
 import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
-import com.example.juke.services.QueueManager
+import com.example.juke.services.PlaylistImportManager
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -29,20 +28,16 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.milliseconds
 
 data class SearchUiState(
     val query: String = "",
@@ -89,9 +84,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private val database = MusicDatabase.getDatabase(application)
     private val trackDao = database.trackDao()
-    private val playlistDao = database.playlistDao()
-    private val importManager = com.example.juke.services.PlaylistImportManager.get(application)
-    private val queueManager = QueueManager.getInstance(application)
+    private val importManager = PlaylistImportManager.get(application)
 
     private val searchPrefs =
         application.getSharedPreferences("search_history", android.content.Context.MODE_PRIVATE)
@@ -151,7 +144,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             searchJob = viewModelScope.launch {
-                delay(LIVE_SUGGESTION_DEBOUNCE_MS) // Fast debounce for near-immediate typing suggestions
+                delay(LIVE_SUGGESTION_DEBOUNCE_MS.milliseconds) // Fast debounce for near-immediate typing suggestions
                 if (requestNonce != suggestionRequestNonce.get()) return@launch
                 fetchSuggestions(query, requestNonce)
             }
@@ -459,7 +452,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     val likeliest = filteredSpotifyTracks.take(SEARCH_WARMUP_COUNT)
                     if (likeliest.isNotEmpty()) {
                         warmupJob = viewModelScope.launch {
-                            delay(WARMUP_DEBOUNCE_MS)
+                            delay(WARMUP_DEBOUNCE_MS.milliseconds)
                             likeliest.forEach { track ->
                                 JukesApi.warmup(
                                     title = track.name,
@@ -514,7 +507,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val json = searchPrefs.getString("recent_searches", null) ?: return emptyList()
         return try {
             json.split("|||")
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -613,10 +606,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setDownloading(songId: String?) {
         _uiState.value = _uiState.value.copy(downloadingId = songId)
-    }
-
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
     }
 
     fun clearArtistDetail() {

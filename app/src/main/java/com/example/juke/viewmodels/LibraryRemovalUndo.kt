@@ -9,6 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Serializes removal batches; Undo cancels the timer, never a deletion already committing. */
 internal class LibraryRemovalUndo(
@@ -25,8 +26,7 @@ internal class LibraryRemovalUndo(
     private val mutex = Mutex()
 
     suspend fun stage(incoming: PendingLibraryRemoval): Boolean {
-        if (incoming.tracks.isEmpty() || committing) return false
-        return mutex.withLock {
+        return incoming.tracks.isNotEmpty() && !committing && mutex.withLock {
             val previous = pending
             // Never shorten the five-second promise by committing a different operation early.
             if (previous != null && previous.playlist?.id != incoming.playlist?.id) return@withLock false
@@ -35,7 +35,7 @@ internal class LibraryRemovalUndo(
             pending = next
             onChanged(next, false)
             timer = scope.launch {
-                delay(5000)
+                delay(5000.milliseconds)
                 mutex.withLock { if (pending == next) finish(next) }
             }
             true
@@ -57,7 +57,7 @@ internal class LibraryRemovalUndo(
             withContext(NonCancellable) { commit(removal) }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             onFailure(removal)
         } finally {
             pending = null

@@ -37,11 +37,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             Calendar.LONG,
             java.util.Locale.getDefault()
         )
-        return when {
-            hour in 5..11  -> "First Light Sounds !"
-            hour in 12..16 -> "Afternoon Drift !"
-            hour in 17..20 -> "The Golden Hour !"
-            else           -> "After Dark !"
+        return when (hour) {
+            in 5..11 -> "First Light Sounds !"
+            in 12..16 -> "Afternoon Drift !"
+            in 17..20 -> "The Golden Hour !"
+            else -> "After Dark !"
         }
     }
 

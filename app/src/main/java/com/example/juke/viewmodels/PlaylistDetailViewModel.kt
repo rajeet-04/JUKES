@@ -4,24 +4,15 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
-import com.example.juke.database.PlaylistTrackEntity
 import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.models.SpotifyTrack
-import com.example.juke.models.Track
 import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
-import com.example.juke.services.QueueManager
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import java.util.concurrent.atomic.AtomicInteger
 
 data class PlaylistDetailUiState(
     val playlist: SpotifyPlaylist? = null,
@@ -34,9 +25,6 @@ data class PlaylistDetailUiState(
 )
 
 class PlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
-    private val database = MusicDatabase.getDatabase(application)
-    private val playlistDao = database.playlistDao()
-    private val queueManager = QueueManager.getInstance(application)
     private val importManager = com.example.juke.services.PlaylistImportManager.get(application)
     
     private val _uiState = MutableStateFlow(PlaylistDetailUiState())

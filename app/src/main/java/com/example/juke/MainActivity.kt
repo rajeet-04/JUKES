@@ -32,7 +32,6 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -55,7 +54,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -129,7 +129,6 @@ sealed class Screen(
         { Icon(painter = painterResource(R.drawable.library), contentDescription = "Library") })
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
 
     private val showPlayerOnLaunch = mutableStateOf(false)
@@ -199,15 +198,15 @@ class MainActivity : ComponentActivity() {
 
                     GlassAlertDialog(
                         onDismissRequest = {
-                            // Only allow dismiss if not emergency
+                            // Allow dismissal only for non-emergency updates.
                             if (!isEmergency) {
                                 updateAvailable = null
                             }
                         },
                         title = {
-                            androidx.compose.foundation.layout.Row(
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = if (isEmergency) Icons.Filled.Warning else Icons.Filled.SystemUpdate,
@@ -341,9 +340,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val isExpanded = LocalConfiguration.current.screenWidthDp >= 600
+                val windowWidth = with(LocalDensity.current) {
+                    LocalWindowInfo.current.containerSize.width.toDp()
+                }
+                val isExpanded = windowWidth >= 600.dp
                 // Scrolling down a list folds the tab bar into one button beside the mini player.
-                val chromeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+                val chromeThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
                 val chrome = remember(chromeThresholdPx) { com.example.juke.ui.components.CollapsingChrome(chromeThresholdPx) }
                 LaunchedEffect(currentRoute) { chrome.expand() } // a new screen starts unfolded
                 val hasMiniPlayer = musicViewModel.uiState.collectAsStateWithLifecycle().value.currentTrack != null
@@ -744,8 +746,8 @@ private fun UpdateReadyDialog(
 
 @Composable
 private fun PreparingPill(title: String) {
-    androidx.compose.material3.Surface(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+    Surface(
+        shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         modifier = Modifier.fillMaxWidth()
