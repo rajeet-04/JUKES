@@ -1,5 +1,6 @@
 package com.example.juke.ui.components
 
+
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.ui.draw.clipToBounds
@@ -353,6 +354,7 @@ fun MiniPlayer(
                             contentDescription = currentTrack.title,
                             modifier = Modifier
                                 .size(46.dp)
+                                .playerArtworkEndpoint(expanded = false)
                                 .clip(RoundedCornerShape(18.dp)),
                             contentScale = ContentScale.Crop
                         )
@@ -360,6 +362,7 @@ fun MiniPlayer(
                         Box(
                             modifier = Modifier
                                 .size(46.dp)
+                                .playerArtworkEndpoint(expanded = false)
                                 .clip(RoundedCornerShape(18.dp)),
                             contentAlignment = Alignment.Center
                         ) {

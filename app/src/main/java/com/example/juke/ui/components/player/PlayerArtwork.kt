@@ -1,5 +1,6 @@
 package com.example.juke.ui.components.player
 
+import com.example.juke.ui.components.playerArtworkEndpoint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -137,6 +138,7 @@ private fun ArtworkCard(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .playerArtworkEndpoint(expanded = true, enabled = !showLyrics && track.uuid == musicViewModel.uiState.value.currentTrack?.uuid)
             .glassPane(RoundedCornerShape(32.dp), GlassLevel.Thick)
             .clickable {
                 haptic.click()

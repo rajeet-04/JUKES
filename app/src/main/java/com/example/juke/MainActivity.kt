@@ -399,6 +399,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                com.example.juke.ui.components.PlayerTransitionHost(expanded = showPlayerModal, musicViewModel = musicViewModel) {
                 CompositionLocalProvider(LocalHazeState provides hazeState) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -653,7 +654,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Player Modal
-                if (showPlayerModal) {
+                com.example.juke.ui.components.PlayerTransitionContent(onDismiss = { showPlayerModal = false }) {
                     PlayerScreen(
                         musicViewModel = musicViewModel,
                         onDismiss = { showPlayerModal = false },
@@ -682,6 +683,7 @@ class MainActivity : ComponentActivity() {
                             context.startActivity(shareIntent)
                         }
                     )
+                }
                 }
             }
         }
