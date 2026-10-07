@@ -1,14 +1,11 @@
 package com.example.juke.ui.screens
 
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import android.os.Build
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,8 +29,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -42,23 +41,19 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Button
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,13 +75,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
-import com.example.juke.ui.components.HeroTrackCard
-import com.example.juke.ui.components.HomeSkeleton
 import com.example.juke.ui.components.GlassIconButton
 import com.example.juke.ui.components.GlassPillButton
+import com.example.juke.ui.components.HeroTrackCard
+import com.example.juke.ui.components.HomeSkeleton
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.glassPane
@@ -96,8 +92,9 @@ import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     musicViewModel: MusicViewModel,
@@ -161,8 +158,7 @@ fun HomeScreen(
 
                     if (uiState.mostPlayed.isNotEmpty()) {
                         item {
-                            HorizontalTrackSection(
-                                title = "Most Played",
+                            MostPlayedSection(
                                 tracks = uiState.mostPlayed,
                                 onSeeAllClick = onSeeAllClick,
                                 onTrackClick = { index ->
@@ -218,7 +214,6 @@ private fun HomeHeader(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecentlyPlayedSection(
     tracks: List<Track>,
@@ -273,7 +268,7 @@ private fun RecentlyPlayedSection(
     ) {
         if (tracks.size <= 1 || touchExplorationEnabled) return@LaunchedEffect
 
-        delay(autoAdvanceDelayMillis.toLong())
+        delay(autoAdvanceDelayMillis.toLong().milliseconds)
         val isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
         if (!pagerState.isScrollInProgress && isResumed) {
             isAutoScrolling = true
@@ -381,14 +376,13 @@ private fun RecentlyPlayedSection(
 }
 
 @Composable
-private fun HorizontalTrackSection(
-    title: String,
+private fun MostPlayedSection(
     tracks: List<Track>,
     onSeeAllClick: () -> Unit,
     onTrackClick: (Int) -> Unit
 ) {
     Column {
-        SectionHeader(title = title, onActionClick = onSeeAllClick)
+        SectionHeader(title = "Most Played", onActionClick = onSeeAllClick)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)

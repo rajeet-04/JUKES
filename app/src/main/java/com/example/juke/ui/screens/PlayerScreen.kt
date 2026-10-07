@@ -1,26 +1,9 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.components.GlassAlertDialog
-import androidx.compose.material3.ModalBottomSheet
-import com.example.juke.ui.components.GlassIconButton
-import com.example.juke.ui.components.GlassModalBottomSheet
-import com.example.juke.ui.theme.GlassBackdrop
-import com.example.juke.ui.theme.isGlassDark
-import com.example.juke.ui.theme.GlassLevel
-import com.example.juke.ui.theme.GlassShapes
-import com.example.juke.ui.theme.GlassSurface
-import com.example.juke.ui.theme.JUKETheme
-import com.example.juke.ui.theme.glassSheetColor
-import androidx.compose.ui.draw.alpha
-import com.example.juke.ui.theme.GlassCard
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import android.annotation.SuppressLint
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -30,16 +13,14 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -53,8 +34,8 @@ import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lyrics
-import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.DropdownMenu
@@ -65,47 +46,51 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.surfaceColorAtElevation
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.example.juke.R
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.models.Track
 import com.example.juke.ui.components.AddToPlaylistDialog
 import com.example.juke.ui.components.CreatePlaylistDialog
+import com.example.juke.ui.components.GlassAlertDialog
+import com.example.juke.ui.components.GlassIconButton
+import com.example.juke.ui.components.GlassModalBottomSheet
 import com.example.juke.ui.components.PlayerSkeleton
 import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
 import com.example.juke.ui.components.player.QueueBottomSheetContent
+import com.example.juke.ui.theme.GlassBackdrop
+import com.example.juke.ui.theme.GlassCard
+import com.example.juke.ui.theme.GlassShapes
+import com.example.juke.ui.theme.JUKETheme
+import com.example.juke.ui.theme.glassSheetColor
+import com.example.juke.ui.theme.isGlassDark
 import com.example.juke.utils.BlacklistManager
 import com.example.juke.utils.LyricsRomanizer
 import com.example.juke.utils.rememberJukeHaptics
@@ -113,6 +98,7 @@ import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 // Re-export LyricLine for compatibility if needed elsewhere,
 // though it should ideally be in a model file.
@@ -208,7 +194,7 @@ fun PlayerScreen(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             musicViewModel.updateProgress()
             while (uiState.isPlaying) {
-                delay(300)
+                delay(300.milliseconds)
                 musicViewModel.updateProgress()
             }
         }
@@ -258,7 +244,7 @@ fun PlayerScreen(
         // Failed lines (offline, rate-limited, network blocked in background) are retried a few
         // times; successful lines are cached in memory, so a retry only re-asks for the failures.
         for (attempt in 0..3) {
-            if (attempt > 0) delay(5_000L * attempt)
+            if (attempt > 0) delay((5_000L * attempt).milliseconds)
             val romanizedSynced = currentTrack.romanizedSyncedLyrics?.takeIf(complete)
                 ?: currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) }
             val romanizedPlain = currentTrack.romanizedPlainLyrics?.takeIf(complete)
@@ -313,8 +299,6 @@ fun PlayerScreen(
                 val ctrlBtnSize = if (isCompact) 48.dp else if (isTablet) 72.dp else 56.dp
                 val ctrlIconSize = if (isCompact) 28.dp else if (isTablet) 56.dp else 40.dp
                 val ctrlSmallIconSize = if (isCompact) 18.dp else if (isTablet) 32.dp else 24.dp
-                val artworkFraction =
-                    if (isCompact) 0.38f else if (screenH < 800.dp) 0.42f else 0.45f
                 val titleStyle =
                     if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
                 val subtitleStyle =
@@ -538,9 +522,9 @@ fun PlayerScreen(
                 onMoveTrack = { from, to -> musicViewModel.moveInQueue(from, to) },
                 onRemoveTrack = { id -> musicViewModel.removeFromQueue(id) },
                 onPlayTrack = { track -> musicViewModel.playTrackFromQueue(track) },
-                onShuffleUpcoming = { musicViewModel.applyQueueTool(com.example.juke.viewmodels.MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
-                onSortUpcoming = { musicViewModel.applyQueueTool(com.example.juke.viewmodels.MusicViewModel.QueueTool.SORT_UPCOMING) },
-                onClearPlayed = { musicViewModel.applyQueueTool(com.example.juke.viewmodels.MusicViewModel.QueueTool.CLEAR_PLAYED) },
+                onShuffleUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
+                onSortUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
+                onClearPlayed = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },
                 onSaveAsPlaylist = { musicViewModel.saveQueueAsPlaylist() }
             )
         }

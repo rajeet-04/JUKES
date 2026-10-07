@@ -1,11 +1,5 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.components.GlassButton
-import com.example.juke.ui.components.SearchHeader
-import com.example.juke.ui.components.GlassFilterChip
-import com.example.juke.ui.components.GlassModalBottomSheet
-import com.example.juke.ui.components.GlassAlertDialog
-import com.example.juke.ui.theme.GlassCard
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,8 +20,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Check
@@ -38,17 +32,14 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.SearchOff
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -56,63 +47,64 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
-import com.example.juke.ui.components.LibrarySelectionActions
-import com.example.juke.ui.components.LibraryTrackActionsSheet
-import com.example.juke.ui.components.LibraryPlaylistSheet
-import com.example.juke.ui.components.GlassIconButton
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import com.example.juke.ui.components.CompactDownloadBanner
 import com.example.juke.ui.components.CreatePlaylistDialog
 import com.example.juke.ui.components.EditPlaylistDialog
+import com.example.juke.ui.components.GlassAlertDialog
+import com.example.juke.ui.components.GlassButton
+import com.example.juke.ui.components.GlassFilterChip
+import com.example.juke.ui.components.GlassIconButton
+import com.example.juke.ui.components.GlassModalBottomSheet
+import com.example.juke.ui.components.LibraryPlaylistSheet
+import com.example.juke.ui.components.LibrarySelectionActions
+import com.example.juke.ui.components.LibraryTrackActionsSheet
 import com.example.juke.ui.components.LibraryTrackItem
+import com.example.juke.ui.components.SearchHeader
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.ui.components.TrackListSkeleton
+import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.DownloadItem
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SortOption
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     musicViewModel: MusicViewModel,
     libraryViewModel: LibraryViewModel = viewModel(),
     bottomPadding: Dp = 0.dp
 ) {
-    val coroutineScope = rememberCoroutineScope()
     val uiState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val libraryDownloadBannerState by remember(musicViewModel) {
         musicViewModel.uiState
@@ -127,7 +119,6 @@ fun LibraryScreen(
         initialValue = LibraryDownloadBannerState(currentDownload = null, downloadQueue = emptyList())
     )
     val haptic = rememberJukeHaptics()
-    val keyboardController = LocalSoftwareKeyboardController.current
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     val importStatus by com.example.juke.services.PlaylistImportManager
         .get(androidx.compose.ui.platform.LocalContext.current).status.collectAsStateWithLifecycle()
@@ -312,12 +303,7 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            val chipColors = FilterChipDefaults.filterChipColors(
-                containerColor = Color.Transparent,
-                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                labelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                selectedLabelColor = MaterialTheme.colorScheme.primary
-            )
+
 
             // Enhanced Filter Row
             LazyRow(
@@ -694,7 +680,7 @@ fun LibraryScreen(
                     itemsIndexed(
                         items = uiState.tracks,
                         key = { index, track -> "${track.uuid}_$index" }
-                    ) { index, track ->
+                    ) { _, track ->
                         SwipeToAddNextContainer(
                             onAddNext = { queueSongs(listOf(track), true) },
                             onDelete = { tracksForDelete = listOf(track) },

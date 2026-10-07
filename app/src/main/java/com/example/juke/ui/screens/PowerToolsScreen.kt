@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.core.content.edit
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -110,7 +111,7 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
                                 onClick = {
                                     haptic.click()
                                     threshold = n
-                                    settings.edit().putInt("repeat_threshold", n).apply()
+                                    settings.edit { putInt("repeat_threshold", n) }
                                 },
                                 label = { Text("$n") }
                             )
@@ -130,12 +131,12 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
                     SwitchRow("Double-tap mini player", "Play or pause", doubleTap) {
                         haptic.toggle()
                         doubleTap = it
-                        power.edit().putBoolean("mini_double_tap_play_pause", it).apply()
+                        power.edit { putBoolean("mini_double_tap_play_pause", it) }
                     }
                     SwitchRow("Long-press mini player", "Add or remove the favourite", longPress) {
                         haptic.toggle()
                         longPress = it
-                        power.edit().putBoolean("mini_long_press_favorite", it).apply()
+                        power.edit { putBoolean("mini_long_press_favorite", it) }
                     }
                     Label("Also built in", "Tap Search again to select your query and type. Swipe the mini player to change songs. Queue ⋮ menu: shuffle, sort, clear played, save as playlist.")
                 }
@@ -146,7 +147,7 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
                     Label("Hide Power Tools", "Locks this page again. Unlock it by tapping the version in Audio Control 7 times.")
                     GlassButton(onClick = {
                         haptic.confirm()
-                        power.edit().putBoolean("power_tools_unlocked", false).apply()
+                        power.edit { putBoolean("power_tools_unlocked", false) }
                         onNavigateBack()
                     }) { Text("Lock Power Tools") }
                 }

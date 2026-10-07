@@ -163,7 +163,6 @@ class MainActivity : ComponentActivity() {
                 }
                 val context = LocalContext.current
                 var showPlayerModal by remember { mutableStateOf(false) }
-                var searchResetTrigger by remember { mutableIntStateOf(0) }
                 var searchFocusTrigger by remember { mutableIntStateOf(0) }
 
                 // --- UPDATE CHECK LOGIC ---
@@ -542,7 +541,6 @@ class MainActivity : ComponentActivity() {
                                 SearchScreen(
                                     musicViewModel = musicViewModel,
                                     searchViewModel = searchViewModel,
-                                    searchResetTrigger = searchResetTrigger,
                                     searchFocusTrigger = searchFocusTrigger,
                                     onNavigateToArtist = { artist ->
                                         searchViewModel.loadArtistDetails(artist)
