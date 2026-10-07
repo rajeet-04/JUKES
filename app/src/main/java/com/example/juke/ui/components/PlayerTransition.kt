@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -45,9 +44,10 @@ private class PlayerTransitionState {
 private val LocalPlayerTransition = staticCompositionLocalOf<PlayerTransitionState?> { null }
 
 /** Measure real endpoints rather than guessing artwork positions from screen dimensions. */
-fun Modifier.playerArtworkEndpoint(expanded: Boolean, enabled: Boolean = true): Modifier = composed {
+@Composable
+fun Modifier.playerArtworkEndpoint(expanded: Boolean, enabled: Boolean = true): Modifier {
     val state = LocalPlayerTransition.current
-    if (state == null || !enabled) this else this
+    return if (state == null || !enabled) this else this
         .onGloballyPositioned {
             if (expanded) state.playerBounds = it.boundsInRoot()
             else state.miniBounds = it.boundsInRoot()

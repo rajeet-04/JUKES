@@ -48,9 +48,7 @@ fun AddToPlaylistDialog(
     onDismiss: () -> Unit,
     onAddToPlaylist: (PlaylistEntity) -> Unit,
     onRemoveFromPlaylist: (PlaylistEntity) -> Unit,
-    onCreatePlaylist: () -> Unit,
-    onRemoveFromCurrentPlaylist: ((PlaylistEntity) -> Unit)? = null,
-    currentPlaylist: PlaylistEntity? = null
+    onCreatePlaylist: () -> Unit
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -137,13 +135,13 @@ fun AddToPlaylistDialog(
                         }
                     } else {
                         items(playlists, key = { it.id }) { playlist ->
-                            val isAlreadyAdded = if (tracks.size == 1) trackPlaylists.any { it.id == playlist.id } else false
+                            val isAlreadyAdded = tracks.size == 1 && trackPlaylists.any { it.id == playlist.id }
 
                             PlaylistItemRow(
                                 playlist = playlist,
                                 isAlreadyAdded = isAlreadyAdded,
                                 onClick = {
-                                    if (isAlreadyAdded && tracks.size == 1) {
+                                    if (isAlreadyAdded) {
                                         onRemoveFromPlaylist(playlist)
                                     } else {
                                         onAddToPlaylist(playlist)

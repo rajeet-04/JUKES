@@ -44,6 +44,7 @@ import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.glassFloat
 import com.example.juke.utils.rememberJukeHaptics
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * One compact header shared by Library and Search: title + actions at rest, and the same
@@ -82,7 +83,7 @@ fun SearchHeader(
     LaunchedEffect(selectAllTrigger, open) {
         if (open && selectAllTrigger != handledSelectAll) {
             handledSelectAll = selectAllTrigger
-            delay(60) // let the field enter composition when the bar was closed
+            delay(60.milliseconds) // let the field enter composition when the bar was closed
             field = field.copy(selection = TextRange(0, field.text.length))
             try { focus.requestFocus() } catch (_: Exception) {}
             keyboard?.show()

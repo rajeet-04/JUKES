@@ -1,42 +1,25 @@
 package com.example.juke.ui.components
 
 
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
-import com.example.juke.models.Track
-import kotlin.math.abs
-import kotlin.math.sign
-import androidx.compose.runtime.derivedStateOf
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -51,38 +34,54 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.juke.models.Track
 import com.example.juke.ui.screens.LyricLine
+import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.glassFloat
-import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.utils.LyricsRomanizer
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
+import kotlin.math.sign
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Returns true if the lyric line contains only musical notation symbols / whitespace.
  *  Such lines signal an instrumental passage and should not be shown in the mini-player. */
@@ -116,7 +115,6 @@ private fun computeAdaptiveLyricsGapThreshold(lyrics: List<LyricLine>): Long {
     return (median * 2.2).toLong().coerceIn(1_800L, 12_000L)
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MiniPlayer(
     musicViewModel: MusicViewModel,
@@ -142,7 +140,7 @@ fun MiniPlayer(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (uiState.isPlaying) {
                 musicViewModel.updateProgress()
-                delay(300)
+                delay(300.milliseconds)
             }
         }
     }
@@ -178,7 +176,7 @@ fun MiniPlayer(
             // Same rules as the full player: a saved result with non-Latin lines left is redone,
             // failed lines are retried, and only a complete result is saved.
             for (attempt in 0..3) {
-                if (attempt > 0) delay(5_000L * attempt)
+                if (attempt > 0) delay((5_000L * attempt).milliseconds)
                 val result = currentTrack.romanizedSyncedLyrics?.takeIf(LyricsRomanizer::isFullyRomanized)
                     ?: currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) }
                 romanizedSyncedLyrics = result
@@ -265,7 +263,7 @@ fun MiniPlayer(
             if (nextLineAt == null || !isPlaying || !isMiniPlayerLyricsEnabled) return@LaunchedEffect
             val waitMs = ((nextLineAt - currentPosition) / playbackSpeed.coerceAtLeast(0.25f)).toLong()
             if (waitMs in 1..300) {
-                delay(waitMs)
+                delay(waitMs.milliseconds)
                 musicViewModel.updateProgress()
             }
         }
@@ -309,12 +307,12 @@ fun MiniPlayer(
                                     offsetX.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 200f))
                                     return@launch
                                 }
-                                // Glide the current card out; the neighbour card glides in behind it.
+                                // Glide the current card out; the neighbor card glides in behind it.
                                 val before = currentUuid
                                 offsetX.animateTo(if (toNext) -w else w, tween(190, easing = FastOutSlowInEasing))
                                 if (toNext) musicViewModel.skipToNext() else musicViewModel.skipToPrevious()
-                                // Hold the neighbour in place until the real card shows the new track.
-                                withTimeoutOrNull(900) { snapshotFlow { currentUuid }.first { it != before } }
+                                // Hold the neighbor in place until the real card shows the new track.
+                                withTimeoutOrNull(900.milliseconds) { snapshotFlow { currentUuid }.first { it != before } }
                                 offsetX.snapTo(0f)
                             }
                         },
@@ -426,7 +424,7 @@ fun MiniPlayer(
                     }
 
                     // Favourite button — tinted primary when hearted. Hidden in the merged row, where
-                    // the title or lyric needs the width (long-press can still favourite).
+                    // the title or lyric needs the width (long-press can still favorite).
                     if (!compact) IconButton(
                         onClick = {
                             haptic.confirm()
@@ -437,8 +435,8 @@ fun MiniPlayer(
                         Icon(
                             imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite
                             else Icons.Outlined.FavoriteBorder,
-                            contentDescription = if (currentTrack.isFavourite) "Remove from favourites"
-                            else "Add to favourites",
+                            contentDescription = if (currentTrack.isFavourite) "Remove from favorites"
+                            else "Add to favorites",
                             tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
                             modifier = Modifier.size(20.dp)
@@ -541,7 +539,7 @@ fun MiniPlayer(
     }
 }
 
-/** Static preview of a neighbouring track, laid out exactly like the live mini player row. */
+/** Static preview of a neighboring track, laid out exactly like the live mini player row. */
 @Composable
 private fun MiniPlayerGlideCard(track: Track, isPlaying: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current

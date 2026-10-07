@@ -2,6 +2,7 @@ package com.example.juke.ui.components
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,7 +11,8 @@ class CollapsingChromeTest {
     private val chrome = CollapsingChrome(thresholdPx = 100f)
 
     private fun scroll(dy: Float) {
-        chrome.connection.onPostScroll(Offset(0f, dy), Offset.Zero, NestedScrollSource.UserInput)
+        assertEquals(Offset.Zero,
+            chrome.connection.onPostScroll(Offset(0f, dy), Offset.Zero, NestedScrollSource.UserInput))
     }
 
     @Test

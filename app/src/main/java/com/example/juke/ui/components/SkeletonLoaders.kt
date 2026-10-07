@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -81,8 +80,8 @@ private fun TrackRowSkeleton(index: Int) {
 
 @Composable
 fun TrackListSkeleton(
-    count: Int = 8,
     modifier: Modifier = Modifier,
+    count: Int = 8,
     contentPadding: PaddingValues = PaddingValues(top = 16.dp, bottom = 100.dp)
 ) {
     LazyColumn(
@@ -98,8 +97,8 @@ fun TrackListSkeleton(
 
 @Composable
 fun MediaDetailSkeleton(
-    count: Int = 6,
     modifier: Modifier = Modifier,
+    count: Int = 6,
     contentPadding: PaddingValues = PaddingValues(
         start = 20.dp,
         top = 16.dp,

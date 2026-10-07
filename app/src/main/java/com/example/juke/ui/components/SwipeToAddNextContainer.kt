@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
@@ -43,7 +42,6 @@ import com.example.juke.ui.theme.LocalGlassAccent
 import com.example.juke.ui.theme.isGlassDark
 import com.example.juke.utils.rememberJukeHaptics
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeToAddNextContainer(
     onAddNext: () -> Unit,

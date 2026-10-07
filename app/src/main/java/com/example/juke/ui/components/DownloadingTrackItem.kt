@@ -312,36 +312,3 @@ private fun CompactDownloadRow(
         }
     }
 }
-
-// ── Legacy single-item composable kept for any other call sites ──────────────
-@Composable
-fun DownloadingTrackItem(
-    downloadItem: DownloadItem,
-    onCancel: () -> Unit = {},
-    onRetry: () -> Unit = {},
-    @SuppressLint("ModifierParameter") modifier: Modifier = Modifier
-) {
-    LocalHapticFeedback.current
-    CompactDownloadRow(
-        title = downloadItem.song.title,
-        artist = downloadItem.song.artist,
-        thumbnail = downloadItem.song.thumbnail,
-        status = downloadItem.status,
-        statusLabel = when (downloadItem.status) {
-            DownloadStatus.DOWNLOADING -> "Downloading…"
-            DownloadStatus.QUEUED -> "Queued"
-            DownloadStatus.FAILED -> downloadItem.error ?: "Failed"
-            DownloadStatus.COMPLETED -> "Done"
-        },
-        onAction = when (downloadItem.status) {
-            DownloadStatus.FAILED -> onRetry
-            DownloadStatus.QUEUED -> onCancel
-            else -> null
-        },
-        actionIcon = when (downloadItem.status) {
-            DownloadStatus.FAILED -> Icons.Default.Refresh
-            DownloadStatus.QUEUED -> Icons.Default.Close
-            else -> null
-        }
-    )
-}

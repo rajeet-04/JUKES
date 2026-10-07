@@ -1,6 +1,5 @@
 package com.example.juke.ui.components
 
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,7 +42,7 @@ fun EditPlaylistDialog(
     onConfirm: (String, String?) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
-    var selectedUri by remember { mutableStateOf<Uri?>(initialThumbnailUri?.let { it.toUri() }) }
+    var selectedUri by remember { mutableStateOf(initialThumbnailUri?.toUri()) }
     val haptic = rememberJukeHaptics()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(

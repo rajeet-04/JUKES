@@ -34,6 +34,8 @@ class CollapsingChrome(private val thresholdPx: Float) {
     private var travel = 0f
 
     val connection = object : NestedScrollConnection {
+        // This observer updates chrome state without consuming any additional scroll distance.
+        @Suppress("SameReturnValue")
         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
             val dy = consumed.y // what actually scrolled: nothing at a list's ends
             if (dy == 0f) return Offset.Zero
