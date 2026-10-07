@@ -1,6 +1,7 @@
 package com.example.juke.repositories
 
 import android.content.Context
+import androidx.core.content.edit
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifySimplifiedTrack
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,7 +31,7 @@ class OfflineAlbumStore private constructor(context: Context) {
         val id = album.id ?: return
         if (tracks.isEmpty()) return
         val entry = OfflineAlbum(album, tracks)
-        prefs.edit().putString(id, json.encodeToString(entry)).apply()
+        prefs.edit { putString(id, json.encodeToString(entry)) }
         state.value = (state.value.filterNot { it.album.id == id } + entry).sortedBy { it.album.name }
     }
 
