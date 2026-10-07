@@ -20,21 +20,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -66,14 +57,13 @@ import androidx.navigation.compose.rememberNavController
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.models.GithubRelease
 import com.example.juke.network.SpotifyApi
-import com.example.juke.services.DownloadedUpdate
 import com.example.juke.services.UpdateDownloadState
 import com.example.juke.services.UpdateManager
-import com.example.juke.ui.components.GlassAlertDialog
 import com.example.juke.ui.components.GlassNavBar
 import com.example.juke.ui.components.GlassNavItem
 import com.example.juke.ui.components.GlassNavRail
 import com.example.juke.ui.components.MiniPlayer
+import com.example.juke.ui.components.UpdateSheet
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.AlbumDetailScreen
 import com.example.juke.ui.screens.ArtistDetailScreen
@@ -164,14 +154,13 @@ class MainActivity : ComponentActivity() {
                 // --- UPDATE CHECK LOGIC ---
                 var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
                 val updateDownloadState by UpdateManager.downloadState.collectAsStateWithLifecycle()
-                val isUpdateDownloading = updateDownloadState is UpdateDownloadState.Downloading
 
                 LaunchedEffect(Unit) {
                     // Yield the first frame before optional launch work.
                     withFrameNanos { }
                     musicViewModel.startDeferredStartupWork()
                     AnalyticsManager.getInstance(context).trackAppOpened()
-                    updateAvailable = UpdateManager.checkForUpdates()
+                    updateAvailable = UpdateManager.checkForUpdates(context)
 
 
                 }
@@ -183,127 +172,16 @@ class MainActivity : ComponentActivity() {
                     UpdateManager.clearDownloadState()
                 }
 
-                if (updateAvailable != null) {
-                    val release = updateAvailable!!
-
-                    // Determine if the update is an emergency update (e.g., contains "emergency" or "hotfix" in tags or body)
-                    val isEmergency = release.tagName.contains("emergency", ignoreCase = true) ||
-                            release.tagName.contains("hotfix", ignoreCase = true) ||
-                            (release.body?.contains("emergency", ignoreCase = true) == true) ||
-                            (release.body?.contains("critical", ignoreCase = true) == true) ||
-                            (release.body?.contains("hotfix", ignoreCase = true) == true)
-
-                    GlassAlertDialog(
-                        onDismissRequest = {
-                            // Allow dismissal only for non-emergency updates.
-                            if (!isEmergency) {
-                                updateAvailable = null
-                            }
-                        },
-                        title = {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = if (isEmergency) Icons.Filled.Warning else Icons.Filled.SystemUpdate,
-                                    contentDescription = "Update Icon",
-                                    tint = if (isEmergency) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(end = 8.dp)
-                                )
-                                Text(
-                                    text = if (isEmergency) "Critical Update Required" else "Update Available",
-                                    color = if (isEmergency) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                                    style = MaterialTheme.typography.titleLarge
-                                )
-                            }
-                        },
-                        text = {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    // Make the content scrollable
-                                    .verticalScroll(rememberScrollState())
-                            ) {
-                                Text(
-                                    text = "Version ${release.tagName} is now available.",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
-
-                                if (isEmergency) {
-                                    Text(
-                                        text = "This update contains critical bug fixes. Please update immediately to continue using the app smoothly.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier
-                                            .padding(bottom = 8.dp)
-                                            .background(
-                                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
-                                                shape = RoundedCornerShape(
-                                                    8.dp
-                                                )
-                                            )
-                                            .padding(8.dp)
-                                    )
-                                }
-
-                                if (release.isPrerelease) {
-                                    Text(
-                                        text = "Note: This is a pre-release (beta) version.",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(bottom = 8.dp)
-                                    )
-                                }
-
-                                if (!release.body.isNullOrBlank()) {
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(
-                                            8.dp
-                                        )
-                                    ) {
-                                        Text(
-                                            text = release.body.trim(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.padding(12.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    if (UpdateManager.startUpdateDownload(context, release)) {
-                                        updateAvailable = null
-                                    }
-                                },
-                                enabled = !isUpdateDownloading,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isEmergency) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Text(if (isUpdateDownloading) "Downloading..." else "Download Update")
-                            }
-                        },
-                        dismissButton = {
-                            if (!isEmergency) {
-                                TextButton(onClick = { updateAvailable = null }) {
-                                    Text("Maybe Later")
-                                }
-                            }
+                if (updateAvailable != null || updateDownloadState is UpdateDownloadState.Ready) {
+                    UpdateSheet(
+                        release = updateAvailable,
+                        state = updateDownloadState,
+                        onStart = { release -> UpdateManager.startUpdateDownload(context, release) },
+                        onDismiss = {
+                            updateAvailable?.let { if (!it.isCritical) UpdateManager.snooze(context, it) }
+                            updateAvailable = null
+                            UpdateManager.clearDownloadState()
                         }
-                    )
-                }
-
-                val readyUpdate = (updateDownloadState as? UpdateDownloadState.Ready)?.update
-                if (readyUpdate != null) {
-                    UpdateReadyDialog(
-                        downloadedUpdate = readyUpdate,
-                        onDismiss = { UpdateManager.clearDownloadState() }
                     )
                 }
                 // --- END UPDATE CHECK LOGIC ---
@@ -709,46 +587,6 @@ class MainActivity : ComponentActivity() {
             analytics.endSession()
         }
     }
-}
-
-@Composable
-private fun UpdateReadyDialog(
-    downloadedUpdate: DownloadedUpdate,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-
-    GlassAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Update Downloaded") },
-        text = {
-            Text(
-                "${downloadedUpdate.fileName} is ready. Install ${downloadedUpdate.releaseTag} now or open Downloads to manage the APK manually."
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (UpdateManager.installDownloadedUpdate(context, downloadedUpdate)) {
-                        onDismiss()
-                    }
-                }
-            ) {
-                Text("Install Now")
-            }
-        },
-        dismissButton = {
-            OutlinedButton(
-                onClick = {
-                    if (UpdateManager.openDownloadsFolder(context)) {
-                        onDismiss()
-                    }
-                }
-            ) {
-                Text("Open Folder")
-            }
-        }
-    )
 }
 
 @Composable

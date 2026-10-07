@@ -307,41 +307,6 @@ class AnalyticsManager private constructor(context: Context) {
     }
 
     /**
-     * Track a song completion or skip
-     */
-    fun trackSongEnd(songId: String, playDuration: Long, songDuration: Long) {
-        val completionPercentage = (playDuration.toFloat() / songDuration.toFloat() * 100).toInt()
-        val isCompleted = completionPercentage >= 80 // Consider 80%+ as completed
-        val isSkipped = !isCompleted
-
-        val eventType = if (isCompleted) EventType.SONG_COMPLETED else EventType.SONG_SKIPPED
-        val icon = if (isCompleted) "✓" else "⏭"
-        val status = if (isCompleted) "COMPLETED" else "SKIPPED"
-
-        Log.d(
-            TAG,
-            "$icon SONG $status: '$songId' (${completionPercentage}% - ${playDuration / 1000}s/${songDuration / 1000}s)"
-        )
-
-        trackEvent(
-            eventType, mapOf(
-                EventProperty.USER_ID to userId,
-                EventProperty.SONG_ID to songId,
-                EventProperty.PLAY_DURATION to playDuration,
-                EventProperty.SONG_DURATION to songDuration,
-                EventProperty.COMPLETION_PERCENTAGE to completionPercentage,
-                EventProperty.SKIPPED to isSkipped,
-                EventProperty.DURATION_SECONDS to (playDuration / 1000)
-            )
-        )
-
-        // Update total listening time
-        val totalListeningTime = prefs.getLong(KEY_TOTAL_LISTENING_TIME, 0) + playDuration
-        prefs.edit { putLong(KEY_TOTAL_LISTENING_TIME, totalListeningTime) }
-        Log.d(TAG, "⏱ Total listening time: ${totalListeningTime / 1000 / 60} minutes")
-    }
-
-    /**
      * Track search queries
      */
     fun trackSearchQuery(searchTerm: String) {
@@ -465,25 +430,6 @@ class AnalyticsManager private constructor(context: Context) {
         }
     }
 
-    /**
-     * Get analytics metrics
-     */
-    fun getTotalSongsPlayed(): Int = prefs.getInt(KEY_TOTAL_SONGS_PLAYED, 0)
-
-    fun getTotalListeningTime(): Long = prefs.getLong(KEY_TOTAL_LISTENING_TIME, 0)
-
-    fun getUserId(): String = userId
-
-    fun getSongsPlayedInOrder(): List<SongPlay> = songsPlayedInOrder.toList()
-
-    fun getPendingEventsCount(): Int = eventQueue.size
-
-    /**
-     * Force sync - useful for testing or manual sync
-     */
-    fun forceSync() {
-        syncEvents()
-    }
 }
 
 data class SongPlay(

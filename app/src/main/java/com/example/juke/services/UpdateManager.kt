@@ -10,6 +10,8 @@ import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import kotlin.time.Duration.Companion.seconds
 import androidx.core.net.toUri
 import androidx.core.content.FileProvider
 import com.example.juke.BuildConfig
@@ -22,7 +24,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.File
 
 data class DownloadedUpdate(
@@ -37,7 +42,9 @@ sealed interface UpdateDownloadState {
     data class Downloading(
         val releaseTag: String,
         val fileName: String,
-        val downloadId: Long
+        val downloadId: Long,
+        val bytes: Long = 0,
+        val total: Long = 0
     ) : UpdateDownloadState
 
     data class Ready(val update: DownloadedUpdate) : UpdateDownloadState
@@ -62,27 +69,67 @@ object UpdateManager {
     private var activeDownloadFileName: String? = null
     private var activeReleaseTag: String? = null
 
-    suspend fun checkForUpdates(): GithubRelease? = withContext(Dispatchers.IO) {
-        try {
-            // Fetch list of releases (returns generic list)
-            val response = ApiClient.httpClient.get(GITHUB_API_URL)
-            val releases: List<GithubRelease> = response.body()
+    private const val CHECK_INTERVAL_MS = 6 * 60 * 60_000L
+    private const val SNOOZE_MS = 24 * 60 * 60_000L
 
-            if (releases.isEmpty()) return@withContext null
-
-            // The API usually returns sorted by date, but we take the first one as 'latest'
-            val latestRelease = releases.first()
-
-            // Clean up version strings (remove 'v' prefix)
-            val latestVersionTag = latestRelease.tagName.removePrefix("v") // e.g., "1.0.2"
-
-            if (isNewer(latestVersionTag)) {
-                return@withContext latestRelease
+    /**
+     * Newest installable release, or null. Skips the network when the last check found nothing
+     * recently, hides pre-releases from stable builds, and respects "Not now" for a day
+     * (never for critical releases). [force] bypasses both throttles.
+     */
+    suspend fun checkForUpdates(context: Context, force: Boolean = false): GithubRelease? =
+        withContext(Dispatchers.IO) {
+            val prefs = context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            if (!force && now - prefs.getLong("last_clean_check", 0) < CHECK_INTERVAL_MS) {
+                return@withContext null
             }
-        } catch (e: Exception) {
-            Log.e("UpdateManager", "Failed to check for updates", e)
+
+            val includePre = BuildConfig.VERSION_NAME.let {
+                it.contains("beta", true) || it.contains("alpha", true)
+            }
+            val release = try {
+                withTimeout(8.seconds) {
+                    val releases: List<GithubRelease> = ApiClient.httpClient.get(GITHUB_API_URL).body()
+                    releases.firstOrNull { !it.isDraft && (includePre || !it.isPrerelease) && it.assets.any(::isApkAsset) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("UpdateManager", "Failed to check for updates", e)
+                return@withContext null
+            }
+
+            val newer = release?.takeIf { isNewer(it.tagName.removePrefix("v")) }
+            if (newer == null) {
+                prefs.edit { putLong("last_clean_check", now) }
+                return@withContext null
+            }
+            val snoozed = prefs.getString("snoozed_tag", null) == newer.tagName &&
+                now - prefs.getLong("snoozed_at", 0) < SNOOZE_MS
+            if (!force && !newer.isCritical && snoozed) null else newer
         }
-        return@withContext null
+
+    /** "Not now": stay quiet about this version for a day. */
+    fun snooze(context: Context, release: GithubRelease) {
+        context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE).edit {
+            putString("snoozed_tag", release.tagName)
+            putLong("snoozed_at", System.currentTimeMillis())
+        }
+    }
+
+    /** Refreshes byte counts of the active download for the progress bar. */
+    fun pollProgress(context: Context) {
+        val s = _downloadState.value as? UpdateDownloadState.Downloading ?: return
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        dm.query(DownloadManager.Query().setFilterById(s.downloadId))?.use { c ->
+            if (!c.moveToFirst()) return
+            val got = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+            val total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+            _downloadState.update {
+                if (it is UpdateDownloadState.Downloading && it.downloadId == s.downloadId) it.copy(bytes = got, total = total) else it
+            }
+        }
     }
 
     fun startUpdateDownload(context: Context, release: GithubRelease): Boolean {

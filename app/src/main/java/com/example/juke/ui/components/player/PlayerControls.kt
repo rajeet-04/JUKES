@@ -1,7 +1,5 @@
 package com.example.juke.ui.components.player
 
-import com.example.juke.ui.icons.JukeIcons
-
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -15,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +30,7 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.glassPane
 import com.example.juke.utils.rememberJukeHaptics

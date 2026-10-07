@@ -330,12 +330,11 @@ class PlaybackService : MediaLibraryService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Fix: Check if app is in background before attempting anything that might require foreground
         // This prevents ForegroundServiceStartNotAllowedException on Android 12+
-        var isAppInForeground = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 val currentState =
                     androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
-                isAppInForeground =
+                val isAppInForeground =
                     currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
                 if (!isAppInForeground) {
                     Log.w(
@@ -502,7 +501,7 @@ class PlaybackService : MediaLibraryService() {
                         try {
                             // Try QueueManager's in-memory queue first (works for streams not in DB)
                             val oldTrack =
-                                queueManager.currentQueue.value.find { it.uuid == oldTrackId }
+                                queueManager.currentQueue.value.find { t -> t.uuid == oldTrackId }
                                     ?: database.trackDao().getTrackByUuid(oldTrackId)?.toTrack()
 
                             if (oldTrack != null && oldTrack.isStream) {

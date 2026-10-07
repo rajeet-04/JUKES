@@ -1,7 +1,5 @@
 package com.example.juke.ui.components
 
-import com.example.juke.ui.icons.JukeIcons
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -11,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.glassFloat

@@ -1,7 +1,5 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.icons.JukeIcons
-
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -52,12 +49,13 @@ import com.example.juke.ui.components.GlassButton
 import com.example.juke.ui.components.GlassCard
 import com.example.juke.ui.components.GlassTopAppBar
 import com.example.juke.ui.components.TrackListSkeleton
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import java.io.File
+import java.util.Locale
 import kotlin.math.ln
 import kotlin.math.pow
-import java.util.Locale
 
 @Composable
 fun PurgeSelectionScreen(

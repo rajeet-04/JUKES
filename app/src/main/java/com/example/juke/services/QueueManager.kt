@@ -311,37 +311,6 @@ class QueueManager private constructor(private val context: Context) {
 
 
     /**
-     * Move to the next track in queue.
-     * 
-     * @return Next track or null if queue is empty
-     */
-    fun moveToNext(): Track? {
-        val currentList = _currentQueue.value.toMutableList()
-        if (currentList.isEmpty()) return null
-
-        // Get the track being removed (just played) and add to recent artists
-        val playedTrack = currentList[0]
-        addToRecentArtists(playedTrack.artist)
-        playedTracksHistory.add(playedTrack)
-        if (playedTracksHistory.size > 50) {
-            playedTracksHistory.removeFirst()
-        }
-
-        // Remove first track
-        currentList.removeAt(0)
-        _currentQueue.value = currentList
-
-        Log.d(tag, "Moved to next track. Queue size: ${currentList.size}")
-
-        currentList.firstOrNull()?.let { requestFill(it, currentList.size - 1) }
-
-        // Ensure next 3 songs are downloaded/validated
-        ensureUpcomingTracksReady() // <-- Updated from ensureNext2Ready()
-
-        return currentList.firstOrNull()
-    }
-
-    /**
      * Maintains a recency-ordered artist list used to diversify future recommendations.
      */
     private fun addToRecentArtists(artist: String) {
@@ -1001,24 +970,6 @@ class QueueManager private constructor(private val context: Context) {
     }
 
     /**
-     * Get the current queue size.
-     * 
-     * @return Number of tracks in queue
-     */
-    fun getQueueSize(): Int {
-        return _currentQueue.value.size
-    }
-
-    /**
-     * Clear the entire queue.
-     */
-    fun clearQueue() {
-        _currentQueue.value = emptyList()
-        cancelPendingRecommendationDownloads()
-        Log.d(tag, "Queue cleared")
-    }
-
-    /**
      * Cancel all pending recommendation downloads.
      * 
      * This is called when:
@@ -1048,15 +999,6 @@ class QueueManager private constructor(private val context: Context) {
         _downloadingTracks.value = _downloadingTracks.value.filterNot {
             it.title == title && it.artist == artist
         }
-    }
-
-    /**
-     * Manually trigger recommendation fetch for a specific track.
-     * 
-     * @param track Track to base recommendations on
-     */
-    fun manuallyFetchRecommendations(track: Track) {
-        fetchAndQueueRecommendations(track, isRadioMode = true)
     }
 
     /**

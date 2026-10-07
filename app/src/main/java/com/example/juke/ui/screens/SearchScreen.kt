@@ -202,7 +202,7 @@ fun SearchScreen(
                                     bottomPadding = bottomPadding,
                                     keyboardController = keyboardController
                                 )
-                            } else if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty() && !uiState.isImportingPlaylist) {
+                            } else if (uiState.isPlaylistUrl && uiState.playlists.isNotEmpty()) {
                                 val playlist = uiState.playlists.first()
                                 ImportPlaylistCard(
                                     playlist = playlist,

@@ -1,7 +1,5 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.icons.JukeIcons
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -41,6 +38,7 @@ import com.example.juke.ui.components.GlassButton
 import com.example.juke.ui.components.GlassTopAppBar
 import com.example.juke.ui.components.MediaDetailSkeleton
 import com.example.juke.ui.components.SwipeToAddNextContainer
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import kotlinx.coroutines.launch

@@ -1,7 +1,5 @@
 package com.example.juke.ui.components
 
-import com.example.juke.ui.icons.JukeIcons
-
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -27,7 +25,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.services.DownloadInfo
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.viewmodels.DownloadItem
 import com.example.juke.viewmodels.DownloadStatus
 
