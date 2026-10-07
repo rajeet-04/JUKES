@@ -302,7 +302,8 @@ object JukesApi {
 
     /**
      * YouTube Music radio for [videoId], seed first, in the shape the queue engine already filters,
-     * dedupes and reseeds. Null when the backend can't answer (the caller uses its own radio fetch).
+     * dedupes and reseeds. Used when the direct YouTube Music radio fetch returns nothing.
+     * Null when the backend can't answer.
      */
     suspend fun radio(videoId: String, limit: Int = 50): List<RecommenderApi.YouTubeRecommendation>? {
         if (!AlexaBackendApi.isConfigured || !BuildConfig.JUKE_BACKEND_V1) return null
