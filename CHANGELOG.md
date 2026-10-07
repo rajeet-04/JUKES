@@ -2,7 +2,7 @@
 
 ## Changelog
 
-## [2.4.0-beta] - 2026-10-07
+## [2.4.1-beta] - 2026-10-07
 
 ### Added
 
@@ -14,8 +14,9 @@
 ### Changed
 
 - Recommendations use YouTube Music directly first, the shared backend only as fallback.
+- Smaller release APK: ARM-only (arm64-v8a, armeabi-v7a), unused libraries removed, tighter R8 shrinking.
 
-See full release notes: [v2.4.0-beta-RELEASE_NOTES.md](docs/v2.4.0-beta-RELEASE_NOTES.md)
+See full release notes: [v2.4.1-beta-RELEASE_NOTES.md](docs/v2.4.1-beta-RELEASE_NOTES.md)
 
 ## [2.3.5-beta] - 2026-10-04
 

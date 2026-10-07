@@ -97,3 +97,7 @@
     public static void checkNotNullParameter(java.lang.Object, java.lang.String);
     public static void checkParameterIsNotNull(java.lang.Object, java.lang.String);
 }
+
+# Size: flatten packages and allow wider inlining
+-repackageclasses ""
+-allowaccessmodification
