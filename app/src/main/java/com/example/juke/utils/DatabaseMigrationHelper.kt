@@ -6,6 +6,7 @@ import com.example.juke.database.MusicDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.abs
 
 object DatabaseMigrationHelper {
     private const val TAG = "DatabaseMigrationHelper"
@@ -18,8 +19,6 @@ object DatabaseMigrationHelper {
 
                 val downloadedTracks = trackDao.getDownloadedTracks()
                 var updatedCount = 0
-
-                System.currentTimeMillis()
 
                 for (track in downloadedTracks) {
                     val localUri = track.localUri ?: continue
@@ -35,7 +34,7 @@ object DatabaseMigrationHelper {
 
                         // We'll update if the difference is more than 1 second, just to avoid unnecessary writes
                         // if it just happened.
-                        if (Math.abs(
+                        if (abs(
                                 track.downloadedAt?.minus(lastModified) ?: Long.MAX_VALUE
                             ) > 1000
                         ) {

@@ -53,13 +53,6 @@ object BlacklistManager {
         }
     }
 
-    /** Clear the entire blacklist. */
-    fun clearAll(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit { remove(KEY_BLACKLISTED) }
-        Log.i(TAG, "Artist blacklist cleared")
-    }
-
     // ── matching helpers ────────────────────────────────────────────
 
     /**
