@@ -1,7 +1,5 @@
 package com.example.juke
 
-import com.example.juke.ui.icons.JukeIcons
-
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -52,10 +50,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,6 +74,7 @@ import com.example.juke.ui.components.GlassNavBar
 import com.example.juke.ui.components.GlassNavItem
 import com.example.juke.ui.components.GlassNavRail
 import com.example.juke.ui.components.MiniPlayer
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.AlbumDetailScreen
 import com.example.juke.ui.screens.ArtistDetailScreen
 import com.example.juke.ui.screens.AudioSettingsScreen
@@ -88,6 +87,7 @@ import com.example.juke.ui.theme.GlassBackdrop
 import com.example.juke.ui.theme.JUKETheme
 import com.example.juke.ui.theme.LocalHazeState
 import com.example.juke.ui.theme.isGlassDark
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
@@ -381,11 +381,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val hazeState = remember { HazeState() }
+                val haptic = rememberJukeHaptics()
                 val navItems = items.map { screen ->
                     GlassNavItem(
                         label = screen.title,
                         selected = currentMainTab == screen.route,
-                        onClick = { onNavigate(screen) },
+                        onClick = { haptic.nav(); onNavigate(screen) },
                         icon = { if (currentMainTab == screen.route) screen.filledIcon() else screen.outlinedIcon() }
                     )
                 }
@@ -530,6 +531,11 @@ class MainActivity : ComponentActivity() {
                                             launchSingleTop = true
                                             restoreState = true
                                         }
+                                    },
+                                    onAlbumClick = { album ->
+                                        activityViewModelProvider[AlbumDetailViewModel::class.java]
+                                            .loadAlbumDetails(album)
+                                        navController.navigate("album/${album.id}")
                                     },
                                     bottomPadding = bottomPadding
                                 )

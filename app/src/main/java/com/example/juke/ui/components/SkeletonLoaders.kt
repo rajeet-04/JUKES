@@ -29,7 +29,7 @@ private val titleWidths = listOf(0.72f, 0.58f, 0.81f, 0.66f, 0.76f, 0.63f)
 private val subtitleWidths = listOf(0.36f, 0.49f, 0.42f, 0.31f, 0.53f, 0.39f)
 
 @Composable
-private fun ShapedSkeletonBlock(
+fun ShapedSkeletonBlock(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(12.dp)
 ) {
@@ -72,7 +72,9 @@ private fun TrackRowSkeleton(index: Int) {
         }
         Spacer(modifier = Modifier.width(16.dp))
         ShapedSkeletonBlock(
-            modifier = Modifier.width(28.dp).height(10.dp),
+            modifier = Modifier
+                .width(28.dp)
+                .height(10.dp),
             shape = RoundedCornerShape(5.dp)
         )
     }

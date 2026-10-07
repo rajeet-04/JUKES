@@ -26,12 +26,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +79,9 @@ import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.ui.components.TrackListSkeleton
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassCard
+import com.example.juke.ui.theme.GlassLevel
+import com.example.juke.ui.theme.GlassShapes
+import com.example.juke.ui.theme.glassPane
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import kotlinx.coroutines.launch
@@ -568,9 +571,14 @@ internal fun SearchInput(query: String, onQueryChange: (String) -> Unit, focusTr
     OutlinedTextField(
         value = field,
         onValueChange = { field = it; if (it.text != query) onQueryChange(it.text) },
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(focus),
+        modifier = Modifier
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .glassPane(GlassShapes.Pill, GlassLevel.Regular)
+            .focusRequester(focus),
         singleLine = true,
-        shape = RoundedCornerShape(16.dp),
+        shape = GlassShapes.Pill,
         textStyle = MaterialTheme.typography.bodyLarge,
         placeholder = { Text("Songs, artists, albums…", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingIcon = { Icon(JukeIcons.Search, null) },
@@ -578,8 +586,9 @@ internal fun SearchInput(query: String, onQueryChange: (String) -> Unit, focusTr
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch() }),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            focusedBorderColor = Color.Transparent,
             unfocusedBorderColor = Color.Transparent
         )
     )
@@ -587,7 +596,10 @@ internal fun SearchInput(query: String, onQueryChange: (String) -> Unit, focusTr
 
 @Composable
 private fun SearchSectionHeader(title: String, showAll: Boolean, onSeeAll: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier
+        .fillMaxWidth()
+        .padding(start = 20.dp, end = 8.dp)
+        .heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         if (showAll) TextButton(onClick = onSeeAll) { Text("See all") }
     }
@@ -599,9 +611,13 @@ private fun SearchCollectionRow(title: String, subtitle: String, image: String?,
         headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge) },
         supportingContent = { Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium) },
         leadingContent = { AsyncImage(model = image, contentDescription = null,
-            modifier = Modifier.size(48.dp).clip(if (roundArtwork) CircleShape else RoundedCornerShape(8.dp))
+            modifier = Modifier
+                .size(48.dp)
+                .clip(if (roundArtwork) CircleShape else RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 4.dp)
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp)
     )
 }

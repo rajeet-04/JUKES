@@ -77,6 +77,7 @@ import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.ui.components.TrackListSkeleton
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassCard
+import com.example.juke.ui.theme.glassPane
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.DownloadItem
 import com.example.juke.viewmodels.LibraryViewModel
@@ -347,7 +348,14 @@ fun LibraryScreen(
             if (!uiState.isSelectionMode) {
                 SecondaryTabRow(
                     selectedTabIndex = librarySection,
-                    containerColor = Color.Transparent
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .glassPane(
+                            com.example.juke.ui.theme.GlassShapes.Pill,
+                            com.example.juke.ui.theme.GlassLevel.Thin
+                        ),
+                    containerColor = Color.Transparent,
+                    divider = {}
                 ) {
                     Tab(selected = librarySection == 0, onClick = {
                         if (librarySection == 0) showSongsFilter = true

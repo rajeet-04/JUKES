@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -47,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
+import com.example.juke.ui.components.GlassFilterChip
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.rememberJukeHaptics
@@ -101,18 +101,24 @@ fun SearchScreen(
                 }
             )
 
-            Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Column(modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()) {
 
                     // ── Suggestions view (shown while the user is typing) ────────────
                     if (uiState.isShowingSuggestions && uiState.query.isNotBlank()) {
                         LazyColumn(modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = bottomPadding + 24.dp)) {
                             item(key = "submit_query") {
-                                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable {
-                                    selectedFilter = "All"
-                                    keyboardController?.hide()
-                                    searchViewModel.search(uiState.query)
-                                }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .clickable {
+                                        selectedFilter = "All"
+                                        keyboardController?.hide()
+                                        searchViewModel.search(uiState.query)
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(JukeIcons.Search, null, Modifier.size(20.dp))
                                     Spacer(Modifier.width(16.dp))
                                     Text("Search for “${uiState.query}”", style = MaterialTheme.typography.bodyLarge,
@@ -165,7 +171,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 items(filters) { filter ->
-                                    FilterChip(
+                                    GlassFilterChip(
                                         selected = selectedFilter == filter,
                                         onClick = { selectedFilter = filter },
                                         label = {
