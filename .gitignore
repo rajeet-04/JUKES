@@ -24,3 +24,4 @@ spotdown-kv-worker/wrangler.json
 
 diff.txt
 .kiro/*
+/graphify-out/
