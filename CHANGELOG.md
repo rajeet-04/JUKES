@@ -2,6 +2,21 @@
 
 ## Changelog
 
+## [2.4.0-beta] - 2026-10-07
+
+### Added
+
+- Home discovery feed (new releases from your artists, history-based picks) with per-section skeletons, offline notice and auto-reload.
+- Flat Library and Search with glass swipe reveals, offline album saving, JukeIcons icon set.
+- Update sheet with live download progress and a smarter GitHub check.
+- Softer haptic feel with a tab-change tap and a long buzz for delete.
+
+### Changed
+
+- Recommendations use YouTube Music directly first, the shared backend only as fallback.
+
+See full release notes: [v2.4.0-beta-RELEASE_NOTES.md](docs/v2.4.0-beta-RELEASE_NOTES.md)
+
 ## [2.3.5-beta] - 2026-10-04
 
 ### Added
