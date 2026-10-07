@@ -2,6 +2,7 @@
   <dictionary name="project">
     <words>
       <w>english</w>
+      <w>enoent</w>
       <w>gamepvz</w>
       <w>innertube</w>
       <w>jukes</w>
@@ -9,15 +10,22 @@
       <w>khtml</w>
       <w>lofi</w>
       <w>lrclib</w>
+      <w>millibels</w>
       <w>reactionplus</w>
       <w>romanized</w>
+      <w>seeked</w>
+      <w>segs</w>
       <w>spotdown</w>
       <w>spotmate</w>
+      <w>spotsaver</w>
       <w>timedtext</w>
       <w>tvhtml</w>
+      <w>uuids</w>
       <w>vevo</w>
+      <w>xing</w>
       <w>xsrf</w>
-      <w>segs</w>
+      <w>fileprovider</w>
+      <w>rajeet</w>
     </words>
   </dictionary>
 </component>

@@ -35,7 +35,7 @@ import kotlinx.serialization.json.Json
 import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
 
-/** Progress of one import, for the greyed-out playlist in Library and the Search progress card. */
+/** Progress of one import, for the grayed-out playlist in Library and the Search progress card. */
 data class ImportStatus(
     val playlistId: String,
     val done: Int,
@@ -49,7 +49,7 @@ data class ImportStatus(
  * The to-do list is the `pending_imports` table: each track is deleted when it lands in the
  * playlist, so after the app is closed [resume] (called from Application.onCreate) just continues.
  * Downloads wait while offline and retry when the network returns; failed tracks are retried a
- * few times with backoff before being dropped so one bad track can't keep a playlist grey forever.
+ * few times with backoff before being dropped so one bad track can't keep a playlist gray forever.
  */
 class PlaylistImportManager private constructor(context: Context) {
 
@@ -80,7 +80,7 @@ class PlaylistImportManager private constructor(context: Context) {
             connectivity.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) { online.value = true }
                 override fun onLost(network: Network) { online.value = isOnlineNow() }
-                // Leaving the app, Android (and vivo's battery manager) blocks its network; coming
+                // Leaving the app, Android (and the device battery manager) blocks its network; coming
                 // back only lifts the block, with no onAvailable. Missing this kept the import
                 // waiting for a network that was already there.
                 override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
@@ -165,7 +165,7 @@ class PlaylistImportManager private constructor(context: Context) {
     private suspend fun download(item: PendingImportEntity): Boolean {
         val track = try {
             json.decodeFromString<SpotifyTrack>(item.trackJson)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             dao.deletePendingImport(item.playlistId, item.position) // unreadable row, nothing to retry
             return true
         }
