@@ -513,6 +513,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 ?.filter { it.isNotBlank() }
                 ?.toSet() ?: emptySet()
             musicService.purgeStaleStreamEntries(preserveUuids = savedIds)
+            // Files may have been deleted outside the app (system cache/storage clear)
+            musicService.reconcileMissingLocalFiles()
         }
     }
 

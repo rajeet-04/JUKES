@@ -359,7 +359,10 @@ class MusicService(private val context: Context) {
         if (existingTrack != null && existingTrack.localUri != null) {
             val isRemoteUri = existingTrack.localUri.startsWith("http", ignoreCase = true)
 
-            if (!isRemoteUri && !existingTrack.isStream) {
+            if (!isRemoteUri && !existingTrack.isStream && LocalAudio.isMissing(existingTrack.localUri)) {
+                // DB says downloaded but the file was deleted (cache/storage cleared): download again
+                Log.w(tag, "Local file missing for ${song.title}, re-downloading into the same record")
+            } else if (!isRemoteUri && !existingTrack.isStream) {
                 // Already has a local file, return it
                 Log.d(
                     tag,
@@ -1188,6 +1191,33 @@ class MusicService(private val context: Context) {
             if (evictedUuids.isNotEmpty()) trackDao.clearStreamLocalUris(evictedUuids)
         } catch (e: Exception) {
             Log.e(tag, "Error during stream cache eviction: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Brings the DB in line with what's actually on disk. Audio files can vanish without going
+     * through [evictStreamCache] (system "Clear cache/storage", OS reclaiming space, a crash
+     * mid-eviction), leaving localUri pointing at nothing.
+     * - Stream tracks: localUri is cleared so nothing tries to play the deleted file.
+     * - Downloads: kept as-is (they stay in the library); playback re-downloads them on demand.
+     */
+    suspend fun reconcileMissingLocalFiles() = withContext(Dispatchers.IO) {
+        try {
+            val missingStreams = trackDao.getStreamTracks()
+                .filter { it.localUri != null && LocalAudio.isMissing(it.localUri) }
+                .map { it.uuid }
+            if (missingStreams.isNotEmpty()) {
+                trackDao.clearStreamLocalUris(missingStreams)
+                Log.w(tag, "Reconcile: cleared localUri for ${missingStreams.size} stream tracks with deleted files")
+            }
+            val missingDownloads = trackDao.getDownloadedTracks().count { LocalAudio.isMissing(it.localUri) }
+            if (missingDownloads > 0) {
+                Log.w(tag, "Reconcile: $missingDownloads downloaded tracks have missing files (re-downloaded on play)")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(tag, "Reconcile of missing local files failed: ${e.message}", e)
         }
     }
 

@@ -1313,64 +1313,113 @@ class PlaybackManager private constructor(private val context: Context) {
     private val streamRecoveryAttempts = mutableMapOf<String, Int>()
     private val maxStreamRecoveryAttempts = 2
 
-    // UUIDs whose stream file is currently being re-downloaded (dedupes prefetch vs. error recovery)
-    private val streamsBeingRecovered = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    // UUIDs whose audio file is currently being re-downloaded (dedupes prefetch vs. error recovery)
+    private val audioBeingRecovered = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val upcomingValidationWindow = 3
 
-    /** True when a stream track's local file (evicted/deleted) is no longer on disk. */
-    private fun isStreamFileMissing(track: Track): Boolean {
-        if (!track.isStream) return false
-        val uri = track.localUri ?: return true
-        if (!uri.startsWith("/") && !uri.startsWith("file:")) return false // remote/content URI
-        return try {
-            val file = java.io.File(uri.removePrefix("file://"))
-            !file.exists() || file.length() <= 0L
-        } catch (_: Exception) {
-            true
-        }
-    }
+    /**
+     * True when the track's audio is no longer on disk, whatever removed it: LRU eviction,
+     * stale-stream purge, a system "Clear cache/storage", or the OS reclaiming space.
+     */
+    private fun isLocalAudioMissing(track: Track): Boolean = LocalAudio.isMissing(track.localUri)
 
     /**
-     * Re-downloads a stream track whose file is missing and persists the new localUri.
-     * [pinnedUuids] (the queue) are protected from LRU eviction while the new file is written.
+     * Re-fetches a track whose audio file is missing and persists the new localUri. Streams are
+     * re-streamed (with [pinnedUuids], the queue, protected from LRU eviction meanwhile);
+     * downloads are re-downloaded into the same record so they stay in the library.
      * If a recovery for the same track is already running, waits for it and reuses its result.
-     * Returns null if it can't be recovered.
+     * Returns null if it can't be recovered (offline, no Spotify id, all sources failed).
      */
-    private suspend fun recoverMissingStream(track: Track, pinnedUuids: Set<String>): Track? {
+    private suspend fun recoverMissingAudio(track: Track, pinnedUuids: Set<String>): Track? {
         val spotifyId = track.spotifyId ?: return null
-        if (!streamsBeingRecovered.add(track.uuid)) {
-            kotlinx.coroutines.withTimeoutOrNull(30_000L) {
-                while (track.uuid in streamsBeingRecovered) kotlinx.coroutines.delay(250)
+        val timeoutMs = if (track.isStream) 30_000L else 120_000L
+        if (!audioBeingRecovered.add(track.uuid)) {
+            kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                while (track.uuid in audioBeingRecovered) kotlinx.coroutines.delay(250)
             }
             return withContext(Dispatchers.IO) {
                 database.trackDao().getTrackByUuid(track.uuid)?.toTrack()
-            }?.takeIf { !isStreamFileMissing(it) }
+            }?.takeIf { !isLocalAudioMissing(it) }
         }
         return try {
             withContext(Dispatchers.IO) {
-                kotlinx.coroutines.withTimeout(30_000L) {
+                kotlinx.coroutines.withTimeout(timeoutMs) {
                     val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(spotifyId))
-                    val refreshed = musicService.streamTrack(
-                        song,
-                        preferredUuid = track.uuid,
-                        pinnedUuids = pinnedUuids + track.uuid
-                    )
-                    database.trackDao().insertTrack(refreshed.toEntity())
-                    Log.d(tag, "Re-downloaded missing stream for '${track.title}'")
+                    val refreshed = if (track.isStream) {
+                        musicService.streamTrack(
+                            song,
+                            preferredUuid = track.uuid,
+                            pinnedUuids = pinnedUuids + track.uuid
+                        ).also { database.trackDao().insertTrack(it.toEntity()) }
+                    } else {
+                        // smartDownloadAndIndex re-downloads into the existing record when its file is gone
+                        musicService.smartDownloadAndIndex(song)
+                    }
+                    if (isLocalAudioMissing(refreshed)) throw java.io.IOException("Re-fetched audio still missing")
+                    Log.d(tag, "Re-fetched missing audio for '${track.title}' (stream=${track.isStream})")
                     refreshed
                 }
             }
         } catch (e: Exception) {
-            Log.w(tag, "Failed to re-download stream for '${track.title}': ${e.message}")
+            Log.w(tag, "Failed to re-fetch audio for '${track.title}': ${e.message}")
             null
         } finally {
-            streamsBeingRecovered.remove(track.uuid)
+            audioBeingRecovered.remove(track.uuid)
         }
     }
 
     /**
-     * Look-ahead check: for the current + next few queue items, re-download any stream whose
-     * file was evicted so it's ready before the song arrives instead of failing with ENOENT.
+     * The current item's audio file is gone (ENOENT, or a generic I/O error after a cache clear):
+     * re-fetch it and resume in place; skip only if that fails. Must be called on the main thread.
+     */
+    private fun recoverMissingCurrentAudio() {
+        val missingId = controller?.currentMediaItem?.mediaId
+        val queueUuids = controller?.let { ctrl ->
+            (0 until ctrl.mediaItemCount).map { ctrl.getMediaItemAt(it).mediaId }.toSet()
+        } ?: emptySet()
+        Log.w(tag, "Track file not found for $missingId, trying re-download")
+
+        scope.launch {
+            // Audio file evicted/deleted/cleared: re-download it and resume in place
+            val track = missingId?.let {
+                try {
+                    database.trackDao().getTrackByUuid(it)?.toTrack()
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            val refreshed = if (track != null) {
+                recoverMissingAudio(track, queueUuids)
+            } else null
+
+            withContext(Dispatchers.Main) {
+                val ctrl = controller ?: return@withContext
+                if (refreshed != null && missingId != null && ctrl.currentMediaItem?.mediaId == missingId &&
+                    replaceTrackInQueue(missingId, refreshed)
+                ) {
+                    ctrl.prepare()
+                    ctrl.play()
+                    return@withContext
+                }
+                Log.w(tag, "Could not recover $missingId, skipping to next track")
+                if (ctrl.currentMediaItem?.mediaId != missingId) return@withContext
+                if (ctrl.hasNextMediaItem()) {
+                    ctrl.seekToNext()
+                    ctrl.prepare()
+                    ctrl.play()
+                } else {
+                    // No next track, stop playback
+                    ctrl.stop()
+                    Log.d(tag, "No next track available, stopping playback")
+                }
+            }
+        }
+    }
+
+    /**
+     * Look-ahead check: for the current + next few queue items, re-download any song whose audio
+     * file was deleted (evicted, purged or cleared by the user/OS) so it's ready before the song
+     * arrives instead of failing with ENOENT.
      * Must be called on the main thread (reads the controller).
      */
     private fun validateUpcomingStreams() {
@@ -1388,9 +1437,9 @@ class PlaybackManager private constructor(private val context: Context) {
                 } catch (_: Exception) {
                     null
                 } ?: continue
-                if (!isStreamFileMissing(track)) continue
-                Log.d(tag, "Upcoming stream file missing for '${track.title}', re-downloading ahead of playback")
-                val refreshed = recoverMissingStream(track, queueUuids) ?: continue
+                if (!isLocalAudioMissing(track)) continue
+                Log.d(tag, "Upcoming audio file missing for '${track.title}', re-downloading ahead of playback")
+                val refreshed = recoverMissingAudio(track, queueUuids) ?: continue
                 withContext(Dispatchers.Main) { replaceTrackInQueue(uuid, refreshed) }
             }
         }
@@ -1494,47 +1543,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                     causeMessage.contains("FileNotFoundException")
                                 ) {
 
-                                    val missingId = controller?.currentMediaItem?.mediaId
-                                    val queueUuids = controller?.let { ctrl ->
-                                        (0 until ctrl.mediaItemCount).map { ctrl.getMediaItemAt(it).mediaId }.toSet()
-                                    } ?: emptySet()
-                                    Log.w(tag, "Track file not found for $missingId, trying re-download")
-
-                                    scope.launch {
-                                        // Stream file evicted/deleted: re-download it and resume in place
-                                        val track = missingId?.let {
-                                            try {
-                                                database.trackDao().getTrackByUuid(it)?.toTrack()
-                                            } catch (_: Exception) {
-                                                null
-                                            }
-                                        }
-                                        val refreshed = if (track != null && track.isStream) {
-                                            recoverMissingStream(track, queueUuids)
-                                        } else null
-
-                                        withContext(Dispatchers.Main) {
-                                            val ctrl = controller ?: return@withContext
-                                            if (refreshed != null && missingId != null && ctrl.currentMediaItem?.mediaId == missingId &&
-                                                replaceTrackInQueue(missingId, refreshed)
-                                            ) {
-                                                ctrl.prepare()
-                                                ctrl.play()
-                                                return@withContext
-                                            }
-                                            Log.w(tag, "Could not recover $missingId, skipping to next track")
-                                            if (ctrl.currentMediaItem?.mediaId != missingId) return@withContext
-                                            if (ctrl.hasNextMediaItem()) {
-                                                ctrl.seekToNext()
-                                                ctrl.prepare()
-                                                ctrl.play()
-                                            } else {
-                                                // No next track, stop playback
-                                                ctrl.stop()
-                                                Log.d(tag, "No next track available, stopping playback")
-                                            }
-                                        }
-                                    }
+                                    recoverMissingCurrentAudio()
 
                                 } else if (
                                     error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
@@ -1769,6 +1778,14 @@ class PlaybackManager private constructor(private val context: Context) {
                                             val trackEntity =
                                                 database.trackDao().getTrackByUuid(trackId)
                                             val track = trackEntity?.toTrack() ?: return@launch
+
+                                            // Some cache/storage clears surface as generic I/O errors
+                                            // rather than ENOENT; recover any track whose file is gone.
+                                            if (isLocalAudioMissing(track)) {
+                                                Log.w(tag, "Source error with missing audio file for '${track.title}', recovering")
+                                                withContext(Dispatchers.Main) { recoverMissingCurrentAudio() }
+                                                return@launch
+                                            }
 
                                             if (!track.isStream || track.spotifyId == null) {
                                                 return@launch
@@ -2569,27 +2586,27 @@ class PlaybackManager private constructor(private val context: Context) {
             // Later songs are re-downloaded ahead of time by validateUpcomingStreams().
             val queueUuids = allTracks.map { it.uuid }.toSet()
             val current = allTracks[startIdx]
-            val resolvedCurrent = if (isStreamFileMissing(current)) {
+            val resolvedCurrent = if (isLocalAudioMissing(current)) {
                 kotlinx.coroutines.withTimeoutOrNull(15_000L) {
-                    recoverMissingStream(current, queueUuids)
+                    recoverMissingAudio(current, queueUuids)
                 }
             } else null
 
-            // Missing-file streams with a spotifyId stay in the queue (pointing at their stream
+            // Missing-file tracks with a spotifyId stay in the queue (pointing at their expected
             // file path) so they're re-downloaded before they play; anything else unplayable is
             // dropped. Restore starts at the first on-disk track >= the saved index.
-            val streamDir = java.io.File(context.filesDir, "stream_files")
             val playable = ArrayList<Pair<Track, androidx.media3.common.MediaItem>>()
             var restoredIdx = -1
             allTracks.forEachIndexed { i, t ->
                 var track = if (i == startIdx && resolvedCurrent != null) resolvedCurrent else t
-                val missing = isStreamFileMissing(track)
+                val missing = isLocalAudioMissing(track)
                 if (missing) {
                     if (track.spotifyId == null) return@forEachIndexed
                     if (track.localUri == null) {
-                        track = track.copy(
-                            localUri = java.io.File(streamDir, "${track.uuid}_stream.mp3").absolutePath
-                        )
+                        // Point at where the re-fetch will write it; ENOENT there triggers recovery
+                        val expected = if (track.isStream) "stream_files/${track.uuid}_stream.mp3"
+                        else "music/${track.uuid}.mp3"
+                        track = track.copy(localUri = java.io.File(context.filesDir, expected).absolutePath)
                     }
                 }
                 val item = createValidatedMediaItem(track) ?: return@forEachIndexed
