@@ -11,6 +11,9 @@ class JukeApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // Experimental progressive playback (Power Tools → Experimental)
+        com.example.juke.network.JukesApi.progressiveEnabled =
+            getSharedPreferences("music_settings_prefs", MODE_PRIVATE).getBoolean("progressive_playback", false)
         // Continue any Spotify import that was cut off when the app was closed, and again each time
         // the app comes back to the foreground (the process may have been kept alive with its
         // network blocked, which parks the import).

@@ -48,6 +48,12 @@ object JukesApi {
     /** The server holds a job poll up to this long and answers the moment the job finishes. */
     private const val LONG_POLL_SEC = 10
 
+    /**
+     * Experimental (Power Tools): for immediate playback, ask for the server's progressive HLS
+     * stream and start on it while the file is still downloading. Downloads keep the completed file.
+     */
+    @Volatile var progressiveEnabled = false
+
     @Serializable
     data class Prepared(
         @SerialName("video_id") val videoId: String,
@@ -57,6 +63,8 @@ object JukesApi {
         @SerialName("job_id") val jobId: String,
         val status: String,
         @SerialName("audio_url") val audioUrl: String? = null,
+        val streamable: Boolean = false,
+        @SerialName("stream_url") val streamUrl: String? = null,
     )
 
     @Serializable
@@ -65,6 +73,8 @@ object JukesApi {
         val status: String,
         @SerialName("audio_url") val audioUrl: String? = null,
         val error: JobError? = null,
+        val streamable: Boolean = false,
+        @SerialName("stream_url") val streamUrl: String? = null,
     )
 
     @Serializable
@@ -141,6 +151,9 @@ object JukesApi {
      * Audio for the song, once the server has the whole file. Throws [JukesException] for a song
      * this source can't serve (no match, wrong version, unavailable video, ...) so the next provider
      * takes over, and [V1MissingException] when the server predates `/v1`.
+     *
+     * [progressive]: also accept the server's HLS stream while the file is still downloading
+     * (returned with [SpotifyApi.DirectDownloadRequest.awaitFile] for the completed file).
      */
     suspend fun requestForPlayback(
         title: String,
@@ -148,7 +161,11 @@ object JukesApi {
         durationSec: Int?,
         showPreparing: Boolean,
         client: HttpClient = ApiClient.httpClient,
+        progressive: Boolean = false,
     ): SpotifyApi.DirectDownloadRequest {
+        val opt = if (progressive) "progressive=1" else ""
+        val started = System.nanoTime()
+        fun elapsed() = (System.nanoTime() - started) / 1_000_000
         // Title + main artist: every featured artist in the query pulls in their other songs.
         val body = track(title, artist.split(", ").first(), durationSec?.let { it * 1000L })
         val deadline = System.currentTimeMillis() + PREPARE_BUDGET_MS
@@ -159,7 +176,7 @@ object JukesApi {
                 if (System.currentTimeMillis() >= deadline) error("Backend still preparing '$title'")
                 prepares++
                 val prepared = try {
-                    call<Prepared>(client, HttpMethod.Post, "/v1/audio/prepare", body)
+                    call<Prepared>(client, HttpMethod.Post, "/v1/audio/prepare" + (if (progressive) "?$opt" else ""), body)
                 } catch (e: JukesException) {
                     // 429 / 502 / 503 (pending, capacity): wait as told, then ask again.
                     if (prepares < MAX_PREPARES && (e.retryable || e.http in setOf(429, 502, 503))) {
@@ -176,7 +193,14 @@ object JukesApi {
                 check(isLengthOk(foundSec, durationSec)) {
                     "Backend match ${prepared.videoId} is ${foundSec}s, expected ${durationSec}s"
                 }
-                prepared.audioUrl?.takeIf { prepared.status == "ready" }?.let { return audio(it) }
+                prepared.audioUrl?.takeIf { prepared.status == "ready" }?.let {
+                    if (progressive) logProgressive("'$title' file ready at prepare (${elapsed()}ms)")
+                    return audio(it)
+                }
+                if (progressive && prepared.streamable) prepared.streamUrl?.let {
+                    logProgressive("'$title' stream ready at prepare (${elapsed()}ms)")
+                    return stream(it, prepared.jobId, title, started, client)
+                }
 
                 // Long-poll the job; network errors (airplane mode, a cell handover) just mean "poll
                 // again". A server without long polls answers at once, so then back off 1 s, 2 s, 3 s.
@@ -185,7 +209,7 @@ object JukesApi {
                 while (System.currentTimeMillis() < deadline) {
                     val asked = System.currentTimeMillis()
                     val job = try {
-                        call<Job>(client, HttpMethod.Get, "/v1/jobs/${prepared.jobId}?wait=$LONG_POLL_SEC")
+                        call<Job>(client, HttpMethod.Get, "/v1/jobs/${prepared.jobId}?wait=$LONG_POLL_SEC" + (if (progressive) "&$opt" else ""))
                     } catch (e: JukesException) {
                         when {
                             // The job aged out; that is not "audio deleted". Prepare again (idempotent).
@@ -203,11 +227,18 @@ object JukesApi {
                         backOff(); continue // offline for a moment
                     }
                     when (job.status) {
-                        "ready" -> job.audioUrl?.let { return audio(it) }
+                        "ready" -> job.audioUrl?.let {
+                            if (progressive) logProgressive("'$title' file ready before stream (${elapsed()}ms)")
+                            return audio(it)
+                        }
                         "failed" -> {
                             val err = job.error
                             if (err?.retryable == true && prepares < MAX_PREPARES) continue@prepare
                             throw JukesException(422, err?.code ?: "job_failed", false, null)
+                        }
+                        else -> if (progressive && job.streamable) job.streamUrl?.let {
+                            logProgressive("'$title' stream ready (${elapsed()}ms)")
+                            return stream(it, prepared.jobId, title, started, client)
                         }
                     }
                     if (System.currentTimeMillis() - asked < 1_000) backOff()
@@ -223,6 +254,58 @@ object JukesApi {
         url = if (url.startsWith("/")) "$base$url" else url,
         probeRanges = true, // a finished file: Content-Length and byte ranges
     )
+
+    /** The HLS playlist to play now; [SpotifyApi.DirectDownloadRequest.awaitFile] gives the file later. */
+    private fun stream(url: String, jobId: String, title: String, started: Long, client: HttpClient) =
+        SpotifyApi.DirectDownloadRequest(
+            url = if (url.startsWith("/")) "$base$url" else url,
+            probeRanges = false,
+            awaitFile = { awaitFile(jobId, title, started, client) },
+        )
+
+    /** Long-poll [jobId] (without progressive) until the completed file is ready. */
+    private suspend fun awaitFile(jobId: String, title: String, started: Long, client: HttpClient): SpotifyApi.DirectDownloadRequest {
+        val deadline = System.currentTimeMillis() + PREPARE_BUDGET_MS
+        var i = 0
+        while (System.currentTimeMillis() < deadline) {
+            val asked = System.currentTimeMillis()
+            val job = try {
+                call<Job>(client, HttpMethod.Get, "/v1/jobs/$jobId?wait=$LONG_POLL_SEC")
+            } catch (e: JukesException) {
+                if (e.retryable || e.http == 429 || e.http == 503) {
+                    waitBefore(e.retryAfterSec, deadline); continue
+                }
+                throw e
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: V1MissingException) {
+                throw e
+            } catch (_: Exception) {
+                delay(POLL_DELAYS_MS.getOrElse(i++) { 3_000L }.milliseconds); continue
+            }
+            when (job.status) {
+                "ready" -> job.audioUrl?.let {
+                    logProgressive("'$title' file ready (${(System.nanoTime() - started) / 1_000_000}ms after request)")
+                    return audio(it)
+                }
+                "failed", "evicted" -> throw JukesException(422, job.error?.code ?: "job_${job.status}", false, null)
+            }
+            if (System.currentTimeMillis() - asked < 1_000) delay(POLL_DELAYS_MS.getOrElse(i++) { 3_000L }.milliseconds)
+        }
+        error("Backend still preparing '$title'")
+    }
+
+    /** Timing lines for comparing progressive playback on a device (`adb logcat -s JukesApi`). */
+    private fun logProgressive(message: String) {
+        try {
+            Log.d(TAG, "Progressive: $message")
+        } catch (_: RuntimeException) {
+            // android.util.Log is not available in JVM unit tests
+        }
+    }
+
+    /** True for this backend's progressive HLS playlist URLs. */
+    fun isStreamPlaylist(url: String?): Boolean = url != null && "/v1/streams/" in url && ".m3u8" in url
 
     /** Honor Retry-After (1–30 s), never past the deadline. */
     private suspend fun waitBefore(retryAfterSec: Int?, deadline: Long) {
@@ -295,7 +378,8 @@ object JukesApi {
         val path = url.removePrefix(base)
         return when {
             path.startsWith("/v1/audio/") -> path.removePrefix("/v1/audio/").substringBefore('?')
-            path.startsWith("/audio/") -> Regex("""[?&]video_id=([\w-]+)""").find(path)?.groupValues?.get(1)
+            path.startsWith("/audio/") || path.startsWith("/v1/streams/") ->
+                Regex("""[?&]video_id=([\w-]+)""").find(path)?.groupValues?.get(1)
             else -> null
         }?.takeIf { it.isNotBlank() }
     }

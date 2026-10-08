@@ -73,7 +73,12 @@ object SpotifyApi {
     data class DirectDownloadRequest(
         val url: String,
         val headers: Map<String, String> = emptyMap(),
-        val probeRanges: Boolean = true
+        val probeRanges: Boolean = true,
+        /**
+         * Set when [url] is a progressive HLS playlist (play only, never download it): returns the
+         * completed file to download once the server has it.
+         */
+        val awaitFile: (suspend () -> DirectDownloadRequest)? = null
     )
 
     private const val TAG = "SpotifyApi"

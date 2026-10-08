@@ -99,6 +99,24 @@ class PlaybackService : MediaLibraryService() {
          * embedded byte arrays for every MediaItem. The session bitmap loader can resolve the URI
          * lazily when artwork is actually needed for the active item/notification.
          */
+        /**
+         * The backend's progressive stream is an HLS EVENT playlist, which Media3 treats as live: it
+         * would start near the newest segment and nudge the playback speed to hold a live offset.
+         * Pin it to start at 0:00 (target offset is clamped to the window) at normal speed.
+         */
+        internal fun applyStreamHints(builder: MediaItem.Builder, uri: String?): MediaItem.Builder {
+            if (!com.example.juke.network.JukesApi.isStreamPlaylist(uri)) return builder
+            return builder
+                .setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(24 * 60 * 60 * 1000L)
+                        .setMinPlaybackSpeed(1f)
+                        .setMaxPlaybackSpeed(1f)
+                        .build()
+                )
+        }
+
         internal fun applyArtwork(metadataBuilder: MediaMetadata.Builder, thumbnailUri: String?) {
             thumbnailUri?.takeIf { it.isNotEmpty() }?.let { uriString ->
                 try {
@@ -395,6 +413,7 @@ class PlaybackService : MediaLibraryService() {
             .setMediaId(track.uuid)
             .setUri(track.localUri)
             .setMediaMetadata(metadataBuilder.build())
+            .let { PlaybackService.applyStreamHints(it, track.localUri) }
             .build()
     }
 
@@ -643,7 +662,10 @@ class PlaybackService : MediaLibraryService() {
             .setUpstreamDataSourceFactory(upstreamDataSourceFactory)
             // Cache errors are non-fatal — fall through to the network.
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
+        // Progressive HLS playlists bypass the cache (they grow); segments and files are cached.
+        val mediaSourceFactory = DefaultMediaSourceFactory(
+            PlaylistBypassDataSource.Factory(cacheDataSourceFactory, upstreamDataSourceFactory)
+        )
 
         // Balanced LoadControl: 30s min buffer / 120s max buffer. Playback starts as soon as
         // 250 ms of audio is decoded-ready (the first network bytes of a stream); after a mid-song
@@ -1168,6 +1190,7 @@ class PlaybackService : MediaLibraryService() {
                 .setMediaId(track.uuid)
                 .setUri(track.localUri)
                 .setMediaMetadata(metadataBuilder.build())
+                .let { applyStreamHints(it, track.localUri) }
                 .build()
         }
 
@@ -1473,6 +1496,7 @@ class PlaybackManager private constructor(private val context: Context) {
             .setMediaId(track.uuid)
             .setUri(track.localUri)
             .setMediaMetadata(metadataBuilder.build())
+            .let { PlaybackService.applyStreamHints(it, track.localUri) }
             .build()
     }
 

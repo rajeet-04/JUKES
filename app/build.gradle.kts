@@ -154,6 +154,8 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource)
     implementation(libs.androidx.media3.datasource.okhttp)
+    // Experimental progressive playback: the backend serves an AAC HLS playlist while it downloads
+    implementation(libs.androidx.media3.exoplayer.hls)
 
     // Coil
     implementation(libs.coil.compose)

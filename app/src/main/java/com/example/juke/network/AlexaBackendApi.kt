@@ -73,7 +73,10 @@ object AlexaBackendApi {
         // `/v1` prepare + poll; the legacy `/audio/` below stays as the rollout fallback.
         if (BuildConfig.JUKE_BACKEND_V1 && hasV1 != false) {
             try {
-                return JukesApi.requestForPlayback(title, artist, durationSec, showPreparing = live, client = client)
+                return JukesApi.requestForPlayback(
+                    title, artist, durationSec, showPreparing = live, client = client,
+                    progressive = live && JukesApi.progressiveEnabled
+                )
                     .also { hasV1 = true }
             } catch (_: JukesApi.V1MissingException) {
                 Log.i(TAG, "Backend has no /v1 API; using /audio/")

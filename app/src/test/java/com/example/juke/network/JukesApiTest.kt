@@ -68,6 +68,45 @@ class JukesApiTest {
         assertNull(JukesApi.preparing.value)
     }
 
+    private val streamUrl = "$base/v1/streams/s1/index.m3u8?video_id=fsiPzT50ZiM"
+    private val streaming = job("downloading", ""","streamable":true,"stream_url":"$streamUrl","stream_id":"s1"""")
+
+    @Test
+    fun progressive_playsStreamWhileDownloading_thenDownloadsCompletedFile() = runTest {
+        val request = JukesApi.requestForPlayback(
+            "Tum Hi Ho", "Arijit Singh", 262, showPreparing = true,
+            client = client(prepared("queued"), streaming, job("downloading"), ready), progressive = true
+        )
+        assertEquals(streamUrl, request.url)
+        assertTrue(!request.probeRanges)
+        assertTrue(JukesApi.isStreamPlaylist(request.url))
+        assertEquals("$base/v1/audio/prepare?progressive=1", requests[0].url.toString())
+        assertEquals("$base/v1/jobs/j1?wait=10&progressive=1", requests[1].url.toString())
+
+        // The background download waits for the completed file with a normal (non-progressive) poll.
+        val file = request.awaitFile!!.invoke()
+        assertEquals("$base/v1/audio/fsiPzT50ZiM", file.url)
+        assertTrue(file.probeRanges)
+        assertEquals("$base/v1/jobs/j1?wait=10", requests.last().url.toString())
+    }
+
+    @Test
+    fun progressive_readyFileStillWins() = runTest {
+        val request = JukesApi.requestForPlayback(
+            "Tum Hi Ho", "Arijit Singh", 262, showPreparing = true, client = client(prepared("ready")), progressive = true
+        )
+        assertEquals("$base/v1/audio/fsiPzT50ZiM", request.url)
+        assertNull(request.awaitFile)
+    }
+
+    @Test
+    fun withoutProgressive_streamIsIgnoredAndJobPolledToReady() = runTest {
+        val request = play(client(prepared("queued"), streaming, ready))
+        assertEquals("$base/v1/audio/fsiPzT50ZiM", request.url)
+        assertNull(request.awaitFile)
+        assertTrue(requests.none { "progressive" in it.url.toString() })
+    }
+
     @Test
     fun queued_pollsJobUntilReady() = runTest {
         val request = play(client(prepared("queued"), job("downloading"), job("downloading"), ready))

@@ -736,7 +736,8 @@ class MusicService(private val context: Context) {
                 // A legacy `/audio/` live URL has no length; ask for the finished file instead (the
                 // server waits for the stream that is already running, so yt-dlp doesn't run twice).
                 // `/v1` audio URLs are finished files already.
-                val bgRequest = if (resolvedSource == Source.BACKEND && "/audio/?" in resolvedRequest.url &&
+                // A progressive HLS playlist is play-only: wait for the server's completed file instead.
+                val bgRequest = resolvedRequest.awaitFile?.invoke() ?: if (resolvedSource == Source.BACKEND && "/audio/?" in resolvedRequest.url &&
                     "wait=1" !in resolvedRequest.url
                 ) {
                     resolvedRequest.copy(url = resolvedRequest.url + "&wait=1", probeRanges = true)
