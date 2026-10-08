@@ -182,6 +182,16 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS song_exposure (" +
+                "song_key TEXT NOT NULL, play_score REAL NOT NULL, skip_score REAL NOT NULL, " +
+                "rec_score REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(song_key))"
+        )
+    }
+}
+
 class Converters {
     @TypeConverter
     fun fromStringList(value: List<String>?): String? {
@@ -198,14 +208,15 @@ class Converters {
  * Room Database for JUKE music player.
  */
 @Database(
-    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class],
-    version = 10,
+    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
     abstract fun playlistDao(): PlaylistDao
+    abstract fun songExposureDao(): SongExposureDao
 
     companion object {
         @Volatile
@@ -227,7 +238,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
-                        MIGRATION_9_10
+                        MIGRATION_9_10,
+                        MIGRATION_10_11
                     )
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
@@ -391,6 +403,10 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     suspend fun getFavourites(): List<TrackEntity>
+
+    // Title/artist only: enough to build song keys without loading lyrics columns
+    @Query("SELECT title, artist FROM tracks WHERE is_favourite = 1")
+    suspend fun getFavouriteTitleArtists(): List<TitleArtist>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
     @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")

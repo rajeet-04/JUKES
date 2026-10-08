@@ -63,6 +63,11 @@ class QueueManager private constructor(private val context: Context) {
 
         /** Default plays in one day after which a song counts as "on repeat" and is no longer held back. */
         const val DEFAULT_INDULGE_PLAYS = 2
+        /** Stop pulling radios once a refill has this many new candidates. */
+        private const val POOL_TARGET = 60
+        private const val MAX_RADIOS_PER_REFILL = 2
+        /** Relevance rank assumed for a reserve song whose radio position is unknown. */
+        private const val DEFAULT_RANK = 25
 
         fun getInstance(context: Context): QueueManager {
             return instance ?: synchronized(this) {
@@ -74,6 +79,7 @@ class QueueManager private constructor(private val context: Context) {
     private val tag = "QueueManager"
     private val database = MusicDatabase.getDatabase(context)
     private val trackDao = database.trackDao()
+    private val exposureDao = database.songExposureDao()
     private val musicService = MusicService(context)
 
     // Settings for user-defined recommendation count
@@ -136,7 +142,46 @@ class QueueManager private constructor(private val context: Context) {
             putString("date", day)
             putInt(key, count + 1)
         }
+        recordExposure(key, Variety.Event.PLAY)
     }
+
+    /** The listener skipped [uuid] early: it should come back less often. */
+    fun recordSkip(uuid: String) {
+        val known = (_currentQueue.value + playedTracksHistory).firstOrNull { it.uuid == uuid }
+        serviceScope.launch {
+            val track = known ?: trackDao.getTrackByUuid(uuid)?.toTrack() ?: return@launch
+            Log.d(tag, "Early skip: ${track.title}")
+            recordExposure(songKey(track), Variety.Event.SKIP)
+        }
+    }
+
+    private val exposureMutex = Mutex()
+
+    /** Persist one exposure event for a song (play, early skip, or "was recommended"). */
+    private fun recordExposure(key: String, event: Variety.Event) {
+        serviceScope.launch {
+            try {
+                exposureMutex.withLock {
+                    exposureDao.upsert(Variety.record(exposureDao.get(key), key, event, System.currentTimeMillis()))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(tag, "Could not record $event for $key: ${e.message}")
+            }
+        }
+    }
+
+    /** Current exposure rows for [keys] (SQLite caps bound args, so query in chunks). */
+    private suspend fun exposureFor(keys: Collection<String>): Map<String, com.example.juke.database.SongExposureEntity> =
+        keys.chunked(500).flatMap { exposureDao.getAll(it) }.associateBy { it.songKey }
+
+    /** Song keys of favourites: their repeat penalty is waived. */
+    private suspend fun favouriteKeys(): Set<String> =
+        trackDao.getFavouriteTitleArtists().mapTo(HashSet()) { RecommenderApi.songKey(it.title, it.artist) }
+
+    /** First credited artist, as normalised inside a song key. */
+    private fun artistKey(songKey: String) = songKey.substringAfter('|')
 
     // External downloads tracking (downloaded outside QueueManager, e.g. Instant Play)
     // Key: "Title-Artist" to prevent adding them as recommendations
@@ -346,6 +391,19 @@ class QueueManager private constructor(private val context: Context) {
     @Volatile private var seedVideoId: String? = null
     /** Radio seeds already pulled this session; a radio returns the same list, so never repeat one. */
     private val usedSeeds: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    /** Position of each reserve song (by video id) in the radio it came from; drives relevance. */
+    private val radioRank = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    init {
+        // Exposure rows untouched for ~2 months have decayed to nothing.
+        serviceScope.launch {
+            try {
+                exposureDao.pruneOlderThan(System.currentTimeMillis() - Variety.PRUNE_AFTER_MS)
+            } catch (e: Exception) {
+                Log.w(tag, "Exposure prune failed: ${e.message}")
+            }
+        }
+    }
 
     /** How many resolved songs to keep ahead of the playing one (Audio Settings). */
     private fun lookahead(): Int = settingsPrefs.getInt("recommendation_count", 5).coerceIn(1, 49)
@@ -359,6 +417,7 @@ class QueueManager private constructor(private val context: Context) {
         seen.clear()
         claimed.clear()
         usedSeeds.clear()
+        radioRank.clear()
         seedVideoId = null
         _recStatus.value = RecStatus()
         _downloadingTracks.update { list -> list.filterNot { it.source == "recommendation" } }
@@ -436,23 +495,7 @@ class QueueManager private constructor(private val context: Context) {
 
             if (reserve.isEmpty() && refillReserve(current) == 0) break
 
-            val queued = queuedKeys(current)
-            val batch = mutableListOf<RecommenderApi.YouTubeRecommendation>()
-            val batchKeys = mutableSetOf<String>()
-            val heardToday = mutableListOf<RecommenderApi.YouTubeRecommendation>()
-            while (batch.size < need) {
-                val rec = reserve.pollFirst() ?: break
-                val key = RecommenderApi.songKey(rec.title, rec.artist)
-                if (key in queued) continue
-                // Heard once earlier today: hold it back, use it only if nothing fresh is left.
-                if (dailyPlayCount(key) in 1 until indulgePlays) { heardToday += rec; continue }
-                if (!batchKeys.add(key)) continue
-                batch += rec
-            }
-            for (rec in heardToday) {
-                if (batch.size < need && batchKeys.add(RecommenderApi.songKey(rec.title, rec.artist))) batch += rec
-                else reserve.addLast(rec) // back to the bottom of the reserve
-            }
+            val batch = pickFromReserve(current, queuedKeys(current), need)
             if (batch.isEmpty()) continue // reserve drained by duplicates → refill next round
 
             Log.d(tag, "Resolving ${batch.size} of $target lookahead (reserve left: ${reserve.size})")
@@ -465,11 +508,12 @@ class QueueManager private constructor(private val context: Context) {
             } finally {
                 if (gen == sessionGen.get()) _recStatus.value = RecStatus(0, reserve.size)
             }
-            // Add in radio order so the queue follows YouTube's ranking.
+            // Add in pick order (weighted draw, best-scoring songs tend to come first).
             batch.zip(resolved).forEach { (rec, track) ->
                 if (track == null || gen != sessionGen.get()) return@forEach
                 seen.add("k:${songKey(track)}")
                 addToQueue(track)
+                recordExposure(songKey(track), Variety.Event.RECOMMENDED)
                 seedVideoId = rec.id
                 added++
             }
@@ -479,6 +523,46 @@ class QueueManager private constructor(private val context: Context) {
             Log.d(tag, "Online radio produced nothing. Falling back to offline library.")
             fetchOfflineRecommendations(current, target - upcomingAfter(current, reported))
         }
+    }
+
+    /**
+     * Choose [need] songs from the reserve by weighted random draw: radio rank x freshness (how little
+     * the listener has heard, skipped or been shown the song lately, across sessions) x artist spread.
+     * Favourites and songs on repeat today skip the freshness penalty. Picked and blocked songs leave
+     * the reserve; the rest stay for later fills.
+     */
+    private suspend fun pickFromReserve(
+        current: Track,
+        queued: Set<String>,
+        need: Int
+    ): List<RecommenderApi.YouTubeRecommendation> {
+        val byKey = LinkedHashMap<String, RecommenderApi.YouTubeRecommendation>()
+        reserve.toList().forEach { rec ->
+            val key = RecommenderApi.songKey(rec.title, rec.artist)
+            if (key in queued || key in byKey) reserve.remove(rec) else byKey[key] = rec
+        }
+        if (byKey.isEmpty()) return emptyList()
+
+        val now = System.currentTimeMillis()
+        val exposure = try { exposureFor(byKey.keys) } catch (e: Exception) { emptyMap() }
+        val favourites = try { favouriteKeys() } catch (e: Exception) { emptySet() }
+        val recentArtists = (_currentQueue.value.takeLast(3) + current).map { artistKey(songKey(it)) }
+
+        val picks = Variety.pick(
+            byKey.entries.toList(), need,
+            weightOf = { (key, rec) ->
+                val fresh = if (key in favourites || dailyPlayCount(key) >= indulgePlays) 1.0
+                else Variety.freshness(exposure[key], now)
+                Variety.relevance(radioRank[rec.id] ?: DEFAULT_RANK) * fresh
+            },
+            artistOf = { artistKey(it.key) },
+            recentArtists = recentArtists
+        )
+        picks.forEach { reserve.remove(it.value) }
+        Log.d(tag, "Picked ${picks.size} of ${byKey.size} candidates: " + picks.joinToString {
+            "${it.value.title} (rank ${radioRank[it.value.id]}, fresh ${"%.2f".format(Variety.freshness(exposure[it.key], now))})"
+        })
+        return picks.map { it.value }
     }
 
     /**
@@ -495,17 +579,27 @@ class QueueManager private constructor(private val context: Context) {
         val blacklist = BlacklistManager.getBlacklistedArtists(context)
         var added = 0
 
-        seedVideoId?.let { if (usedSeeds.add(it)) added += pullRadio(it, current, blacklist) }
+        var radios = 0
+        seedVideoId?.let { if (usedSeeds.add(it)) { added += pullRadio(it, current, blacklist); radios++ } }
 
-        val candidates = (listOf(current) + _currentQueue.value.asReversed().take(4) +
-                playedTracksHistory.toList().asReversed().take(10)).distinctBy { it.uuid }
+        // Up to two radios per refill so the weighted pick has a wide pool. The playing song comes
+        // first; other seeds are taken in random order so sessions branch differently.
+        val candidates = (listOf(current) + (_currentQueue.value.asReversed().take(4) +
+                playedTracksHistory.toList().asReversed().take(10)).shuffled()).distinctBy { it.uuid }
         for (track in candidates) {
-            if (added >= lookahead()) break
+            if (added >= POOL_TARGET || radios >= MAX_RADIOS_PER_REFILL) break
             val id = track.ytVideoId
                 ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}", track.durationSec, track.artist)
                 ?: continue
             if (!usedSeeds.add(id)) continue
             added += pullRadio(id, current, blacklist)
+            radios++
+        }
+        // A fresh session often has a single seed: branch from a random top song of its radio.
+        if (radios < MAX_RADIOS_PER_REFILL && added in 1 until POOL_TARGET) {
+            reserve.toList().take(10).shuffled().firstOrNull { usedSeeds.add(it.id) }?.let {
+                added += pullRadio(it.id, current, blacklist)
+            }
         }
         Log.d(tag, "Reserve refill: $added new songs → reserve ${reserve.size}")
         return added
@@ -521,7 +615,7 @@ class QueueManager private constructor(private val context: Context) {
             ?: emptyList()
         val blocked = queuedKeys(current)
         var added = 0
-        for (rec in radio) {
+        for ((rank, rec) in radio.withIndex()) {
             if (RecommenderApi.isSpamTitle(rec.title)) continue
             if (blacklist.isNotEmpty() &&
                 (BlacklistManager.containsBlacklistedArtist(context, rec.artist, blacklist) ||
@@ -536,6 +630,7 @@ class QueueManager private constructor(private val context: Context) {
             val newSong = seen.add("k:$key")
             if ((!newVideo || !newSong) && !onRepeat) continue
             if (key in blocked) continue
+            radioRank.putIfAbsent(rec.id, rank)
             reserve.addLast(rec)
             added++
         }
@@ -642,6 +737,9 @@ class QueueManager private constructor(private val context: Context) {
                 artistPlays[a] = (artistPlays[a] ?: 0) + e.playCount
             }
             val blocked = queuedKeys(currentTrack)
+            val exposure = try {
+                exposureFor(allDownloaded.map { RecommenderApi.songKey(it.title, it.artist) })
+            } catch (e: Exception) { emptyMap() }
 
             // ── Artist Blacklist Filter (offline) ────────────────
             val blacklist = BlacklistManager.getBlacklistedArtists(context)
@@ -721,11 +819,16 @@ class QueueManager private constructor(private val context: Context) {
                     // Variety: the same top songs must not win every time
                     score += kotlin.random.Random.nextInt(0, 5)
 
-                    // Replayed today (on repeat): +5. Otherwise -10 if heard today or in the last 24 hours.
-                    val playsToday = dailyPlayCount(songKey(track))
+                    // Replayed today (on repeat): +5. Otherwise up to -25 by recent exposure across
+                    // sessions (plays, early skips, times recommended); favourites are exempt.
+                    val key = songKey(track)
+                    val playsToday = dailyPlayCount(key)
                     val lastPlayedMs = track.lastPlayedAt?.toLongOrNull()
+                    val seen = exposure[key]
                     if (playsToday >= indulgePlays) {
                         score += 5
+                    } else if (seen != null && !track.isFavourite) {
+                        score -= ((1.0 - Variety.freshness(seen, now)) * 25).toInt()
                     } else if (playsToday > 0 || (lastPlayedMs != null && (now - lastPlayedMs) < oneDayMs)) {
                         score -= 10
                     }
@@ -787,6 +890,7 @@ class QueueManager private constructor(private val context: Context) {
             selected.forEach { track ->
                 addToQueue(track)
                 Log.d(tag, "Offline queued: ${track.title} by ${track.artist}")
+                recordExposure(songKey(track), Variety.Event.RECOMMENDED)
             }
 
         } catch (e: Exception) {

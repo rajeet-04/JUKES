@@ -186,6 +186,7 @@ class PlaybackService : MediaLibraryService() {
 
     // Track which songs have reached 50% during this playback session
     private val tracksPlayCountedThisSession = mutableSetOf<String>()
+    private val EARLY_SKIP_MS = 30_000L
     private var currentPlayingTrackId: String? = null
     private val progressHandler = Handler(Looper.getMainLooper())
     private val progressRunnable = object : Runnable {
@@ -540,6 +541,16 @@ class PlaybackService : MediaLibraryService() {
             newPosition: Player.PositionInfo,
             reason: Int
         ) {
+            // Early skip (user jumped forward to another song in the first 30s, before it counted
+            // as a play): a "don't want this now" signal that lowers its chance of coming back.
+            if (reason == Player.DISCONTINUITY_REASON_SEEK &&
+                newPosition.mediaItemIndex > oldPosition.mediaItemIndex &&
+                oldPosition.positionMs < EARLY_SKIP_MS
+            ) {
+                oldPosition.mediaItem?.mediaId
+                    ?.takeIf { it !in tracksPlayCountedThisSession }
+                    ?.let { queueManager.recordSkip(it) }
+            }
             // Seek or track change: the sleeping progress check was timed for the old position.
             if (player.isPlaying) {
                 progressHandler.removeCallbacks(progressRunnable)
