@@ -1145,7 +1145,7 @@ class MusicService(private val context: Context) {
      * This prevents ExoPlayer ENOENT errors when a queued track's file is evicted
      * just before playback.
      */
-    fun evictStreamCache(maxFiles: Int = 30, pinnedUuids: Set<String> = emptySet()) {
+    suspend fun evictStreamCache(maxFiles: Int = 30, pinnedUuids: Set<String> = emptySet()) {
         try {
             val streamDir = File(context.filesDir, "stream_files")
             if (!streamDir.exists()) return
@@ -1170,10 +1170,12 @@ class MusicService(private val context: Context) {
             val toDelete = sorted.take(overLimit)
 
             var bytesFreed = 0L
+            val evictedUuids = mutableListOf<String>()
             toDelete.forEach { file ->
                 val size = file.length()
                 if (file.delete()) {
                     bytesFreed += size
+                    evictedUuids += file.name.removeSuffix("_stream.mp3")
                     Log.d(tag, "LRU evicted stream file: ${file.name} (${size / 1024}KB)")
                 }
             }
@@ -1182,6 +1184,8 @@ class MusicService(private val context: Context) {
                 "Stream cache eviction: removed ${toDelete.size} files, freed ${bytesFreed / 1024 / 1024}MB "
                     + "(${pinned.size} pinned, ${evictable.size - toDelete.size} kept)"
             )
+            // Keep the DB in sync: a stale localUri makes queue restore/playback try a deleted file.
+            if (evictedUuids.isNotEmpty()) trackDao.clearStreamLocalUris(evictedUuids)
         } catch (e: Exception) {
             Log.e(tag, "Error during stream cache eviction: ${e.message}", e)
         }

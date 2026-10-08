@@ -2435,103 +2435,93 @@ class PlaybackManager private constructor(private val context: Context) {
             val savedIndex = prefs.getInt("queue_start_index", 0)
             val savedPosition = prefs.getLong("playback_position", 0L)
 
-            // Load tracks from database, re-resolving stream files if needed
-            val tracks = withContext(Dispatchers.IO) {
+            // Phase 1: DB only, no network. Restoring must not wait on Spotify/stream lookups,
+            // otherwise the last-playing track shows up minutes late (or clobbers new playback).
+            val allTracks = withContext(Dispatchers.IO) {
                 ids.mapNotNull { id ->
                     try {
-                        val entity =
-                            database.trackDao().getTrackByUuid(id) ?: return@mapNotNull null
-                        var track = entity.toTrack()
-
-                        // For stream tracks whose file was evicted, re-resolve the stream
-                        if (track.isStream && track.spotifyId != null) {
-                            val fileExists = track.localUri?.let { uri ->
-                                try {
-                                    java.io.File(uri).let { it.exists() && it.length() > 0 }
-                                } catch (_: Exception) {
-                                    false
-                                }
-                            } ?: false
-
-                            if (!fileExists) {
-                                Log.d(
-                                    tag,
-                                    "Stream file missing for '${track.title}', re-resolving..."
-                                )
-                                try {
-                                    val song =
-                                        SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(track.spotifyId))
-                                    val refreshed =
-                                        musicService.streamTrack(song, preferredUuid = track.uuid)
-                                    // Update DB with new localUri
-                                    database.trackDao().insertTrack(refreshed.toEntity())
-                                    track = refreshed
-                                    Log.d(tag, "Re-resolved stream for '${track.title}'")
-                                } catch (e: Exception) {
-                                    Log.w(
-                                        tag,
-                                        "Failed to re-resolve stream for '${track.title}': ${e.message}"
-                                    )
-                                    // Keep the track in the queue anyway for metadata display;
-                                    // playback will trigger error recovery which re-fetches the stream
-                                    return@mapNotNull track
-                                }
-                            }
-                        }
-
-                        track
+                        database.trackDao().getTrackByUuid(id)?.toTrack()
                     } catch (e: Exception) {
                         Log.e(tag, "Failed to load track $id: ${e.message}")
                         null
                     }
                 }
             }
-
-            if (tracks.isEmpty()) {
+            if (allTracks.isEmpty()) {
                 Log.d(tag, "No tracks found in database for saved queue")
                 return
             }
 
-            Log.d(
-                tag,
-                "Restoring playback state: ${tracks.size} tracks, index=$savedIndex, position=$savedPosition"
-            )
+            val startIdx = savedIndex.coerceIn(0, allTracks.size - 1)
+            var startPosition = savedPosition
 
-            // Restore queue — use createValidatedMediaItem but fall back to URI-less items
-            // for stream tracks that couldn't be re-resolved (they'll trigger error recovery)
-            val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
+            // Re-resolve ONLY the current track if its stream file was evicted (bounded wait).
+            // Queue UUIDs are pinned so resolving it can't evict the rest of the queue.
+            val current = allTracks[startIdx]
+            var resolvedCurrent: Track? = null
+            if (createValidatedMediaItem(current) == null && current.isStream && current.spotifyId != null) {
+                resolvedCurrent = withContext(Dispatchers.IO) {
+                    try {
+                        kotlinx.coroutines.withTimeout(15_000L) {
+                            val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(current.spotifyId))
+                            val refreshed = musicService.streamTrack(
+                                song,
+                                preferredUuid = current.uuid,
+                                pinnedUuids = allTracks.map { it.uuid }.toSet()
+                            )
+                            database.trackDao().insertTrack(refreshed.toEntity())
+                            refreshed
+                        }
+                    } catch (e: Exception) {
+                        Log.w(tag, "Failed to re-resolve current stream '${current.title}': ${e.message}")
+                        null
+                    }
+                }
+            }
 
-            if (mediaItems.isEmpty()) {
+            // Keep only playable tracks (evicted/missing files are dropped, not left to fail
+            // and skip at play time). Index is remapped to the first playable track >= startIdx.
+            val playable = ArrayList<Pair<Track, androidx.media3.common.MediaItem>>()
+            var restoredIdx = -1
+            allTracks.forEachIndexed { i, t ->
+                val track = if (i == startIdx && resolvedCurrent != null) resolvedCurrent else t
+                val item = createValidatedMediaItem(track) ?: return@forEachIndexed
+                if (restoredIdx < 0 && i >= startIdx) {
+                    restoredIdx = playable.size
+                    if (i != startIdx) startPosition = 0L
+                }
+                playable += track to item
+            }
+
+            if (playable.isEmpty() || restoredIdx < 0) {
                 Log.d(tag, "No playable media items could be created from saved queue")
                 return
             }
+            val tracks = playable.map { it.first }
+            val mediaItems = playable.map { it.second }
+
+            Log.d(
+                tag,
+                "Restoring playback state: ${tracks.size} tracks, index=$restoredIdx, position=$startPosition"
+            )
 
             // MediaController methods must be called on main thread
             withContext(Dispatchers.Main) {
-                controller?.apply {
-                    setMediaItems(
-                        mediaItems,
-                        savedIndex.coerceIn(0, mediaItems.size - 1),
-                        savedPosition
-                    )
-                    prepare()
-                    // Don't auto-play, just prepare to paused state
+                val ctrl = controller
+                // The user started something new while we were loading: don't clobber it.
+                if (ctrl == null || ctrl.mediaItemCount > 0 || ctrl.isPlaying) {
+                    Log.d(tag, "Playback already started, skipping queue restore")
+                    return@withContext
                 }
+                ctrl.setMediaItems(mediaItems, restoredIdx, startPosition)
+                ctrl.prepare()
+                // Don't auto-play, just prepare to paused state
 
-                tracks.getOrNull(savedIndex)?.let { track ->
-                    _currentTrackId.value = track.uuid
-                }
+                _currentTrackId.value = tracks[restoredIdx].uuid
+                _currentQueueIndex.value = restoredIdx
 
-                // Set the restored index
-                _currentQueueIndex.value = savedIndex
-
-                // Update QueueManager with remaining tracks from current position
-                // QueueManager treats index 0 as "current track", so we pass only tracks from savedIndex onwards
-                // This prevents state desync between ExoPlayer's position and QueueManager's internal state
-                val remainingTracks = tracks.drop(savedIndex)
-                if (remainingTracks.isNotEmpty()) {
-                    queueManager.initializeQueue(remainingTracks)
-                }
+                // QueueManager treats index 0 as "current track"
+                queueManager.initializeQueue(tracks.drop(restoredIdx))
 
                 _hasRestoredState.value = true
                 Log.d(tag, "Playback state restored successfully")

@@ -409,6 +409,9 @@ interface TrackDao {
     @Query("UPDATE tracks SET local_uri = :streamUrl WHERE uuid = :uuid")
     suspend fun updateTrackStreamUrl(uuid: String, streamUrl: String)
 
+    @Query("UPDATE tracks SET local_uri = NULL WHERE is_stream = 1 AND uuid IN (:uuids)")
+    suspend fun clearStreamLocalUris(uuids: List<String>)
+
     @Query("UPDATE tracks SET is_favourite = :isFavourite WHERE uuid = :uuid")
     suspend fun updateTrackFavourite(uuid: String, isFavourite: Boolean)
 
