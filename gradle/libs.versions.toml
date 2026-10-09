@@ -1,4 +1,8 @@
 [versions]
+baselineprofile = "1.5.0"
+benchmark = "1.5.0"
+profileinstaller = "1.4.1"
+uiautomator = "2.3.0"
 agp = "9.4.1"
 kotlin = "2.2.10"
 coreKtx = "1.15.0"
@@ -21,6 +25,9 @@ palette = "1.0.0"
 haze = "1.2.2"
 
 [libraries]
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
+androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
+androidx-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycleRuntimeKtx" }
 androidx-palette = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 androidx-compose-material = { module = "androidx.compose.material:material" }
@@ -82,6 +89,8 @@ gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
 
 [plugins]
+android-test = { id = "com.android.test", version.ref = "agp" }
+baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineprofile" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

@@ -29,6 +29,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -160,7 +162,11 @@ class MainActivity : ComponentActivity() {
                     // Yield the first frame before optional launch work.
                     withFrameNanos { }
                     musicViewModel.startDeferredStartupWork()
-                    AnalyticsManager.getInstance(context).trackAppOpened()
+                    // PostHog setup is ~90 ms of main-thread work: keep it out of the startup window.
+                    launch {
+                        delay(1_500)
+                        AnalyticsManager.getInstance(context).trackAppOpened()
+                    }
                     updateAvailable = UpdateManager.checkForUpdates(context)
 
 
