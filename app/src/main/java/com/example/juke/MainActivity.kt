@@ -593,7 +593,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePlayerIntent(intent: Intent?) {
         val text = intent?.dataString ?: intent?.getStringExtra(Intent.EXTRA_TEXT)
-        if (text != null && Regex("""open\.spotify\.com/|spotify:|spotify(\.app)?\.link/|youtube\.com/watch|youtu\.be/""").containsMatchIn(text)) {
+        if (text != null && Regex("""open\.spotify\.com/(intl-\w+/)?(track|album|artist|playlist)/|spotify:(track|album|artist|playlist):|spotify(\.app)?\.link/\w|youtube\.com/watch|youtu\.be/""").containsMatchIn(text)) {
             pendingSpotifyLink.value = text
         }
         if (intent?.getBooleanExtra("open_player", false) == true) {

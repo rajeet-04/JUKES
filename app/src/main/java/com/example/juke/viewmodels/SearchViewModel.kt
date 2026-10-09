@@ -583,7 +583,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         // spotify:track:6rqhFgbbKwnb9MLmUQDhG6
 
         val httpRegex =
-            """https?://open\.spotify\.com/(track|artist|playlist|album)/([a-zA-Z0-9]+)""".toRegex()
+            """https?://open\.spotify\.com/(?:intl-[a-z]+/)?(track|artist|playlist|album)/([a-zA-Z0-9]+)""".toRegex()
         val uriRegex = """spotify:(track|artist|playlist|album):([a-zA-Z0-9]+)""".toRegex()
 
         httpRegex.find(query)?.let {
