@@ -348,6 +348,41 @@ fun AudioSettingsScreen(
 
                 item {
                     val ctx = LocalContext.current
+                    var progressive by remember {
+                        mutableStateOf(
+                            ctx.getSharedPreferences("music_settings_prefs", android.content.Context.MODE_PRIVATE)
+                                .getBoolean("progressive_playback", true)
+                        )
+                    }
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        CompactItem(
+                            headlineContent = {
+                                Text(
+                                    "Progressive playback",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            supportingContent = { Text("Start songs while they download. Downloads still save the full file") },
+                            leadingContent = { Icon(Icons.Rounded.CloudSync, contentDescription = null) },
+                            trailingContent = {
+                                Switch(
+                                    checked = progressive,
+                                    onCheckedChange = {
+                                        haptic.toggle()
+                                        progressive = it
+                                        ctx.getSharedPreferences("music_settings_prefs", android.content.Context.MODE_PRIVATE)
+                                            .edit { putBoolean("progressive_playback", it) }
+                                        com.example.juke.network.JukesApi.progressiveEnabled = it
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    val ctx = LocalContext.current
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         CompactItem(
                             headlineContent = {

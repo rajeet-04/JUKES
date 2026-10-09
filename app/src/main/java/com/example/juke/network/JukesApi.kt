@@ -49,10 +49,10 @@ object JukesApi {
     private const val LONG_POLL_SEC = 10
 
     /**
-     * Experimental (Power Tools): for immediate playback, ask for the server's progressive HLS
+     * Audio settings toggle (on by default): for immediate playback, ask for the server's progressive HLS
      * stream and start on it while the file is still downloading. Downloads keep the completed file.
      */
-    @Volatile var progressiveEnabled = false
+    @Volatile var progressiveEnabled = true
 
     @Serializable
     data class Prepared(

@@ -173,9 +173,6 @@ object SpotifyApi {
             )
 
             try {
-                Log.d(TAG, "Client ID: ${clientId.take(10)}...")
-                Log.d(TAG, "Credentials length: ${encodedCredentials.length}")
-
                 val response: HttpResponse = ApiClient.httpClient.post(SPOTIFY_ACCOUNTS_URL) {
                     header("Authorization", "Basic $encodedCredentials")
                     // Use form-encoded body for token request
@@ -188,7 +185,6 @@ object SpotifyApi {
                 val raw = response.bodyAsText()
 
                 Log.d(TAG, "Spotify token response status: $statusCode")
-                Log.d(TAG, "Spotify token raw response (first 1000 chars): ${raw.take(1000)}")
 
                 if (statusCode != 200) {
                     Log.e(TAG, "Spotify auth failed with status $statusCode")
@@ -199,7 +195,6 @@ object SpotifyApi {
                     json.decodeFromString(raw)
                 } catch (serEx: Exception) {
                     Log.e(TAG, "Failed to parse token response: ${serEx.message}")
-                    Log.e(TAG, "Full response body: $raw")
                     throw Exception(
                         "Invalid token response format. Status: $statusCode, Body: ${
                             raw.take(

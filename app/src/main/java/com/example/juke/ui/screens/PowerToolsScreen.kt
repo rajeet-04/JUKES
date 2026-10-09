@@ -55,7 +55,6 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
     var preferred by remember { mutableStateOf(memory.preferred) }
     var rejected by remember { mutableIntStateOf(memory.rejectedSongCount()) }
     var threshold by remember { mutableIntStateOf(settings.getInt("repeat_threshold", 2).coerceIn(2, 6)) }
-    var progressive by remember { mutableStateOf(settings.getBoolean("progressive_playback", false)) }
     var doubleTap by remember { mutableStateOf(power.getBoolean("mini_double_tap_play_pause", false)) }
     var longPress by remember { mutableStateOf(power.getBoolean("mini_long_press_favorite", false)) }
     var stats by remember { mutableStateOf<ListeningStats?>(null) }
@@ -86,21 +85,6 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 100.dp + bottomPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item {
-                Section("Experimental") {
-                    SwitchRow(
-                        "Progressive playback",
-                        "Start a song from the backend while it is still downloading (HLS stream). Downloads still use the full file.",
-                        progressive
-                    ) {
-                        haptic.toggle()
-                        progressive = it
-                        settings.edit { putBoolean("progressive_playback", it) }
-                        com.example.juke.network.JukesApi.progressiveEnabled = it
-                    }
-                }
-            }
-
             item {
                 Section("Advanced") {
                     Label("First audio source", "Which provider is tried first. A source you reject with \"Wrong song? Refetch\" always goes last for that song.")
