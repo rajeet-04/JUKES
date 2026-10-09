@@ -2,7 +2,7 @@
 
 ## Changelog
 
-## [Unreleased]
+## [2.4.2-beta] - 2026-10-09
 
 ### Added
 
@@ -17,7 +17,7 @@
 - The Spotify token response is no longer written to logcat.
 - Queue restore no longer blocks on the network; unplayable tracks are dropped and stale `localUri` values are cleared.
 
-See details: [unreleased.md](docs/unreleased.md)
+See full release notes: [v2.4.2-beta-RELEASE_NOTES.md](docs/v2.4.2-beta-RELEASE_NOTES.md)
 
 ## [2.4.1-beta] - 2026-10-07
 
