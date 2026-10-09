@@ -27,7 +27,11 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -343,7 +347,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
             try {
                 // Check if query is a Spotify URL
-                val urlInfo = parseSpotifyUrl(trimmedQuery)
+                val urlInfo = parseSpotifyUrl(trimmedQuery) ?: resolveShortLink(trimmedQuery)?.let(::parseSpotifyUrl)
 
                 if (urlInfo != null) {
                     // Handle URL-based search
@@ -528,6 +532,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         current.remove(query)
         searchPrefs.edit { putString("recent_searches", current.joinToString("|||")) }
         _uiState.value = _uiState.value.copy(recentSearches = current)
+    }
+
+    /** spotify.link / spotify.app.link redirect to open.spotify.com; follow them (or scan the landing page). */
+    private suspend fun resolveShortLink(query: String): String? {
+        val link = """https?://spotify(\.app)?\.link/\S+""".toRegex().find(query)?.value ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = URL(link).openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                val final = conn.url.toString()
+                if (parseSpotifyUrl(final) != null) final
+                else conn.inputStream.bufferedReader().use { it.readText().take(65536) }
+            }.getOrNull()
+        }
     }
 
     private data class SpotifyUrlInfo(val type: String, val id: String)

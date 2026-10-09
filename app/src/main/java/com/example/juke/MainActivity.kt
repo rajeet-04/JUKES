@@ -586,9 +586,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePlayerIntent(intent: Intent?) {
-        // ponytail: spotify.link short URLs aren't resolved, add a redirect follow if needed
         val text = intent?.dataString ?: intent?.getStringExtra(Intent.EXTRA_TEXT)
-        if (text != null && Regex("""open\.spotify\.com/|spotify:""").containsMatchIn(text)) {
+        if (text != null && Regex("""open\.spotify\.com/|spotify:|spotify(\.app)?\.link/""").containsMatchIn(text)) {
             pendingSpotifyLink.value = text
         }
         if (intent?.getBooleanExtra("open_player", false) == true) {
