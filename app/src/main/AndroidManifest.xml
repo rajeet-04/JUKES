@@ -51,7 +51,22 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="open.spotify.com" />
-                <data android:scheme="https" android:host="spotify.link" />
+                <data android:pathPattern="/track/.*" />
+                <data android:pathPattern="/album/.*" />
+                <data android:pathPattern="/artist/.*" />
+                <data android:pathPattern="/playlist/.*" />
+                <data android:pathPattern="/intl-.*/.*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="spotify.link" android:pathPattern="/..*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="spotify" />
             </intent-filter>
             <intent-filter>
