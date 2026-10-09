@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "JUKE"
 include(":app")
+include(":baselineprofile")

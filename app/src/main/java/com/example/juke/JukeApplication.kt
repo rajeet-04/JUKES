@@ -11,6 +11,13 @@ class JukeApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // Build the heavy singletons (HTTP client, Room open + migrations, stream cache) on a
+        // background thread so the first frame and PlaybackService.onCreate find them ready.
+        Thread {
+            com.example.juke.network.ApiClient.httpClient
+            com.example.juke.database.MusicDatabase.getDatabase(this).openHelper.writableDatabase
+            com.example.juke.services.PlaybackService.StreamCacheManager.getCache(this)
+        }.apply { name = "startup-warmup"; priority = Thread.NORM_PRIORITY - 1; start() }
         // Experimental progressive playback (Power Tools → Experimental)
         com.example.juke.network.JukesApi.progressiveEnabled =
             getSharedPreferences("music_settings_prefs", MODE_PRIVATE).getBoolean("progressive_playback", false)

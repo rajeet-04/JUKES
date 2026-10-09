@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.baselineprofile)
 }
 
 android {
@@ -116,6 +117,8 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
