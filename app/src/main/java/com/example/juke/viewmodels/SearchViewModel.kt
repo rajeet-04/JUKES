@@ -74,6 +74,9 @@ data class ArtistDetailUiState(
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
+        /** youtube.com / music.youtube.com watch links (group 1) and youtu.be short links (group 2). */
+        private val YOUTUBE_LINK =
+            """https?://(?:(?:www\.|m\.|music\.)?youtube\.com/watch\?(?:\S*?&)?v=([\w-]{11})|youtu\.be/([\w-]{11}))""".toRegex()
         private const val LIVE_SUGGESTION_DEBOUNCE_MS = 100L
         private const val WARMUP_DEBOUNCE_MS = 400L
         private const val SEARCH_WARMUP_COUNT = 3
@@ -411,8 +414,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     // Search local DB immediately for instant results
                     // Dynamic query builder for partial matching (e.g. "Linkin Numb" -> matches "Linkin Park - Numb")
+                    // A YouTube / YouTube Music link searches for the song it points to
+                    val textQuery = youtubeTitle(trimmedQuery) ?: trimmedQuery
                     val queryTokens =
-                        trimmedQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
+                        textQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
 
                     val localResults = if (queryTokens.isEmpty()) {
                         emptyList()
@@ -438,7 +443,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results
-                    val response = SpotifyApi.search(trimmedQuery)
+                    val response = SpotifyApi.search(textQuery)
                     // Filter out Spotify tracks that are already in local results (by title+artist match)
                     val localTitles =
                         localResults.map { it.title.lowercase() to it.artist.lowercase() }.toSet()
@@ -546,6 +551,24 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 if (parseSpotifyUrl(final) != null) final
                 else conn.inputStream.bufferedReader().use { it.readText().take(65536) }
             }.getOrNull()
+        }
+    }
+
+    /** "Title Artist" for a youtube.com / music.youtube.com / youtu.be video link (via oEmbed), else null. */
+    private suspend fun youtubeTitle(query: String): String? {
+        val id = YOUTUBE_LINK.find(query)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } } ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = URL("https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=$id")
+                    .openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                val o = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                val title = o.getString("title").replace("""\s*[(\[][^)\]]*(official|video|audio|lyrics?)[^)\]]*[)\]]""".toRegex(RegexOption.IGNORE_CASE), "")
+                val author = o.optString("author_name").removeSuffix(" - Topic").removeSuffix("VEVO")
+                // titles that already read "Artist - Song" don't need the channel name
+                if (" - " in title) title else "$title $author"
+            }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         }
     }
 

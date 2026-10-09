@@ -54,6 +54,18 @@
                 <data android:scheme="https" android:host="spotify.link" />
                 <data android:scheme="spotify" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="youtu.be" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/watch" />
+            </intent-filter>
         </activity>
 
         <!-- Playback Service -->
