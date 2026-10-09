@@ -51,6 +51,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="open.spotify.com" />
+                <data android:scheme="https" android:host="spotify.link" />
                 <data android:scheme="spotify" />
             </intent-filter>
         </activity>
