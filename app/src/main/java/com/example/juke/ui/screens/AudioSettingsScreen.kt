@@ -60,6 +60,8 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juke.network.SpotifyApi
+import com.example.juke.services.UpdateManager
+import kotlinx.coroutines.launch
 import com.example.juke.ui.components.GlassAlertDialog
 import com.example.juke.ui.components.GlassButton
 import com.example.juke.ui.components.GlassTopAppBar
@@ -761,6 +763,27 @@ fun AudioSettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
+
+                        val scope = androidx.compose.runtime.rememberCoroutineScope()
+                        var checking by remember { mutableStateOf(false) }
+                        GlassButton(
+                            onClick = {
+                                if (checking) return@GlassButton
+                                checking = true
+                                scope.launch {
+                                    val release = UpdateManager.checkForUpdates(context, force = true)
+                                    checking = false
+                                    if (release != null) {
+                                        UpdateManager.manualRelease.value = release
+                                    } else {
+                                        android.widget.Toast.makeText(
+                                            context, "You're on the latest version", android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }) {
+                            Text(if (checking) "Checking…" else "Check for updates")
+                        }
 
                         GlassButton(
                             onClick = {

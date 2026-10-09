@@ -64,6 +64,9 @@ object UpdateManager {
     private val _downloadState = MutableStateFlow<UpdateDownloadState>(UpdateDownloadState.Idle)
     val downloadState: StateFlow<UpdateDownloadState> = _downloadState.asStateFlow()
 
+    /** Set by a manual "Check for updates"; MainActivity shows it in the update sheet. */
+    val manualRelease = MutableStateFlow<GithubRelease?>(null)
+
     private var downloadReceiver: BroadcastReceiver? = null
     private var activeDownloadId: Long? = null
     private var activeDownloadFileName: String? = null

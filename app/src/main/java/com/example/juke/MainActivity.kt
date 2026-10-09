@@ -172,6 +172,14 @@ class MainActivity : ComponentActivity() {
 
                 }
 
+                val manualRelease by UpdateManager.manualRelease.collectAsStateWithLifecycle()
+                LaunchedEffect(manualRelease) {
+                    manualRelease?.let {
+                        updateAvailable = it
+                        UpdateManager.manualRelease.value = null
+                    }
+                }
+
                 LaunchedEffect(updateDownloadState) {
                     val errorMessage =
                         (updateDownloadState as? UpdateDownloadState.Error)?.message ?: return@LaunchedEffect

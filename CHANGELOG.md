@@ -9,6 +9,7 @@
 - Weighted cross-session variety for recommendations: decaying play/skip/recommended exposure per song (DB v11) so the same seed no longer yields the same radio picks every session.
 - Progressive playback, on by default (switch in Audio settings): start on the backend's HLS stream while the song downloads.
 - Spotify and YouTube / YouTube Music links open in JUKES from the share sheet and as tapped links, including `spotify.link` short links.
+- Manual "Check for updates" button in Audio settings (bypasses the 6-hour and "Not now" throttles).
 - Faster cold start: baseline and startup profile, background warm-up of the HTTP client, database and stream cache.
 
 ### Fixed
