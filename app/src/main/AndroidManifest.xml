@@ -39,6 +39,20 @@
 
                 <data android:scheme="juke" />
             </intent-filter>
+
+            <!-- Spotify links: share sheet and tapped links -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="open.spotify.com" />
+                <data android:scheme="spotify" />
+            </intent-filter>
         </activity>
 
         <!-- Playback Service -->
