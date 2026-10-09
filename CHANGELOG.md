@@ -7,11 +7,14 @@
 ### Added
 
 - Weighted cross-session variety for recommendations: decaying play/skip/recommended exposure per song (DB v11) so the same seed no longer yields the same radio picks every session.
-- Experimental progressive playback (Power Tools → Experimental, off by default): start on the backend's HLS stream while the song downloads.
+- Progressive playback, on by default (switch in Audio settings): start on the backend's HLS stream while the song downloads.
+- Spotify and YouTube / YouTube Music links open in JUKES from the share sheet and as tapped links, including `spotify.link` short links.
+- Faster cold start: baseline and startup profile, background warm-up of the HTTP client, database and stream cache.
 
 ### Fixed
 
 - Evicted or cache-cleared stream and download audio is re-downloaded ahead of playback and on ENOENT instead of being skipped.
+- The Spotify token response is no longer written to logcat.
 - Queue restore no longer blocks on the network; unplayable tracks are dropped and stale `localUri` values are cleared.
 
 See details: [unreleased.md](docs/unreleased.md)
