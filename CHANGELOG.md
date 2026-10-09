@@ -2,6 +2,20 @@
 
 ## Changelog
 
+## [Unreleased]
+
+### Added
+
+- Weighted cross-session variety for recommendations: decaying play/skip/recommended exposure per song (DB v11) so the same seed no longer yields the same radio picks every session.
+- Experimental progressive playback (Power Tools → Experimental, off by default): start on the backend's HLS stream while the song downloads.
+
+### Fixed
+
+- Evicted or cache-cleared stream and download audio is re-downloaded ahead of playback and on ENOENT instead of being skipped.
+- Queue restore no longer blocks on the network; unplayable tracks are dropped and stale `localUri` values are cleared.
+
+See details: [unreleased.md](docs/unreleased.md)
+
 ## [2.4.1-beta] - 2026-10-07
 
 ### Added
