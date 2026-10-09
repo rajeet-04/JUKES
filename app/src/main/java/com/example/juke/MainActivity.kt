@@ -119,6 +119,7 @@ sealed class Screen(
 class MainActivity : ComponentActivity() {
 
     private val showPlayerOnLaunch = mutableStateOf(false)
+    private val pendingSpotifyLink = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -192,6 +193,17 @@ class MainActivity : ComponentActivity() {
                         showPlayerModal = true
                         showPlayerOnLaunch.value = false
                     }
+                }
+
+                // Spotify link shared to / opened with JUKES: show it in Search
+                LaunchedEffect(pendingSpotifyLink.value) {
+                    val link = pendingSpotifyLink.value ?: return@LaunchedEffect
+                    pendingSpotifyLink.value = null
+                    navController.navigate(Screen.Search.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                    }
+                    activityViewModelProvider[SearchViewModel::class.java].search(link)
                 }
 
                 val items = listOf(
@@ -574,6 +586,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePlayerIntent(intent: Intent?) {
+        val text = intent?.dataString ?: intent?.getStringExtra(Intent.EXTRA_TEXT)
+        if (text != null && Regex("""open\.spotify\.com/|spotify:|spotify(\.app)?\.link/|youtube\.com/watch|youtu\.be/""").containsMatchIn(text)) {
+            pendingSpotifyLink.value = text
+        }
         if (intent?.getBooleanExtra("open_player", false) == true) {
             showPlayerOnLaunch.value = true
         }
