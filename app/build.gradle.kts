@@ -168,7 +168,7 @@ dependencies {
     implementation(libs.gson)
 
     // PostHog
-    implementation("com.posthog:posthog-android:3.71.4")
+    implementation(libs.posthog.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.ktor.client.mock)
