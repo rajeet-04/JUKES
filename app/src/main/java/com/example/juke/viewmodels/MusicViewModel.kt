@@ -372,7 +372,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                     if (newQueue != existingQueue || idsChanged) {
                         _uiState.update { state ->
-                            val currentIndex = state.queueIndex
+                            // The player's index is the source of truth. state.queueIndex can be
+                            // stale (still 0) when the index arrived before this queue did, e.g.
+                            // opening the app while a later song is already playing.
+                            val currentIndex = playbackManager.currentQueueIndexFlow.value
                             val newCurrentTrack =
                                 if (currentIndex >= 0 && currentIndex < newQueue.size) {
                                     newQueue[currentIndex]
@@ -382,7 +385,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                             state.copy(
                                 queue = newQueue,
-                                currentTrack = newCurrentTrack
+                                currentTrack = newCurrentTrack,
+                                queueIndex = if (currentIndex in newQueue.indices) currentIndex else state.queueIndex
                             )
                         }
                         Log.d(
@@ -451,7 +455,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // If current queue is empty (e.g. app restart), sync with QueueManager but DON'T add to PlaybackManager
                 // because PlaybackManager/Restoration logic is what populated QueueManager in the first place.
                 if (currentQueue.isEmpty()) {
-                    if (recommendedTracks.isNotEmpty()) {
+                    // QueueManager's list starts at the current song, so its indices don't match the
+                    // player's. Let the PlaybackManager sync populate the queue when it has one.
+                    if (recommendedTracks.isNotEmpty() && playbackManager.queueFlow.value.isEmpty()) {
                         Log.d(
                             "MusicViewModel",
                             "Syncing UI queue from QueueManager (Startup/Restoration)"

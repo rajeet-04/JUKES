@@ -503,9 +503,19 @@ class PlaybackService : MediaLibraryService() {
                         val index = (0 until player.mediaItemCount).firstOrNull { i ->
                             player.getMediaItemAt(i).mediaId == trackId
                         } ?: return@launch
-                        val refreshedItem = createValidatedMediaItem(track) ?: return@launch
+                        val newItem = createValidatedMediaItem(track) ?: return@launch
+                        // Keep the item's current source: if a stream→download swap just landed in
+                        // the DB, adopting its URI here would restart the song from 0:00. Only the
+                        // metadata (artwork/title) is refreshed, and the position is restored since
+                        // replacing the current item resets it.
+                        val refreshedItem = player.getMediaItemAt(index).buildUpon()
+                            .setMediaMetadata(newItem.mediaMetadata)
+                            .build()
+                        val isCurrent = player.currentMediaItemIndex == index
+                        val resumeMs = player.currentPosition
                         // replaceMediaItem triggers onTimelineChanged → notification redraw
                         player.replaceMediaItem(index, refreshedItem)
+                        if (isCurrent && resumeMs > 0L) player.seekTo(index, resumeMs)
                         Log.d(tag, "Refreshed notification metadata for: ${track.title}")
                     } catch (e: Exception) {
                         Log.w(tag, "Delayed metadata refresh failed: ${e.message}")
@@ -1287,6 +1297,10 @@ class PlaybackManager private constructor(private val context: Context) {
     val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Serial background dispatcher for queue mutations: keeps disk work off the main thread while
+    // preserving the order in which setQueue/addToQueue calls were made.
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val musicService: MusicService by lazy { MusicService(context) }
 
     // Flow to emit current track UUID changes
@@ -2035,38 +2049,43 @@ class PlaybackManager private constructor(private val context: Context) {
             _isShuffleEnabled.value = false
         }
 
-        // Clear all disk cache when a brand-new queue/song is played
-        PlaybackService.StreamCacheManager.clearAllCache()
-
-        val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
-
-        controller?.apply {
-            // When starting a fresh queue the caller is responsible for ordering the tracks
-            // (pre-shuffling in Kotlin when shuffle is on). Disabling ExoPlayer's own shuffle
-            // prevents double-shuffling where ExoPlayer would override the intended playback
-            // order with its own random permutation, causing auto-advance to skip to the
-            // wrong track when a song ends naturally.
-            if (!keepShuffleMode) {
-                shuffleModeEnabled = false
-            }
-            setMediaItems(mediaItems, startIndex, startPositionMs)
-            prepare()
-            play()
-        }
-
-        // Emit the initial track ID
+        // Emit the initial track ID right away so the UI reacts instantly.
         tracks.getOrNull(startIndex)?.let { startTrack ->
             _currentTrackId.value = startTrack.uuid
             _currentQueueIndex.value = startIndex
         }
 
-        Log.d(
-            tag,
-            "Queue set with ${mediaItems.size} tracks, starting at index $startIndex pos $startPositionMs"
-        )
+        // Cache eviction and per-track file validation hit the disk, so they run off the main
+        // thread; only the controller calls hop back. The queue dispatcher is serial, so
+        // back-to-back queue operations still apply in the order they were requested.
+        queueScope.launch {
+            // Clear all disk cache when a brand-new queue/song is played
+            PlaybackService.StreamCacheManager.clearAllCache()
 
-        // Save queue to preferences
-        scope.launch {
+            val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
+
+            withContext(Dispatchers.Main) {
+                controller?.apply {
+                    // When starting a fresh queue the caller is responsible for ordering the tracks
+                    // (pre-shuffling in Kotlin when shuffle is on). Disabling ExoPlayer's own shuffle
+                    // prevents double-shuffling where ExoPlayer would override the intended playback
+                    // order with its own random permutation, causing auto-advance to skip to the
+                    // wrong track when a song ends naturally.
+                    if (!keepShuffleMode) {
+                        shuffleModeEnabled = false
+                    }
+                    setMediaItems(mediaItems, startIndex, startPositionMs)
+                    prepare()
+                    play()
+                }
+            }
+
+            Log.d(
+                tag,
+                "Queue set with ${mediaItems.size} tracks, starting at index $startIndex pos $startPositionMs"
+            )
+
+            // Save queue to preferences
             saveQueueStructure()
         }
     }
@@ -2079,25 +2098,28 @@ class PlaybackManager private constructor(private val context: Context) {
     fun addToQueue(tracks: List<Track>) {
         initialize()
 
-        val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
+        queueScope.launch {
+            val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
+            if (mediaItems.isEmpty()) return@launch
 
-        if (mediaItems.isNotEmpty()) {
-            controller?.addMediaItems(mediaItems)
+            withContext(Dispatchers.Main) { controller?.addMediaItems(mediaItems) }
             Log.d(tag, "Added ${mediaItems.size} tracks to queue")
 
             // Save updated queue structure
-            scope.launch {
-                saveQueueStructure()
-            }
+            saveQueueStructure()
         }
     }
 
     /** Moves or inserts library songs using the timeline API without clearing cache or resuming pause. */
-    fun placeLibraryTracks(tracks: List<Track>, next: Boolean): Boolean {
-        val ctrl = controller ?: return false
-        val incoming = tracks.distinctBy { it.uuid }.filterNot { it.uuid == ctrl.currentMediaItem?.mediaId }
-        val items = incoming.map { createValidatedMediaItem(it) ?: return false }
+    suspend fun placeLibraryTracks(tracks: List<Track>, next: Boolean): Boolean {
+        val currentId = controller?.currentMediaItem?.mediaId
+        val incoming = tracks.distinctBy { it.uuid }.filterNot { it.uuid == currentId }
+        // File validation per track runs off the main thread; only timeline edits happen on it.
+        val items = withContext(Dispatchers.IO) {
+            incoming.map { createValidatedMediaItem(it) ?: return@withContext null }
+        } ?: return false
         if (items.isEmpty()) return false
+        val ctrl = controller ?: return false
         incoming.zip(items).forEachIndexed { placed, (track, item) ->
             val matches = (0 until ctrl.mediaItemCount).filter { ctrl.getMediaItemAt(it).mediaId == track.uuid }
             // Clean up duplicates left by earlier queue insertions without touching the current item.
