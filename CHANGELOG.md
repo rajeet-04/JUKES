@@ -2,6 +2,14 @@
 
 ## Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Downloading a song within its first few seconds no longer restarts it from 0:00; the delayed notification-artwork refresh keeps the current source and playback position.
+- Opening the app while a later song is playing no longer briefly shows (and then switches to) another song; the UI queue sync now follows the player's live index.
+- Starting a mix, enqueueing a whole playlist or clearing the queue no longer causes a blink/delay in the player; cache eviction and media-item file checks run on a background thread.
+
 ## [2.4.2-beta] - 2026-10-09
 
 ### Added
