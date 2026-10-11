@@ -83,6 +83,7 @@
 ### 2.5 Player Screen (`PlayerScreen.kt`)
 - **Full-screen player** with backdrop gradient from album art
 - **Mini-player** (persistent at bottom, shows on all screens except settings)
+- **Player transition** - container transform: the glass mini-player bar grows into the full-screen player and shrinks back (shared artwork, spring motion with drag-velocity hand-off, staged content; `PlayerTransition.kt`)
   - Displays: thumbnail, title, artist, play/pause, next, lyrics toggle
   - **Mini-player lyrics** - Optional ROMajiized synced lyrics (setting: `miniplayer_lyrics_enabled`)
 - **Playback controls**: Play/Pause, Skip Next, Skip Previous, Shuffle, Repeat (Off/One/All)

@@ -4,7 +4,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The mini player and the full player are now one surface: opening grows the glass bar into the full-screen player and minimising shrinks it back into the bar (container transform with shared artwork), instead of a black sheet sliding over the bar. Motion uses a critically damped spring, and a swipe-down hands its release velocity to the settle. The header, title row, progress bar, controls and bottom actions arrive in stages and leave in reverse. Honors Remove animations.
+
 ### Fixed
+
+- Library snackbars (removal, undo, "will play next") and the selection bar sit directly above the player chrome and follow it as it folds into the merged player, instead of floating above a gap.
 
 - Downloading a song within its first few seconds no longer restarts it from 0:00; the delayed notification-artwork refresh keeps the current source and playback position.
 - Opening the app while a later song is playing no longer briefly shows (and then switches to) another song; the UI queue sync now follows the player's live index.

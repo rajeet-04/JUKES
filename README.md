@@ -113,6 +113,7 @@ What's new:
 ### 🎛️ Playback Controls
 
 - **Mini Player** - Persistent bottom player with thumbnail, title, artist, play/pause, next, lyrics toggle
+- **Player Transition** - The mini player and full-screen player are one surface; it grows into the player and shrinks back with shared artwork and spring motion
 - **Full-Screen Player** - Seek bar, shuffle/repeat, queue view, favorite toggle, share track
 - **Notification Controls** - Media controls with favorite and download buttons (for streams)
 - **Background Playback** - Continue playing while using other apps
