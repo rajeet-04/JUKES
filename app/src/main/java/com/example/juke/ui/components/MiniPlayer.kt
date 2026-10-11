@@ -267,6 +267,7 @@ fun MiniPlayer(
         Box(
             modifier = modifier
                 .fillMaxWidth()
+                .playerBarEndpoint()
                 .glassFloat(GlassShapes.Bar, GlassLevel.Regular)
                 .combinedClickable(
                     onClickLabel = "Open player",
