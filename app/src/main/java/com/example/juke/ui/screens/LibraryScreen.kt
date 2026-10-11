@@ -92,6 +92,10 @@ fun LibraryScreen(
     musicViewModel: MusicViewModel,
     libraryViewModel: LibraryViewModel = viewModel(),
     bottomPadding: Dp = 0.dp,
+    // Live height of the floating chrome (mini player + tab bar). Unlike [bottomPadding], which
+    // stays at the unfolded height so lists don't resize mid-scroll, it follows the chrome as it
+    // folds into the merged player, so the snackbar and selection bar sit right above it.
+    floatingBottomPadding: Dp = bottomPadding,
     onAlbumClick: (com.example.juke.models.SpotifyAlbum) -> Unit = {}
 ) {
     val uiState by libraryViewModel.uiState.collectAsStateWithLifecycle()
@@ -295,11 +299,12 @@ fun LibraryScreen(
         },
         bottomBar = {
             val visible = uiState.isSelectionMode || uiState.pendingRemoval != null || snackbarHost.currentSnackbarData != null
+            val chromeGap by androidx.compose.animation.core.animateDpAsState(floatingBottomPadding, label = "libraryChromeGap")
             Column(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .padding(bottom = if (visible) 12.dp + bottomPadding else 0.dp),
+                    .padding(bottom = if (visible) 12.dp + chromeGap else 0.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

@@ -472,6 +472,7 @@ class MainActivity : ComponentActivity() {
                                 LibraryScreen(
                                     musicViewModel = musicViewModel,
                                     bottomPadding = bottomPadding,
+                                    floatingBottomPadding = barPadding,
                                     onAlbumClick = { album ->
                                         activityViewModelProvider[AlbumDetailViewModel::class.java].loadAlbumDetails(album)
                                         navController.navigate("album/${album.id}")
