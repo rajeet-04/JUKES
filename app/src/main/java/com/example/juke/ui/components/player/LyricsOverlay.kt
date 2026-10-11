@@ -1,5 +1,8 @@
 package com.example.juke.ui.components.player
 
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -170,7 +173,9 @@ fun LyricsOverlay(
                 )
         )
 
-        if (syncedLyrics != null) {
+        val mode = if (syncedLyrics != null) 0 else if (lyricsPending) 1 else 2
+        Crossfade(targetState = mode, animationSpec = tween(220), label = "lyricsMode") { shown ->
+        if (shown == 0 && syncedLyrics != null) {
             val lyricLines = remember(syncedLyrics, localOffsetMs) {
                 parseSyncedLyrics(syncedLyrics, localOffsetMs.toLong())
             }
@@ -187,7 +192,7 @@ fun LyricsOverlay(
                             listState.scrollToItem(index = newIndex, scrollOffset = 0)
                             isFirstScroll = false
                         } else {
-                            listState.animateScrollToItem(index = newIndex, scrollOffset = 0)
+                            listState.glideTo(newIndex)
                         }
                     }
                 } else if (newIndex < 0 && currentLineIndex != 0) {
@@ -197,7 +202,7 @@ fun LyricsOverlay(
                             listState.scrollToItem(index = 0)
                             isFirstScroll = false
                         } else {
-                            listState.animateScrollToItem(0)
+                            listState.glideTo(0)
                         }
                     }
                 }
@@ -216,38 +221,32 @@ fun LyricsOverlay(
                     val line = lyricLines[index]
                     val isCurrentLine = index == currentLineIndex
 
-                    // Animate color for the active line
-                    val textColor by animateColorAsState(
-                        targetValue = if (isCurrentLine)
-                            Color.White
-                        else
-                            Color.White.copy(alpha = 0.42f),
-                        animationSpec = tween(durationMillis = 300),
-                        label = "lyricColor"
+                    // The active line is full size and opaque, the others sit back. Only layer
+                    // properties animate, so the text never re-wraps or recomposes per frame.
+                    val emphasis = animateFloatAsState(
+                        targetValue = if (isCurrentLine) 1f else 0f,
+                        animationSpec = spring(dampingRatio = 1f, stiffness = 260f),
+                        label = "lyricEmphasis"
                     )
-                    val fontScale by animateFloatAsState(
-                        targetValue = if (isCurrentLine) 1.0f else 0.92f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "lyricScale"
-                    )
-
-                    // Use fontSize scaling instead of graphicsLayer scale to prevent overflow
-                    val baseFontSize = 28.sp
-                    val animatedFontSize = baseFontSize * fontScale
 
                     Text(
                         text = line.text,
                         style = MaterialTheme.typography.headlineSmall.copy(
-                            fontSize = animatedFontSize,
-                            lineHeight = animatedFontSize * 1.25f,
+                            fontSize = 28.sp,
+                            lineHeight = 35.sp,
                             letterSpacing = (-0.3).sp
                         ),
-                        color = textColor,
+                        color = Color.White,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .graphicsLayer {
+                                val e = emphasis.value
+                                alpha = 0.42f + 0.58f * e
+                                val scale = 0.92f + 0.08f * e
+                                scaleX = scale
+                                scaleY = scale
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                            }
                             .clickable(onClick = {
                                 musicViewModel.seekTo(line.timeMs)
                             }),
@@ -258,7 +257,7 @@ fun LyricsOverlay(
                     )
                 }
             }
-        } else if (lyricsPending) {
+        } else if (shown == 1) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -299,6 +298,8 @@ fun LyricsOverlay(
                 )
             }
         }
+        }
+
 
         // Sync controls use a dense glass surface so lyric text cannot bleed through.
         if (syncedLyrics != null && showSyncControls) {
@@ -451,5 +452,16 @@ private fun LyricsSyncPanel(
                         containerColor = foreground, contentColor = Color(0xFF18181B))) { Text("Done") }
             }
         }
+    }
+}
+
+/** Glide the line to its resting position on a critically damped spring (no snap, no bounce). */
+private suspend fun androidx.compose.foundation.lazy.LazyListState.glideTo(index: Int) {
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (item == null) {
+        animateScrollToItem(index, 0)
+    } else {
+        val delta = item.offset - layoutInfo.beforeContentPadding
+        if (delta != 0) animateScrollBy(delta.toFloat(), spring(dampingRatio = 1f, stiffness = 180f))
     }
 }

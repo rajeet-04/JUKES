@@ -8,6 +8,7 @@
 
 - The mini player and the full player are now one surface: opening grows the glass bar into the full-screen player and minimising shrinks it back into the bar (container transform with shared artwork), instead of a black sheet sliding over the bar. Motion uses a critically damped spring, and a swipe-down hands its release velocity to the settle. The header, title row, progress bar, controls and bottom actions arrive in stages and leave in reverse. Honors Remove animations.
 - One motion language across the app: screens no longer use Navigation's default 700 ms fade. Switching Home / Search / Library is a quick fade-through, and opening a detail screen (album, artist, playlist, settings) slides in on a critically damped spring and slides back out on Back. Track rows and cards settle slightly in on press and spring back (`ui/theme/Motion.kt`).
+- Smoother lyrics: they fade in over the artwork instead of popping, the active line eases between emphasis states without re-wrapping the text or bouncing, the list glides to the next line on a spring, and switching between synced, loading and plain lyrics crossfades.
 
 ### Fixed
 

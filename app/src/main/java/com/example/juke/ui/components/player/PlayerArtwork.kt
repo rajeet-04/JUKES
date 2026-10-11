@@ -1,5 +1,10 @@
 package com.example.juke.ui.components.player
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -176,7 +181,12 @@ private fun ArtworkCard(
             }
         }
 
-        if (showLyrics) {
+        // Fade the lyrics over the artwork rather than popping them in; leaving is quicker.
+        AnimatedVisibility(
+            visible = showLyrics,
+            enter = fadeIn(tween(260, easing = CubicBezierEasing(0f, 0f, 0f, 1f))),
+            exit = fadeOut(tween(160))
+        ) {
             LyricsOverlay(
                 currentTrack = track,
                 currentPosition = currentPosition,
