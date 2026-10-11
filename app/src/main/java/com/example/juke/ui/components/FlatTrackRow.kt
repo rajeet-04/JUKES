@@ -1,5 +1,8 @@
 package com.example.juke.ui.components
 
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.example.juke.ui.theme.pressScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -34,12 +37,18 @@ fun FlatTrackRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val rowSource = remember { MutableInteractionSource() }
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .pressScale(rowSource)
                 .clip(RoundedCornerShape(10.dp))
-                .clickable(onClick = onClick)
+                .clickable(
+                    interactionSource = rowSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    onClick = onClick
+                )
                 .heightIn(min = 48.dp)
                 .padding(horizontal = 4.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically

@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.example.juke.ui.theme.pressScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -51,9 +53,15 @@ fun SearchResultItemM3(
         .minByOrNull { it.width ?: Int.MAX_VALUE }?.url
         ?: track.album.images.lastOrNull()?.url
 
+    val rowSource = remember { MutableInteractionSource() }
     ListItem(
         modifier = Modifier
-            .clickable(enabled = !isDownloading) {
+            .pressScale(rowSource)
+            .clickable(
+                interactionSource = rowSource,
+                indication = androidx.compose.foundation.LocalIndication.current,
+                enabled = !isDownloading
+            ) {
                 haptic.click()
                 onClick()
             }

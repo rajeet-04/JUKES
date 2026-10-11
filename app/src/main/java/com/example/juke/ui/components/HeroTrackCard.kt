@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.example.juke.ui.theme.pressScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -41,13 +43,20 @@ fun HeroTrackCard(
     val haptic = rememberJukeHaptics()
 
     val hazeState = remember { HazeState() }
+    val cardSource = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1.5f)
+            .pressScale(cardSource, pressedScale = 0.97f)
             .glassPane(GlassShapes.Card, GlassLevel.Thick)
-            .clickable(onClickLabel = "Play ${track.title}", role = Role.Button) {
+            .clickable(
+                interactionSource = cardSource,
+                indication = androidx.compose.foundation.LocalIndication.current,
+                onClickLabel = "Play ${track.title}",
+                role = Role.Button
+            ) {
                 haptic.click()
                 onClick()
             }

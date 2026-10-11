@@ -1,5 +1,7 @@
 package com.example.juke.ui.components
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.example.juke.ui.theme.pressScale
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -58,12 +60,16 @@ fun LibraryTrackItem(
 
     val haptic = rememberJukeHaptics()
 
+    val rowSource = remember { MutableInteractionSource() }
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .pressScale(rowSource)
                 .clip(RoundedCornerShape(10.dp))
                 .combinedClickable(
+                    interactionSource = rowSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = {
                         haptic.click()
                         onPlay()

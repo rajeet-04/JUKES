@@ -420,7 +420,11 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(contentPadding)
-                                .nestedScroll(chrome.connection)
+                                .nestedScroll(chrome.connection),
+                            enterTransition = { with(com.example.juke.ui.theme.Motion) { enter() } },
+                            exitTransition = { with(com.example.juke.ui.theme.Motion) { exit() } },
+                            popEnterTransition = { with(com.example.juke.ui.theme.Motion) { popEnter() } },
+                            popExitTransition = { with(com.example.juke.ui.theme.Motion) { popExit() } }
                         ) {
                             composable(Screen.Home.route) {
                                 HomeScreen(
