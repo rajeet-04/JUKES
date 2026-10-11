@@ -2,7 +2,7 @@ package com.example.juke.ui.components
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -40,8 +40,26 @@ private class PlayerTransitionState {
     val progress get() = dragProgress ?: animation.value
     val dragRange get() = ((barBounds ?: miniBounds)?.top?.minus(rootBounds.top) ?: rootBounds.height).coerceAtLeast(1f)
     var expanded by mutableStateOf(false)
+    /** Progress units/s from the last drag release, so the settle continues the finger's motion. */
+    var releaseVelocity = 0f
     var hasArtwork by mutableStateOf(false)
     val moving get() = progress > 0f && progress < 1f
+}
+
+/** The container's current rect (bar -> screen) and corner radius at the present progress. */
+private fun PlayerTransitionState.morph(size: androidx.compose.ui.geometry.Size, barRadius: Float): Pair<Rect, Float> {
+    val t = progress
+    val bar = barBounds
+    val barLeft = bar?.left?.minus(rootBounds.left) ?: 0f
+    val barTop = bar?.top?.minus(rootBounds.top) ?: size.height
+    val barRight = bar?.right?.minus(rootBounds.left) ?: size.width
+    val barBottom = bar?.bottom?.minus(rootBounds.top) ?: size.height
+    return Rect(
+        barLeft * (1f - t),
+        barTop * (1f - t),
+        barRight + (size.width - barRight) * t,
+        barBottom + (size.height - barBottom) * t
+    ) to barRadius * (1f - t)
 }
 
 private val LocalPlayerTransition = staticCompositionLocalOf<PlayerTransitionState?> { null }
@@ -85,7 +103,9 @@ fun PlayerTransitionHost(
         state.animation.snapTo(state.progress)
         state.dragProgress = null
         // Compose honors the system animator duration scale, including disabled animations.
-        state.animation.animateTo(if (expanded) 1f else 0f, playerExpansionSpec(expanded))
+        val velocity = state.releaseVelocity
+        state.releaseVelocity = 0f
+        state.animation.animateTo(if (expanded) 1f else 0f, playerExpansionSpec(expanded), initialVelocity = velocity)
     }
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     state.hasArtwork = uiState.currentTrack?.thumbnailUri != null
@@ -133,33 +153,33 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
     }
     val visible by remember { derivedStateOf { state.expanded || state.progress > 0f } }
     val barRadius = with(density) { 28.dp.toPx() }
-    val contentRise = with(density) { 40.dp.toPx() }
     if (visible) {
         Box(Modifier.fillMaxSize().graphicsLayer {
             // One container that morphs between the mini-player bar and the full screen: all four
             // edges and the corner radius interpolate, so the sheet visibly shrinks into the bar.
-            val t = state.progress
-            val root = state.rootBounds
-            val bar = state.barBounds
-            val barLeft = bar?.left?.minus(root.left) ?: 0f
-            val barTop = bar?.top?.minus(root.top) ?: size.height
-            val barRight = bar?.right?.minus(root.left) ?: size.width
-            val barBottom = bar?.bottom?.minus(root.top) ?: size.height
-            val left = barLeft * (1f - t)
-            val top = barTop * (1f - t)
-            val right = barRight + (size.width - barRight) * t
-            val bottom = barBottom + (size.height - barBottom) * t
-            val radius = barRadius * (1f - t)
+            val (rect, radius) = state.morph(size, barRadius)
             shape = object : androidx.compose.ui.graphics.Shape {
                 override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density) =
                     androidx.compose.ui.graphics.Outline.Rounded(
-                        androidx.compose.ui.geometry.RoundRect(left, top, right, bottom, androidx.compose.ui.geometry.CornerRadius(radius))
+                        androidx.compose.ui.geometry.RoundRect(rect, androidx.compose.ui.geometry.CornerRadius(radius))
                     )
             }
             clip = true
         }.drawBehind {
-            // Transparent at the bar so the mini player shows through, solid before it is full size.
+            // Transparent at the bar so the glass mini player shows through, solid before it is full size.
             drawRect(Color.Black, alpha = (state.progress * 2.2f).coerceIn(0f, 1f))
+            // A faint glass rim while it is still bar-sized, so it reads as the glass bar growing.
+            val rimAlpha = (1f - state.progress * 3f).coerceIn(0f, 1f) * 0.22f
+            if (rimAlpha > 0f) {
+                val (rect, radius) = state.morph(size, barRadius)
+                drawRoundRect(
+                    color = Color.White.copy(alpha = rimAlpha),
+                    topLeft = rect.topLeft,
+                    size = rect.size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                )
+            }
         }
             .draggable(
                 state = dragState,
@@ -172,27 +192,42 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
                 onDragStopped = { velocity ->
                     val dismiss = (1f - state.progress) * state.dragRange >= dismissDistance ||
                         (velocity >= dismissVelocity && state.progress < 1f)
-                    // Transfer the exact finger position to the animation before releasing the drag.
+                    // Transfer the exact finger position and speed to the animation on release.
                     if (state.expanded) {
+                        val progressVelocity = -velocity / state.dragRange
                         state.animation.snapTo(state.progress)
                         state.dragProgress = null
-                        if (dismiss) onDismiss()
-                        else state.animation.animateTo(1f, playerExpansionSpec(true))
+                        if (dismiss) {
+                            state.releaseVelocity = progressVelocity
+                            onDismiss()
+                        } else state.animation.animateTo(1f, playerExpansionSpec(true), initialVelocity = progressVelocity)
                     }
                 }
             )
             .pointerInput(Unit) { detectTapGestures { /* Consume taps on the player backdrop. */ } }) {
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                // The sheet's content appears only once the container is mostly open, and leaves
-                // first on the way back, so the shrinking container never shows squashed content.
-                val t = state.progress
-                alpha = ((t - 0.5f) / 0.5f).coerceIn(0f, 1f)
-                translationY = (1f - t) * contentRise
-            }) { content() }
+            // Each part of the sheet fades in on its own window (see playerStage), so nothing shows
+            // squashed inside the shrinking container.
+            Box(Modifier.fillMaxSize()) { content() }
         }
     }
 }
 
-// Emphasized-decelerate for both directions: a drag hand-off lands softly at either end.
+// A critically damped spring: no bounce, but it takes over the finger's velocity on release, and it
+// retargets mid-flight without a seam. Closing is stiffer than opening (exit faster than entrance).
 private fun playerExpansionSpec(expanding: Boolean) =
-    tween<Float>(if (expanding) 360 else 320, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+    spring<Float>(dampingRatio = 1f, stiffness = if (expanding) 380f else 560f, visibilityThreshold = 0.0005f)
+
+/**
+ * Staggers one part of the player sheet: it fades in and rises while the expansion progress passes
+ * [from]..[to], and (being driven by the same progress) leaves in reverse order when collapsing.
+ */
+@Composable
+fun Modifier.playerStage(from: Float, to: Float, rise: androidx.compose.ui.unit.Dp = 24.dp): Modifier {
+    val state = LocalPlayerTransition.current ?: return this
+    val risePx = with(LocalDensity.current) { rise.toPx() }
+    return graphicsLayer {
+        val a = ((state.progress - from) / (to - from)).coerceIn(0f, 1f)
+        alpha = a
+        translationY = (1f - a) * risePx
+    }
+}

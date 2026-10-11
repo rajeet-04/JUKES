@@ -1,5 +1,6 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.components.playerStage
 import com.example.juke.ui.icons.JukeIcons
 
 import android.annotation.SuppressLint
@@ -305,6 +306,7 @@ fun PlayerScreen(
                 ) {
                     // Header
                     PlayerHeader(
+                        modifier = Modifier.playerStage(0.55f, 0.8f, 12.dp),
                         onDismiss = onDismiss,
                         onShowSleepTimer = { showSleepTimerDialog = true },
                         onNavigateToAlbum = {
@@ -351,7 +353,7 @@ fun PlayerScreen(
 
                     // Track Info & Action icons
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().playerStage(0.5f, 0.78f),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -426,24 +428,28 @@ fun PlayerScreen(
                     Spacer(modifier = Modifier.height(spacerSm))
 
                     // Progress
-                    PlayerProgress(
-                        currentPosition = uiState.position,
-                        uiState = uiState,
-                        musicViewModel = musicViewModel
-                    )
+                    Box(Modifier.playerStage(0.58f, 0.86f)) {
+                        PlayerProgress(
+                            currentPosition = uiState.position,
+                            uiState = uiState,
+                            musicViewModel = musicViewModel
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(spacerSm))
 
                     // Controls
-                    PlayerControls(
-                        uiState = uiState,
-                        musicViewModel = musicViewModel,
-                        isLarge = isTablet,
-                        playButtonSize = ctrlPlaySize,
-                        buttonSize = ctrlBtnSize,
-                        iconSize = ctrlIconSize,
-                        smallIconSize = ctrlSmallIconSize
-                    )
+                    Box(Modifier.playerStage(0.64f, 0.92f)) {
+                        PlayerControls(
+                            uiState = uiState,
+                            musicViewModel = musicViewModel,
+                            isLarge = isTablet,
+                            playButtonSize = ctrlPlaySize,
+                            buttonSize = ctrlBtnSize,
+                            iconSize = ctrlIconSize,
+                            smallIconSize = ctrlSmallIconSize
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(spacerSm))
 
@@ -451,6 +457,7 @@ fun PlayerScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .playerStage(0.72f, 1f)
                             .padding(bottom = bottomPadding)
                             .pointerInput(Unit) {
                                 detectDragGestures { change, dragAmount ->
@@ -602,6 +609,7 @@ fun PlayerScreen(
 
 @Composable
 fun PlayerHeader(
+    modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
     onShowSleepTimer: () -> Unit,
     onNavigateToAlbum: () -> Unit,
@@ -619,7 +627,7 @@ fun PlayerHeader(
 ) {
     val context = LocalContext.current
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(top = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
