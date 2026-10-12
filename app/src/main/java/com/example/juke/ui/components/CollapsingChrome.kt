@@ -3,9 +3,7 @@ package com.example.juke.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -57,9 +55,12 @@ class CollapsingChrome(private val thresholdPx: Float) {
 @Composable
 fun CollapsedTabButton(label: String, onClick: () -> Unit, icon: @Composable () -> Unit) {
     val dark = isGlassDark()
+    // The current tab is the selected one: same neon edge and glowing icon as the open tab bar.
+    val neon = rememberNeon(LocalGlassAccent.current)
     Box(
         modifier = Modifier
             .size(56.dp)
+            .neonRim(neon)
             .liquidGlass(
                 shape = GlassShapes.Pill,
                 fill = if (dark) Color(0xFF0E0E12).copy(alpha = 0.32f) else Color.White.copy(alpha = 0.38f),
@@ -70,6 +71,6 @@ fun CollapsedTabButton(label: String, onClick: () -> Unit, icon: @Composable () 
             .semantics { contentDescription = "$label. Show all tabs" },
         contentAlignment = Alignment.Center
     ) {
-        CompositionLocalProvider(LocalContentColor provides LocalGlassAccent.current) { icon() }
+        NeonGlowIcon(tint = neon, glow = neon, icon = icon)
     }
 }
