@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108">
+  <!-- JUKES app icon master (Play Store 512 px; launcher layers live in res/drawable). -->
+  <defs>
+    <radialGradient id="paper" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.7" stop-color="#F6F4EF"/>
+      <stop offset="1" stop-color="#E9E6DF"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="0" y1="30" x2="0" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2C2C31"/>
+      <stop offset="1" stop-color="#09090B"/>
+    </linearGradient>
+    <radialGradient id="spark" cx="50.8" cy="55.8" r="4.6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF8A5B"/>
+      <stop offset="1" stop-color="#FF3D1F"/>
+    </radialGradient>
+  </defs>
+  <rect width="108" height="108" fill="url(#paper)"/>
+  <path fill="url(#ink)" d="M63 30H76V52A24 24 0 0 1 28 52H41A11 11 0 0 0 63 52Z"/>
+  <circle cx="52" cy="57" r="4" fill="url(#spark)"/>
+</svg>
