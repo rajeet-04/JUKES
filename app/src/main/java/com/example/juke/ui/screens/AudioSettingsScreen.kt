@@ -424,7 +424,7 @@ fun AudioSettingsScreen(
                                     )
                                 },
                                 supportingContent = {
-                                    Text("Songs kept ready ahead; the rest of the radio waits and loads one by one")
+                                    Text("Songs loaded ahead in Up Next. The rest of the radio waits and loads as you reach it or tap it")
                                 },
                                 leadingContent = {
                                     Icon(Icons.Rounded.AutoAwesome, contentDescription = null)

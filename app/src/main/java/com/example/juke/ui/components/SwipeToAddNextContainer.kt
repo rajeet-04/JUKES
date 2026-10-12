@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -32,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.example.juke.ui.icons.JukeIcons
@@ -88,89 +90,108 @@ fun SwipeToAddNextContainer(
         }
     )
 
-    val shape = RoundedCornerShape(12.dp)
-    val dark = isGlassDark()
-    val accent = LocalGlassAccent.current
-
     SwipeToDismissBox(
         state = dismissState,
         enableDismissFromStartToEnd = enabled,
         enableDismissFromEndToStart = enabled && onDelete != null,
         backgroundContent = {
-            // No opaque fill: a tinted glow that lights up from behind the sliding glass card.
-            val direction = dismissState.dismissDirection
-            val glow = when (direction) {
-                SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
-                SwipeToDismissBoxValue.EndToStart -> if (onDelete != null) MaterialTheme.colorScheme.error else null
-                else -> null
-            }
-            if (glow != null) {
-                val toEnd = direction == SwipeToDismissBoxValue.StartToEnd
-                val strength = dismissState.progress.coerceIn(0f, 1f)
-                val onGlow = if (dark) Color.White else MaterialTheme.colorScheme.onSurface
-                // Only the strip the card has slid away from may show the label; anything under the
-                // card would bleed through the glass and clash with the song title.
-                val offsetPx = runCatching { dismissState.requireOffset() }.getOrDefault(0f)
-                val revealed = with(LocalDensity.current) { abs(offsetPx).toDp() }
-                Box(Modifier.fillMaxSize().clip(shape)) {
-                    // Light source behind the glass: blurred so it reads as a glow, never as shapes.
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .blur(18.dp)
-                            .background(
-                                Brush.horizontalGradient(
-                                    if (toEnd) listOf(glow.copy(alpha = 0.55f * strength + 0.15f), glow.copy(alpha = 0.04f))
-                                    else listOf(glow.copy(alpha = 0.04f), glow.copy(alpha = 0.55f * strength + 0.15f))
-                                )
-                            )
-                    )
-                    Box(
-                        Modifier
-                            .width(revealed)
-                            .fillMaxHeight()
-                            .align(if (toEnd) Alignment.CenterStart else Alignment.CenterEnd)
-                            .clipToBounds(),
-                        contentAlignment = if (toEnd) Alignment.CenterStart else Alignment.CenterEnd
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .wrapContentWidth(if (toEnd) Alignment.Start else Alignment.End, unbounded = true)
-                                .padding(horizontal = 20.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (toEnd) {
-                                Icon(JukeIcons.Play, contentDescription = "Add next", tint = onGlow)
-                                Text("Add to queue next", style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
-                            } else {
-                                Text("Delete", style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
-                                Icon(JukeIcons.Delete, contentDescription = "Delete", tint = onGlow)
-                            }
-                        }
-                    }
-                }
-            }
+            SwipeRevealBackground(
+                dismissState = dismissState,
+                startLabel = "Add to queue next",
+                startIcon = JukeIcons.Play,
+                endLabel = if (onDelete != null) "Delete" else null,
+                endIcon = JukeIcons.Delete
+            )
         },
         content = {
-            // The row turns into tinted glass as it is dragged, so the glow reads through it.
-            val dragging = dismissState.dismissDirection != SwipeToDismissBoxValue.Settled
-            val glass by animateFloatAsState(
-                targetValue = if (dragging) 1f else 0f,
-                label = "swipeGlass"
-            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(shape)
-                    .background(
-                        (if (dark) Color(0xFF14141A) else Color.White).copy(alpha = 0.55f * glass)
-                    )
-                    .background(accent.copy(alpha = (if (dark) 0.14f else 0.10f) * glass))
-                    .border(0.6.dp, Color.White.copy(alpha = (if (dark) 0.22f else 0.5f) * glass), shape),
+                    .swipeGlass(dismissState),
                 content = content
             )
         },
         modifier = modifier
     )
+}
+
+private val SwipeShape = RoundedCornerShape(12.dp)
+
+/**
+ * What a swiped row reveals: a tinted glow that lights up from behind the sliding glass card
+ * (no opaque fill), and the action label only in the strip the card has slid away from, so it
+ * never sits under the song title. [endLabel] null = no end-to-start action.
+ */
+@Composable
+fun SwipeRevealBackground(
+    dismissState: SwipeToDismissBoxState,
+    startLabel: String,
+    startIcon: ImageVector,
+    endLabel: String?,
+    endIcon: ImageVector
+) {
+    val dark = isGlassDark()
+    val direction = dismissState.dismissDirection
+    val glow = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
+        SwipeToDismissBoxValue.EndToStart -> if (endLabel != null) MaterialTheme.colorScheme.error else null
+        else -> null
+    } ?: return
+    val toEnd = direction == SwipeToDismissBoxValue.StartToEnd
+    val strength = dismissState.progress.coerceIn(0f, 1f)
+    val onGlow = if (dark) Color.White else MaterialTheme.colorScheme.onSurface
+    val offsetPx = runCatching { dismissState.requireOffset() }.getOrDefault(0f)
+    val revealed = with(LocalDensity.current) { abs(offsetPx).toDp() }
+    Box(Modifier.fillMaxSize().clip(SwipeShape)) {
+        // Light source behind the glass: blurred so it reads as a glow, never as shapes.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .blur(18.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        if (toEnd) listOf(glow.copy(alpha = 0.55f * strength + 0.15f), glow.copy(alpha = 0.04f))
+                        else listOf(glow.copy(alpha = 0.04f), glow.copy(alpha = 0.55f * strength + 0.15f))
+                    )
+                )
+        )
+        Box(
+            Modifier
+                .width(revealed)
+                .fillMaxHeight()
+                .align(if (toEnd) Alignment.CenterStart else Alignment.CenterEnd)
+                .clipToBounds(),
+            contentAlignment = if (toEnd) Alignment.CenterStart else Alignment.CenterEnd
+        ) {
+            Row(
+                modifier = Modifier
+                    .wrapContentWidth(if (toEnd) Alignment.Start else Alignment.End, unbounded = true)
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (toEnd) {
+                    Icon(startIcon, contentDescription = null, tint = onGlow)
+                    Text(startLabel, style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
+                } else if (endLabel != null) {
+                    Text(endLabel, style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
+                    Icon(endIcon, contentDescription = null, tint = onGlow)
+                }
+            }
+        }
+    }
+}
+
+/** The row turns into tinted glass while it is dragged, so the glow reads through it. */
+@Composable
+fun Modifier.swipeGlass(dismissState: SwipeToDismissBoxState): Modifier {
+    val dark = isGlassDark()
+    val accent = LocalGlassAccent.current
+    val dragging = dismissState.dismissDirection != SwipeToDismissBoxValue.Settled
+    val glass by animateFloatAsState(targetValue = if (dragging) 1f else 0f, label = "swipeGlass")
+    return this
+        .clip(SwipeShape)
+        .background((if (dark) Color(0xFF14141A) else Color.White).copy(alpha = 0.55f * glass))
+        .background(accent.copy(alpha = (if (dark) 0.14f else 0.10f) * glass))
+        .border(0.6.dp, Color.White.copy(alpha = (if (dark) 0.22f else 0.5f) * glass), SwipeShape)
 }

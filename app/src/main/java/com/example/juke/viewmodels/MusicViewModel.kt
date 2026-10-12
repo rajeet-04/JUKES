@@ -56,6 +56,7 @@ import com.example.juke.models.findOfflineTrack
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 
 enum class DownloadStatus {
@@ -98,6 +99,61 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val playbackManager = PlaybackManager.getInstance(application)
     private val queueManager = QueueManager.getInstance(application)
     val recStatus = queueManager.recStatus
+
+    /** Up Next songs picked from the radio but not fetched yet. */
+    val pendingSongs = queueManager.pending
+    private val fetchingPending = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** Tap on a waiting Up Next song: fetch it now, then play it like any queued song. */
+    fun playPendingSong(id: String) {
+        val current = _uiState.value.currentTrack ?: return
+        if (!fetchingPending.add(id)) return
+        viewModelScope.launch {
+            try {
+                val track = queueManager.fetchPendingNow(id, current)
+                if (track == null) {
+                    Toast.makeText(getApplication(), "Couldn't load that song", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                // The player gets the song through the recommendation sync; play it once it's there.
+                val queued = withTimeoutOrNull(15_000) {
+                    playbackManager.queueFlow.first { track.uuid in it }
+                    _uiState.first { state -> state.queue.any { it.uuid == track.uuid } }
+                }
+                if (queued != null) playTrackFromQueue(track)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Could not play waiting song: ${e.message}", e)
+            } finally {
+                fetchingPending.remove(id)
+            }
+        }
+    }
+
+    /** Swipe-away of a waiting Up Next song. */
+    fun removePendingSong(id: String) = queueManager.dropPending(id)
+
+    /** "Play next" copies of waiting songs, greyed right after the playing song until loaded. */
+    val heldNextSongs = queueManager.heldNext
+
+    /** Swipe right on a ready queued song: a copy plays next, the original keeps its place. */
+    fun playNextCopy(track: Track) {
+        viewModelScope.launch {
+            if (!playbackManager.insertNext(track)) {
+                Toast.makeText(getApplication(), "Couldn't queue that song", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /**
+     * Swipe right on a waiting song: fetch a copy now and play it next once it is ready. Until
+     * then playback carries on with the ready songs.
+     */
+    fun playNextPending(id: String) {
+        val current = _uiState.value.currentTrack ?: return
+        queueManager.copyPendingNext(id, current)
+    }
 
     private val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
     private val _playbackSpeed = MutableStateFlow(1f)
@@ -429,6 +485,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         )
 
                         // Keep the user's lookahead of resolved songs topped up as each one starts.
+                        // Songs before this one count as played, so a later radio can't bring them back.
+                        queueManager.updateHistory(currentQueue.take(index))
                         val remainingTracks = currentQueue.size - index - 1
                         queueManager.onPlaybackAdvanced(track, remainingTracks)
                     }
@@ -441,50 +499,50 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Observe recommendation queue changes
+        // Startup/restoration: with no UI queue and no player queue yet, show QueueManager's list.
+        // (QueueManager's list starts at the current song, so its indices don't match the player's;
+        // once the player has a queue, its own sync populates the UI.)
         viewModelScope.launch {
             queueManager.currentQueue.collect { recommendedTracks ->
-                Log.d(
-                    "MusicViewModel",
-                    "QueueManager queue updated: ${recommendedTracks.size} tracks"
-                )
-
-                // Add recommended tracks to the main queue if they're not already there
-                val currentQueue = _uiState.value.queue
-
-                // If current queue is empty (e.g. app restart), sync with QueueManager but DON'T add to PlaybackManager
-                // because PlaybackManager/Restoration logic is what populated QueueManager in the first place.
-                if (currentQueue.isEmpty()) {
-                    // QueueManager's list starts at the current song, so its indices don't match the
-                    // player's. Let the PlaybackManager sync populate the queue when it has one.
-                    if (recommendedTracks.isNotEmpty() && playbackManager.queueFlow.value.isEmpty()) {
-                        Log.d(
-                            "MusicViewModel",
-                            "Syncing UI queue from QueueManager (Startup/Restoration)"
-                        )
-                        _uiState.update { it.copy(queue = recommendedTracks) }
-                    }
-                    return@collect
+                if (_uiState.value.queue.isEmpty() && recommendedTracks.isNotEmpty() &&
+                    playbackManager.queueFlow.value.isEmpty()
+                ) {
+                    Log.d("MusicViewModel", "Syncing UI queue from QueueManager (Startup/Restoration)")
+                    _uiState.update { it.copy(queue = recommendedTracks) }
                 }
+            }
+        }
 
-                val newTracks = recommendedTracks.filter { recommended ->
-                    !currentQueue.any { existing -> existing.uuid == recommended.uuid }
+        // Append exactly what the recommendation engine just added. Diffing QueueManager's list
+        // instead re-appended blocks of played songs (it keeps the whole session) and songs the
+        // player had not taken yet (they were sent twice).
+        viewModelScope.launch {
+            queueManager.recommendationsAdded.collect { added ->
+                val playerIds = playbackManager.queueFlow.value
+                if (playerIds.isEmpty()) return@collect
+                val present = playerIds.toHashSet().apply { _uiState.value.queue.mapTo(this) { it.uuid } }
+                // A song the listener also queued as "play next" keeps its own place too.
+                val fresh = added.tracks.distinctBy { it.uuid }
+                    .filter { added.allowDuplicates || it.uuid !in present }
+                if (fresh.isEmpty()) return@collect
+                _uiState.update { it.copy(queue = it.queue + fresh) }
+                playbackManager.addToQueue(fresh, allowDuplicates = added.allowDuplicates)
+                Log.d("MusicViewModel", "Added ${fresh.size} recommended tracks: ${fresh.joinToString { it.title }}")
+            }
+        }
+
+        // A waiting song the listener swiped to play next finished loading: put it after whatever
+        // is playing now (playback kept going with ready songs while it loaded).
+        viewModelScope.launch {
+            queueManager.playNextReady.collect { track ->
+                if (!playbackManager.insertNext(track)) {
+                    Toast.makeText(getApplication(), "Couldn't queue \"${track.title}\"", Toast.LENGTH_SHORT).show()
                 }
-
-                if (newTracks.isNotEmpty()) {
-                    val updatedQueue = currentQueue + newTracks
-                    _uiState.update { it.copy(queue = updatedQueue) }
-
-                    // Add new tracks to the playback queue without interrupting current playback
-                    playbackManager.addToQueue(newTracks)
-
-                    Log.d(
-                        "MusicViewModel",
-                        "Added ${newTracks.size} recommended tracks to main queue. Total queue size: ${updatedQueue.size}"
-                    )
-                } else {
-                    Log.d("MusicViewModel", "No new tracks to add from recommendations")
-                }
+            }
+        }
+        viewModelScope.launch {
+            queueManager.playNextFailed.collect { title ->
+                Toast.makeText(getApplication(), "Couldn't load \"$title\"", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -663,14 +721,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun playTrackFromQueue(track: Track) {
+    /** Play a queued song; [index] picks the entry when the song is queued twice. */
+    fun playTrackFromQueue(track: Track, index: Int? = null) {
         viewModelScope.launch {
             val currentState = _uiState.value
             val queue = currentState.queue
             val shouldResumePlayback = playbackManager.shouldResumeAfterTrackChange()
 
             // Find the track index in the current queue
-            val trackIndex = queue.indexOfFirst { it.uuid == track.uuid }
+            val trackIndex = index?.takeIf { queue.getOrNull(it)?.uuid == track.uuid }
+                ?: queue.indexOfFirst { it.uuid == track.uuid }
             if (trackIndex == -1) {
                 Log.w("MusicViewModel", "Track ${track.title} not found in current queue")
                 return@launch
@@ -1401,7 +1461,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun removeFromQueue(trackId: String) {
+    /** Remove a queued song; [index] picks the entry when the song is queued twice. */
+    fun removeFromQueue(trackId: String, index: Int? = null) {
         viewModelScope.launch {
             // Set loading state
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
@@ -1411,18 +1472,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val currentIndex = currentState.queueIndex
 
             // Find the track to remove
-            val trackIndex = currentQueue.indexOfFirst { it.uuid == trackId }
+            val trackIndex = index?.takeIf { currentQueue.getOrNull(it)?.uuid == trackId }
+                ?: currentQueue.indexOfFirst { it.uuid == trackId }
             if (trackIndex == -1) {
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
                 return@launch
             }
 
             // Remove from playback queue first
-            val playbackResult = playbackManager.removeFromQueue(trackId)
+            val playbackResult = playbackManager.removeFromQueueAt(trackIndex, trackId)
 
             if (playbackResult) {
-                // Keep recommendation queue in sync so deleted tracks don't reappear
-                queueManager.removeFromQueue(trackId)
+                // Keep recommendation queue in sync so deleted tracks don't reappear (unless a
+                // "play next" copy of it is still queued).
+                if (currentQueue.count { it.uuid == trackId } <= 1) queueManager.removeFromQueue(trackId)
 
                 // Remove from UI queue
                 val newQueue = currentQueue.toMutableList().apply { removeAt(trackIndex) }
@@ -1500,9 +1563,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Sync with QueueManager
                 // Pass only relevant future tracks to avoid desync
+                // Reordering is the same session: keep what was already played and recommended.
                 val queueManagerTracks = newQueue.drop(newQueueIndex)
                 if (queueManagerTracks.isNotEmpty()) {
-                    queueManager.initializeQueue(queueManagerTracks)
+                    queueManager.updateHistory(newQueue.take(newQueueIndex))
+                    queueManager.initializeQueue(queueManagerTracks, preserveHistory = true)
                 }
 
                 Log.d("MusicViewModel", "Moved track from index $fromIndex to $toIndex")

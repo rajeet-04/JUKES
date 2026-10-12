@@ -15,14 +15,18 @@ import com.example.juke.utils.ArtistUtils
 import com.example.juke.utils.BlacklistManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -63,11 +67,11 @@ class QueueManager private constructor(private val context: Context) {
 
         /** Default plays in one day after which a song counts as "on repeat" and is no longer held back. */
         const val DEFAULT_INDULGE_PLAYS = 2
-        /** Stop pulling radios once a refill has this many new candidates. */
-        private const val POOL_TARGET = 60
-        private const val MAX_RADIOS_PER_REFILL = 2
-        /** Relevance rank assumed for a reserve song whose radio position is unknown. */
-        private const val DEFAULT_RANK = 25
+        /**
+         * A radio song heard this often lately (freshness below this) waits behind the fresh ones
+         * instead of keeping its radio position. Favourites and songs on repeat today are exempt.
+         */
+        private const val STALE_FRESHNESS = 0.5
 
         fun getInstance(context: Context): QueueManager {
             return instance ?: synchronized(this) {
@@ -104,6 +108,17 @@ class QueueManager private constructor(private val context: Context) {
     // Queue state
     private val _currentQueue = MutableStateFlow<List<Track>>(emptyList())
     val currentQueue: StateFlow<List<Track>> = _currentQueue.asStateFlow()
+
+    /**
+     * Songs the recommendation engine just added, one emission per batch. The player queue is
+     * extended from this, never by diffing [currentQueue]: that list keeps the whole session, so a
+     * diff re-appended played songs after "Clear played" and songs still in flight to the player.
+     */
+    private val _recommendationsAdded = MutableSharedFlow<Added>(extraBufferCapacity = 64)
+    val recommendationsAdded: SharedFlow<Added> = _recommendationsAdded.asSharedFlow()
+
+    /** Songs to append to the player. [allowDuplicates]: the listener also queued a copy of it. */
+    data class Added(val tracks: List<Track>, val allowDuplicates: Boolean = false)
 
     /** What the recommendation engine is doing: songs being resolved now and songs waiting in reserve. */
     data class RecStatus(val resolving: Int = 0, val reserve: Int = 0)
@@ -269,6 +284,7 @@ class QueueManager private constructor(private val context: Context) {
             val existingIds = playedTracksHistory.map { it.uuid }.toSet()
             val newTracks = toKeep.filter { it.uuid !in existingIds }
             playedTracksHistory.addAll(newTracks)
+            while (playedTracksHistory.size > 100) playedTracksHistory.removeFirst()
         }
     }
 
@@ -283,8 +299,9 @@ class QueueManager private constructor(private val context: Context) {
      *    and the new one is dropped, preventing duplicate poisoning.
      *
      * @param track Track to add
+     * @return true when the track was newly added (not moved or dropped as a duplicate)
      */
-    fun addToQueue(track: Track) {
+    fun addToQueue(track: Track): Boolean {
         val currentList = _currentQueue.value.toMutableList()
 
         // Check if track already exists (Move operation by uuid)
@@ -294,7 +311,7 @@ class QueueManager private constructor(private val context: Context) {
             currentList.add(track)
             _currentQueue.value = currentList
             Log.d(tag, "Moved existing track to end of queue: ${track.title}")
-            return
+            return false
         }
 
         // Same song under a different UUID — drop to prevent duplicate poisoning.
@@ -307,12 +324,13 @@ class QueueManager private constructor(private val context: Context) {
                 tag,
                 "Skipping duplicate addToQueue for same title+artist: ${track.title} by ${track.artist}"
             )
-            return
+            return false
         }
 
         currentList.add(track)
         _currentQueue.value = currentList
         Log.d(tag, "Added to queue: ${track.title}")
+        return true
     }
 
     /**
@@ -392,7 +410,88 @@ class QueueManager private constructor(private val context: Context) {
     /** Radio seeds already pulled this session; a radio returns the same list, so never repeat one. */
     private val usedSeeds: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     /** Position of each reserve song (by video id) in the radio it came from; drives relevance. */
-    private val radioRank = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    /** An Up Next song picked from the radio but not fetched yet (shown greyed in the queue). */
+    data class PendingSong(
+        val id: String,
+        val title: String,
+        val artist: String,
+        val thumbnailUrl: String,
+        val duration: String?,
+        val loading: Boolean
+    )
+
+    /** Picked songs waiting to be fetched, in queue order. */
+    private val pendingRecs = java.util.concurrent.ConcurrentLinkedDeque<RecommenderApi.YouTubeRecommendation>()
+    /** Fetches in progress by video id; a tap and the background fill share one fetch. */
+    private val inFlight = java.util.concurrent.ConcurrentHashMap<String, Deferred<Track?>>()
+    /** Video ids already delivered to the queue this session. */
+    private val delivered: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val _pending = MutableStateFlow<List<PendingSong>>(emptyList())
+    val pending: StateFlow<List<PendingSong>> = _pending.asStateFlow()
+
+    private fun publishPending() {
+        _pending.value = pendingRecs.map { rec -> pendingSong(rec, loading = inFlight.containsKey(rec.id)) }
+    }
+
+    /**
+     * "Play next" copies the listener asked for while the song was still waiting: shown greyed
+     * right after the playing song until fetched, then put there in the player.
+     */
+    private val _heldNext = MutableStateFlow<List<PendingSong>>(emptyList())
+    val heldNext: StateFlow<List<PendingSong>> = _heldNext.asStateFlow()
+    /** A held copy finished loading: the player should put it right after the playing song. */
+    private val _playNextReady = MutableSharedFlow<Track>(extraBufferCapacity = 16)
+    val playNextReady: SharedFlow<Track> = _playNextReady.asSharedFlow()
+    /** A held copy could not be fetched (title, for the message). */
+    private val _playNextFailed = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val playNextFailed: SharedFlow<String> = _playNextFailed.asSharedFlow()
+    /** Fetched tracks of waiting songs the listener copied, by video id; the original reuses it. */
+    private val copies = java.util.concurrent.ConcurrentHashMap<String, Track>()
+
+    private fun pendingSong(rec: RecommenderApi.YouTubeRecommendation, loading: Boolean) = PendingSong(
+        id = rec.id,
+        title = rec.title,
+        artist = rec.artist,
+        thumbnailUrl = "https://i.ytimg.com/vi/${rec.id}/mqdefault.jpg",
+        duration = rec.duration,
+        loading = loading
+    )
+
+    /**
+     * The listener swiped a waiting song to play next. The original keeps its place in Up Next;
+     * a copy is fetched now (ahead of everything else) and put after whatever is playing once it
+     * is ready, so playback carries on with ready songs while it loads.
+     */
+    fun copyPendingNext(id: String, current: Track): Boolean {
+        val rec = pendingRecs.firstOrNull { it.id == id } ?: return false
+        if (_heldNext.value.any { it.id == id }) return false
+        _heldNext.update { listOf(pendingSong(rec, loading = true)) + it }
+        val gen = sessionGen.get()
+        sessionScope.launch {
+            val track = try {
+                copies[rec.id] ?: inFlight[rec.id]?.await() ?: resolveRecommendation(rec, current, allowQueued = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(tag, "Play next fetch failed for ${rec.title}: ${e.message}")
+                null
+            } finally {
+                _heldNext.update { list -> list.filterNot { it.id == id } }
+            }
+            if (gen != sessionGen.get()) return@launch
+            if (track == null) {
+                _playNextFailed.tryEmit(rec.title)
+                return@launch
+            }
+            copies[rec.id] = track
+            _playNextReady.tryEmit(track)
+        }
+        return true
+    }
+
+    private fun pendingKeys(): Set<String> =
+        pendingRecs.mapTo(HashSet()) { RecommenderApi.songKey(it.title, it.artist) }
 
     init {
         // Exposure rows untouched for ~2 months have decayed to nothing.
@@ -417,7 +516,12 @@ class QueueManager private constructor(private val context: Context) {
         seen.clear()
         claimed.clear()
         usedSeeds.clear()
-        radioRank.clear()
+        pendingRecs.clear()
+        inFlight.clear()
+        delivered.clear()
+        copies.clear()
+        _heldNext.value = emptyList()
+        publishPending()
         seedVideoId = null
         _recStatus.value = RecStatus()
         _downloadingTracks.update { list -> list.filterNot { it.source == "recommendation" } }
@@ -481,128 +585,184 @@ class QueueManager private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Up Next shows the whole radio, in YouTube Music's order, as waiting songs; the first
+     * [lookahead] of them (the listener's setting) are fetched and in the player. Fetched songs
+     * join the queue one after another, in radio order, as each becomes ready.
+     */
     private suspend fun fillWindow(current: Track, reported: Int, ignoreQueue: Boolean, gen: Int) {
-        val target = lookahead()
+        val ready = lookahead()
+        val baseline = if (ignoreQueue) upcomingAfter(current, 0) else 0
+        fun upcoming() = if (ignoreQueue) upcomingAfter(current, 0) - baseline else upcomingAfter(current, reported)
         var added = 0
         var round = 0
-        val baseline = if (ignoreQueue) upcomingAfter(current, 0) else 0
 
-        while (round++ < 4 && gen == sessionGen.get()) {
-            val upcoming = if (ignoreQueue) upcomingAfter(current, 0) - baseline
-            else upcomingAfter(current, reported)
-            val need = target - upcoming
-            if (need <= 0) return
+        while (round++ < 6 && gen == sessionGen.get()) {
+            // Running low on waiting songs: continue the radio.
+            if (pendingRecs.size < ready) {
+                if (reserve.isEmpty()) refillReserve(current)
+                moveReserveToPending(current)
+            }
 
-            if (reserve.isEmpty() && refillReserve(current) == 0) break
+            val need = ready - upcoming()
+            if (need <= 0) break
+            val batch = pendingRecs.filterNot { inFlight.containsKey(it.id) }.take(need)
+            if (batch.isEmpty()) break
 
-            val batch = pickFromReserve(current, queuedKeys(current), need)
-            if (batch.isEmpty()) continue // reserve drained by duplicates → refill next round
-
-            Log.d(tag, "Resolving ${batch.size} of $target lookahead (reserve left: ${reserve.size})")
-            _recStatus.value = RecStatus(batch.size, reserve.size)
-            val resolved = try {
+            Log.d(tag, "Fetching ${batch.size} of $ready ahead (waiting: ${pendingRecs.size})")
+            _recStatus.value = RecStatus(batch.size, pendingRecs.size)
+            try {
                 coroutineScope {
-                    batch.map { rec -> async { resolveSlots.withPermit { resolveRecommendation(rec, current) } } }
-                        .awaitAll()
+                    val jobs = batch.map { rec -> async { fetchPending(rec, current, priority = false) } }
+                    // Fetch in parallel, deliver in radio order: each song joins the queue as soon
+                    // as it and the ones before it are ready.
+                    batch.zip(jobs).forEach { (rec, job) ->
+                        val track = job.await() ?: return@forEach
+                        if (gen != sessionGen.get()) return@forEach
+                        deliver(rec, track)
+                        added++
+                    }
                 }
             } finally {
-                if (gen == sessionGen.get()) _recStatus.value = RecStatus(0, reserve.size)
-            }
-            // Add in pick order (weighted draw, best-scoring songs tend to come first).
-            batch.zip(resolved).forEach { (rec, track) ->
-                if (track == null || gen != sessionGen.get()) return@forEach
-                seen.add("k:${songKey(track)}")
-                addToQueue(track)
-                recordExposure(songKey(track), Variety.Event.RECOMMENDED)
-                seedVideoId = rec.id
-                added++
+                if (gen == sessionGen.get()) _recStatus.value = RecStatus(0, pendingRecs.size)
             }
         }
 
-        if (added == 0 && gen == sessionGen.get() && target - upcomingAfter(current, reported) > 0) {
+        if (added == 0 && pendingRecs.isEmpty() && gen == sessionGen.get() && ready - upcoming() > 0) {
             Log.d(tag, "Online radio produced nothing. Falling back to offline library.")
-            fetchOfflineRecommendations(current, target - upcomingAfter(current, reported))
+            fetchOfflineRecommendations(current, ready - upcoming())
         }
     }
 
     /**
-     * Choose [need] songs from the reserve by weighted random draw: radio rank x freshness (how little
-     * the listener has heard, skipped or been shown the song lately, across sessions) x artist spread.
-     * Favourites and songs on repeat today skip the freshness penalty. Picked and blocked songs leave
-     * the reserve; the rest stay for later fills.
+     * Move the reserve into Up Next in radio order, dropping anything already queued. Songs the
+     * listener has heard, skipped or been shown a lot lately move behind the fresh ones; nothing
+     * else is reordered, so the queue follows YouTube Music's radio.
      */
-    private suspend fun pickFromReserve(
-        current: Track,
-        queued: Set<String>,
-        need: Int
-    ): List<RecommenderApi.YouTubeRecommendation> {
-        val byKey = LinkedHashMap<String, RecommenderApi.YouTubeRecommendation>()
-        reserve.toList().forEach { rec ->
+    private suspend fun moveReserveToPending(current: Track) {
+        if (reserve.isEmpty()) return
+        val blocked = queuedKeys(current) + pendingKeys()
+        val incoming = LinkedHashMap<String, RecommenderApi.YouTubeRecommendation>()
+        while (true) {
+            val rec = reserve.pollFirst() ?: break
             val key = RecommenderApi.songKey(rec.title, rec.artist)
-            if (key in queued || key in byKey) reserve.remove(rec) else byKey[key] = rec
+            if (key !in blocked) incoming.putIfAbsent(key, rec)
         }
-        if (byKey.isEmpty()) return emptyList()
-
+        if (incoming.isEmpty()) return
         val now = System.currentTimeMillis()
-        val exposure = try { exposureFor(byKey.keys) } catch (e: Exception) { emptyMap() }
+        val exposure = try { exposureFor(incoming.keys) } catch (e: Exception) { emptyMap() }
         val favourites = try { favouriteKeys() } catch (e: Exception) { emptySet() }
-        val recentArtists = (_currentQueue.value.takeLast(3) + current).map { artistKey(songKey(it)) }
-
-        val picks = Variety.pick(
-            byKey.entries.toList(), need,
-            weightOf = { (key, rec) ->
-                val fresh = if (key in favourites || dailyPlayCount(key) >= indulgePlays) 1.0
-                else Variety.freshness(exposure[key], now)
-                Variety.relevance(radioRank[rec.id] ?: DEFAULT_RANK) * fresh
-            },
-            artistOf = { artistKey(it.key) },
-            recentArtists = recentArtists
-        )
-        picks.forEach { reserve.remove(it.value) }
-        Log.d(tag, "Picked ${picks.size} of ${byKey.size} candidates: " + picks.joinToString {
-            "${it.value.title} (rank ${radioRank[it.value.id]}, fresh ${"%.2f".format(Variety.freshness(exposure[it.key], now))})"
-        })
-        return picks.map { it.value }
+        val (fresh, stale) = incoming.entries.partition { (key, _) ->
+            key in favourites || dailyPlayCount(key) >= indulgePlays ||
+                Variety.freshness(exposure[key], now) >= STALE_FRESHNESS
+        }
+        pendingRecs.addAll(fresh.map { it.value } + stale.map { it.value })
+        publishPending()
+        Log.d(tag, "Up Next +${incoming.size} from the radio (${stale.size} heard lately moved back)")
     }
 
     /**
-     * Refill the reserve from YouTube Music radios. Starts from the newest seed (the last song we
-     * queued) and, when that radio has nothing new, reseeds from the last few songs in the queue
-     * and then recent history, so a drained radio is continued from where the listening is now
-     * instead of falling back to the library. Each seed is used once per session.
-     * Returns how many new songs were added.
+     * Fetch one waiting song, or join the fetch already running for it. [priority] fetches (a tap)
+     * skip the background concurrency limit. The song leaves the waiting list either way.
+     */
+    private suspend fun fetchPending(
+        rec: RecommenderApi.YouTubeRecommendation,
+        current: Track,
+        priority: Boolean
+    ): Track? {
+        // The listener already fetched it as a "play next" copy: reuse that.
+        copies[rec.id]?.let { track ->
+            pendingRecs.removeIf { it.id == rec.id }
+            publishPending()
+            return track
+        }
+        val job = inFlight.computeIfAbsent(rec.id) {
+            sessionScope.async {
+                if (priority) resolveRecommendation(rec, current)
+                else resolveSlots.withPermit { resolveRecommendation(rec, current) }
+            }
+        }
+        publishPending()
+        return try {
+            job.await()
+        } finally {
+            inFlight.remove(rec.id, job)
+            pendingRecs.removeIf { it.id == rec.id }
+            publishPending()
+        }
+    }
+
+    /** Add a fetched song to the queue once (a tap and the fill may both finish it). */
+    @Synchronized
+    private fun deliver(rec: RecommenderApi.YouTubeRecommendation, track: Track): Track {
+        if (!delivered.add(rec.id)) {
+            return _currentQueue.value.firstOrNull { songKey(it) == songKey(track) } ?: track
+        }
+        seen.add("k:${songKey(track)}")
+        // The listener also queued a copy of this song: the original still takes its own place.
+        val copied = copies.containsKey(rec.id)
+        if (copied) {
+            _currentQueue.update { it + track }
+        } else if (!addToQueue(track)) {
+            // Same song already queued under another entry: play that one.
+            return _currentQueue.value.firstOrNull { songKey(it) == songKey(track) } ?: track
+        }
+        recordExposure(songKey(track), Variety.Event.RECOMMENDED)
+        seedVideoId = rec.id
+        Log.d(tag, "Recommended: ${track.title}")
+        _recommendationsAdded.tryEmit(Added(listOf(track), allowDuplicates = copied))
+        return track
+    }
+
+    /**
+     * The listener tapped a waiting Up Next song: fetch it now (ahead of the background fill) and
+     * return the queued track to play, or null when it can't be fetched.
+     */
+    suspend fun fetchPendingNow(id: String, current: Track): Track? {
+        val rec = pendingRecs.firstOrNull { it.id == id } ?: return null
+        val gen = sessionGen.get()
+        val track = fetchPending(rec, current, priority = true) ?: return null
+        if (gen != sessionGen.get()) return null
+        // Jumping ahead skips the waiting songs above it, as in any queue.
+        val skipped = pendingRecs.takeWhile { it.id != id }.filterNot { inFlight.containsKey(it.id) }
+        if (skipped.isNotEmpty()) {
+            pendingRecs.removeAll(skipped.toSet())
+            publishPending()
+        }
+        return deliver(rec, track)
+    }
+
+    /** The listener removed a waiting song from Up Next. */
+    fun dropPending(id: String) {
+        if (pendingRecs.removeIf { it.id == id && !inFlight.containsKey(id) }) publishPending()
+    }
+
+    /**
+     * Refill the reserve with one YouTube Music radio, like YouTube Music continuing a radio: the
+     * last song queued from the radio seeds it, then the playing song, then recent queue and
+     * history. Only one radio per refill, and only once the previous one ran out, so a stray radio
+     * (one seeded by an unrelated upload) can't mix into a good one. Each seed is used once per
+     * session. Returns how many new songs were added.
      */
     private suspend fun refillReserve(current: Track): Int {
         queuedKeys(current).forEach { seen.add("k:$it") }
         current.ytVideoId?.let { seen.add("yt:$it") }
 
         val blacklist = BlacklistManager.getBlacklistedArtists(context)
-        var added = 0
+        seedVideoId?.let { if (usedSeeds.add(it)) pullRadio(it, current, blacklist).let { n -> if (n > 0) return n } }
 
-        var radios = 0
-        seedVideoId?.let { if (usedSeeds.add(it)) { added += pullRadio(it, current, blacklist); radios++ } }
-
-        // Up to two radios per refill so the weighted pick has a wide pool. The playing song comes
-        // first; other seeds are taken in random order so sessions branch differently.
-        val candidates = (listOf(current) + (_currentQueue.value.asReversed().take(4) +
-                playedTracksHistory.toList().asReversed().take(10)).shuffled()).distinctBy { it.uuid }
+        val candidates = (listOf(current) + _currentQueue.value.asReversed().take(4) +
+                playedTracksHistory.toList().asReversed().take(10)).distinctBy { it.uuid }
         for (track in candidates) {
-            if (added >= POOL_TARGET || radios >= MAX_RADIOS_PER_REFILL) break
             val id = track.ytVideoId
                 ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}", track.durationSec, track.artist)
                 ?: continue
             if (!usedSeeds.add(id)) continue
-            added += pullRadio(id, current, blacklist)
-            radios++
+            val added = pullRadio(id, current, blacklist)
+            if (added > 0) return added
         }
-        // A fresh session often has a single seed: branch from a random top song of its radio.
-        if (radios < MAX_RADIOS_PER_REFILL && added in 1 until POOL_TARGET) {
-            reserve.toList().take(10).shuffled().firstOrNull { usedSeeds.add(it.id) }?.let {
-                added += pullRadio(it.id, current, blacklist)
-            }
-        }
-        Log.d(tag, "Reserve refill: $added new songs → reserve ${reserve.size}")
-        return added
+        Log.d(tag, "Reserve refill: no seed produced new songs")
+        return 0
     }
 
     /** One radio for [seedId] into the reserve, skipping everything already seen or queued. */
@@ -615,7 +775,7 @@ class QueueManager private constructor(private val context: Context) {
             ?: emptyList()
         val blocked = queuedKeys(current)
         var added = 0
-        for ((rank, rec) in radio.withIndex()) {
+        for (rec in radio) {
             if (RecommenderApi.isSpamTitle(rec.title)) continue
             if (blacklist.isNotEmpty() &&
                 (BlacklistManager.containsBlacklistedArtist(context, rec.artist, blacklist) ||
@@ -630,7 +790,6 @@ class QueueManager private constructor(private val context: Context) {
             val newSong = seen.add("k:$key")
             if ((!newVideo || !newSong) && !onRepeat) continue
             if (key in blocked) continue
-            radioRank.putIfAbsent(rec.id, rank)
             reserve.addLast(rec)
             added++
         }
@@ -641,7 +800,8 @@ class QueueManager private constructor(private val context: Context) {
     /** Spotify match, then stream or download. Null means skip this song. */
     private suspend fun resolveRecommendation(
         rec: RecommenderApi.YouTubeRecommendation,
-        current: Track
+        current: Track,
+        allowQueued: Boolean = false
     ): Track? {
         val validated = try {
             RecommenderApi.matchOnSpotify(rec)
@@ -652,7 +812,8 @@ class QueueManager private constructor(private val context: Context) {
         val key = RecommenderApi.songKey(validated.title, validated.artist)
         val spotifyId = validated.spotifyUrl.substringAfterLast("/").substringBefore("?")
         val inQueue = _currentQueue.value.any { it.spotifyId == spotifyId } || key in queuedKeys(current)
-        if (inQueue || !claimed.add(key)) {
+        // [allowQueued]: a "play next" copy the listener asked for, even though it is queued.
+        if (!allowQueued && (inQueue || !claimed.add(key))) {
             Log.d(tag, "Skipping already-queued song: ${validated.title}")
             return null
         }
@@ -676,11 +837,11 @@ class QueueManager private constructor(private val context: Context) {
                 musicService.smartDownloadAndIndex(song)
             }
         } catch (e: CancellationException) {
-            claimed.remove(key)
+            if (!allowQueued) claimed.remove(key)
             throw e
         } catch (e: Exception) {
             Log.e(tag, "Error resolving ${validated.title}: ${e.message}", e)
-            claimed.remove(key)
+            if (!allowQueued) claimed.remove(key)
             return null
         } finally {
             _downloadingTracks.update { list ->
@@ -887,11 +1048,11 @@ class QueueManager private constructor(private val context: Context) {
             }
 
             Log.d(tag, "Offline fallback: queuing ${selected.size} tracks")
-            selected.forEach { track ->
-                addToQueue(track)
-                Log.d(tag, "Offline queued: ${track.title} by ${track.artist}")
-                recordExposure(songKey(track), Variety.Event.RECOMMENDED)
+            val fresh = selected.filter { track ->
+                addToQueue(track).also { if (it) Log.d(tag, "Offline queued: ${track.title} by ${track.artist}") }
             }
+            fresh.forEach { recordExposure(songKey(it), Variety.Event.RECOMMENDED) }
+            if (fresh.isNotEmpty()) _recommendationsAdded.tryEmit(Added(fresh))
 
         } catch (e: Exception) {
             Log.e(tag, "Error in offline fallback: ${e.message}", e)

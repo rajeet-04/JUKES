@@ -506,20 +506,27 @@ fun PlayerScreen(
             showHandle = false
         ) {
             val rec by musicViewModel.recStatus.collectAsStateWithLifecycle()
+            val pending by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
+            val heldNext by musicViewModel.heldNextSongs.collectAsStateWithLifecycle()
             QueueBottomSheetContent(
                 statusText = when {
-                    rec.resolving > 0 -> "Finding next songs… (${rec.resolving})"
-                    rec.reserve > 0 -> "${rec.reserve} more songs ready from the radio"
+                    rec.resolving > 0 -> "Loading next songs… (${rec.resolving})"
                     else -> null
                 },
+                pending = pending,
+                onPlayPending = { id -> musicViewModel.playPendingSong(id) },
+                onRemovePending = { id -> musicViewModel.removePendingSong(id) },
+                heldNext = heldNext,
+                onPlayNextCopy = { track -> musicViewModel.playNextCopy(track) },
+                onPlayNextPending = { id -> musicViewModel.playNextPending(id) },
                 currentTrack = currentTrack,
                 queue = uiState.queue,
                 queueIndex = uiState.queueIndex,
                 uiState = uiState,
                 onClose = { showQueue = false },
                 onMoveTrack = { from, to -> musicViewModel.moveInQueue(from, to) },
-                onRemoveTrack = { id -> musicViewModel.removeFromQueue(id) },
-                onPlayTrack = { track -> musicViewModel.playTrackFromQueue(track) },
+                onRemoveTrack = { id, index -> musicViewModel.removeFromQueue(id, index) },
+                onPlayTrack = { track, index -> musicViewModel.playTrackFromQueue(track, index) },
                 onShuffleUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
                 onSortUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
                 onClearPlayed = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },

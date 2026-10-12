@@ -2095,19 +2095,42 @@ class PlaybackManager private constructor(private val context: Context) {
      *
      * @param tracks Tracks to add
      */
-    fun addToQueue(tracks: List<Track>) {
+    fun addToQueue(tracks: List<Track>, allowDuplicates: Boolean = false) {
         initialize()
 
         queueScope.launch {
             val mediaItems = tracks.mapNotNull { track -> createValidatedMediaItem(track) }
             if (mediaItems.isEmpty()) return@launch
 
-            withContext(Dispatchers.Main) { controller?.addMediaItems(mediaItems) }
-            Log.d(tag, "Added ${mediaItems.size} tracks to queue")
+            val added = withContext(Dispatchers.Main) {
+                val ctrl = controller ?: return@withContext 0
+                // Never queue a song the player already holds (a late or repeated add), unless the
+                // listener asked for a second copy.
+                val queued = (0 until ctrl.mediaItemCount).mapTo(HashSet()) { ctrl.getMediaItemAt(it).mediaId }
+                val fresh = if (allowDuplicates) mediaItems else mediaItems.filter { queued.add(it.mediaId) }
+                if (fresh.isNotEmpty()) ctrl.addMediaItems(fresh)
+                fresh.size
+            }
+            Log.d(tag, "Added $added of ${mediaItems.size} tracks to queue")
 
             // Save updated queue structure
             saveQueueStructure()
         }
+    }
+
+    /**
+     * Put [track] right after the playing song. A song already in the queue gets a second entry
+     * (the listener's "play next" copy); the original keeps its place.
+     */
+    suspend fun insertNext(track: Track): Boolean {
+        initialize()
+        val item = withContext(Dispatchers.IO) { createValidatedMediaItem(track) } ?: return false
+        val ctrl = controller ?: return false
+        val at = (ctrl.currentMediaItemIndex + 1).coerceIn(0, ctrl.mediaItemCount)
+        ctrl.addMediaItem(at, item)
+        Log.d(tag, "Play next: ${track.title} at index $at")
+        scope.launch { saveQueueStructure() }
+        return true
     }
 
     /** Moves or inserts library songs using the timeline API without clearing cache or resuming pause. */
@@ -2349,6 +2372,26 @@ class PlaybackManager private constructor(private val context: Context) {
      * @param mediaId The media ID of the track to remove
      * @return true if the track was removed, false otherwise
      */
+    /**
+     * Remove the entry at [index] (a song can be queued twice). Falls back to the first entry
+     * with [mediaId] when the index is stale. The cached audio is kept while another copy remains.
+     */
+    @OptIn(UnstableApi::class)
+    fun removeFromQueueAt(index: Int, mediaId: String): Boolean {
+        val ctrl = controller ?: return false
+        if (index !in 0 until ctrl.mediaItemCount || ctrl.getMediaItemAt(index).mediaId != mediaId) {
+            return removeFromQueue(mediaId)
+        }
+        val copies = (0 until ctrl.mediaItemCount).count { ctrl.getMediaItemAt(it).mediaId == mediaId }
+        if (copies <= 1) {
+            PlaybackService.StreamCacheManager.removeTrackCache(ctrl.getMediaItemAt(index).localConfiguration?.uri?.toString())
+        }
+        ctrl.removeMediaItem(index)
+        Log.d(tag, "Removed track $mediaId from queue at index $index")
+        scope.launch { saveQueueStructure() }
+        return true
+    }
+
     @OptIn(UnstableApi::class)
     fun removeFromQueue(mediaId: String): Boolean {
         controller?.let { ctrl ->
@@ -2416,6 +2459,11 @@ class PlaybackManager private constructor(private val context: Context) {
                     _currentQueueIndex.value = index
                 }
             }
+
+            // A "play next" copy of the same song gets the new source too.
+            (0 until ctrl.mediaItemCount)
+                .filter { it != index && it != ctrl.currentMediaItemIndex && ctrl.getMediaItemAt(it).mediaId == oldMediaId }
+                .forEach { ctrl.replaceMediaItem(it, newMediaItem) }
 
             Log.d(tag, "Replaced track $oldMediaId with ${newTrack.uuid} at index $index")
 
@@ -2701,8 +2749,9 @@ class PlaybackManager private constructor(private val context: Context) {
                 _currentTrackId.value = tracks[restoredIdx].uuid
                 _currentQueueIndex.value = restoredIdx
 
-                // QueueManager treats index 0 as "current track"
-                queueManager.initializeQueue(tracks.drop(restoredIdx))
+                // QueueManager treats index 0 as "current track"; earlier songs were already played.
+                queueManager.updateHistory(tracks.take(restoredIdx))
+                queueManager.initializeQueue(tracks.drop(restoredIdx), preserveHistory = true)
 
                 _hasRestoredState.value = true
                 Log.d(tag, "Playback state restored successfully")

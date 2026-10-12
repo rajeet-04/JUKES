@@ -597,6 +597,16 @@ object RecommenderApi {
                 return emptyList()
             }
 
+            // A real radio starts with its seed. YouTube sometimes answers with an unrelated
+            // generic list instead (seen on device: a Seedhe Maut seed returned folk/bhajan
+            // trending songs); queueing that poisons the whole session, so reject it.
+            val firstId = tracks.firstOrNull()?.asJsonObject
+                ?.getAsJsonObject("playlistPanelVideoRenderer")?.get("videoId")?.asString
+            if (firstId != videoId) {
+                Log.w(TAG, "Radio for $videoId starts with $firstId, not the seed; ignoring it")
+                return emptyList()
+            }
+
             val recommendations = mutableListOf<YouTubeRecommendation>()
 
             // Skip index 0 (the original song), get 1 to last
