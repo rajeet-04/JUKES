@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [2.5.0-beta] - 2026-10-12
+
 ### Added
 
 - Save the queue as a playlist from the "Save as playlist" button in Up Next or the player's ⋮ menu: name it (suggested "<first song> Mix"), and optionally bring the greyed waiting songs, which are matched on Spotify and download in the background like a playlist import.
@@ -37,6 +39,8 @@
 - Downloading a song within its first few seconds no longer restarts it from 0:00; the delayed notification-artwork refresh keeps the current source and playback position.
 - Opening the app while a later song is playing no longer briefly shows (and then switches to) another song; the UI queue sync now follows the player's live index.
 - Starting a mix, enqueueing a whole playlist or clearing the queue no longer causes a blink/delay in the player; cache eviction and media-item file checks run on a background thread.
+
+See full release notes: [v2.5.0-beta-RELEASE_NOTES.md](docs/v2.5.0-beta-RELEASE_NOTES.md)
 
 ## [2.4.2-beta] - 2026-10-09
 
