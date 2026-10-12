@@ -152,6 +152,7 @@ fun PlayerScreen(
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     val currentTrack = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
+    var showSaveQueue by remember { mutableStateOf(false) }
     val playbackSpeed by musicViewModel.playbackSpeed.collectAsStateWithLifecycle()
     var showLyrics by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
@@ -324,7 +325,8 @@ fun PlayerScreen(
                         currentArtist = currentTrack.artist,
                         onShowBlacklistPicker = { showBlacklistPicker = true },
                         playbackSpeed = playbackSpeed,
-                        onCycleSpeed = { musicViewModel.cyclePlaybackSpeed() }
+                        onCycleSpeed = { musicViewModel.cyclePlaybackSpeed() },
+                        onSaveQueue = { showSaveQueue = true }
                     )
 
                     Spacer(modifier = Modifier.height(spacerSm))
@@ -497,6 +499,21 @@ fun PlayerScreen(
         }
     }
 
+    // Save the queue from the player's menu (same dialog as the Up Next header button).
+    if (showSaveQueue) {
+        val pendingToSave by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
+        com.example.juke.ui.components.player.SaveQueueDialog(
+            initialName = remember { musicViewModel.suggestedQueuePlaylistName() },
+            readyCount = uiState.queue.distinctBy { it.uuid }.size,
+            waitingCount = pendingToSave.size,
+            onDismiss = { showSaveQueue = false },
+            onSave = { name, includeWaiting ->
+                showSaveQueue = false
+                musicViewModel.saveQueueAsPlaylist(name, includeWaiting)
+            }
+        )
+    }
+
     // Queue Sheet
     if (showQueue) {
         GlassModalBottomSheet(
@@ -530,7 +547,8 @@ fun PlayerScreen(
                 onShuffleUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
                 onSortUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
                 onClearPlayed = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },
-                onSaveAsPlaylist = { musicViewModel.saveQueueAsPlaylist() }
+                onSaveAsPlaylist = { name, includeWaiting -> musicViewModel.saveQueueAsPlaylist(name, includeWaiting) },
+                suggestedPlaylistName = { musicViewModel.suggestedQueuePlaylistName() }
             )
         }
     }
@@ -630,7 +648,8 @@ fun PlayerHeader(
     currentArtist: String = "",
     onShowBlacklistPicker: () -> Unit = {},
     playbackSpeed: Float = 1f,
-    onCycleSpeed: () -> Unit = {}
+    onCycleSpeed: () -> Unit = {},
+    onSaveQueue: () -> Unit = {}
 ) {
     val context = LocalContext.current
     Row(
@@ -683,6 +702,16 @@ fun PlayerHeader(
                         onClick = {
                             showMenu = false
                             onShowSleepTimer()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Save queue as playlist") },
+                        leadingIcon = {
+                            Icon(JukeIcons.PlaylistAdd, contentDescription = null)
+                        },
+                        onClick = {
+                            showMenu = false
+                            onSaveQueue()
                         }
                     )
                     if (isAlbumAvailable) {

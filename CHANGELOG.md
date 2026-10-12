@@ -6,6 +6,8 @@
 
 ### Added
 
+- Save the queue as a playlist from the "Save as playlist" button in Up Next or the player's ⋮ menu: name it (suggested "<first song> Mix"), and optionally bring the greyed waiting songs, which are matched on Spotify and download in the background like a playlist import.
+- Playlists made in the app get cover art from their songs when they have none: one song fills it, two split it, three are one large plus two stacked, four make a 2x2 mosaic; an empty playlist gets a tinted tile with a note instead of a blank square.
 - Up Next shows the whole YouTube Music radio at once. Songs not fetched yet are greyed (desaturated artwork, dimmed text) and colour up as they become ready; tapping one fetches it right away and plays it (the waiting songs above it are skipped, as in any queue).
 - Swipe right on a queued song to play a copy next while the original keeps its place. A waiting song swiped right is fetched first and held greyed as "Plays next"; if the current song ends before it is ready, playback continues with ready songs and the pick slots in after whatever is playing once it loads.
 - New app icon, fully vector: a black J-note over a grey vinyl record on white, with a monochrome layer for Android 13 themed icons. The PNG/WebP launcher bitmaps are gone; `app/src/main/ic_launcher-playstore.svg` is the master.
@@ -19,9 +21,12 @@
 - Recommendations follow the playing song's YouTube Music radio in its own order. One radio at a time; the next starts only when it runs out, seeded from the last queued song. Songs heard, skipped or shown a lot lately wait at the end. The weighted random mix of several radios is gone.
 - Only the songs about to play are fetched: the Recommendation Queue setting (5–15) is how many load ahead, and each one joins the player as soon as it (and the ones before it) is ready instead of after the whole batch. This also cuts load on the backend.
 - Up Next rows are flat Library-style rows with hairline separators, and swiping uses the same glass reveal as Library and Search.
+- Song identity reads brackets instead of cutting them: upload labels (Official Video, Lyrics, HD, From "Movie", Remastered, a year) are ignored, versions (Remix, Live, Acoustic, Slowed, Female Version, Lo-fi...) count as different songs, and credits (feat., with) plus alternate titles are decided by length, so "Pal Pal" and the longer "Pal Pal (with Talwiinder)" are two songs. Spotify's " - Female Version" matches YouTube's "(Female Version)", "A&B" artist lists match "A, B", and Spotify matching penalises a different version (`network/SongTitle.kt`).
 
 ### Fixed
 
+- "Fetch from another source" now really swaps in the new audio and starts it from 0:00; the player used to keep playing what it had open because the new file has the same path.
+- Glass sheet headers (Up Next's back, title and menu) were nearly invisible: sheets now set their own text colour instead of inheriting the player's tint.
 - Recommended songs no longer repeat in blocks or get queued twice: the player queue is extended only with the songs the engine just fetched (it used to re-append every song it had queued this session that the player lacked, e.g. after Clear played or while a previous add was still in flight), and the player skips IDs it already holds.
 - Reordering the queue or reopening the app no longer restarts the recommendation session and forgets what was already played; auto-advanced songs now count as played.
 - A YouTube radio that doesn't start with its seed song (an unrelated generic list YouTube sometimes returns) is ignored instead of filling the queue with off-topic songs.

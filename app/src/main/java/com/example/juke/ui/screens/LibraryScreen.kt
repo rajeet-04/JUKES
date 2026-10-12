@@ -435,17 +435,9 @@ fun LibraryScreen(
                                     ?: "${playlist.trackCount} songs")
                             },
                             leadingContent = {
-                                AsyncImage(
-                                    model = playlist.thumbnailUri,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(52.dp),
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                    placeholder = androidx.compose.ui.graphics.painter.ColorPainter(
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    ),
-                                    error = androidx.compose.ui.graphics.painter.ColorPainter(
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    )
+                                com.example.juke.ui.components.PlaylistCover(
+                                    playlist = playlist,
+                                    modifier = Modifier.size(52.dp)
                                 )
                             },
                             trailingContent = {
@@ -849,11 +841,10 @@ private fun PlaylistHeader(
         ) {
             GlassCard(
                 modifier = Modifier.size(96.dp)) {
-                AsyncImage(
-                    model = playlist.thumbnailUri,
-                    contentDescription = playlist.name,
+                com.example.juke.ui.components.PlaylistCover(
+                    playlist = playlist,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
                 )
             }
             Column(

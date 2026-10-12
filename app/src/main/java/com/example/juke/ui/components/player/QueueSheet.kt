@@ -68,6 +68,10 @@ import com.example.juke.ui.components.swipeGlass
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.ui.theme.pressScale
+import androidx.compose.ui.semantics.Role
+import com.example.juke.ui.theme.GlassLevel
+import com.example.juke.ui.theme.GlassShapes
+import com.example.juke.ui.theme.glassPane
 import com.example.juke.utils.rememberJukeHaptics
 
 @Composable
@@ -90,11 +94,13 @@ fun QueueBottomSheetContent(
     onShuffleUpcoming: () -> Unit = {},
     onSortUpcoming: () -> Unit = {},
     onClearPlayed: () -> Unit = {},
-    onSaveAsPlaylist: () -> Unit = {}
+    onSaveAsPlaylist: (name: String, includeWaiting: Boolean) -> Unit = { _, _ -> },
+    suggestedPlaylistName: () -> String = { "Queue" }
 ) {
     val haptic = rememberJukeHaptics()
     // Songs already loaded when the sheet opened don't replay the colour-up.
     val openedWith = remember { queue.drop(queueIndex + 1).mapTo(HashSet()) { it.uuid } }
+    var showSave by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -106,7 +112,7 @@ fun QueueBottomSheetContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp),
+                .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -120,6 +126,19 @@ fun QueueBottomSheetContent(
                 textAlign = TextAlign.Center
             )
             var showTools by remember { mutableStateOf(false) }
+
+            if (showSave) {
+                SaveQueueDialog(
+                    initialName = remember { suggestedPlaylistName() },
+                    readyCount = queue.distinctBy { it.uuid }.size,
+                    waitingCount = pending.size,
+                    onDismiss = { showSave = false },
+                    onSave = { name, includeWaiting ->
+                        showSave = false
+                        onSaveAsPlaylist(name, includeWaiting)
+                    }
+                )
+            }
             Box {
                 IconButton(onClick = { haptic.click(); showTools = true }) {
                     Icon(JukeIcons.More, "Queue tools")
@@ -139,7 +158,7 @@ fun QueueBottomSheetContent(
                     )
                     androidx.compose.material3.DropdownMenuItem(
                         text = { Text("Save queue as playlist") },
-                        onClick = { showTools = false; onSaveAsPlaylist() }
+                        onClick = { showTools = false; showSave = true }
                     )
                 }
             }
@@ -242,17 +261,46 @@ fun QueueBottomSheetContent(
             val upcomingTracks = queue.drop(queueIndex + 1)
             if (upcomingTracks.isNotEmpty() || pending.isNotEmpty() || heldNext.isNotEmpty()) {
                 item(key = "queue_header_text") {
-                    Text(
-                        buildString {
-                            append("${upcomingTracks.size} ready")
-                            if (pending.isNotEmpty() || heldNext.isNotEmpty()) {
-                                append(" · ${pending.size + heldNext.size} waiting")
-                            }
-                        },
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 4.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            buildString {
+                                append("${upcomingTracks.size} ready")
+                                if (pending.isNotEmpty() || heldNext.isNotEmpty()) {
+                                    append(" · ${pending.size + heldNext.size} waiting")
+                                }
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        // A queue worth keeping: save it where the list starts.
+                        Row(
+                            modifier = Modifier
+                                .heightIn(min = 40.dp)
+                                .glassPane(GlassShapes.Pill, GlassLevel.Thin)
+                                .clickable(role = Role.Button) { haptic.click(); showSave = true }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                JukeIcons.PlaylistAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Save as playlist",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
 
                 // "Play next" picks still loading: they go right after the playing song once ready.
@@ -635,4 +683,74 @@ private fun QueueSongRow(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
     }
+}
+
+/** Name the saved queue; optionally bring the greyed waiting songs along (they load in the background). */
+@Composable
+internal fun SaveQueueDialog(
+    initialName: String,
+    readyCount: Int,
+    waitingCount: Int,
+    onDismiss: () -> Unit,
+    onSave: (name: String, includeWaiting: Boolean) -> Unit
+) {
+    val haptic = rememberJukeHaptics()
+    var name by remember { mutableStateOf(initialName) }
+    var includeWaiting by remember { mutableStateOf(waitingCount > 0) }
+    com.example.juke.ui.components.GlassAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save queue as playlist") },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Playlist name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "$readyCount ${if (readyCount == 1) "song" else "songs"} from the queue",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (waitingCount > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { includeWaiting = !includeWaiting }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = includeWaiting,
+                            onCheckedChange = { includeWaiting = it }
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text("Also add $waitingCount waiting songs", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "They download in the background",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    haptic.heavyClick()
+                    onSave(name, includeWaiting)
+                },
+                enabled = name.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = { haptic.click(); onDismiss() }) { Text("Cancel") }
+        }
+    )
 }

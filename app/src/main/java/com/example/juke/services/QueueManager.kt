@@ -402,6 +402,8 @@ class QueueManager private constructor(private val context: Context) {
     private val reserve = java.util.concurrent.ConcurrentLinkedDeque<RecommenderApi.YouTubeRecommendation>()
     private val seen: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private val claimed: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    /** Songs seen this session (title key + length, so two recordings of one title stay two). */
+    private val seenSongs = com.example.juke.network.SongIndex()
     private val fillMutex = Mutex()
     private val resolveSlots = Semaphore(3)
     private val sessionGen = java.util.concurrent.atomic.AtomicInteger(0)
@@ -490,8 +492,11 @@ class QueueManager private constructor(private val context: Context) {
         return true
     }
 
-    private fun pendingKeys(): Set<String> =
-        pendingRecs.mapTo(HashSet()) { RecommenderApi.songKey(it.title, it.artist) }
+    private fun recLength(rec: RecommenderApi.YouTubeRecommendation) = com.example.juke.network.SongTitle.clockSeconds(rec.duration)
+
+    private fun pendingKeys(): com.example.juke.network.SongIndex = com.example.juke.network.SongIndex().also { index ->
+        pendingRecs.forEach { index.add(RecommenderApi.songKey(it.title, it.artist), recLength(it)) }
+    }
 
     init {
         // Exposure rows untouched for ~2 months have decayed to nothing.
@@ -515,6 +520,7 @@ class QueueManager private constructor(private val context: Context) {
         reserve.clear()
         seen.clear()
         claimed.clear()
+        seenSongs.clear()
         usedSeeds.clear()
         pendingRecs.clear()
         inFlight.clear()
@@ -533,13 +539,14 @@ class QueueManager private constructor(private val context: Context) {
      * Keys that must not be queued again: the queue and the playing song always, and recently
      * played songs unless the listener has replayed them today (then they may come back).
      */
-    private fun queuedKeys(current: Track): Set<String> {
-        val keys = (_currentQueue.value + current).mapTo(HashSet()) { songKey(it) }
+    private fun queuedKeys(current: Track): com.example.juke.network.SongIndex {
+        val index = com.example.juke.network.SongIndex()
+        (_currentQueue.value + current).forEach { index.add(songKey(it), it.durationSec) }
         playedTracksHistory.toList().forEach {
             val key = songKey(it)
-            if (dailyPlayCount(key) < indulgePlays) keys += key
+            if (dailyPlayCount(key) < indulgePlays) index.add(key, it.durationSec)
         }
-        return keys
+        return index
     }
 
     /** Songs queued after [current], using the larger of our own count and the caller's. */
@@ -641,22 +648,22 @@ class QueueManager private constructor(private val context: Context) {
      */
     private suspend fun moveReserveToPending(current: Track) {
         if (reserve.isEmpty()) return
-        val blocked = queuedKeys(current) + pendingKeys()
-        val incoming = LinkedHashMap<String, RecommenderApi.YouTubeRecommendation>()
+        val blocked = queuedKeys(current).also { it.addAll(pendingKeys()) }
+        val incoming = mutableListOf<Pair<String, RecommenderApi.YouTubeRecommendation>>()
         while (true) {
             val rec = reserve.pollFirst() ?: break
             val key = RecommenderApi.songKey(rec.title, rec.artist)
-            if (key !in blocked) incoming.putIfAbsent(key, rec)
+            if (blocked.add(key, recLength(rec))) incoming += key to rec
         }
         if (incoming.isEmpty()) return
         val now = System.currentTimeMillis()
-        val exposure = try { exposureFor(incoming.keys) } catch (e: Exception) { emptyMap() }
+        val exposure = try { exposureFor(incoming.mapTo(HashSet()) { it.first }) } catch (e: Exception) { emptyMap() }
         val favourites = try { favouriteKeys() } catch (e: Exception) { emptySet() }
-        val (fresh, stale) = incoming.entries.partition { (key, _) ->
+        val (fresh, stale) = incoming.partition { (key, _) ->
             key in favourites || dailyPlayCount(key) >= indulgePlays ||
                 Variety.freshness(exposure[key], now) >= STALE_FRESHNESS
         }
-        pendingRecs.addAll(fresh.map { it.value } + stale.map { it.value })
+        pendingRecs.addAll(fresh.map { it.second } + stale.map { it.second })
         publishPending()
         Log.d(tag, "Up Next +${incoming.size} from the radio (${stale.size} heard lately moved back)")
     }
@@ -698,7 +705,7 @@ class QueueManager private constructor(private val context: Context) {
         if (!delivered.add(rec.id)) {
             return _currentQueue.value.firstOrNull { songKey(it) == songKey(track) } ?: track
         }
-        seen.add("k:${songKey(track)}")
+        seenSongs.add(songKey(track), track.durationSec)
         // The listener also queued a copy of this song: the original still takes its own place.
         val copied = copies.containsKey(rec.id)
         if (copied) {
@@ -732,6 +739,33 @@ class QueueManager private constructor(private val context: Context) {
         return deliver(rec, track)
     }
 
+    /**
+     * Spotify tracks for the waiting songs [ids], in order, for saving the queue as a playlist.
+     * Songs without a confident Spotify match are left out.
+     */
+    suspend fun spotifyTracksForPending(ids: List<String>): List<com.example.juke.models.SpotifyTrack> {
+        val recs = ids.mapNotNull { id -> pendingRecs.firstOrNull { it.id == id } }
+        val slots = Semaphore(4)
+        return coroutineScope {
+            recs.map { rec ->
+                async {
+                    slots.withPermit {
+                        try {
+                            val match = RecommenderApi.matchOnSpotify(rec) ?: return@withPermit null
+                            val spotifyId = match.spotifyUrl.substringAfterLast("/").substringBefore("?")
+                            SpotifyApi.getTrack(spotifyId)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(tag, "No Spotify match to save for ${rec.title}: ${e.message}")
+                            null
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+
     /** The listener removed a waiting song from Up Next. */
     fun dropPending(id: String) {
         if (pendingRecs.removeIf { it.id == id && !inFlight.containsKey(id) }) publishPending()
@@ -745,7 +779,7 @@ class QueueManager private constructor(private val context: Context) {
      * session. Returns how many new songs were added.
      */
     private suspend fun refillReserve(current: Track): Int {
-        queuedKeys(current).forEach { seen.add("k:$it") }
+        seenSongs.addAll(queuedKeys(current))
         current.ytVideoId?.let { seen.add("yt:$it") }
 
         val blacklist = BlacklistManager.getBlacklistedArtists(context)
@@ -787,9 +821,9 @@ class QueueManager private constructor(private val context: Context) {
             val key = RecommenderApi.songKey(rec.title, rec.artist)
             val onRepeat = dailyPlayCount(key) >= indulgePlays
             val newVideo = seen.add("yt:${rec.id}")
-            val newSong = seen.add("k:$key")
+            val newSong = seenSongs.add(key, recLength(rec))
             if ((!newVideo || !newSong) && !onRepeat) continue
-            if (key in blocked) continue
+            if (blocked.contains(key, recLength(rec))) continue
             reserve.addLast(rec)
             added++
         }
@@ -811,9 +845,11 @@ class QueueManager private constructor(private val context: Context) {
 
         val key = RecommenderApi.songKey(validated.title, validated.artist)
         val spotifyId = validated.spotifyUrl.substringAfterLast("/").substringBefore("?")
-        val inQueue = _currentQueue.value.any { it.spotifyId == spotifyId } || key in queuedKeys(current)
+        val inQueue = _currentQueue.value.any { it.spotifyId == spotifyId } ||
+            queuedKeys(current).contains(key, validated.durationSec)
         // [allowQueued]: a "play next" copy the listener asked for, even though it is queued.
-        if (!allowQueued && (inQueue || !claimed.add(key))) {
+        // Claimed by Spotify id: two versions of one title are two different tracks.
+        if (!allowQueued && (inQueue || !claimed.add(spotifyId))) {
             Log.d(tag, "Skipping already-queued song: ${validated.title}")
             return null
         }
@@ -837,11 +873,11 @@ class QueueManager private constructor(private val context: Context) {
                 musicService.smartDownloadAndIndex(song)
             }
         } catch (e: CancellationException) {
-            if (!allowQueued) claimed.remove(key)
+            if (!allowQueued) claimed.remove(spotifyId)
             throw e
         } catch (e: Exception) {
             Log.e(tag, "Error resolving ${validated.title}: ${e.message}", e)
-            if (!allowQueued) claimed.remove(key)
+            if (!allowQueued) claimed.remove(spotifyId)
             return null
         } finally {
             _downloadingTracks.update { list ->
@@ -1003,7 +1039,7 @@ class QueueManager private constructor(private val context: Context) {
 
                     ScoredTrack(track, score)
                 }
-                .filter { it.score > 0 && songKey(it.track) !in blocked }
+                .filter { it.score > 0 && !blocked.contains(songKey(it.track), it.track.durationSec) }
                 .sortedByDescending { it.score }
 
             Log.d(

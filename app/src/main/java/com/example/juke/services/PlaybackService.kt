@@ -2426,23 +2426,30 @@ class PlaybackManager private constructor(private val context: Context) {
     fun replaceTrackInQueue(
         oldMediaId: String,
         newTrack: Track,
-        seamlessIfPlaying: Boolean = false
+        seamlessIfPlaying: Boolean = false,
+        restartFromStart: Boolean = false
     ): Boolean {
         controller?.let { ctrl ->
             val index = (0 until ctrl.mediaItemCount).firstOrNull { i ->
                 ctrl.getMediaItemAt(i).mediaId == oldMediaId
             } ?: return false
 
-            val newMediaItem = createValidatedMediaItem(newTrack)
-            if (newMediaItem == null) {
+            val built = createValidatedMediaItem(newTrack)
+            if (built == null) {
                 Log.w(tag, "Cannot replace track without valid media item: ${newTrack.title}")
                 return false
             }
+            // A refetch writes the new audio to the same file, so the item would equal the old
+            // one and Media3 would keep playing what it had open. A fresh cache key makes it a new
+            // source the player actually reloads.
+            val newMediaItem = if (restartFromStart) {
+                built.buildUpon().setCustomCacheKey("${newTrack.uuid}#${System.currentTimeMillis()}").build()
+            } else built
 
             val isCurrentTrack = ctrl.currentMediaItemIndex == index
-            val currentPosition = if (isCurrentTrack) ctrl.currentPosition else 0L
+            val currentPosition = if (isCurrentTrack && !restartFromStart) ctrl.currentPosition else 0L
 
-            if (isCurrentTrack && seamlessIfPlaying) {
+            if (isCurrentTrack && seamlessIfPlaying && !restartFromStart) {
                 // Keep seamless audio until a seek explicitly needs the completed local file.
                 val pendingPosition = streamSeekHandoff.completed(newTrack)
                 if (pendingPosition != null) {

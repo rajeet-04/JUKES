@@ -173,10 +173,7 @@ fun LibraryPlaylistSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (playlist.thumbnailUri != null) {
-                        AsyncImage(playlist.thumbnailUri, null,
-                            Modifier.size(44.dp).clip(GlassShapes.Control), contentScale = ContentScale.Crop)
-                    } else Icon(JukeIcons.Queue, null, Modifier.size(44.dp))
+                    PlaylistCover(playlist, Modifier.size(44.dp), shape = GlassShapes.Control)
                     Column(Modifier.weight(1f)) {
                         Text(playlist.name, style = MaterialTheme.typography.titleMedium,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)

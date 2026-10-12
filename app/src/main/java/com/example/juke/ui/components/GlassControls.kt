@@ -155,6 +155,9 @@ fun GlassModalBottomSheet(
         sheetState = sheetState,
         shape = GlassShapes.Sheet,
         containerColor = glassSheetColor(),
+        // The glass colour isn't a scheme colour, so Material can't derive text on it and would
+        // inherit the caller's (on the player that is a dim tint): headers came out near-invisible.
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
         scrimColor = Color.Transparent,
         dragHandle = if (!showHandle) null else {

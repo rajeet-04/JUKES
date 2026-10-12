@@ -149,6 +149,18 @@ interface PlaylistDao {
     )
     suspend fun getPlaylistTracks(playlistId: String): List<TrackEntity>
 
+    /** Artwork of the first songs in the playlist, in order (for the cover mosaic). */
+    @Query(
+        """
+        SELECT t.thumbnail_uri FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.uuid = pt.track_uuid
+        WHERE pt.playlist_id = :playlistId AND t.thumbnail_uri IS NOT NULL AND t.thumbnail_uri != ''
+        ORDER BY pt.position ASC
+        LIMIT 16
+    """
+    )
+    fun getPlaylistArtwork(playlistId: String): Flow<List<String>>
+
     @Query("SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun getNextPlaylistPosition(playlistId: String): Int
 

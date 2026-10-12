@@ -481,14 +481,11 @@ object RecommenderApi {
     fun isSpamTitle(title: String): Boolean = isSpamOrVariant(title) != null
 
     /**
-     * Stable identity for "the same song" across YouTube and Spotify spellings:
-     * brackets stripped, punctuation/case dropped, first credited artist only.
+     * Stable identity for "the same song" across YouTube and Spotify spellings: upload labels and
+     * credits dropped, version tags (remix, live, female version...) kept, first artist only.
+     * See [SongTitle]; recordings that share a key are told apart by length ([SongIndex]).
      */
-    fun songKey(title: String, artist: String): String {
-        val t = cleanTitle(title).lowercase().filter { it.isLetterOrDigit() }
-        val a = parseArtists(artist).firstOrNull().orEmpty().lowercase().filter { it.isLetterOrDigit() }
-        return "$t|$a"
-    }
+    fun songKey(title: String, artist: String): String = SongTitle.key(title, artist)
 
     /** Match one YouTube Music item to its Spotify track (null if no confident match). */
     suspend fun matchOnSpotify(rec: YouTubeRecommendation): ValidatedRecommendation? =
@@ -702,7 +699,10 @@ object RecommenderApi {
             for (spotifyTrack in spotifyResults.take(5)) {
                 val rawTitleSim = similarity(rec.title, spotifyTrack.name)
                 val cleanTitleSim = similarity(cleanTitle(rec.title), cleanTitle(spotifyTrack.name))
-                val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
+                // A different version (remix vs original, live vs studio) is not the same song even
+                // when the bare titles match: judge it on the raw title and halve that.
+                val titleSimilarity = if (SongTitle.differentVersion(rec.title, spotifyTrack.name)) rawTitleSim * 0.5
+                else maxOf(rawTitleSim, cleanTitleSim)
 
                 val spotifyArtists = parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
                 val youtubeArtists = parseArtists(rec.artist)

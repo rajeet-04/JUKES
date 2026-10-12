@@ -121,6 +121,20 @@ class PlaylistImportManager private constructor(context: Context) {
         resume()
     }
 
+    /**
+     * Add more tracks to an existing playlist from [startPosition] on (e.g. the waiting songs of a
+     * saved queue); they download in the background like an import.
+     */
+    suspend fun enqueueMore(playlistId: String, tracks: List<SpotifyTrack>, startPosition: Int) {
+        if (tracks.isEmpty()) return
+        dao.insertPendingImports(
+            tracks.mapIndexed { index, t ->
+                PendingImportEntity(playlistId, startPosition + index, json.encodeToString(t))
+            }
+        )
+        resume()
+    }
+
     /** Safe to call any time; does nothing if a run is already active or nothing is pending. */
     fun resume() {
         online.value = isOnlineNow() // a stale "offline" must not keep a running import parked

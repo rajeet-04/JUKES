@@ -31,6 +31,7 @@ import com.example.juke.network.SpotifyApi
 import com.example.juke.services.LibraryQueueOrder
 import com.example.juke.services.MusicService
 import com.example.juke.services.PlaybackManager
+import com.example.juke.services.PlaylistImportManager
 import com.example.juke.services.QueueManager
 import com.example.juke.ui.theme.ExtractedColors
 import com.example.juke.utils.ArtistUtils
@@ -1994,20 +1995,32 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         ).show()
     }
 
-    /** Save the whole queue as a new playlist named after the moment it was saved. */
-    fun saveQueueAsPlaylist() {
-        val queue = _uiState.value.queue
-        if (queue.isEmpty()) return
+    /** Default name offered when saving the queue: after the song it grew from. */
+    fun suggestedQueuePlaylistName(): String {
+        val seed = _uiState.value.queue.firstOrNull()?.title ?: _uiState.value.currentTrack?.title
+        return if (seed != null) "$seed Mix"
+        else "Queue " + java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+    }
+
+    /**
+     * Save the queue (played, playing and ready songs, once each) as a playlist named [name]. With
+     * [includeWaiting] the greyed Up Next songs are matched on Spotify and added after them; they
+     * download in the background like a playlist import and survive the app closing.
+     */
+    fun saveQueueAsPlaylist(name: String, includeWaiting: Boolean) {
+        val queue = _uiState.value.queue.distinctBy { it.uuid }
+        val waitingIds = if (includeWaiting) pendingSongs.value.map { it.id } else emptyList()
+        if (queue.isEmpty() && waitingIds.isEmpty()) return
+        val title = name.trim().ifBlank { suggestedQueuePlaylistName() }
         viewModelScope.launch {
-            val name = "Queue " + java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+            val id = UUID.randomUUID().toString()
             withContext(Dispatchers.IO) {
                 // Playlist rows reference tracks by uuid, so streamed tracks must exist in the library table first.
                 queue.forEach { trackDao.insertTrack(it.toEntity()) }
                 val playlistDao = database.playlistDao()
-                val id = UUID.randomUUID().toString()
                 playlistDao.insertPlaylist(
                     PlaylistEntity(
-                        id = id, name = name, trackCount = queue.size, createdAt = System.currentTimeMillis()
+                        id = id, name = title, trackCount = queue.size, createdAt = System.currentTimeMillis()
                     )
                 )
                 queue.forEachIndexed { i, t ->
@@ -2018,7 +2031,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
-            Toast.makeText(getApplication(), "Saved ${queue.size} songs as \"$name\"", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                getApplication(),
+                if (waitingIds.isEmpty()) "Saved ${queue.size} songs as \"$title\""
+                else "Saved \"$title\"; adding ${waitingIds.size} waiting songs in the background",
+                Toast.LENGTH_SHORT
+            ).show()
+            if (waitingIds.isNotEmpty()) {
+                val tracks = withContext(Dispatchers.IO) { queueManager.spotifyTracksForPending(waitingIds) }
+                PlaylistImportManager.get(getApplication()).enqueueMore(id, tracks, startPosition = queue.size)
+            }
         }
     }
 
@@ -2039,7 +2061,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         if (fresh.isStream) trackDao.insertTrack(fresh.toEntity())
                     }
                 }
-                playbackManager.replaceTrackInQueue(track.uuid, updated, seamlessIfPlaying = false)
+                // The song from the new source starts over from 0:00 (a playing one keeps playing).
+                playbackManager.replaceTrackInQueue(track.uuid, updated, restartFromStart = true)
                 queueManager.replaceTrackInQueue(track.uuid, updated)
                 _uiState.update { state ->
                     state.copy(
