@@ -250,7 +250,9 @@ class MainActivity : ComponentActivity() {
                 val chrome = remember(chromeThresholdPx) { com.example.juke.ui.components.CollapsingChrome(chromeThresholdPx) }
                 LaunchedEffect(currentRoute) { chrome.expand() } // a new screen starts unfolded
                 val hasMiniPlayer = musicViewModel.uiState.collectAsStateWithLifecycle().value.currentTrack != null
-                val merged = chrome.collapsed && !isExpanded && hasMiniPlayer
+                // Settings pages keep the mini player (the equalizer and volume are heard live) but not the tab bar.
+                val inSettings = currentRoute?.startsWith("settings") == true
+                val merged = chrome.collapsed && !isExpanded && hasMiniPlayer && !inSettings
                 // Artist/album/playlist are child screens: they can be opened on top of any tab
                 // (and on top of each other), so a tab tap must first dispose of all of them.
                 fun isDetailRoute(route: String?) =
@@ -302,7 +304,7 @@ class MainActivity : ComponentActivity() {
                     containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     bottomBar = {
-                        if (currentRoute != "settings") {
+                        if (!inSettings || hasMiniPlayer) {
                             // One progress value (0 = two rows, 1 = merged) drives every part of the
                             // fold, read only in layout/draw: the tab button's width, scale and fade and
                             // the tab bar's height (gap included) and fade move together and land on the
@@ -370,7 +372,7 @@ class MainActivity : ComponentActivity() {
                                         compact = merged
                                     )
                                 }
-                                if (!isExpanded && showTabBar) {
+                                if (!isExpanded && showTabBar && !inSettings) {
                                     Box(
                                         Modifier.layout { measurable, constraints ->
                                             // The bar keeps its size and sinks while its slot (8 dp gap +
