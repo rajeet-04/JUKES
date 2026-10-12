@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [2.5.1-beta] - 2026-10-12
+
+### Fixed
+
+- Playback no longer pauses and stutters about 3 seconds into every song: the delayed notification-artwork refresh replaced the playing item and seeked, which flushed the audio buffer. It now does nothing when the artwork and text are already right, and only seeks if a replace really reset the position.
+- The notification and lock-screen artwork and title now follow track changes while the app is in the background or the screen is off. Updates were skipped whenever the app wasn't in the foreground, so they only refreshed once playback paused (seen on an OriginOS phone).
+
+See full release notes: [v2.5.1-beta-RELEASE_NOTES.md](docs/v2.5.1-beta-RELEASE_NOTES.md)
+
 ## [2.5.0-beta] - 2026-10-12
 
 ### Added
