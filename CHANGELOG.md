@@ -8,7 +8,7 @@
 
 - Up Next shows the whole YouTube Music radio at once. Songs not fetched yet are greyed (desaturated artwork, dimmed text) and colour up as they become ready; tapping one fetches it right away and plays it (the waiting songs above it are skipped, as in any queue).
 - Swipe right on a queued song to play a copy next while the original keeps its place. A waiting song swiped right is fetched first and held greyed as "Plays next"; if the current song ends before it is ready, playback continues with ready songs and the pick slots in after whatever is playing once it loads.
-- New app icon, fully vector: a heavy geometric black J with a vermilion dot resting in its bowl, on warm white, with a monochrome layer for Android 13 themed icons. The PNG/WebP launcher bitmaps are gone; `app/src/main/ic_launcher-playstore.svg` is the master.
+- New app icon, fully vector: a black J-note over a grey vinyl record on white, with a monochrome layer for Android 13 themed icons. The PNG/WebP launcher bitmaps are gone; `app/src/main/ic_launcher-playstore.svg` is the master.
 - Neon edge on the selected Home / Search / Library tab, in the open tab bar and in the folded button beside the mini player: a rim of light in the album accent, a soft bloom and a glowing icon; it flares while the selection slides between tabs.
 
 ### Changed
