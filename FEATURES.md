@@ -53,7 +53,7 @@
 - `playlist/{playlistId}` - Playlist detail screen
 - `album/{albumId}` - Album detail screen
 
-**Navigation bar** (bottom): Home, Search, Library with filled/outlined icons
+**Navigation bar** (bottom): Home, Search, Library in a floating liquid-glass capsule; the selected tab sits in a sliding glass lens with a neon edge in the album accent (also on the folded button beside the mini player)
 
 ### 2.2 Home Screen (`HomeScreen.kt`)
 - **Greeting banner** - Time-based ("First Light Sounds!", "Afternoon Drift!", "The Golden Hour!", "After Dark!")
@@ -90,7 +90,7 @@
 - **Seek bar** with elapsed/total time
 - **Lyrics display** - Synced LRC format with offset adjustment
 - **Share track** - Sends Spotify link via Android share intent
-- **Queue view** - Reorder, remove, play from queue
+- **Queue view** - Reorder, remove, play from queue; the whole radio is listed, songs not fetched yet are greyed and colour up when ready, tap one to fetch and play it; swipe right to play a copy next (a waiting song is held greyed as "Plays next" until it loads)
 - **Favorite toggle** - Heart icon
 
 ### 2.6 Artist Detail Screen (`ArtistDetailScreen.kt`)
@@ -276,10 +276,11 @@
 
 **QueueManager** (`QueueManager.kt`):
 - **Recommendation engine**:
-  - Online: YouTube Music → Spotify validation → Filter
+  - Online: YouTube Music radio of the playing song, in radio order → Spotify validation → Filter; one radio at a time, continued from the last queued song when it runs out; a radio that doesn't start with its seed is ignored
+  - Up Next shows every waiting song (`pending`); only the first `recommendation_count` are fetched, each joining the player as soon as it is ready (`recommendationsAdded`)
   - Offline fallback: Score-based local library (artist match +10, album match +8, favorite +10, play count +5/10, recency -10/-20)
 - **Queue operations**: `initializeQueue()`, `addToQueue()`, `insertQueueItem()`, `removeFromQueue()`, `moveToNext()`, `clearQueue()`
-- **Pre-fetch system** - Ensures next 3 tracks are ready (checks file existence, URL expiry)
+- **Pre-fetch system** - Keeps the next `recommendation_count` songs fetched (checks file existence, URL expiry)
 - **Download management** - Max 6 concurrent, pending queue with `ConcurrentLinkedQueue`
 - **Stream mode support** - Downloads to `stream_files/` directory with LRU eviction (30 file max)
 - **Blacklist filtering** - `BlacklistManager` integration
@@ -415,10 +416,11 @@
 
 ### 6.8 Queue Operations
 - **Add to queue** - `addToQueue()` (deduplicates by UUID)
+- **Play next copy** - `playNextCopy(track)` / `playNextPending(id)` (swipe right; the only way a song is queued twice)
 - **Add next** - `addNext()` / `addNext(list)` (inserts after current)
 - **Move in queue** - `moveInQueue(fromIndex, toIndex)`
-- **Remove from queue** - `removeFromQueue(trackId)`
-- **Play from queue** - `playTrackFromQueue(track)`
+- **Remove from queue** - `removeFromQueue(trackId, index)` (index picks the entry when a song is queued twice)
+- **Play from queue** - `playTrackFromQueue(track, index)`; `playPendingSong(id)` fetches a waiting song and plays it
 - **Shuffle/Repeat** - Toggle shuffle mode, repeat mode (Off/One/All)
 - **Radio mode** - `startRadio()` keeps only current track then fetches recommendations
 

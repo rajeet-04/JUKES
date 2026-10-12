@@ -321,12 +321,12 @@ app/src/main/java/com/example/juke/
 
 1. **Track Selection**: User plays a track
 2. **Video Matching**: Find corresponding YouTube Music video (title/artist similarity, duration check)
-3. **Radio Generation**: Fetch 50-track YouTube Music radio queue
+3. **Radio Generation**: Fetch the ~50-track YouTube Music radio of the playing song and keep its order (a radio that doesn't start with its seed is ignored)
 4. **Spotify Validation**: Validate each song against Spotify (artist similarity, duration proximity)
 5. **Filtering**: Remove spam (remixes, covers, karaoke, AI)
-6. **Prioritization**: Prioritize official releases, favorites, play count
-7. **Queue Population**: Pre-fetch next 3 tracks, auto-download recommendations
-8. **Continuous Loop**: Repeat when queue drops below threshold
+6. **Prioritization**: Songs heard, skipped or shown a lot lately move to the end; favourites and songs on repeat today are exempt
+7. **Queue Population**: Up Next lists the whole radio (greyed until fetched); the next 5–15 (setting) are fetched and join the player one by one as they become ready; tap or swipe right on a waiting song to fetch it first
+8. **Continuous Loop**: When the radio runs out, continue it from the last queued song
 
 > 📖 For detailed documentation, see [RECOMMENDATION_SYSTEM.md](RECOMMENDATION_SYSTEM.md)
 

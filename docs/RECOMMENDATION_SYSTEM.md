@@ -1,5 +1,7 @@
 # Smart Recommendation System
 
+> **Current flow (2026-10):** Up Next follows the playing song's YouTube Music radio in its own order and lists all of it; only the next `recommendation_count` (5–15) songs are fetched, each joining the player as soon as it is ready. One radio at a time, continued from the last queued song when it runs out; a radio that doesn't start with its seed is rejected. Recently heard songs move to the end instead of being weighted-shuffled. Sections below that describe weighted picks across several radios are historical. Code: `QueueManager.fillWindow`, `moveReserveToPending`, `refillReserve`, `RecommenderApi.fetchFullRadioQueue`.
+
 This document describes the implementation of the smart music recommendation system in JUKE.
 
 ## Overview

@@ -4,14 +4,26 @@
 
 ## [Unreleased]
 
+### Added
+
+- Up Next shows the whole YouTube Music radio at once. Songs not fetched yet are greyed (desaturated artwork, dimmed text) and colour up as they become ready; tapping one fetches it right away and plays it (the waiting songs above it are skipped, as in any queue).
+- Swipe right on a queued song to play a copy next while the original keeps its place. A waiting song swiped right is fetched first and held greyed as "Plays next"; if the current song ends before it is ready, playback continues with ready songs and the pick slots in after whatever is playing once it loads.
+- Neon edge on the selected Home / Search / Library tab, in the open tab bar and in the folded button beside the mini player: a rim of light in the album accent, a soft bloom and a glowing icon; it flares while the selection slides between tabs.
+
 ### Changed
 
 - The mini player and the full player are now one surface: opening grows the glass bar into the full-screen player and minimising shrinks it back into the bar (container transform with shared artwork), instead of a black sheet sliding over the bar. Motion uses a critically damped spring, and a swipe-down hands its release velocity to the settle. The header, title row, progress bar, controls and bottom actions arrive in stages and leave in reverse. Honors Remove animations.
 - One motion language across the app: screens no longer use Navigation's default 700 ms fade. Switching Home / Search / Library is a quick fade-through, and opening a detail screen (album, artist, playlist, settings) slides in on a critically damped spring and slides back out on Back. Track rows and cards settle slightly in on press and spring back (`ui/theme/Motion.kt`).
 - Smoother lyrics: they fade in over the artwork instead of popping, the active line eases between emphasis states without re-wrapping the text or bouncing, the list glides to the next line on a spring, and switching between synced, loading and plain lyrics crossfades.
+- Recommendations follow the playing song's YouTube Music radio in its own order. One radio at a time; the next starts only when it runs out, seeded from the last queued song. Songs heard, skipped or shown a lot lately wait at the end. The weighted random mix of several radios is gone.
+- Only the songs about to play are fetched: the Recommendation Queue setting (5–15) is how many load ahead, and each one joins the player as soon as it (and the ones before it) is ready instead of after the whole batch. This also cuts load on the backend.
+- Up Next rows are flat Library-style rows with hairline separators, and swiping uses the same glass reveal as Library and Search.
 
 ### Fixed
 
+- Recommended songs no longer repeat in blocks or get queued twice: the player queue is extended only with the songs the engine just fetched (it used to re-append every song it had queued this session that the player lacked, e.g. after Clear played or while a previous add was still in flight), and the player skips IDs it already holds.
+- Reordering the queue or reopening the app no longer restarts the recommendation session and forgets what was already played; auto-advanced songs now count as played.
+- A YouTube radio that doesn't start with its seed song (an unrelated generic list YouTube sometimes returns) is ignored instead of filling the queue with off-topic songs.
 - Library snackbars (removal, undo, "will play next") and the selection bar sit directly above the player chrome and follow it as it folds into the merged player, instead of floating above a gap.
 
 - Downloading a song within its first few seconds no longer restarts it from 0:00; the delayed notification-artwork refresh keeps the current source and playback position.
