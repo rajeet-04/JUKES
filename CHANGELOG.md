@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- Downloading a streamed song no longer resets its favourite, play count or last played: the download kept the stats of the queue's (older) copy of the song instead of the stored ones.
 - "Fetch from another source" now really swaps in the new audio and starts it from 0:00; the player used to keep playing what it had open because the new file has the same path.
 - Glass sheet headers (Up Next's back, title and menu) were nearly invisible: sheets now set their own text colour instead of inheriting the player's tint.
 - Recommended songs no longer repeat in blocks or get queued twice: the player queue is extended only with the songs the engine just fetched (it used to re-append every song it had queued this session that the player lacked, e.g. after Clear played or while a previous add was still in flight), and the player skips IDs it already holds.

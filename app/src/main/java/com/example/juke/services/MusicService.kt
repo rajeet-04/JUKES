@@ -1066,6 +1066,9 @@ class MusicService(private val context: Context) {
             }
         }
 
+        // The caller's Track is often a stale queue copy: the listener may have favourited or
+        // played the stream since. Keep the stats stored now, not the copy's.
+        val stored = trackDao.getTrackByUuid(track.uuid)
         val promotedTrack = Track(
             uuid = track.uuid,
             title = track.title,
@@ -1075,9 +1078,9 @@ class MusicService(private val context: Context) {
             localUri = permanentFile.absolutePath,
             ytVideoId = track.ytVideoId
                 ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}", track.durationSec, track.artist),
-            isFavourite = track.isFavourite,
-            playCount = track.playCount,
-            lastPlayedAt = track.lastPlayedAt,
+            isFavourite = stored?.isFavourite ?: track.isFavourite,
+            playCount = maxOf(stored?.playCount ?: 0, track.playCount),
+            lastPlayedAt = stored?.lastPlayedAt ?: track.lastPlayedAt,
             downloadedAt = System.currentTimeMillis(),
             spotifyId = track.spotifyId,
             albumSpotifyId = track.albumSpotifyId,
