@@ -508,14 +508,27 @@ class PlaybackService : MediaLibraryService() {
                         // the DB, adopting its URI here would restart the song from 0:00. Only the
                         // metadata (artwork/title) is refreshed, and the position is restored since
                         // replacing the current item resets it.
-                        val refreshedItem = player.getMediaItemAt(index).buildUpon()
-                            .setMediaMetadata(newItem.mediaMetadata)
+                        val existing = player.getMediaItemAt(index)
+                        val old = existing.mediaMetadata
+                        val fresh = newItem.mediaMetadata
+                        // Nothing new to show: touching the playing item would stall the audio.
+                        if (old.artworkUri == fresh.artworkUri &&
+                            old.title == fresh.title && old.artist == fresh.artist &&
+                            old.albumTitle == fresh.albumTitle &&
+                            old.artworkData.contentEquals(fresh.artworkData)
+                        ) return@launch
+                        val refreshedItem = existing.buildUpon()
+                            .setMediaMetadata(fresh)
                             .build()
                         val isCurrent = player.currentMediaItemIndex == index
                         val resumeMs = player.currentPosition
                         // replaceMediaItem triggers onTimelineChanged → notification redraw
                         player.replaceMediaItem(index, refreshedItem)
-                        if (isCurrent && resumeMs > 0L) player.seekTo(index, resumeMs)
+                        // Only restore the position if the replace actually reset it; a seek on a
+                        // source that kept playing flushes the buffer and is heard as a stutter.
+                        if (isCurrent && resumeMs > 1_000L && player.currentPosition < resumeMs - 1_000L) {
+                            player.seekTo(index, resumeMs)
+                        }
                         Log.d(tag, "Refreshed notification metadata for: ${track.title}")
                     } catch (e: Exception) {
                         Log.w(tag, "Delayed metadata refresh failed: ${e.message}")
@@ -802,35 +815,12 @@ class PlaybackService : MediaLibraryService() {
 
     @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
-        // On Android 12+ (API 31), starting a foreground service from the background is
-        // restricted and throws ForegroundServiceStartNotAllowedException.
-        //
-        // Media3's default onUpdateNotification() → MediaNotificationManager.startForeground()
-        // calls BOTH ContextCompat.startForegroundService() AND Service.startForeground() —
-        // even when startInForegroundRequired=false. Both are fatal when in the background.
-        //
-        // Strategy: return early (skip super) when app is in background.
-        // The existing notification remains visible; it will be refreshed when the user
-        // brings the app back to the foreground and normal playback resumes.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && startInForegroundRequired) {
-            try {
-                val currentState =
-                    androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
-                val isAppInForeground =
-                    currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
-
-                if (!isAppInForeground) {
-                    Log.w(
-                        tag,
-                        "App is in background — skipping onUpdateNotification to prevent ForegroundServiceStartNotAllowedException"
-                    )
-                    return
-                }
-            } catch (e: Exception) {
-                Log.w(tag, "Failed to check app lifecycle state: ${e.message}")
-            }
-        }
-
+        // Never skip the update when the app is in the background: while a song plays,
+        // startInForegroundRequired is true on every update, so skipping froze the title and
+        // artwork of the notification and lock screen on background track changes (they only
+        // refreshed once playback paused). The service is already foreground then, so Media3
+        // does not start it again; if the system still refuses (Android 12+), the exception
+        // is caught below and the next update retries.
         try {
             super.onUpdateNotification(session, startInForegroundRequired)
         } catch (e: Exception) {
