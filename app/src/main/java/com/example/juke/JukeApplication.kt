@@ -21,6 +21,7 @@ class JukeApplication : Application(), ImageLoaderFactory {
         // Progressive playback (Audio settings), on by default
         com.example.juke.network.JukesApi.progressiveEnabled =
             getSharedPreferences("music_settings_prefs", MODE_PRIVATE).getBoolean("progressive_playback", true)
+        com.example.juke.network.JukesApi.init(this)
         // Continue any Spotify import that was cut off when the app was closed, and again each time
         // the app comes back to the foreground (the process may have been kept alive with its
         // network blocked, which parks the import).

@@ -1,8 +1,11 @@
 package com.example.juke.network
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.example.juke.BuildConfig
 import io.ktor.client.HttpClient
+import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -89,7 +92,65 @@ object JukesApi {
     )
 
     @Serializable
-    private data class Radio(val tracks: List<RadioTrack> = emptyList())
+    private data class Radio(
+        val tracks: List<RadioTrack> = emptyList(),
+        @SerialName("personalization_status") val status: String = "",
+    )
+
+    @Serializable
+    private data class Issued(val token: String)
+
+    // -- Optional personalisation: the user's YouTube Music session lives on the backend, tied to
+    // an installation token kept here. ponytail: token in app-private prefs, Keystore if it matters.
+    enum class Session { OFF, CONNECTED, RECONNECT }
+
+    private var prefs: SharedPreferences? = null
+    private val _session = MutableStateFlow(Session.OFF)
+    val session: StateFlow<Session> = _session.asStateFlow()
+
+    /** Settings toggle: backend (signed-in account) radio first instead of anonymous direct radio. */
+    @Volatile var personalisedRadio = false
+        private set
+    private val token get() = prefs?.getString("token", null)
+
+    fun init(context: Context) {
+        val p = context.getSharedPreferences("jukes_identity", Context.MODE_PRIVATE).also { prefs = it }
+        personalisedRadio = p.getBoolean("personalised", false)
+        _session.value = runCatching { Session.valueOf(p.getString("session", "OFF")!!) }.getOrDefault(Session.OFF)
+    }
+
+    fun setPersonalisedRadio(on: Boolean) {
+        personalisedRadio = on
+        prefs?.edit()?.putBoolean("personalised", on)?.apply()
+    }
+
+    private fun setSession(s: Session) {
+        _session.value = s
+        prefs?.edit()?.putString("session", s.name)?.apply()
+    }
+
+    /** Sends the Cookie header captured from music.youtube.com to the backend. Throws [JukesException]. */
+    suspend fun connectYoutube(cookie: String) {
+        val t = token ?: call<Issued>(ApiClient.httpClient, HttpMethod.Post, "/v1/installations").token
+            .also { prefs?.edit()?.putString("token", it)?.apply() }
+        check(t.isNotBlank())
+        call<Unit>(
+            ApiClient.httpClient, HttpMethod.Put, "/v1/me/youtube",
+            buildJsonObject { put("cookie", cookie); put("account_index", 0) }, auth = true
+        )
+        setSession(Session.CONNECTED)
+    }
+
+    /** Revokes the installation: deletes the stored session and token on the backend. */
+    suspend fun disconnectYoutube() {
+        if (token != null) call<Unit>(ApiClient.httpClient, HttpMethod.Delete, "/v1/me", auth = true)
+        forgetInstallation()
+    }
+
+    private fun forgetInstallation() {
+        prefs?.edit()?.remove("token")?.apply()
+        setSession(Session.OFF)
+    }
 
     @Serializable
     private data class ErrorBody(val error: Detail) {
@@ -119,9 +180,11 @@ object JukesApi {
         method: HttpMethod,
         path: String,
         body: JsonObject? = null,
+        auth: Boolean = false,
     ): T {
         val response = client.request("$base$path") {
             this.method = method
+            if (auth) token?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             if (body != null) {
                 contentType(ContentType.Application.Json)
                 setBody(body.toString())
@@ -129,7 +192,11 @@ object JukesApi {
         }
         val text = response.bodyAsText()
         val status = response.status.value
-        if (status in 200..299) return json.decodeFromString(text)
+        if (status in 200..299) {
+            @Suppress("UNCHECKED_CAST")
+            return if (text.isBlank()) Unit as T else json.decodeFromString(text)
+        }
+        if (auth && status == 401) forgetInstallation()
         val error = runCatching { json.decodeFromString<ErrorBody>(text).error }.getOrNull()
         // An unknown route is a JSON 404 `not_found` on new servers and an HTML page on old ones.
         if (status == 404 && (error == null || error.code == "not_found")) throw V1MissingException()
@@ -391,11 +458,18 @@ object JukesApi {
      */
     suspend fun radio(videoId: String, limit: Int = 50): List<RecommenderApi.YouTubeRecommendation>? {
         if (!AlexaBackendApi.isConfigured || !BuildConfig.JUKE_BACKEND_V1) return null
+        // Signed-in users only: anonymous backend radio is heavy and not wanted.
+        if (token == null || _session.value == Session.OFF) return null
         return try {
-            call<Radio>(
+            val radio = call<Radio>(
                 ApiClient.httpClient, HttpMethod.Post, "/v1/recommendations",
-                buildJsonObject { put("video_id", videoId); put("limit", limit.coerceIn(1, 100)) }
-            ).tracks.filter { it.videoId.isNotBlank() && it.title.isNotBlank() }.map {
+                buildJsonObject { put("video_id", videoId); put("limit", limit.coerceIn(1, 100)) },
+                auth = true
+            )
+            Log.d(TAG, "Backend radio for $videoId: status=${radio.status} tracks=${radio.tracks.size}")
+            if (radio.status == "reconnect_required") setSession(Session.RECONNECT)
+            if (radio.status != "connected") return null
+            radio.tracks.filter { it.videoId.isNotBlank() && it.title.isNotBlank() }.map {
                 RecommenderApi.YouTubeRecommendation(
                     id = it.videoId,
                     title = it.title,
@@ -412,5 +486,20 @@ object JukesApi {
             Log.w(TAG, "Backend radio for $videoId failed: ${e.message}")
             null
         }
+    }
+
+    /** Radio for [videoId]: signed-in backend first when personalised, else direct YouTube Music first. */
+    suspend fun fullRadio(videoId: String): List<RecommenderApi.YouTubeRecommendation> {
+        val direct: suspend () -> List<RecommenderApi.YouTubeRecommendation>? =
+            { RecommenderApi.fetchFullRadioQueue(videoId) }
+        val backend: suspend () -> List<RecommenderApi.YouTubeRecommendation>? = { radio(videoId) }
+        val order = if (personalisedRadio) "backend,direct" else "direct,backend"
+        return (if (personalisedRadio) listOf(backend, direct) else listOf(direct, backend)).firstNonEmpty()
+            .also { Log.d(TAG, "Radio for $videoId: order=$order tracks=${it.size}") }
+    }
+
+    internal suspend fun <T> List<suspend () -> List<T>?>.firstNonEmpty(): List<T> {
+        for (source in this) source()?.takeIf { it.isNotEmpty() }?.let { return it }
+        return emptyList()
     }
 }

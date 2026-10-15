@@ -76,7 +76,8 @@ fun AudioSettingsScreen(
     musicViewModel: MusicViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToPurge: () -> Unit,
-    onNavigateToPowerTools: () -> Unit = {}
+    onNavigateToPowerTools: () -> Unit = {},
+    onNavigateToYoutubeSignIn: () -> Unit = {}
 ) {
     val isBoosterEnabled by musicViewModel.isBoosterEnabled.collectAsStateWithLifecycle()
     val boosterLevel by musicViewModel.boosterLevel.collectAsStateWithLifecycle()
@@ -380,6 +381,67 @@ fun AudioSettingsScreen(
                                 )
                             }
                         )
+                    }
+                }
+
+                item {
+                    val session by com.example.juke.network.JukesApi.session.collectAsStateWithLifecycle()
+                    var personalised by remember {
+                        mutableStateOf(com.example.juke.network.JukesApi.personalisedRadio)
+                    }
+                    val connected = session != com.example.juke.network.JukesApi.Session.OFF
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            CompactItem(
+                                headlineContent = {
+                                    Text(
+                                        "Personalised radio",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(
+                                        if (connected) "Radio from your YouTube Music account. Off uses anonymous radio"
+                                        else "Connect your YouTube Music account to use it"
+                                    )
+                                },
+                                leadingContent = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = personalised && connected,
+                                        enabled = connected,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            personalised = it
+                                            com.example.juke.network.JukesApi.setPersonalisedRadio(it)
+                                        }
+                                    )
+                                }
+                            )
+                            CompactItem(
+                                headlineContent = {
+                                    Text(
+                                        when (session) {
+                                            com.example.juke.network.JukesApi.Session.OFF -> "Connect YouTube Music"
+                                            com.example.juke.network.JukesApi.Session.CONNECTED -> "Disconnect and delete my data"
+                                            com.example.juke.network.JukesApi.Session.RECONNECT -> "Reconnect YouTube Music"
+                                        },
+                                        modifier = Modifier.clickable {
+                                            if (session == com.example.juke.network.JukesApi.Session.CONNECTED) {
+                                                scope.launch { runCatching { com.example.juke.network.JukesApi.disconnectYoutube() } }
+                                            } else onNavigateToYoutubeSignIn()
+                                        },
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                supportingContent = {
+                                    Text("Your session is sent to the JUKES server, stored encrypted, and used only for your recommendations")
+                                }
+                            )
+                        }
                     }
                 }
 

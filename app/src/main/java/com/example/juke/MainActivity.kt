@@ -496,7 +496,15 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onNavigateToPowerTools = {
                                         navController.navigate("settings/power")
+                                    },
+                                    onNavigateToYoutubeSignIn = {
+                                        navController.navigate("settings/youtube")
                                     }
+                                )
+                            }
+                            composable("settings/youtube") {
+                                com.example.juke.ui.screens.YoutubeSignInScreen(
+                                    onDone = { navController.popBackStack() }
                                 )
                             }
                             composable("settings/power") {

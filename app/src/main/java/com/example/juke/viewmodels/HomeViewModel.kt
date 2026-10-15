@@ -268,10 +268,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Matches radio picks on Spotify concurrently and stops as soon as enough have landed. */
     private suspend fun radioSection(seed: Track, knownKeys: Set<String>): RadioSection? = try {
         val videoId = seed.ytVideoId ?: return null
-        // Direct YouTube Music radio first; the shared backend only as a fallback, so one heavy
-        // listener's history never skews everyone else's feed.
-        val radio = RecommenderApi.fetchFullRadioQueue(videoId).takeIf { it.isNotEmpty() }
-            ?: JukesApi.radio(videoId) ?: emptyList()
+        val radio = JukesApi.fullRadio(videoId)
         val candidates = radio.drop(1)
             .filter { !RecommenderApi.isSpamTitle(it.title) }
             .filter { RecommenderApi.songKey(it.title, it.artist) !in knownKeys }
