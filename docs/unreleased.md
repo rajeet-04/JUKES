@@ -20,3 +20,4 @@
 - Playlists: new "Custom order" sort. Drag the handle on a song to reorder it; the order is saved per playlist and kept across restarts. Opening a playlist starts in its custom order; other sorts remain available.
 - Playlists no longer get the same song twice (playlist import and saving the queue skip a song already in the playlist); existing repeats are cleaned up once on update.
 - Fixed a crash when reordering a playlist that held the same song twice.
+- Queue: dragging a song now slides the other rows aside to make room, like in playlists; the queue is changed once on drop.

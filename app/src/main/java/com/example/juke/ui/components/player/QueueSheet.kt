@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -45,6 +46,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -174,8 +176,24 @@ fun QueueBottomSheetContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Drag-to-reorder: while a row is held the upcoming order is previewed (rows slide aside as it
+        // passes them); the real queue moves once, on drop.
+        val listState = rememberLazyListState()
+        var preview by remember { mutableStateOf<List<com.example.juke.models.Track>?>(null) }
+        var dragKey by remember { mutableStateOf<String?>(null) }
+        var dragOffset by remember { mutableFloatStateOf(0f) }
+        var dragFrom by remember { mutableIntStateOf(-1) }
+        // The queue moved (or the drop was refused): stop previewing.
+        LaunchedEffect(queue) { if (dragKey == null) preview = null }
+        LaunchedEffect(dragKey) {
+            if (dragKey == null && preview != null) {
+                kotlinx.coroutines.delay(1500)
+                if (dragKey == null) preview = null
+            }
+        }
+
         // Queue list with swipe-to-remove
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Current track indicator
             item(key = "now_playing_card") {
                 GlassCard(
@@ -258,7 +276,7 @@ fun QueueBottomSheetContent(
             }
 
             // Upcoming: fetched songs first, then the ones still waiting to be fetched.
-            val upcomingTracks = queue.drop(queueIndex + 1)
+            val upcomingTracks = preview ?: queue.drop(queueIndex + 1)
             if (upcomingTracks.isNotEmpty() || pending.isNotEmpty() || heldNext.isNotEmpty()) {
                 item(key = "queue_header_text") {
                     Row(
@@ -328,18 +346,19 @@ fun QueueBottomSheetContent(
                     }
                 }
 
+                val rowKeys = upcomingRowKeys(upcomingTracks)
                 itemsIndexed(
                     items = upcomingTracks,
-                    key = { index, track -> "queue_item_${track.uuid}_$index" }
+                    key = { index, _ -> rowKeys[index] }
                 ) { index, track ->
                     val actualQueueIndex = queueIndex + 1 + index
-                    val density = LocalDensity.current
-
-                    // Drag state for visual feedback
-                    var dragOffset by remember { mutableFloatStateOf(0f) }
-                    var isDragging by remember { mutableStateOf(false) }
-                    var lastDragPosition by remember { mutableIntStateOf(0) }
-                    val itemHeightPx = with(density) { QueueRowHeight.toPx() }
+                    val rowKey = rowKeys[index]
+                    val isDragging = dragKey == rowKey
+                    // The drag handler outlives recompositions: read the live values, not captured ones.
+                    val indexNow by rememberUpdatedState(index)
+                    val upcomingNow by rememberUpdatedState(upcomingTracks)
+                    val queueIndexNow by rememberUpdatedState(queueIndex)
+                    val moveNow by rememberUpdatedState(onMoveTrack)
 
                     // The swipe callback can fire repeatedly while past the threshold: one copy per swipe.
                     val copyQueued = remember { mutableStateOf(false) }
@@ -400,8 +419,8 @@ fun QueueBottomSheetContent(
                             }
                         },
                         modifier = Modifier
-                            .animateItem()
-                            .zIndex(if (dragOffset != 0f) 100f else 0f)
+                            .then(if (isDragging) Modifier else Modifier.animateItem())
+                            .zIndex(if (isDragging) 100f else 0f)
                     ) {
                         val scale by animateFloatAsState(
                             if (isDragging) 1.03f else 1f,
@@ -419,8 +438,8 @@ fun QueueBottomSheetContent(
                             },
                             modifier = Modifier
                                 .graphicsLayer {
-                                    translationY = dragOffset
-                                    shadowElevation = if (dragOffset != 0f) 12f else 0f
+                                    translationY = if (isDragging) dragOffset else 0f
+                                    shadowElevation = if (isDragging) 12f else 0f
                                     this.scaleX = scale
                                     this.scaleY = scale
                                 }
@@ -436,53 +455,67 @@ fun QueueBottomSheetContent(
                                 modifier = Modifier
                                     .padding(end = 4.dp)
                                     .size(24.dp)
-                                    .pointerInput(Unit) {
-                                        if (!uiState.isQueueOperationInProgress) {
-                                            detectDragGestures(
-                                                onDragStart = {
-                                                    haptic.gestureStart()
-                                                    dragOffset = 0f
-                                                    lastDragPosition = 0
-                                                    isDragging = true
-                                                },
-                                                onDragEnd = {
-                                                    val positionsToMove =
-                                                        (dragOffset / itemHeightPx).toInt()
-
-                                                    if (positionsToMove != 0) {
-                                                        val targetIndex =
-                                                            (actualQueueIndex + positionsToMove).coerceIn(
-                                                                queueIndex + 1,
-                                                                queue.size - 1
-                                                            )
-                                                        if (targetIndex != actualQueueIndex) {
-                                                            onMoveTrack(
-                                                                actualQueueIndex,
-                                                                targetIndex
-                                                            )
-                                                        }
-                                                    }
-                                                    dragOffset = 0f
-                                                    isDragging = false
-                                                    haptic.gestureEnd()
-                                                },
-                                                onDragCancel = {
-                                                    dragOffset = 0f
-                                                    isDragging = false
-                                                },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    dragOffset += dragAmount.y
-
-                                                    // Ratchet feedback when dragged item crosses another item's boundary.
-                                                    val currentPosition = (dragOffset / itemHeightPx).toInt()
-                                                    if (currentPosition != lastDragPosition) {
+                                    .pointerInput(rowKey, uiState.isQueueOperationInProgress) {
+                                        if (uiState.isQueueOperationInProgress) return@pointerInput
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                haptic.gestureStart()
+                                                dragOffset = 0f
+                                                dragFrom = indexNow
+                                                preview = upcomingNow
+                                                dragKey = rowKey
+                                            },
+                                            onDragEnd = {
+                                                val order = preview
+                                                val to = order?.let { upcomingRowKeys(it).indexOf(rowKey) } ?: dragFrom
+                                                if (dragFrom >= 0 && to >= 0 && to != dragFrom) {
+                                                    moveNow(queueIndexNow + 1 + dragFrom, queueIndexNow + 1 + to)
+                                                } else {
+                                                    preview = null
+                                                }
+                                                dragKey = null
+                                                dragOffset = 0f
+                                                haptic.gestureEnd()
+                                            },
+                                            onDragCancel = {
+                                                preview = null
+                                                dragKey = null
+                                                dragOffset = 0f
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                dragOffset += dragAmount.y
+                                                val order = preview ?: return@detectDragGestures
+                                                val keys = upcomingRowKeys(order)
+                                                val info = listState.layoutInfo
+                                                val rows = info.visibleItemsInfo
+                                                val cur = rows.firstOrNull { it.key == rowKey } ?: return@detectDragGestures
+                                                val center = cur.offset + cur.size / 2f + dragOffset
+                                                // Swap with the song under the dragged row's centre.
+                                                val target = rows.firstOrNull {
+                                                    it.key != rowKey && it.key in keys &&
+                                                            center >= it.offset && center < it.offset + it.size
+                                                }
+                                                if (target != null) {
+                                                    val from = keys.indexOf(rowKey)
+                                                    val to = keys.indexOf(target.key)
+                                                    if (from >= 0 && to >= 0) {
+                                                        preview = order.toMutableList().apply { add(to, removeAt(from)) }
                                                         haptic.tick()
-                                                        lastDragPosition = currentPosition
+                                                        val newOffset =
+                                                            if (to > from) target.offset + target.size - cur.size else target.offset
+                                                        dragOffset += cur.offset - newOffset
                                                     }
                                                 }
-                                            )
-                                        }
+                                                // Edge auto-scroll keeps a long queue reachable.
+                                                val scroll = when {
+                                                    center > info.viewportEndOffset - 96f -> 24f
+                                                    center < info.viewportStartOffset + 96f -> -24f
+                                                    else -> 0f
+                                                }
+                                                if (scroll != 0f) dragOffset += listState.dispatchRawDelta(scroll)
+                                            }
+                                        )
                                     }
                             )
                         }
@@ -587,8 +620,14 @@ fun QueueBottomSheetContent(
     }
 }
 
-/** Height of one queue row including its hairline; drag-to-reorder steps by it. */
-private val QueueRowHeight = 61.dp
+/** One unique key per upcoming row: the same song can be queued twice. */
+private fun upcomingRowKeys(tracks: List<com.example.juke.models.Track>): List<String> {
+    val seen = HashMap<String, Int>()
+    return tracks.map { t ->
+        val n = seen.merge(t.uuid, 1, Int::plus)!! - 1
+        "queue_item_${t.uuid}#$n"
+    }
+}
 
 /**
  * Flat queue row in the Library / Search style: artwork, title and artist, a trailing slot and a
