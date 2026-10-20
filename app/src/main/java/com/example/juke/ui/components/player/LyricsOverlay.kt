@@ -15,6 +15,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.key
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,6 +79,11 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
+
+/** Last scroll position of plain lyrics per song (first visible item, offset), kept across overlay closes. */
+private object PlainLyricsScroll {
+    val positions = HashMap<String, Pair<Int, Int>>()
+}
 
 /**
  * Fading edge modifier that masks content with a vertical gradient,
@@ -267,25 +276,57 @@ fun LyricsOverlay(
                 }
             }
         } else {
-            // Plain lyrics (no syncing)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 32.dp, vertical = 48.dp)
-                    .fadingEdges(topFraction = 0.08f, bottomFraction = 0.08f)
-                    .verticalScroll(rememberScrollState()),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    plainLyrics ?: "No lyrics available",
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        lineHeight = 30.sp,
-                        letterSpacing = 0.2.sp
-                    ),
-                    color = Color.White.copy(alpha = 0.85f),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.Normal
-                )
+            // Plain lyrics (no syncing): same left-aligned reading style as the synced view, and the
+            // scroll position is remembered per song so closing and reopening resumes in place.
+            if (plainLyrics == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "No lyrics available",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White.copy(alpha = 0.72f)
+                    )
+                }
+            } else key(currentTrack.uuid) {
+                val rows = remember(plainLyrics) { plainLyrics.trim().lines().map { it.trim() } }
+                val saved = PlainLyricsScroll.positions[currentTrack.uuid]
+                val listState = rememberLazyListState(saved?.first ?: 0, saved?.second ?: 0)
+                DisposableEffect(Unit) {
+                    onDispose {
+                        if (PlainLyricsScroll.positions.size > 50) PlainLyricsScroll.positions.clear()
+                        PlainLyricsScroll.positions[currentTrack.uuid] =
+                            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+                    }
+                }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp)
+                        .fadingEdges(topFraction = 0.10f, bottomFraction = 0.14f),
+                    // Top clears the sync/close buttons; bottom lets the last line scroll to mid-card.
+                    contentPadding = PaddingValues(top = 72.dp, bottom = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(rows.size) { i ->
+                        val line = rows[i]
+                        if (line.isEmpty()) {
+                            Spacer(Modifier.height(16.dp))
+                        } else {
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontSize = 22.sp,
+                                    lineHeight = 30.sp,
+                                    letterSpacing = (-0.2).sp
+                                ),
+                                color = Color.White.copy(alpha = 0.92f),
+                                textAlign = TextAlign.Start,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
             }
         }
         }
