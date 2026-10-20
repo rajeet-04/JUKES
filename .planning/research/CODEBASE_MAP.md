@@ -271,7 +271,7 @@ app/src/main/java/com/example/juke/
 | File | Purpose |
 |------|---------|
 | `gradle.properties` | JVM args (6GB heap), parallel builds, daemon enabled, caching enabled, Kotlin incremental, R8 full mode |
-| `local.properties` | Local config: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `POSTHOG_API_KEY`, `POSTHOG_HOST` (not committed to git) |
+| `local.properties` | Local config: `SPOTIFY_TOKEN_KEY`, `POSTHOG_API_KEY`, `POSTHOG_HOST` (not committed to git) |
 | `gradle/wrapper/gradle-wrapper.properties` | Gradle 8.13.1 |
 | `gradle/gradle-daemon-jvm.properties` | Daemon JVM config |
 

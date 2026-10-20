@@ -31,13 +31,13 @@ android {
 
         buildConfigField(
             "String",
-            "SPOTIFY_CLIENT_ID",
-            "\"${properties.getProperty("SPOTIFY_CLIENT_ID", "")}\""
+            "SPOTIFY_TOKEN_URL",
+            "\"${properties.getProperty("SPOTIFY_TOKEN_URL", "https://spotdown-kv-worker.meek.workers.dev/spotify-token")}\""
         )
         buildConfigField(
             "String",
-            "SPOTIFY_CLIENT_SECRET",
-            "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
+            "SPOTIFY_TOKEN_KEY",
+            "\"${properties.getProperty("SPOTIFY_TOKEN_KEY", "")}\""
         )
         buildConfigField(
             "String",

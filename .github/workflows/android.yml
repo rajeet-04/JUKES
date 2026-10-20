@@ -25,8 +25,7 @@ jobs:
       # The build reads these from local.properties; CI only needs placeholders to compile.
       - name: Placeholder secrets
         run: |
-          echo "SPOTIFY_CLIENT_ID=ci" >> local.properties
-          echo "SPOTIFY_CLIENT_SECRET=ci" >> local.properties
+          echo "SPOTIFY_TOKEN_KEY=ci" >> local.properties
       - run: sh ./gradlew test assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:

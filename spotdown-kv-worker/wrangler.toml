@@ -1,0 +1,7 @@
+name = "spotdown-kv-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# id omitted: wrangler provisions the namespace on first deploy
+[[kv_namespaces]]
+binding = "KV"

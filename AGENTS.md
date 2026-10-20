@@ -11,7 +11,7 @@ Quick start
 
 Key environment
 - Java 11, Android SDK (compile/target 36), Kotlin 2.0.21, Gradle 8.13.1.
-- Secrets: set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `local.properties`. Never commit secrets.
+- Secrets: set `SPOTIFY_TOKEN_KEY` in `local.properties`; the Spotify id/secret live only in the `spotdown-kv-worker` Cloudflare Worker (see `docs/SPOTIFY_SETUP.md`). Never commit secrets.
 
 Where to look first
 - App code: `app/src/main/java/com/example/juke/` (UI, ViewModels, services, network, database).

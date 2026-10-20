@@ -18,8 +18,7 @@ JUKE is a modern Android music player featuring Spotify integration, smart recom
 - Gradle 8.13.1
 
 # Setup Spotify Credentials
-echo "SPOTIFY_CLIENT_ID=your_id" > local.properties
-echo "SPOTIFY_CLIENT_SECRET=your_secret" >> local.properties
+echo "SPOTIFY_TOKEN_KEY=your_worker_app_secret" > local.properties
 
 # Build & Install
 ./gradlew assembleDebug       # Build debug APK
@@ -379,10 +378,10 @@ app/src/main/java/com/example/juke/
 
 ### 1. Spotify Credentials Not Found
 
-**Problem**: `BuildConfig.SPOTIFY_CLIENT_ID` or `SPOTIFY_CLIENT_SECRET` empty
+**Problem**: `BuildConfig.SPOTIFY_TOKEN_KEY` empty
 **Solution**:
 
-- Add to `local.properties`: `SPOTIFY_CLIENT_ID=xyz` and `SPOTIFY_CLIENT_SECRET=abc`
+- Add to `local.properties`: `SPOTIFY_TOKEN_KEY=<worker APP_SECRET>` (see `docs/SPOTIFY_SETUP.md`)
 - Run `./gradlew clean` then rebuild
 - Verify credentials in `app/build.gradle.kts` (lines load properties)
 

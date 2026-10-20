@@ -210,7 +210,7 @@ queueManager.initializeQueue(listOf(testTrack))
 
 **Downloads failing?**
 - Check Spotify credentials in local.properties
-- Verify SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET
+- Verify SPOTIFY_TOKEN_KEY matches the worker APP_SECRET
 - Check logcat for "SpotifyApi" errors
 
 **Queue not auto-refilling?**

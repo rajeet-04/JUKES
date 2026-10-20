@@ -83,7 +83,6 @@ object SpotifyApi {
 
     private const val TAG = "SpotifyApi"
     private const val SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
-    private const val SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
 
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val GAMEPVZ_BASE_URL  = "https://gamepvz.com"
@@ -158,27 +157,14 @@ object SpotifyApi {
 
             Log.d(TAG, "Requesting new Spotify OAuth token")
 
-            val clientId = BuildConfig.SPOTIFY_CLIENT_ID
-            val clientSecret = BuildConfig.SPOTIFY_CLIENT_SECRET
-
-            if (clientId.isEmpty() || clientSecret.isEmpty()) {
-                throw Exception("Spotify credentials not configured. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to local.properties")
+            if (BuildConfig.SPOTIFY_TOKEN_KEY.isEmpty()) {
+                throw Exception("Spotify token key not configured. Please add SPOTIFY_TOKEN_KEY to local.properties")
             }
 
-            // Encode credentials in Base64
-            val credentials = "$clientId:$clientSecret"
-            val encodedCredentials = Base64.encodeToString(
-                credentials.toByteArray(),
-                Base64.NO_WRAP
-            )
-
             try {
-                val response: HttpResponse = ApiClient.httpClient.post(SPOTIFY_ACCOUNTS_URL) {
-                    header("Authorization", "Basic $encodedCredentials")
-                    // Use form-encoded body for token request
-                    setBody(FormDataContent(Parameters.build {
-                        append("grant_type", "client_credentials")
-                    }))
+                // The Cloudflare worker owns the client id/secret and hands out the cached token.
+                val response: HttpResponse = ApiClient.httpClient.get(BuildConfig.SPOTIFY_TOKEN_URL) {
+                    header("X-App-Secret", BuildConfig.SPOTIFY_TOKEN_KEY)
                 }
 
                 val statusCode = response.status.value

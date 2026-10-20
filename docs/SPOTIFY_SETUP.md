@@ -28,21 +28,24 @@ JUKE now uses the **official Spotify Web API** for searching songs and retrievin
 
 ⚠️ **IMPORTANT**: Never share your Client Secret publicly or commit it to version control!
 
-## Step 3: Add Credentials to local.properties
+## Step 3: Deploy the token worker
 
-1. Open `local.properties` in the project root directory
-2. Add these lines (replace with your actual credentials):
+The app never holds the Client ID or Secret. `spotdown-kv-worker` (Cloudflare Worker + KV) holds them,
+mints a Spotify token (valid 3600 s), caches it in KV for 3300 s, and hands it to the app.
 
-```properties
-SPOTIFY_CLIENT_ID=your_actual_client_id_here
-SPOTIFY_CLIENT_SECRET=your_actual_client_secret_here
+```bash
+cd spotdown-kv-worker
+bunx wrangler login
+bunx wrangler deploy                          # provisions the KV namespace on first run
+bunx wrangler secret put SPOTIFY_CLIENT_ID
+bunx wrangler secret put SPOTIFY_CLIENT_SECRET
+bunx wrangler secret put APP_SECRET           # any random string; the app sends it as X-App-Secret
 ```
 
-Example:
+Then add to `local.properties` (`SPOTIFY_TOKEN_URL` defaults to the deployed worker):
+
 ```properties
-sdk.dir=R\:\\Android_Studio_SDK
-SPOTIFY_CLIENT_ID=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
-SPOTIFY_CLIENT_SECRET=z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4
+SPOTIFY_TOKEN_KEY=the_same_value_as_APP_SECRET
 ```
 
 ## Step 4: Build and Run
