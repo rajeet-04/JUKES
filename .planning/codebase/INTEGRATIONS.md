@@ -17,7 +17,7 @@
 - LRCLib - Synchronized and plain text lyrics
   - SDK/Client: Direct HTTP calls via Ktor in `SpotifyApi.kt` (`searchLyrics` function)
   - Auth: None required (public API)
-  - Endpoint: `https://lrclib.net/api/search` (called directly from the app; the shared Cloudflare worker egress IP was rate-limited)`
+  - Endpoint: `https://lrclib.net/api/search` (called directly from the app; the shared Cloudflare worker egress IP was rate-limited)
   - Used in: `SpotifyApi.kt` for fetching lyrics with validation
 
 **[YouTube]:**
