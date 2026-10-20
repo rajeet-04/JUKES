@@ -554,7 +554,7 @@ internal fun RecentSearches(
 
 
 @Composable
-internal fun SearchInput(query: String, onQueryChange: (String) -> Unit, focusTrigger: Int, onSearch: () -> Unit) {
+internal fun SearchInput(query: String, onQueryChange: (String) -> Unit, focusTrigger: Int, playerOpen: Boolean, onSearch: () -> Unit) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var field by remember { mutableStateOf(TextFieldValue(query, TextRange(query.length))) }
@@ -562,7 +562,7 @@ internal fun SearchInput(query: String, onQueryChange: (String) -> Unit, focusTr
         if (field.text != query) field = TextFieldValue(query, TextRange(query.length))
     }
     LaunchedEffect(focusTrigger) {
-        if (focusTrigger > 0) {
+        if (focusTrigger > 0 && !playerOpen) {
             field = field.copy(selection = TextRange(0, field.text.length))
             focus.requestFocus()
             keyboard?.show()

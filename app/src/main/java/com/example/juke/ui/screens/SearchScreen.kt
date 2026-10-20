@@ -58,6 +58,7 @@ fun SearchScreen(
     musicViewModel: MusicViewModel,
     searchViewModel: SearchViewModel = viewModel(),
     searchFocusTrigger: Int = 0,
+    playerOpen: Boolean = false,
     onNavigateToArtist: (SpotifyArtist) -> Unit = {},
     onNavigateToPlaylist: (SpotifyPlaylist) -> Unit = {},
     onNavigateToAlbum: (SpotifyAlbum) -> Unit = {},
@@ -92,6 +93,7 @@ fun SearchScreen(
                 query = uiState.query,
                 onQueryChange = { searchViewModel.updateQuery(it) },
                 focusTrigger = searchFocusTrigger,
+                playerOpen = playerOpen,
                 onSearch = {
                     if (uiState.query.isNotBlank() && !uiState.isSearching) {
                         selectedFilter = "All"

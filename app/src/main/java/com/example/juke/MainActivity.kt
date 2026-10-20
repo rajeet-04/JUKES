@@ -44,6 +44,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -153,6 +155,16 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 var showPlayerModal by remember { mutableStateOf(false) }
                 var searchFocusTrigger by remember { mutableIntStateOf(0) }
+                // No keyboard while the full player is open: drop the search field's focus too, so
+                // the IME can't come back over the player.
+                val keyboard = LocalSoftwareKeyboardController.current
+                val focusManager = LocalFocusManager.current
+                LaunchedEffect(showPlayerModal) {
+                    if (showPlayerModal) {
+                        keyboard?.hide()
+                        focusManager.clearFocus(force = true)
+                    }
+                }
 
                 // --- UPDATE CHECK LOGIC ---
                 var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
@@ -457,6 +469,7 @@ class MainActivity : ComponentActivity() {
                                     musicViewModel = musicViewModel,
                                     searchViewModel = searchViewModel,
                                     searchFocusTrigger = searchFocusTrigger,
+                                    playerOpen = showPlayerModal,
                                     onNavigateToArtist = { artist ->
                                         searchViewModel.loadArtistDetails(artist)
                                         navController.navigate("artist/${artist.id}")
