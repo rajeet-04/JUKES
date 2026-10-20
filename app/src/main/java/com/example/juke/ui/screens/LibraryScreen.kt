@@ -581,7 +581,7 @@ fun LibraryScreen(
                         uiState.sortOption == SortOption.CUSTOM && uiState.searchQuery.isBlank() &&
                         !uiState.isSelectionMode
                 val listState = rememberLazyListState()
-                var draggingUuid by remember { mutableStateOf<String?>(null) }
+                var draggingKey by remember { mutableStateOf<String?>(null) }
                 var dragOffset by remember { mutableFloatStateOf(0f) }
                 LazyColumn(
                     state = listState,
@@ -624,9 +624,10 @@ fun LibraryScreen(
                     itemsIndexed(
                         items = uiState.tracks,
                         // Stable key in custom order so a dragged row keeps its identity as it moves.
-                        key = { index, track -> if (canReorder) track.uuid else "${track.uuid}_$index" }
-                    ) { _, track ->
-                        val dragging = draggingUuid == track.uuid
+                        key = { index, track -> if (canReorder) trackRowKeys(uiState.tracks)[index] else "${track.uuid}_$index" }
+                    ) { index, track ->
+                        val rowKey = if (canReorder) trackRowKeys(uiState.tracks).getOrNull(index) else null
+                        val dragging = rowKey != null && draggingKey == rowKey
                         Box(
                             Modifier
                                 .zIndex(if (dragging) 1f else 0f)
@@ -639,7 +640,7 @@ fun LibraryScreen(
                         SwipeToAddNextContainer(
                             onAddNext = { queueSongs(listOf(track), true) },
                             onDelete = { tracksForDelete = listOf(track) },
-                            enabled = !uiState.isSelectionMode && actionsEnabled && draggingUuid == null
+                            enabled = !uiState.isSelectionMode && actionsEnabled && draggingKey == null
                         ) {
                             LibraryTrackItem(
                                 track = track,
@@ -676,20 +677,20 @@ fun LibraryScreen(
                                             modifier = Modifier
                                                 .padding(horizontal = 10.dp)
                                                 .size(24.dp)
-                                                .pointerInput(track.uuid) {
+                                                .pointerInput(rowKey) {
                                                     detectDragGestures(
                                                         onDragStart = {
                                                             performHapticFeedback()
-                                                            draggingUuid = track.uuid
+                                                            draggingKey = rowKey
                                                             dragOffset = 0f
                                                         },
                                                         onDragEnd = {
-                                                            draggingUuid = null
+                                                            draggingKey = null
                                                             dragOffset = 0f
                                                             libraryViewModel.commitPlaylistOrder()
                                                         },
                                                         onDragCancel = {
-                                                            draggingUuid = null
+                                                            draggingKey = null
                                                             dragOffset = 0f
                                                             libraryViewModel.commitPlaylistOrder()
                                                         },
@@ -698,17 +699,18 @@ fun LibraryScreen(
                                                             dragOffset += amount.y
                                                             val info = listState.layoutInfo
                                                             val rows = info.visibleItemsInfo
-                                                            val cur = rows.firstOrNull { it.key == track.uuid }
+                                                            val keys = trackRowKeys(uiState.tracks)
+                                                            val cur = rows.firstOrNull { it.key == rowKey }
                                                                 ?: return@detectDragGestures
                                                             val center = cur.offset + cur.size / 2f + dragOffset
                                                             // Swap with the row under the dragged row's centre.
                                                             val target = rows.firstOrNull {
-                                                                it.key != track.uuid && uiState.tracks.any { t -> t.uuid == it.key } &&
+                                                                it.key != rowKey && it.key in keys &&
                                                                         center >= it.offset && center < it.offset + it.size
                                                             }
                                                             if (target != null) {
-                                                                val from = uiState.tracks.indexOfFirst { it.uuid == track.uuid }
-                                                                val to = uiState.tracks.indexOfFirst { it.uuid == target.key }
+                                                                val from = keys.indexOf(rowKey)
+                                                                val to = keys.indexOf(target.key)
                                                                 if (from >= 0 && to >= 0) {
                                                                     libraryViewModel.moveTrackInPlaylist(from, to)
                                                                     val newOffset = if (to > from) target.offset + target.size - cur.size else target.offset
@@ -852,6 +854,15 @@ private data class LibraryDownloadBannerState(
     val currentDownload: DownloadItem?,
     val downloadQueue: List<DownloadItem>
 )
+
+/** One unique key per row: a song can be in a playlist twice, so the uuid alone is not enough. */
+private fun trackRowKeys(tracks: List<Track>): List<String> {
+    val seen = HashMap<String, Int>()
+    return tracks.map { t ->
+        val n = seen.merge(t.uuid, 1, Int::plus)!! - 1
+        "${t.uuid}#$n"
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

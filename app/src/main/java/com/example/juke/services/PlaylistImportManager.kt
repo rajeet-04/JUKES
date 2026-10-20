@@ -187,7 +187,9 @@ class PlaylistImportManager private constructor(context: Context) {
         queueManager.addDownloadTracking(track.name, artist, "playlist")
         return try {
             val downloaded = musicService.smartDownloadAndIndex(SpotifyApi.spotifyTrackToSong(track))
-            dao.insertPlaylistTrack(PlaylistTrackEntity(item.playlistId, downloaded.uuid, item.position))
+            // A song can resolve to a library track the playlist already has (listed twice on Spotify, or
+            // two versions of one song): keep it once.
+            dao.insertPlaylistTrackIfAbsent(item.playlistId, downloaded.uuid, item.position)
             dao.deletePendingImport(item.playlistId, item.position)
             true
         } catch (e: CancellationException) {

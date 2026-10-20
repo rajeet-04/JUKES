@@ -126,6 +126,24 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTrack(playlistTrack: PlaylistTrackEntity)
 
+    /**
+     * Insert unless the playlist already has this song. `position` is part of the primary key, so
+     * a plain insert at a new position would add the same song a second time.
+     */
+    @Query(
+        """
+        INSERT INTO playlist_tracks (playlist_id, track_uuid, position, added_at)
+        SELECT :playlistId, :trackUuid, :position, :addedAt
+        WHERE NOT EXISTS (SELECT 1 FROM playlist_tracks WHERE playlist_id = :playlistId AND track_uuid = :trackUuid)
+    """
+    )
+    suspend fun insertPlaylistTrackIfAbsent(
+        playlistId: String,
+        trackUuid: String,
+        position: Int,
+        addedAt: Long = System.currentTimeMillis()
+    )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTracks(playlistTracks: List<PlaylistTrackEntity>)
 
@@ -174,13 +192,23 @@ interface PlaylistDao {
     )
     fun getPlaylistTracksFlow(playlistId: String): Flow<List<TrackEntity>>
 
-    @Query("UPDATE playlist_tracks SET position = :position WHERE playlist_id = :playlistId AND track_uuid = :trackUuid")
-    suspend fun setPlaylistTrackPosition(playlistId: String, trackUuid: String, position: Int)
+    @Query("SELECT * FROM playlist_tracks WHERE playlist_id = :playlistId ORDER BY position ASC")
+    suspend fun getPlaylistTrackRows(playlistId: String): List<PlaylistTrackEntity>
 
-    /** Persist a user-chosen order: position = index in [trackUuids]. */
+    /**
+     * Persist a user-chosen order: position = index in [trackUuids]. `position` is part of the primary
+     * key and a song can be in a playlist more than once, so the rows are rewritten (keeping each
+     * row's added_at) rather than updated in place.
+     */
     @Transaction
     suspend fun setPlaylistOrder(playlistId: String, trackUuids: List<String>) {
-        trackUuids.forEachIndexed { index, uuid -> setPlaylistTrackPosition(playlistId, uuid, index) }
+        val pending = getPlaylistTrackRows(playlistId).groupBy { it.trackUuid }
+            .mapValues { ArrayDeque(it.value) }
+        val ordered = ArrayList<PlaylistTrackEntity>()
+        trackUuids.forEach { uuid -> pending[uuid]?.removeFirstOrNull()?.let { ordered += it } }
+        pending.values.forEach { ordered += it } // rows the list did not show keep their place at the end
+        deletePlaylistTracks(playlistId)
+        insertPlaylistTracks(ordered.mapIndexed { i, row -> row.copy(position = i) })
     }
 
     @Query("DELETE FROM playlists WHERE id = :playlistId")

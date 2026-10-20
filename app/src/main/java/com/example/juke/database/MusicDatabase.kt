@@ -192,6 +192,21 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
+/** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "DELETE FROM playlist_tracks WHERE EXISTS (SELECT 1 FROM playlist_tracks o " +
+                "WHERE o.playlist_id = playlist_tracks.playlist_id AND o.track_uuid = playlist_tracks.track_uuid " +
+                "AND o.position < playlist_tracks.position)"
+        )
+        db.execSQL(
+            "UPDATE playlists SET track_count = " +
+                "(SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id)"
+        )
+    }
+}
+
 class Converters {
     @TypeConverter
     fun fromStringList(value: List<String>?): String? {
@@ -209,7 +224,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -239,7 +254,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_7_8,
                         MIGRATION_8_9,
                         MIGRATION_9_10,
-                        MIGRATION_10_11
+                        MIGRATION_10_11,
+                        MIGRATION_11_12
                     )
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()

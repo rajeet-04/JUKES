@@ -2024,11 +2024,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
                 queue.forEachIndexed { i, t ->
-                    playlistDao.insertPlaylistTrack(
-                        PlaylistTrackEntity(
-                            playlistId = id, trackUuid = t.uuid, position = i, addedAt = System.currentTimeMillis()
-                        )
-                    )
+                    playlistDao.insertPlaylistTrackIfAbsent(id, t.uuid, i)
                 }
             }
             Toast.makeText(
