@@ -104,6 +104,8 @@ data class LyricLine(
 // Global render lead applies to existing and new tracks, in addition to per-track sync adjustments.
 const val DEFAULT_LYRICS_RENDER_OFFSET_MS = -500L
 
+private val INLINE_TIMESTAMP = """[\[<]\d{1,2}:\d{2}(?:[.:]\d{1,3})?[\]>]""".toRegex()
+
 // Helper moved to top level or util file, keeping here for now to avoid breaking changes if used elsewhere
 fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine> {
     val lines = mutableListOf<LyricLine>()
@@ -117,7 +119,8 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
             var text = match.groupValues[4]
 
             // Basic cleanup of lrc artifact chars
-            text = text.trim()
+            // Word-level sync files embed [mm:ss.xxx] / <mm:ss.xxx> stamps inside the line.
+            text = text.replace(INLINE_TIMESTAMP, "").trim()
 
             val millisFromFrac = when (frac.length) {
                 3 -> frac.toLongOrNull() ?: 0L
@@ -156,16 +159,17 @@ private fun CurrentLyricLine(
             .fillMaxWidth()
             .clickable(onClickLabel = "Open lyrics", onClick = onOpen)
     ) { shown ->
-        Box(Modifier.fillMaxSize().padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
+        // Left-aligned on the title's edge, bold and bright, as the line reads in Spotify.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
             Text(
                 text = shown,
                 style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    lineHeight = 20.sp
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    lineHeight = 22.sp
                 ),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Start,
                 maxLines = 2,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )

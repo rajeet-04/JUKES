@@ -15,3 +15,4 @@
 - Lyrics are fetched from `lrclib.net` directly instead of through the shared Cloudflare worker, which was hitting lrclib IP rate limits (HTTP 429).
 - Synced lyrics keep the active line at its reading position; the auto-scroll is no longer cancelled partway by position updates.
 - Player: with synced lyrics, the artwork rides up and the current lyric line shows under it (tap opens full lyrics).
+- Lyrics: inline word-sync timestamps no longer show inside lyric lines; the player lyric line is left-aligned and bold.
