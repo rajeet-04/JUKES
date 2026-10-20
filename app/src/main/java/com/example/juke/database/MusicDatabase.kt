@@ -404,6 +404,19 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     suspend fun getFavourites(): List<TrackEntity>
 
+    // Android Auto lists: no lyrics columns, so long lists can't overflow the CursorWindow
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun getRecentlyPlayedLight(limit: Int): List<TrackEntity>
+
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun getFavouritesLight(limit: Int): List<TrackEntity>
+
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun getDownloadedTracksLight(limit: Int): List<TrackEntity>
+
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun searchTracksLight(query: String, limit: Int): List<TrackEntity>
+
     // Title/artist only: enough to build song keys without loading lyrics columns
     @Query("SELECT title, artist FROM tracks WHERE is_favourite = 1")
     suspend fun getFavouriteTitleArtists(): List<TitleArtist>

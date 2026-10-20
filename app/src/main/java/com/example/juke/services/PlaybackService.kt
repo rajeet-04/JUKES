@@ -1099,19 +1099,18 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
+            // Ask Auto for list rows (1) rather than grid tiles, and say we support the hints.
+            val extras = Bundle().apply {
+                putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1)
+                putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1)
+            }
+            // A "recent" root is how Android resumes the last session on reconnecting to a car.
+            val rootId = if (params?.isRecent == true) AutoLibrary.RECENT else AutoLibrary.ROOT
             return Futures.immediateFuture(
                 LibraryResult.ofItem(
-                    MediaItem.Builder()
-                        .setMediaId("root")
-                        .setMediaMetadata(
-                            MediaMetadata.Builder()
-                                .setIsBrowsable(true)
-                                .setIsPlayable(false)
-                                .setTitle("JUKE")
-                                .build()
-                        )
-                        .build(),
-                    params
+                    AutoLibrary.folder(rootId, "JUKE"),
+                    LibraryParams.Builder().setExtras(extras).build()
                 )
             )
         }
@@ -1125,22 +1124,32 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            return when (parentId) {
-                "root" -> {
-                    // Root menu categories
-                    val items = ImmutableList.of(
-                        buildBrowsableItem("recent", "Recently Played"),
-                        buildBrowsableItem("favorites", "Favorites"),
-                        buildBrowsableItem("all_tracks", "All Tracks")
-                    )
-                    Futures.immediateFuture(LibraryResult.ofItemList(items, params))
-                }
-
-                "recent" -> loadRecentTracks(params)
-                "favorites" -> loadFavorites(params)
-                "all_tracks" -> loadAllTracks(params)
-                else -> Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+            val dao = database.trackDao()
+            val list: (suspend () -> List<com.example.juke.database.TrackEntity>)? = when (parentId) {
+                AutoLibrary.ROOT -> null
+                AutoLibrary.RECENT -> { { dao.getRecentlyPlayedLight(AutoLibrary.MAX_ITEMS) } }
+                AutoLibrary.FAVORITES -> { { dao.getFavouritesLight(AutoLibrary.MAX_ITEMS) } }
+                AutoLibrary.DOWNLOADS -> { { dao.getDownloadedTracksLight(AutoLibrary.MAX_ITEMS) } }
+                else -> return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
             }
+            if (list == null) {
+                val folders = ImmutableList.of(
+                    AutoLibrary.folder(AutoLibrary.RECENT, "Recently Played"),
+                    AutoLibrary.folder(AutoLibrary.FAVORITES, "Favorites"),
+                    AutoLibrary.folder(AutoLibrary.DOWNLOADS, "Downloaded")
+                )
+                return Futures.immediateFuture(LibraryResult.ofItemList(folders, params))
+            }
+            return serviceScope.async {
+                try {
+                    val items = AutoLibrary.pageOf(list(), page, pageSize)
+                        .map { AutoLibrary.browseItem(packageName, it.toTrack()) }
+                    LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+                } catch (e: Exception) {
+                    Log.e(tag, "Error loading $parentId: ${e.message}")
+                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
+                }
+            }.asListenableFuture()
         }
 
         @OptIn(UnstableApi::class)
@@ -1153,7 +1162,7 @@ class PlaybackService : MediaLibraryService() {
                 try {
                     val track = database.trackDao().getTrackByUuid(mediaId)?.toTrack()
                     if (track != null) {
-                        LibraryResult.ofItem(buildPlayableMediaItem(track), null)
+                        LibraryResult.ofItem(AutoLibrary.browseItem(packageName, track), null)
                     } else {
                         LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                     }
@@ -1164,77 +1173,100 @@ class PlaybackService : MediaLibraryService() {
             }.asListenableFuture()
         }
 
-        private fun buildBrowsableItem(mediaId: String, title: String): MediaItem {
-            return MediaItem.Builder()
-                .setMediaId(mediaId)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setIsBrowsable(true)
-                        .setIsPlayable(false)
-                        .setTitle(title)
-                        .build()
-                )
-                .build()
-        }
+        // -- Playing from the car --------------------------------------------------------------
 
-        private fun buildPlayableMediaItem(track: Track): MediaItem {
-            val metadataBuilder = MediaMetadata.Builder()
-                .setTitle(track.title)
-                .setArtist(track.artist)
-                .setIsBrowsable(false)
-                .setIsPlayable(true)
-
-            applyArtwork(metadataBuilder, track.thumbnailUri)
-
-            return MediaItem.Builder()
-                .setMediaId(track.uuid)
-                .setUri(track.localUri)
-                .setMediaMetadata(metadataBuilder.build())
-                .let { applyStreamHints(it, track.localUri) }
-                .build()
-        }
-
-        @OptIn(UnstableApi::class)
-        private fun loadRecentTracks(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+        /**
+         * Auto (and voice) send items that carry only a media id or a search query. Turn those
+         * into playable items, then start the radio from them like tapping a song in the app.
+         * Items that already have a URI are the app's own queue operations: pass them through.
+         */
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>
+        ): ListenableFuture<MutableList<MediaItem>> {
+            if (mediaItems.all { it.localConfiguration != null }) return Futures.immediateFuture(mediaItems)
             return serviceScope.async {
-                try {
-                    val tracks = database.trackDao().getRecentlyPlayed(20)
-                    val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
-                    LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
-                } catch (e: Exception) {
-                    Log.e(tag, "Error loading recent tracks: ${e.message}")
-                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
+                val tracks = ArrayList<Track>()
+                val items = mediaItems.flatMap { item ->
+                    if (item.localConfiguration != null) return@flatMap listOf(item)
+                    val resolved = resolveRequested(item)
+                    tracks += resolved
+                    resolved.mapNotNull { AutoLibrary.playbackItem(packageName, filesDir, it) }
                 }
+                if (items.isEmpty()) error("Nothing playable for ${mediaItems.map { it.mediaId }}")
+                startRadioFor(tracks)
+                items.toMutableList()
             }.asListenableFuture()
         }
 
+        /** The car reconnected and pressed play with an empty player: pick up the last song. */
         @OptIn(UnstableApi::class)
-        private fun loadFavorites(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            return serviceScope.async {
-                try {
-                    val tracks = database.trackDao().getFavourites()
-                    val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
-                    LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
-                } catch (e: Exception) {
-                    Log.e(tag, "Error loading favorites: ${e.message}")
-                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = serviceScope.async {
+            val track = database.trackDao().getRecentlyPlayedLight(1).firstOrNull()?.toTrack()
+                ?: error("No song to resume")
+            val item = AutoLibrary.playbackItem(packageName, filesDir, track) ?: error("Can't resume ${track.title}")
+            startRadioFor(listOf(track))
+            MediaSession.MediaItemsWithStartPosition(listOf(item), 0, 0L)
+        }.asListenableFuture()
+
+        private suspend fun resolveRequested(item: MediaItem): List<Track> {
+            val dao = database.trackDao()
+            val query = item.requestMetadata.searchQuery?.takeIf { it.isNotBlank() }
+            if (query == null) return listOfNotNull(dao.getTrackByUuid(item.mediaId)?.toTrack())
+            dao.searchTracksLight(query, 1).firstOrNull()?.let { return listOf(it.toTrack()) }
+            // Not in the library: find it online and stream it, as playing from search does.
+            return try {
+                val hit = SpotifyApi.search(query, listOf("track")).tracks?.items?.firstOrNull()
+                    ?: return emptyList()
+                val track = withContext(Dispatchers.IO) {
+                    musicService.streamTrack(SpotifyApi.spotifyTrackToSong(hit))
                 }
-            }.asListenableFuture()
+                dao.insertTrack(track.toEntity())
+                listOf(track)
+            } catch (e: Exception) {
+                Log.w(tag, "Voice search '$query' found nothing online: ${e.message}")
+                emptyList()
+            }
         }
 
-        @OptIn(UnstableApi::class)
-        private fun loadAllTracks(params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            return serviceScope.async {
-                try {
-                    val tracks = database.trackDao().getDownloadedTracks()
-                    val items = tracks.map { buildPlayableMediaItem(it.toTrack()) }
-                    LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
-                } catch (e: Exception) {
-                    Log.e(tag, "Error loading all tracks: ${e.message}")
-                    LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
-                }
-            }.asListenableFuture()
+        private suspend fun startRadioFor(tracks: List<Track>) {
+            if (tracks.isEmpty()) return
+            withContext(Dispatchers.Main) {
+                // The queue manager adds the radio through the app's controller, so it must be up.
+                PlaybackManager.getInstance(applicationContext).initialize()
+                queueManager.initializeQueue(tracks)
+            }
         }
+
+        // -- Search (voice or the search box in Auto) --------------------------------------------
+
+        override fun onSearch(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<Void>> = serviceScope.async {
+            val count = database.trackDao().searchTracksLight(query, AutoLibrary.MAX_ITEMS).size
+            session.notifySearchResultChanged(browser, query, count, params)
+            LibraryResult.ofVoid()
+        }.asListenableFuture()
+
+        override fun onGetSearchResult(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = serviceScope.async {
+            val tracks = database.trackDao().searchTracksLight(query, AutoLibrary.MAX_ITEMS)
+            val items = AutoLibrary.pageOf(tracks, page, pageSize).map { AutoLibrary.browseItem(packageName, it.toTrack()) }
+            LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+        }.asListenableFuture()
 
         /**
          * Bridges coroutine-based library queries to the Media3 callback API.
