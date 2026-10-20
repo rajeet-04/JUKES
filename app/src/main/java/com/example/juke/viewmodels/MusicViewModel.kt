@@ -822,6 +822,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         placeLibraryTracks(tracks, next = true, onComplete = onComplete)
     }
 
+    /** Album queue actions: [next] after the playing song, otherwise at the queue end, in album order. */
+    fun addAlbumTracks(tracks: List<Track>, next: Boolean, onComplete: (Boolean) -> Unit) {
+        if (next) addNext(tracks, onComplete) else addToQueue(tracks, onComplete)
+    }
+
     /** Move selected songs to the queue end, keeping one entry per UUID. */
     fun addToQueue(tracks: List<Track>, onComplete: ((Boolean) -> Unit)? = null) {
         placeLibraryTracks(tracks, next = false, onComplete = onComplete)

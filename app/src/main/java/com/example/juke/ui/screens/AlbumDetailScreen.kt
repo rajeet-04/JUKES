@@ -26,6 +26,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +69,35 @@ fun AlbumDetailScreen(
     val isSaving = album != null && (downloads.downloadQueue + listOfNotNull(downloads.currentDownload))
         .any { it.song.albumSpotifyId == album.id && it.status in listOf(DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING) }
     val wasRequested = savedAlbums.any { it.album.id == album?.id }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var showAlbumMenu by remember { mutableStateOf(false) }
+
+    // Same actions as a playlist. Playing works for any track (streamed if not saved); queueing
+    // only places songs already on the device, so it says when it had to leave some out.
+    fun playAlbum(shuffle: Boolean) {
+        val tracks = if (shuffle) uiState.tracks.shuffled() else uiState.tracks
+        if (album == null || tracks.isEmpty()) return
+        val locals = tracks.mapNotNull { it.findOfflineTrack(offlineTracks) }
+        if (locals.size == tracks.size) musicViewModel.setQueue(locals)
+        else musicViewModel.setQueueFromSimplifiedTracks(tracks, album, 0)
+    }
+    fun queueAlbum(next: Boolean) {
+        val locals = uiState.tracks.mapNotNull { it.findOfflineTrack(offlineTracks) }
+        if (locals.isEmpty()) {
+            android.widget.Toast.makeText(context, "Save the album offline to queue it", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val skipped = uiState.tracks.size - locals.size
+        musicViewModel.addAlbumTracks(locals, next) { ok ->
+            val what = if (next) "will play next" else "added to queue end"
+            android.widget.Toast.makeText(
+                context,
+                if (!ok) "Couldn’t queue the album"
+                else "${locals.size} ${if (locals.size == 1) "song" else "songs"} $what" + if (skipped > 0) " ($skipped not saved offline were skipped)" else "",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
 
     Scaffold(
@@ -188,6 +221,43 @@ fun AlbumDetailScreen(
                         uiState.error?.let { error ->
                             Text(error, color = MaterialTheme.colorScheme.error)
                             Button(onClick = { albumDetailViewModel.loadAlbumDetails(album) }) { Text("Retry loading tracks") }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = { playAlbum(false) },
+                                enabled = uiState.tracks.isNotEmpty(),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(JukeIcons.Play, null, Modifier.size(20.dp))
+                                Text("Play", Modifier.padding(start = 8.dp))
+                            }
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = { playAlbum(true) },
+                                enabled = uiState.tracks.isNotEmpty(),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(JukeIcons.Shuffle, null, Modifier.size(20.dp))
+                                Text("Shuffle", Modifier.padding(start = 8.dp))
+                            }
+                            Box {
+                                IconButton(onClick = { showAlbumMenu = true }, enabled = uiState.tracks.isNotEmpty()) {
+                                    Icon(JukeIcons.More, "Album options")
+                                }
+                                androidx.compose.material3.DropdownMenu(
+                                    expanded = showAlbumMenu,
+                                    onDismissRequest = { showAlbumMenu = false }
+                                ) {
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Play next") },
+                                        onClick = { showAlbumMenu = false; queueAlbum(true) }
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Add to queue") },
+                                        onClick = { showAlbumMenu = false; queueAlbum(false) }
+                                    )
+                                }
+                            }
                         }
                         Button(
                             onClick = { musicViewModel.saveAlbumOffline(album, uiState.tracks) },
