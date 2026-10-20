@@ -4,6 +4,33 @@
 
 ## [Unreleased]
 
+## [2.6.0-beta] - 2026-10-20
+
+### Added
+
+- Recommendations now match YouTube Music: the radio is seeded with the song's album-track (audio) upload, not a stored music-video id (about 36 of 50 picks in common instead of 16). The backend does the same.
+- Personalised radio from a connected YouTube Music account (Settings toggle: personalised backend radio first, or anonymous direct radio first).
+- Android Auto: list-style browse (Recently Played, Favorites, Downloaded), voice and search playback, resume on reconnect, and cover art.
+- Playlists: "Custom order" sort with drag-to-reorder; the order is saved per playlist and kept across restarts.
+- Queue: dragging a song slides the other rows aside to make room; the queue changes once on drop.
+- Albums: Play, Shuffle, Play next and Add to queue (queueing places the songs saved offline).
+- Player: with synced lyrics, the artwork rides up and the current lyric line shows under it (tap opens the full lyrics).
+
+### Changed
+
+- Spotify credentials moved off the device into a Cloudflare Worker (token cached in KV); builds need `SPOTIFY_TOKEN_KEY` instead of the client id and secret.
+- Lyrics are fetched from `lrclib.net` directly; the shared worker was rate-limited and has been removed (older builds lose lyrics).
+
+### Fixed
+
+- Search no longer fails when Spotify returns a playlist with a missing owner.
+- Restarting the app no longer fetches recommendations when the restored queue is already full.
+- Synced lyrics keep the active line at its reading position; unsynced lyrics are left-aligned, larger and remember their scroll position per song; inline word timestamps no longer show in lyric lines.
+- The search field no longer takes focus or shows the keyboard while the full player is open.
+- Playlists no longer get the same song twice, existing repeats are cleaned up once (database v12), and reordering a playlist with repeats no longer crashes.
+
+See full release notes: [v2.6.0-beta-RELEASE_NOTES.md](docs/v2.6.0-beta-RELEASE_NOTES.md)
+
 ## [2.5.1-beta] - 2026-10-12
 
 ### Fixed
