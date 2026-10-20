@@ -174,6 +174,15 @@ interface PlaylistDao {
     )
     fun getPlaylistTracksFlow(playlistId: String): Flow<List<TrackEntity>>
 
+    @Query("UPDATE playlist_tracks SET position = :position WHERE playlist_id = :playlistId AND track_uuid = :trackUuid")
+    suspend fun setPlaylistTrackPosition(playlistId: String, trackUuid: String, position: Int)
+
+    /** Persist a user-chosen order: position = index in [trackUuids]. */
+    @Transaction
+    suspend fun setPlaylistOrder(playlistId: String, trackUuids: List<String>) {
+        trackUuids.forEachIndexed { index, uuid -> setPlaylistTrackPosition(playlistId, uuid, index) }
+    }
+
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: String)
 

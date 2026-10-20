@@ -16,6 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -570,7 +576,15 @@ fun LibraryScreen(
                     }
                 }
             } else {
+                // Drag-to-reorder is only offered in a playlist's custom order (no search, no selection).
+                val canReorder = librarySection == 1 && uiState.selectedPlaylist != null &&
+                        uiState.sortOption == SortOption.CUSTOM && uiState.searchQuery.isBlank() &&
+                        !uiState.isSelectionMode
+                val listState = rememberLazyListState()
+                var draggingUuid by remember { mutableStateOf<String?>(null) }
+                var dragOffset by remember { mutableFloatStateOf(0f) }
                 LazyColumn(
+                    state = listState,
                     contentPadding = PaddingValues(
                         start = 20.dp,
                         top = 8.dp,
@@ -609,12 +623,23 @@ fun LibraryScreen(
                     // Show downloaded tracks
                     itemsIndexed(
                         items = uiState.tracks,
-                        key = { index, track -> "${track.uuid}_$index" }
+                        // Stable key in custom order so a dragged row keeps its identity as it moves.
+                        key = { index, track -> if (canReorder) track.uuid else "${track.uuid}_$index" }
                     ) { _, track ->
+                        val dragging = draggingUuid == track.uuid
+                        Box(
+                            Modifier
+                                .zIndex(if (dragging) 1f else 0f)
+                                .graphicsLayer {
+                                    translationY = if (dragging) dragOffset else 0f
+                                    shadowElevation = if (dragging) 12f else 0f
+                                }
+                                .then(if (canReorder && !dragging) Modifier.animateItem() else Modifier)
+                        ) {
                         SwipeToAddNextContainer(
                             onAddNext = { queueSongs(listOf(track), true) },
                             onDelete = { tracksForDelete = listOf(track) },
-                            enabled = !uiState.isSelectionMode && actionsEnabled
+                            enabled = !uiState.isSelectionMode && actionsEnabled && draggingUuid == null
                         ) {
                             LibraryTrackItem(
                                 track = track,
@@ -639,9 +664,77 @@ fun LibraryScreen(
                                     libraryViewModel.toggleFavorite(track.uuid)
                                 },
                                 trailingIcon = JukeIcons.More,
-                                onTrailingIconClick = { tracksForActions = listOf(track) }
-
+                                onTrailingIconClick = { tracksForActions = listOf(track) },
+                                dragHandle = if (!canReorder) null else {
+                                    {
+                                        Icon(
+                                            imageVector = JukeIcons.List,
+                                            contentDescription = "Drag to reorder ${track.title}",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                alpha = if (dragging) 1f else 0.6f
+                                            ),
+                                            modifier = Modifier
+                                                .padding(horizontal = 10.dp)
+                                                .size(24.dp)
+                                                .pointerInput(track.uuid) {
+                                                    detectDragGestures(
+                                                        onDragStart = {
+                                                            performHapticFeedback()
+                                                            draggingUuid = track.uuid
+                                                            dragOffset = 0f
+                                                        },
+                                                        onDragEnd = {
+                                                            draggingUuid = null
+                                                            dragOffset = 0f
+                                                            libraryViewModel.commitPlaylistOrder()
+                                                        },
+                                                        onDragCancel = {
+                                                            draggingUuid = null
+                                                            dragOffset = 0f
+                                                            libraryViewModel.commitPlaylistOrder()
+                                                        },
+                                                        onDrag = { change, amount ->
+                                                            change.consume()
+                                                            dragOffset += amount.y
+                                                            val info = listState.layoutInfo
+                                                            val rows = info.visibleItemsInfo
+                                                            val cur = rows.firstOrNull { it.key == track.uuid }
+                                                                ?: return@detectDragGestures
+                                                            val center = cur.offset + cur.size / 2f + dragOffset
+                                                            // Swap with the row under the dragged row's centre.
+                                                            val target = rows.firstOrNull {
+                                                                it.key != track.uuid && uiState.tracks.any { t -> t.uuid == it.key } &&
+                                                                        center >= it.offset && center < it.offset + it.size
+                                                            }
+                                                            if (target != null) {
+                                                                val from = uiState.tracks.indexOfFirst { it.uuid == track.uuid }
+                                                                val to = uiState.tracks.indexOfFirst { it.uuid == target.key }
+                                                                if (from >= 0 && to >= 0) {
+                                                                    libraryViewModel.moveTrackInPlaylist(from, to)
+                                                                    val newOffset = if (to > from) target.offset + target.size - cur.size else target.offset
+                                                                    dragOffset += cur.offset - newOffset
+                                                                }
+                                                            }
+                                                            // Edge auto-scroll keeps long playlists reachable.
+                                                            val top = info.viewportStartOffset + 96f
+                                                            val bottom = info.viewportEndOffset - 96f
+                                                            val scroll = when {
+                                                                center > bottom -> 24f
+                                                                center < top -> -24f
+                                                                else -> 0f
+                                                            }
+                                                            if (scroll != 0f) {
+                                                                val consumed = listState.dispatchRawDelta(scroll)
+                                                                dragOffset += consumed
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                        )
+                                    }
+                                }
                             )
+                        }
                         }
                     }
                 }
@@ -746,6 +839,7 @@ fun LibraryScreen(
     if (uiState.showSortSheet) {
         SortBottomSheet(
             currentSortStyle = uiState.sortOption,
+            showCustom = librarySection == 1 && uiState.selectedPlaylist != null,
             onSortSelected = { libraryViewModel.updateSortOption(it) },
             onDismissRequest = { libraryViewModel.toggleSortSheet() }
         )
@@ -763,6 +857,7 @@ private data class LibraryDownloadBannerState(
 @Composable
 private fun SortBottomSheet(
     currentSortStyle: SortOption,
+    showCustom: Boolean,
     onSortSelected: (SortOption) -> Unit,
     onDismissRequest: () -> Unit
 ) {
@@ -783,7 +878,8 @@ private fun SortBottomSheet(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            val sortOptions = listOf(
+            val sortOptions = listOfNotNull(
+                if (showCustom) SortOption.CUSTOM to "Custom order" else null,
                 SortOption.TITLE to "Title",
                 SortOption.RECENTLY_ADDED to "Recently Added",
                 SortOption.ARTIST to "Artist",

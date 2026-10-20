@@ -50,7 +50,9 @@ fun LibraryTrackItem(
     isSelected: Boolean = false,
     onLongClick: () -> Unit = {},
     onTrailingIconClick: () -> Unit = {},
-    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = JukeIcons.More
+    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = JukeIcons.More,
+    /** Reorder handle shown after the actions (playlist custom order). */
+    dragHandle: (@Composable () -> Unit)? = null
 ) {
     var isFavoritePressed by remember { mutableStateOf(false) }
     val favoriteScale by animateFloatAsState(
@@ -175,6 +177,7 @@ fun LibraryTrackItem(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+                dragHandle?.invoke()
             }
         }
         HorizontalDivider(

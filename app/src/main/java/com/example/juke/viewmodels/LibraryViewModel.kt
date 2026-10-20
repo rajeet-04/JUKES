@@ -23,7 +23,10 @@ enum class SortOption {
     TITLE,
     ARTIST,
     LAST_PLAYED,
-    MOST_PLAYED
+    MOST_PLAYED,
+
+    /** Playlists only: the order the user arranged (playlist_tracks.position). */
+    CUSTOM
 }
 
 data class LibraryUiState(
@@ -101,11 +104,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 trackDao.getDownloadedTracks().map { it.toTrack() }
             }
 
+            // Custom order belongs to a playlist; the library falls back to its default sort.
+            val sort = _uiState.value.sortOption.takeIf { it != SortOption.CUSTOM } ?: SortOption.RECENTLY_ADDED
             val filteredTracks = filterTracksBySearch(tracks, null)
-            val sortedTracks = sortTracks(filteredTracks, _uiState.value.sortOption)
+            val sortedTracks = sortTracks(filteredTracks, sort)
 
             _uiState.value = _uiState.value.copy(
                 tracks = sortedTracks,
+                sortOption = sort,
                 isLoading = false,
                 selectedPlaylist = null
             ).withVisibleSelection()
@@ -128,8 +134,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
             val playlist = playlistDao.getPlaylist(playlistId)
             val tracks = playlistDao.getPlaylistTracks(playlistId).map { it.toTrack() }
+            // Opening a playlist starts in its own (custom) order.
+            val sort = if (_uiState.value.selectedPlaylist?.id != playlistId) SortOption.CUSTOM
+            else _uiState.value.sortOption
+            _uiState.value = _uiState.value.copy(sortOption = sort)
             val filteredTracks = filterTracksBySearch(tracks, playlistId)
-            val sortedTracks = sortTracks(filteredTracks, _uiState.value.sortOption)
+            val sortedTracks = sortTracks(filteredTracks, sort)
 
             // Self-healing: Check if track count matches
             if (playlist != null && playlist.trackCount != tracks.size) {
@@ -286,7 +296,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             SortOption.ARTIST -> tracks.sortedBy { it.artist.lowercase() }
             SortOption.LAST_PLAYED -> tracks.sortedByDescending { it.lastPlayedAt }
             SortOption.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
+            SortOption.CUSTOM -> tracks // already in playlist_tracks.position order
         }
+    }
+
+    /** Live reorder while dragging in a playlist's custom order (not saved until [commitPlaylistOrder]). */
+    fun moveTrackInPlaylist(from: Int, to: Int) {
+        val list = _uiState.value.tracks.toMutableList()
+        if (from !in list.indices || to !in list.indices || from == to) return
+        list.add(to, list.removeAt(from))
+        _uiState.value = _uiState.value.copy(tracks = list)
+    }
+
+    fun commitPlaylistOrder() {
+        val state = _uiState.value
+        val playlist = state.selectedPlaylist ?: return
+        if (state.sortOption != SortOption.CUSTOM || state.searchQuery.isNotBlank()) return
+        val order = state.tracks.map { it.uuid }
+        viewModelScope.launch { playlistDao.setPlaylistOrder(playlist.id, order) }
     }
 
     fun updateSortOption(option: SortOption) {

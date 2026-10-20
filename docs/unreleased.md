@@ -17,3 +17,4 @@
 - Player: with synced lyrics, the artwork rides up and the current lyric line shows under it (tap opens full lyrics).
 - Lyrics: inline word-sync timestamps no longer show inside lyric lines; the player lyric line is left-aligned and bold.
 - Unsynced lyrics are left-aligned and larger, clear of the close button, and the scroll position is remembered per song when the lyrics are closed and reopened.
+- Playlists: new "Custom order" sort. Drag the handle on a song to reorder it; the order is saved per playlist and kept across restarts. Opening a playlist starts in its custom order; other sorts remain available.
