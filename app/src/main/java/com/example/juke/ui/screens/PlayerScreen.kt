@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,6 +60,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -157,7 +159,11 @@ private fun CurrentLyricLine(
         Box(Modifier.fillMaxSize().padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
             Text(
                 text = shown,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp
+                ),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                 textAlign = TextAlign.Center,
                 maxLines = 2,
@@ -364,37 +370,45 @@ fun PlayerScreen(
                     Spacer(modifier = Modifier.height(spacerSm))
 
                     // Artwork — fills a portion of screen height. The art is square, so a tall slot
-                    // leaves slack; with synced lyrics the art rides to the top and the slack under it
-                    // carries the current line (hidden when there is too little room for it).
+                    // leaves slack. With synced lyrics the art moves up a little and the rest of the
+                    // slack, between art and title, carries the current line. Without them (or with
+                    // too little room) the art stays centred as before.
                     BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(vertical = if (showLyrics) 0.dp else 8.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(vertical = if (showLyrics) 0.dp else 8.dp)
                     ) {
                         val slack = maxHeight - maxWidth
                         val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
                         val lineStrip = !showLyrics && syncedLyrics != null && slack >= 56.dp
-                        PlayerArtwork(
-                            modifier = if (lineStrip) Modifier.align(Alignment.TopCenter) else Modifier,
-                            queue = uiState.queue,
-                            queueIndex = uiState.queueIndex,
-                            currentTrack = displayTrack,
-                            currentPosition = uiState.position,
-                            showLyrics = showLyrics,
-                            musicViewModel = musicViewModel,
-                            isTablet = isTablet,
-                            onToggleLyrics = { showLyrics = !showLyrics }
-                        )
-                        if (lineStrip && syncedLyrics != null) {
-                            CurrentLyricLine(
-                                syncedLyrics = syncedLyrics,
-                                offsetMs = displayTrack.lyricsOffsetMs.toLong(),
-                                position = uiState.position,
-                                onOpen = { showLyrics = true },
-                                modifier = Modifier.align(Alignment.BottomCenter).height(slack)
-                            )
+                        Column(Modifier.fillMaxSize()) {
+                            Spacer(Modifier.height(if (lineStrip) slack * 0.25f else 0.dp))
+                            Box(
+                                modifier = if (lineStrip) Modifier.fillMaxWidth().aspectRatio(1f)
+                                else Modifier.fillMaxWidth().weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                PlayerArtwork(
+                                    queue = uiState.queue,
+                                    queueIndex = uiState.queueIndex,
+                                    currentTrack = displayTrack,
+                                    currentPosition = uiState.position,
+                                    showLyrics = showLyrics,
+                                    musicViewModel = musicViewModel,
+                                    isTablet = isTablet,
+                                    onToggleLyrics = { showLyrics = !showLyrics }
+                                )
+                            }
+                            if (lineStrip && syncedLyrics != null) {
+                                CurrentLyricLine(
+                                    syncedLyrics = syncedLyrics,
+                                    offsetMs = displayTrack.lyricsOffsetMs.toLong(),
+                                    position = uiState.position,
+                                    onOpen = { showLyrics = true },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
 
