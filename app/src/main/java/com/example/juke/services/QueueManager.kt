@@ -605,6 +605,9 @@ class QueueManager private constructor(private val context: Context) {
         var round = 0
 
         while (round++ < 6 && gen == sessionGen.get()) {
+            // Queue already holds the lookahead (e.g. restored on app start): no radio fetch needed.
+            if (ready - upcoming() <= 0) break
+
             // Running low on waiting songs: continue the radio.
             if (pendingRecs.size < ready) {
                 if (reserve.isEmpty()) refillReserve(current)

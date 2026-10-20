@@ -385,3 +385,7 @@ Potential improvements:
 - [ ] Cache popular recommendations
 - [ ] Configurable queue size thresholds
 - [ ] Download quality settings
+
+## Restoring a saved queue
+
+On app start the saved queue is restored from the database. `QueueManager.fillWindow` checks the queue against the lookahead (`recommendation_count`) before touching the radio, so a restored queue that is already full triggers no network fetch. The radio is only refilled once the queue runs low.
