@@ -7,6 +7,12 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import android.widget.Toast
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -192,7 +198,15 @@ private fun HomeFeed(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(state.newReleases, key = { it.id.orEmpty() }) { album ->
-                        ReleaseCard(album = album, onClick = { onAlbumClick(album) })
+                        ReleaseCard(
+                            album = album,
+                            onClick = { onAlbumClick(album) },
+                            actions = listOf(
+                                MenuAction("Open album") { onAlbumClick(album) },
+                                MenuAction("Play") { musicViewModel.playAlbum(album, shuffle = false) },
+                                MenuAction("Shuffle") { musicViewModel.playAlbum(album, shuffle = true) }
+                            )
+                        )
                     }
                 }
                 Spacer(Modifier.height(28.dp))
@@ -221,13 +235,8 @@ private fun HomeFeed(
                     items(section.tracks, key = { it.id.orEmpty() }) { track ->
                         RadioCard(
                             track = track,
-                            onClick = {
-                                musicViewModel.playInstant(
-                                    SpotifyApi.spotifyTrackToSong(
-                                        track
-                                    )
-                                )
-                            }
+                            onClick = { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
+                            actions = spotifyTrackActions(track, musicViewModel)
                         )
                     }
                 }
@@ -245,7 +254,10 @@ private fun HomeFeed(
                     itemsIndexed(rotation, key = { _, t -> t.uuid }) { index, track ->
                         LibraryCard(
                             track = track,
-                            onClick = { musicViewModel.setQueue(rotation, index) }
+                            onClick = { musicViewModel.setQueue(rotation, index) },
+                            actions = libraryTrackActions(track, musicViewModel) {
+                                musicViewModel.setQueue(rotation, index)
+                            }
                         )
                     }
                 }
@@ -322,8 +334,9 @@ private fun SectionHeader(
 private val releaseDateFormat = DateTimeFormatter.ofPattern("MMM d")
 
 @Composable
-private fun ReleaseCard(album: SpotifyAlbum, onClick: () -> Unit) {
+private fun ReleaseCard(album: SpotifyAlbum, onClick: () -> Unit, actions: List<MenuAction>) {
     val haptic = rememberJukeHaptics()
+    var menuOpen by remember { mutableStateOf(false) }
     val date = remember(album.releaseDate) {
         album.releaseDate?.let {
             runCatching {
@@ -341,11 +354,17 @@ private fun ReleaseCard(album: SpotifyAlbum, onClick: () -> Unit) {
                 contentDescription =
                     "${album.name}, $kind by $artist${date?.let { ", released $it" }.orEmpty()}"
             }
-            .clickable(role = Role.Button, onClickLabel = "Open ${album.name}") {
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "Open ${album.name}",
+                onLongClickLabel = "More options for ${album.name}",
+                onLongClick = { haptic.heavyClick(); menuOpen = true }
+            ) {
                 haptic.click()
                 onClick()
             }
     ) {
+        ActionMenu(menuOpen, { menuOpen = false }, actions)
         ArtImage(
             url = album.images.firstOrNull()?.url,
             modifier = Modifier
@@ -372,6 +391,44 @@ private fun ReleaseCard(album: SpotifyAlbum, onClick: () -> Unit) {
     }
 }
 
+/** One entry of a long-press menu. */
+private class MenuAction(val label: String, val run: () -> Unit)
+
+/** Long-press menu shown next to the pressed card or row. */
+@Composable
+private fun ActionMenu(expanded: Boolean, onDismiss: () -> Unit, actions: List<MenuAction>) {
+    if (actions.isEmpty()) return
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        actions.forEach { action ->
+            DropdownMenuItem(text = { Text(action.label) }, onClick = { onDismiss(); action.run() })
+        }
+    }
+}
+
+/** Play now, play next, add to queue for a song that isn't in the library yet. */
+@Composable
+private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewModel): List<MenuAction> {
+    val context = LocalContext.current
+    fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+    return listOf(
+        MenuAction("Play") { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
+        MenuAction("Play next") { musicViewModel.queueSpotifyTrack(track, next = true); say("${track.name} will play next") },
+        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") }
+    )
+}
+
+/** Play now, play next, add to queue for a song already in the library. */
+@Composable
+private fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, play: () -> Unit): List<MenuAction> {
+    val context = LocalContext.current
+    fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+    return listOf(
+        MenuAction("Play", play),
+        MenuAction("Play next") { musicViewModel.addNext(track); say("${track.title} will play next") },
+        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") }
+    )
+}
+
 @Composable
 private fun RadioList(section: RadioSection, musicViewModel: MusicViewModel) {
     val haptic = rememberJukeHaptics()
@@ -384,16 +441,23 @@ private fun RadioList(section: RadioSection, musicViewModel: MusicViewModel) {
     ) {
         section.tracks.take(5).forEach { track ->
             val artist = track.artists.joinToString(", ") { it.name }
+            var menuOpen by remember { mutableStateOf(false) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(role = Role.Button, onClickLabel = "Play ${track.name}") {
+                    .combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = "Play ${track.name}",
+                        onLongClickLabel = "More options for ${track.name}",
+                        onLongClick = { haptic.heavyClick(); menuOpen = true }
+                    ) {
                         haptic.click()
                         musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track))
                     }
                     .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                ActionMenu(menuOpen, { menuOpen = false }, spotifyTrackActions(track, musicViewModel))
                 ArtImage(
                     url = track.album.images.lastOrNull { (it.width ?: 0) >= 128 }?.url
                         ?: track.album.images.firstOrNull()?.url,
@@ -440,8 +504,9 @@ private fun RadioList(section: RadioSection, musicViewModel: MusicViewModel) {
 }
 
 @Composable
-private fun RadioCard(track: SpotifyTrack, onClick: () -> Unit) {
+private fun RadioCard(track: SpotifyTrack, onClick: () -> Unit, actions: List<MenuAction>) {
     CoverCard(
+        actions = actions,
         title = track.name,
         subtitle = track.artists.joinToString(", ") { it.name },
         imageUrl = track.album.images.firstOrNull()?.url,
@@ -451,8 +516,9 @@ private fun RadioCard(track: SpotifyTrack, onClick: () -> Unit) {
 }
 
 @Composable
-private fun LibraryCard(track: Track, onClick: () -> Unit) {
+private fun LibraryCard(track: Track, onClick: () -> Unit, actions: List<MenuAction>) {
     CoverCard(
+        actions = actions,
         title = track.title,
         subtitle = track.artist,
         imageUrl = track.thumbnailUri,
@@ -468,9 +534,11 @@ private fun CoverCard(
     subtitle: String,
     imageUrl: String?,
     onClick: () -> Unit,
-    description: String
+    description: String,
+    actions: List<MenuAction> = emptyList()
 ) {
     val haptic = rememberJukeHaptics()
+    var menuOpen by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -484,16 +552,19 @@ private fun CoverCard(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .glassPane(GlassShapes.Card, GlassLevel.Regular)
             .semantics(mergeDescendants = true) { contentDescription = description }
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 role = Role.Button,
-                onClickLabel = "Play $title"
+                onClickLabel = "Play $title",
+                onLongClickLabel = if (actions.isEmpty()) null else "More options for $title",
+                onLongClick = if (actions.isEmpty()) null else ({ haptic.heavyClick(); menuOpen = true })
             ) {
                 haptic.click()
                 onClick()
             }
     ) {
+        ActionMenu(menuOpen, { menuOpen = false }, actions)
         ArtImage(url = imageUrl, modifier = Modifier.fillMaxSize())
         Box(
             Modifier

@@ -14,6 +14,7 @@
 - Playlists: "Custom order" sort with drag-to-reorder; the order is saved per playlist and kept across restarts.
 - Queue: dragging a song slides the other rows aside to make room; the queue changes once on drop.
 - Albums: Play, Shuffle, Play next and Add to queue (queueing places the songs saved offline).
+- Home: press and hold any card or row for Play, Play next and Add to queue (album cards: Open album, Play, Shuffle).
 - Player: with synced lyrics, the artwork rides up and the current lyric line shows under it (tap opens the full lyrics).
 
 ### Changed

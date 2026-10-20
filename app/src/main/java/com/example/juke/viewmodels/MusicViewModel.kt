@@ -20,6 +20,7 @@ import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyAlbum
+import com.example.juke.models.collectAlbumTracks
 import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
@@ -901,6 +902,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun queueSpotifyTrackNext(
         spotifyTrack: SpotifyTrack,
         useStreamMode: Boolean = queueManager.isStreamMode
+    ) = queueSpotifyTrack(spotifyTrack, next = true, useStreamMode)
+
+    /** Queue a Spotify track after the playing song ([next]) or at the end of the queue. */
+    fun queueSpotifyTrack(
+        spotifyTrack: SpotifyTrack,
+        next: Boolean,
+        useStreamMode: Boolean = queueManager.isStreamMode
     ) {
         val spotdownSong = SpotifyApi.spotifyTrackToSong(spotifyTrack)
         val key = "${spotdownSong.title}-${spotdownSong.artist}"
@@ -942,7 +950,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val track = withContext(Dispatchers.IO) {
                     resolveQueueTrack(spotdownSong, useStreamMode)
                 }
-                addNext(track)
+                if (next) addNext(track) else addToQueue(listOf(track))
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Failed to queue Spotify track next: ${e.message}", e)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
@@ -950,6 +958,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 queueManager.removeDownloadTracking(spotdownSong.title, spotdownSong.artist)
                 pendingQueueOperations.remove(key)
                 _uiState.update { it.copy(isQueueOperationInProgress = false) }
+            }
+        }
+    }
+
+    /** Play an album (not necessarily saved) from the top, or shuffled, loading its full track list first. */
+    fun playAlbum(album: SpotifyAlbum, shuffle: Boolean) {
+        val id = album.id ?: return
+        viewModelScope.launch {
+            try {
+                val tracks = collectAlbumTracks { offset -> SpotifyApi.getAlbumTracks(id, offset = offset) }
+                val ordered = if (shuffle) tracks.shuffled() else tracks
+                val locals = ordered.mapNotNull { it.findOfflineTrack(offlineTracks.value) }
+                if (ordered.isNotEmpty() && locals.size == ordered.size) setQueue(locals)
+                else setQueueFromSimplifiedTracks(ordered, album, 0)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(getApplication(), "Couldn’t load the album: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
