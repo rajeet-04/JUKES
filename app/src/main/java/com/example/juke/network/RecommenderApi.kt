@@ -491,6 +491,72 @@ object RecommenderApi {
     suspend fun matchOnSpotify(rec: YouTubeRecommendation): ValidatedRecommendation? =
         validateSingleRecommendation(rec, ytIndex = 0)
 
+    // A song's radio depends on which upload seeds it: YouTube Music seeds with the album-track
+    // (audio) upload, while a stored id is often the music video, whose radio is quite different
+    // (about a third of the audio radio's picks for the same song). Cached per song.
+    private val audioSeeds = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private const val YT_MUSIC_SEARCH_URL = "https://music.youtube.com/youtubei/v1/search?prettyPrint=false"
+    private const val YT_SONGS_FILTER = "EgWKAQIIAWoSEAMQBBAJEA4QChAFEBEQEBAV"
+
+    /** The album-track (audio) video id for a song, or null when none matches the title and length. */
+    suspend fun audioSeedFor(title: String, artist: String, durationSec: Int): String? {
+        val key = songKey(title, artist)
+        audioSeeds[key]?.let { return it.takeIf { id -> id.isNotEmpty() } }
+        return try {
+            val body = mapOf(
+                "query" to "$title $artist",
+                "params" to YT_SONGS_FILTER,
+                "context" to mapOf(
+                    "client" to mapOf(
+                        "hl" to "en-IN", "gl" to "IN",
+                        "clientName" to "WEB_REMIX", "clientVersion" to "1.20251203.02.00"
+                    )
+                )
+            )
+            val response = ApiClient.httpClient.post(YT_MUSIC_SEARCH_URL) {
+                contentType(ContentType.Application.Json)
+                setBody(gson.toJson(body))
+                header("User-Agent", "Mozilla/5.0")
+            }
+            val root = gson.fromJson(response.body<ByteArray>().decodeToString(), JsonObject::class.java)
+            val wanted = SongTitle.parse(title)
+            val found = songRows(root).firstNotNullOfOrNull { row ->
+                val id = row.getAsJsonObject("playlistItemData")?.get("videoId")?.asString ?: return@firstNotNullOfOrNull null
+                val columns = row.getAsJsonArray("flexColumns") ?: return@firstNotNullOfOrNull null
+                fun text(i: Int): String {
+                    if (i >= columns.size()) return ""
+                    val runs = columns[i].asJsonObject
+                        .getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.getAsJsonObject("text")?.getAsJsonArray("runs") ?: return ""
+                    return runs.joinToString("") { it.asJsonObject.get("text")?.asString.orEmpty() }
+                }
+                val rowTitle = text(0)
+                val length = SongTitle.clockSeconds(text(1).substringAfterLast(" • "))
+                val sameSong = SongTitle.parse(rowTitle).core == wanted.core && !SongTitle.differentVersion(rowTitle, title)
+                val sameLength = durationSec <= 0 || length == null || abs(length - durationSec) <= 5
+                id.takeIf { sameSong && sameLength }
+            }
+            audioSeeds[key] = found.orEmpty()
+            found
+        } catch (e: Exception) {
+            Log.w(TAG, "Audio seed lookup failed for '$title': ${e.message}")
+            null
+        }
+    }
+
+    /** Song rows from a YouTube Music (songs-filtered) search response, best first. */
+    private fun songRows(node: com.google.gson.JsonElement, out: MutableList<JsonObject> = mutableListOf()): List<JsonObject> {
+        when {
+            node.isJsonObject -> {
+                val obj = node.asJsonObject
+                obj.getAsJsonObject("musicResponsiveListItemRenderer")?.let { out += it }
+                obj.entrySet().forEach { songRows(it.value, out) }
+            }
+            node.isJsonArray -> node.asJsonArray.forEach { songRows(it, out) }
+        }
+        return out
+    }
+
     /**
      * Fetch full radio queue recommendations from YouTube Music.
      * 

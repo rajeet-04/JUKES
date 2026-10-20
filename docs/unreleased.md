@@ -22,3 +22,4 @@
 - Fixed a crash when reordering a playlist that held the same song twice.
 - Queue: dragging a song now slides the other rows aside to make room, like in playlists; the queue is changed once on drop.
 - Albums: Play, Shuffle, Play next and Add to queue, like playlists (queueing places the songs saved offline).
+- Recommendations: the radio is now seeded with the song's album-track (audio) upload, as YouTube Music does, instead of a stored music-video id. For the same song this matches YouTube Music's queue far more closely (33 of 50 picks instead of 16).

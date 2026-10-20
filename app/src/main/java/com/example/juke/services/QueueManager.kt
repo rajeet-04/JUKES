@@ -791,9 +791,10 @@ class QueueManager private constructor(private val context: Context) {
         val candidates = (listOf(current) + _currentQueue.value.asReversed().take(4) +
                 playedTracksHistory.toList().asReversed().take(10)).distinctBy { it.uuid }
         for (track in candidates) {
-            val id = track.ytVideoId
+            val stored = track.ytVideoId
                 ?: RecommenderApi.getBestVideoMatch("${track.title} ${track.artist}", track.durationSec, track.artist)
-                ?: continue
+            // Seed with the album-track upload like YouTube Music does; the stored id is often the video.
+            val id = RecommenderApi.audioSeedFor(track.title, track.artist, track.durationSec) ?: stored ?: continue
             if (!usedSeeds.add(id)) continue
             val added = pullRadio(id, current, blacklist)
             if (added > 0) return added
