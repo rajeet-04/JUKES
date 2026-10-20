@@ -135,6 +135,38 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
     return lines.sortedBy { it.timeMs }
 }
 
+/** The line being sung, in the slack under the artwork; tap opens the full lyrics. */
+@Composable
+private fun CurrentLyricLine(
+    syncedLyrics: String,
+    offsetMs: Long,
+    position: Long,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val lines = remember(syncedLyrics, offsetMs) { parseSyncedLyrics(syncedLyrics, offsetMs) }
+    val text = lines.lastOrNull { it.timeMs <= position }?.text.orEmpty()
+    androidx.compose.animation.Crossfade(
+        targetState = text,
+        animationSpec = androidx.compose.animation.core.tween(220),
+        label = "currentLyricLine",
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = "Open lyrics", onClick = onOpen)
+    ) { shown ->
+        Box(Modifier.fillMaxSize().padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
+            Text(
+                text = shown,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @SuppressLint("ConfigurationScreenWidthHeight")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -331,15 +363,21 @@ fun PlayerScreen(
 
                     Spacer(modifier = Modifier.height(spacerSm))
 
-                    // Artwork — fills a portion of screen height
-                    Box(
+                    // Artwork — fills a portion of screen height. The art is square, so a tall slot
+                    // leaves slack; with synced lyrics the art rides to the top and the slack under it
+                    // carries the current line (hidden when there is too little room for it).
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                             .padding(vertical = if (showLyrics) 0.dp else 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
+                        val slack = maxHeight - maxWidth
+                        val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
+                        val lineStrip = !showLyrics && syncedLyrics != null && slack >= 56.dp
                         PlayerArtwork(
+                            modifier = if (lineStrip) Modifier.align(Alignment.TopCenter) else Modifier,
                             queue = uiState.queue,
                             queueIndex = uiState.queueIndex,
                             currentTrack = displayTrack,
@@ -349,6 +387,15 @@ fun PlayerScreen(
                             isTablet = isTablet,
                             onToggleLyrics = { showLyrics = !showLyrics }
                         )
+                        if (lineStrip && syncedLyrics != null) {
+                            CurrentLyricLine(
+                                syncedLyrics = syncedLyrics,
+                                offsetMs = displayTrack.lyricsOffsetMs.toLong(),
+                                position = uiState.position,
+                                onOpen = { showLyrics = true },
+                                modifier = Modifier.align(Alignment.BottomCenter).height(slack)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(spacerSm))
