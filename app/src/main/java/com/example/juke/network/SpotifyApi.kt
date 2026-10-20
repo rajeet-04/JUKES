@@ -86,7 +86,7 @@ object SpotifyApi {
 
     private const val SPOTMATE_BASE_URL = "https://spotmate.online"
     private const val GAMEPVZ_BASE_URL  = "https://gamepvz.com"
-    private const val LRCLIB_BASE_URL = "https://lrclib.meek.workers.dev"
+    private const val LRCLIB_BASE_URL = "https://lrclib.net/api/search"
     private const val YTM_BASE_URL = "https://music.youtube.com"
     private const val YT_BASE_URL  = "https://www.youtube.com"
     private const val GAMEPVZ_USER_AGENT =
@@ -915,7 +915,7 @@ object SpotifyApi {
             val cleanedTitle = cleanSongTitle(title)
             Log.d(
                 TAG,
-                "LRCLib Search: $LRCLIB_BASE_URL?track=$cleanedTitle&artist=$artist (Original: $title)"
+                "LRCLib Search: $LRCLIB_BASE_URL?track_name=$cleanedTitle&artist_name=$artist (Original: $title)"
             )
 
             val raw = lrclibGet {
@@ -923,10 +923,10 @@ object SpotifyApi {
                     "User-Agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
                 )
-                parameter("track", cleanedTitle)
-                parameter("artist", artist)
+                parameter("track_name", cleanedTitle)
+                parameter("artist_name", artist)
                 if (album.isNotBlank()) {
-                    parameter("album", album)
+                    parameter("album_name", album)
                 }
             }
             val lrclibBusy = raw == null
@@ -979,8 +979,8 @@ object SpotifyApi {
                                     "User-Agent",
                                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
                                 )
-                                parameter("track", cleanedTitle)
-                                parameter("artist", singleArtist)
+                                parameter("track_name", cleanedTitle)
+                                parameter("artist_name", singleArtist)
                             } ?: break // LRCLib went busy: stop the per-artist fan-out
 
                             val fallbackResults: List<LRCLibResult> = json.decodeFromString(fallbackRaw)
