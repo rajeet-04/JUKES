@@ -13,3 +13,4 @@
 - The search field no longer takes focus or brings up the keyboard while the full player is open.
 - Spotify credentials now live in a Cloudflare Worker (`spotdown-kv-worker`, token cached in KV for 3300 s). The app no longer ships the client id/secret; it needs `SPOTIFY_TOKEN_KEY` instead.
 - Lyrics are fetched from `lrclib.net` directly instead of through the shared Cloudflare worker, which was hitting lrclib IP rate limits (HTTP 429).
+- Synced lyrics keep the active line at its reading position; the auto-scroll is no longer cancelled partway by position updates.

@@ -180,31 +180,21 @@ fun LyricsOverlay(
                 parseSyncedLyrics(syncedLyrics, localOffsetMs.toLong())
             }
             val listState = rememberLazyListState()
-            var currentLineIndex by remember(currentTrack.uuid) { mutableIntStateOf(-1) }
+            // Before the first timestamp the first line is the active one.
+            val currentLineIndex = remember(lyricLines, currentPosition) {
+                lyricLines.indexOfLast { it.timeMs <= currentPosition }.coerceAtLeast(0)
+            }
             var isFirstScroll by remember(currentTrack.uuid) { mutableStateOf(true) }
 
-            LaunchedEffect(currentPosition, lyricLines) {
-                val newIndex = lyricLines.indexOfLast { it.timeMs <= currentPosition }
-                if (newIndex >= 0 && newIndex != currentLineIndex) {
-                    currentLineIndex = newIndex
-                    if (lyricLines.isNotEmpty() && !listState.isScrollInProgress) {
-                        if (isFirstScroll) {
-                            listState.scrollToItem(index = newIndex, scrollOffset = 0)
-                            isFirstScroll = false
-                        } else {
-                            listState.glideTo(newIndex)
-                        }
-                    }
-                } else if (newIndex < 0 && currentLineIndex != 0) {
-                    currentLineIndex = 0
-                    if (lyricLines.isNotEmpty() && !listState.isScrollInProgress) {
-                        if (isFirstScroll) {
-                            listState.scrollToItem(index = 0)
-                            isFirstScroll = false
-                        } else {
-                            listState.glideTo(0)
-                        }
-                    }
+            // Keyed on the line, not the position: a per-tick key cancels the glide mid-flight and
+            // leaves the active line stranded away from its resting spot.
+            LaunchedEffect(currentLineIndex, lyricLines) {
+                if (lyricLines.isEmpty()) return@LaunchedEffect
+                if (isFirstScroll) {
+                    listState.scrollToItem(index = currentLineIndex, scrollOffset = 0)
+                    isFirstScroll = false
+                } else {
+                    listState.glideTo(currentLineIndex)
                 }
             }
 
