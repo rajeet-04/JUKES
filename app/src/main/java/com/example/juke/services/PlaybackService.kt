@@ -52,6 +52,8 @@ import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.example.juke.R
 import com.example.juke.analytics.AnalyticsManager
+import com.example.juke.analytics.EventProperty
+import com.example.juke.analytics.EventType
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
@@ -1948,6 +1950,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                             }
 
                                             streamRecoveryAttempts[trackId] = attempts
+                                            AnalyticsManager.log(EventType.STREAM_RECOVERY, mapOf(EventProperty.ATTEMPT to attempts))
                                             Log.w(
                                                 tag,
                                                 "Recovering stream after source error for ${track.title} (attempt $attempts/$maxStreamRecoveryAttempts)"
@@ -1980,6 +1983,10 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                             streamSeekHandoff.trackChanged(mediaItem?.mediaId)
+                            when (reason) {
+                                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> AnalyticsManager.getIfInitialized()?.songTransition(true)
+                                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> AnalyticsManager.getIfInitialized()?.songTransition(false)
+                            }
                             mediaItem?.let { item ->
                                 val trackId = item.mediaId
                                 _currentTrackId.value = trackId
@@ -2017,7 +2024,8 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 songTitle = track.title,
                                                 songArtist = track.artist,
                                                 songDuration = track.durationSec * 1000L,
-                                                positionInQueue = currentIndex
+                                                positionInQueue = currentIndex,
+                                                isStream = track.isStream
                                             )
                                         } else {
                                             Log.w(

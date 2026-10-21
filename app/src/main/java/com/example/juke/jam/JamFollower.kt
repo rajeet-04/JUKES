@@ -82,6 +82,7 @@ object JamFollower {
                 if (!sameSong(cur, item)) {
                     if (startedFor == pb.itemId && gaveUpOn != pb.itemId && System.currentTimeMillis() - startedAt > LOAD_TIMEOUT_MS) {
                         gaveUpOn = pb.itemId // others keep listening; this phone can skip to the next song
+                        com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.JAM_SONG_FAILED)
                         JamSession.toast("Couldn't load \"${item.title}\" on this phone")
                     }
                     if (startedFor != pb.itemId) {

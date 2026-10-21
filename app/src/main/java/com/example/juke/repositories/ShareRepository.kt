@@ -77,6 +77,7 @@ class ShareRepository(private val playlistDao: PlaylistDao) {
     /** Saves a copy to the library; the songs download in the background like a Spotify import. */
     suspend fun savePlaylist(shared: SharedPlaylist, importManager: PlaylistImportManager): String {
         val entity = PlaylistEntity(id = UUID.randomUUID().toString(), name = shared.name, description = shared.description)
+        com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SHARED_PLAYLIST_SAVED, mapOf(com.example.juke.analytics.EventProperty.SONG_COUNT to shared.tracks.size))
         // Look the songs up on Spotify for the real artwork, album and artists; the snapshot only has titles and ids.
         val full = HashMap<String, SpotifyTrack>()
         shared.tracks.mapNotNull { it.spotifyId }.distinct().chunked(50).forEach { ids ->

@@ -1,5 +1,8 @@
 package com.example.juke.jam
 
+import com.example.juke.analytics.AnalyticsManager
+import com.example.juke.analytics.EventProperty
+import com.example.juke.analytics.EventType
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -134,6 +137,9 @@ object JamSession {
     val playbackChanged = Channel<Unit>(Channel.CONFLATED)
     /** Someone pressed Mix: the host starts a fresh radio from the current song. */
     val mixRequested = Channel<Unit>(Channel.CONFLATED)
+
+    /** The songs still to come when this user leaves on purpose, so the app can keep them as the local queue. */
+    val leftWithQueue = Channel<List<JamItem>>(Channel.CONFLATED)
     private val nudge = Channel<Unit>(Channel.CONFLATED) // wakes a waiting reconnect (network back, app in front)
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var lifecycleHooked = false
@@ -155,7 +161,7 @@ object JamSession {
     /** Asks the Worker for a new room; null if that failed. */
     suspend fun create(): String? = try {
         val res = ApiClient.httpClient.post("$BASE/jam") { header("X-App-Secret", BuildConfig.SPOTIFY_TOKEN_KEY) }
-        if (res.status.isSuccess()) res.body<Created>().code else null
+        if (res.status.isSuccess()) res.body<Created>().code.also { AnalyticsManager.log(EventType.JAM_CREATED) } else null
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -176,8 +182,10 @@ object JamSession {
     @Volatile private var pendingSeed: Seed? = null
 
     /** [seed] only counts if this phone ends up as host of a brand-new room. */
-    fun join(context: Context, code: String, name: String, seed: Seed? = null) {
+    fun join(context: Context, code: String, name: String, seed: Seed? = null, via: String = "code") {
         val app = context.applicationContext
+        joinedAt = System.currentTimeMillis()
+        AnalyticsManager.log(EventType.JAM_JOINED, mapOf(EventProperty.VIA to via, EventProperty.SEEDED to (seed != null)))
         stop()
         pendingSeed = seed
         saveName(app, name)
@@ -188,7 +196,22 @@ object JamSession {
         loop = scope.launch { run(code.uppercase(), id, name.trim().take(24).ifBlank { "Guest" }) }
     }
 
+    @Volatile private var joinedAt = 0L
+
     fun leave() {
+        val st = _state.value
+        AnalyticsManager.log(
+            EventType.JAM_LEFT,
+            mapOf(
+                EventProperty.DURATION_SECONDS to (System.currentTimeMillis() - joinedAt) / 1000,
+                EventProperty.MEMBERS to st.members.size,
+                EventProperty.QUEUE_SIZE to st.queue.size,
+                EventProperty.IS_HOST to (st.hostId != null && st.hostId == st.you)
+            )
+        )
+        val idx = st.queue.indexOfFirst { it.id == st.playback?.itemId }
+        val upNext = if (idx >= 0) st.queue.drop(idx + 1) else st.queue
+        if (upNext.isNotEmpty()) leftWithQueue.trySend(upNext)
         stop()
         appContext?.let { clearSession(it) } // leaving on purpose: don't rejoin next time the app opens
         _state.value = UiState()
@@ -214,7 +237,7 @@ object JamSession {
         val code = p.getString("session_code", null) ?: return
         if (System.currentTimeMillis() - p.getLong("session_at", 0) > ROOM_MAX_IDLE_MS) { clearSession(context); return }
         resumed = true
-        join(context, code, p.getString("session_name", null) ?: savedName(context))
+        join(context, code, p.getString("session_name", null) ?: savedName(context), via = "resume")
     }
 
     fun add(track: JamTrack, afterId: String? = null): Boolean = send(buildJsonObject {
@@ -263,7 +286,7 @@ object JamSession {
         })
 
     /** "Mix": a fresh radio from the current song for the whole room. */
-    fun mix(): Boolean = send(buildJsonObject { put("t", "mix") })
+    fun mix(): Boolean = AnalyticsManager.log(EventType.JAM_MIX).let { send(buildJsonObject { put("t", "mix") }) }
 
     fun pause(): Boolean = send(buildJsonObject { put("t", "pause") })
 

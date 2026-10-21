@@ -849,6 +849,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Move selected songs to the queue end, keeping one entry per UUID. */
     fun addToQueue(tracks: List<Track>, onComplete: ((Boolean) -> Unit)? = null) {
+        com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.QUEUE_ADDED, mapOf(com.example.juke.analytics.EventProperty.SONG_COUNT to tracks.size, com.example.juke.analytics.EventProperty.IN_JAM to com.example.juke.jam.JamSession.state.value.active))
         if (JamControls.addToEnd(tracks.map { it.toJamPick() })) { onComplete?.invoke(true); return }
         placeLibraryTracks(tracks, next = false, onComplete = onComplete)
     }
@@ -1546,6 +1547,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Remove a queued song; [index] picks the entry when the song is queued twice. */
     fun removeFromQueue(trackId: String, index: Int? = null) {
+        com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.QUEUE_REMOVED, mapOf(com.example.juke.analytics.EventProperty.IN_JAM to com.example.juke.jam.JamSession.state.value.active))
         viewModelScope.launch {
             // Set loading state
             _uiState.update { it.copy(isQueueOperationInProgress = true) }
@@ -1670,6 +1672,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleFavorite(track: Track) {
         viewModelScope.launch {
             val newStatus = !track.isFavourite
+            com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.FAVORITE_TOGGLED, mapOf(com.example.juke.analytics.EventProperty.FAVORITE to newStatus))
             trackDao.updateTrackFavourite(track.uuid, newStatus)
 
             // Emit to PlaybackManager so everyone stays in sync (including ourselves via the flow above)
@@ -1684,6 +1687,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val sleepTimerRemaining = playbackManager.sleepTimerRemaining
 
     fun startSleepTimer(minutes: Int) {
+        com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SLEEP_TIMER_STARTED, mapOf(com.example.juke.analytics.EventProperty.MINUTES to minutes))
         playbackManager.startSleepTimer(minutes)
     }
 

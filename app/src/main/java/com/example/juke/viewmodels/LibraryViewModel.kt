@@ -332,6 +332,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun createPlaylist(name: String, onCreated: ((String) -> Unit)? = null) {
         viewModelScope.launch {
             val uuid = java.util.UUID.randomUUID().toString()
+            com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.PLAYLIST_CREATED)
             val newPlaylist = PlaylistEntity(
                 id = uuid,
                 name = name,
@@ -398,6 +399,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 android.util.Log.w("LibraryViewModel", "Share failed: ${e.message}")
                 null
             }
+            com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SHARE_LINK_CREATED, mapOf(com.example.juke.analytics.EventProperty.SUCCESS to (link != null)))
             onResult(link)
         }
     }
@@ -493,6 +495,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     /** Atomic append: skip existing songs and use persisted positions and counts. */
     suspend fun addTracksToPlaylist(playlist: PlaylistEntity, tracks: List<Track>): Int {
+        com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.ADDED_TO_PLAYLIST, mapOf(com.example.juke.analytics.EventProperty.SONG_COUNT to tracks.size))
         val added = database.withTransaction {
             checkNotNull(playlistDao.getPlaylist(playlist.id)) { "This playlist no longer exists." }
             val existing = playlistDao.getPlaylistTracks(playlist.id).map { it.uuid }.toSet()

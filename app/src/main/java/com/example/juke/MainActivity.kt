@@ -59,6 +59,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.juke.analytics.AnalyticsManager
+import com.example.juke.repositories.toSpotifyTrack
 import com.example.juke.models.GithubRelease
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.UpdateDownloadState
@@ -251,6 +252,16 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(jamActive.active) { // the host's radio keeps the shared queue topped up
                     if (jamActive.active) com.example.juke.jam.JamRadio.run(musicViewModel)
                 }
+                LaunchedEffect(Unit) { // leaving a Jam keeps what was coming up as this phone's own queue
+                    for (items in com.example.juke.jam.JamSession.leftWithQueue) {
+                        items.forEach { item ->
+                            val track = com.example.juke.repositories.SharedTrack(item.title, item.artist, item.durationSec, item.spotifyId, null, item.thumb).toSpotifyTrack()
+                                ?: return@forEach
+                            musicViewModel.queueSpotifyTrack(track, next = false)
+                            while (musicViewModel.uiState.value.isQueueOperationInProgress) kotlinx.coroutines.delay(50)
+                        }
+                    }
+                }
                 val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
                 if (jamSheetOpen) {
                     com.example.juke.ui.components.JamSheet(
@@ -270,6 +281,9 @@ class MainActivity : ComponentActivity() {
 
                 var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
 
+                LaunchedEffect(currentRoute) { // which screens people actually use
+                    currentRoute?.let { com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
+                }
                 LaunchedEffect(currentRoute) {
                     if (
                         currentRoute == Screen.Home.route ||
@@ -750,7 +764,7 @@ private fun JoinJamDialog(code: String, onDismiss: () -> Unit) {
         },
         confirmButton = {
             if (live) androidx.compose.material3.TextButton(onClick = {
-                com.example.juke.jam.JamSession.join(context, code, com.example.juke.jam.JamSession.savedName(context))
+                com.example.juke.jam.JamSession.join(context, code, com.example.juke.jam.JamSession.savedName(context), via = "link")
                 com.example.juke.jam.JamSession.sheetOpen.value = true
                 onDismiss()
             }) { Text("Join") }
