@@ -78,6 +78,7 @@ import com.example.juke.ui.components.PlayerSkeleton
 import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
+import com.example.juke.jam.toTrack
 import com.example.juke.ui.components.player.QueueBottomSheetContent
 import com.example.juke.ui.theme.GlassBackdrop
 import com.example.juke.ui.theme.GlassCard
@@ -393,9 +394,14 @@ fun PlayerScreen(
                                 else Modifier.fillMaxWidth().weight(1f),
                                 contentAlignment = Alignment.Center
                             ) {
+                                // In a Jam the artwork swipes through the room's queue, not this phone's one-song queue
+                                val jamNow by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+                                val roomQueue = remember(jamNow.queue) { jamNow.queue.map { it.toTrack() } }
+                                val roomIndex = jamNow.playback?.itemId?.let { id -> jamNow.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+                                val showRoom = jamNow.active && roomQueue.isNotEmpty() && roomIndex != null
                                 PlayerArtwork(
-                                    queue = uiState.queue,
-                                    queueIndex = uiState.queueIndex,
+                                    queue = if (showRoom) roomQueue else uiState.queue,
+                                    queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
                                     currentTrack = displayTrack,
                                     currentPosition = uiState.position,
                                     showLyrics = showLyrics,
@@ -590,29 +596,42 @@ fun PlayerScreen(
             val rec by musicViewModel.recStatus.collectAsStateWithLifecycle()
             val pending by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
             val heldNext by musicViewModel.heldNextSongs.collectAsStateWithLifecycle()
+            // In a Jam the queue is the room's: shown from it, and every edit goes to it
+            val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+            val inJam = jam.active
+            val jamQueue = remember(jam.queue) { jam.queue.map { it.toTrack() } }
+            val jamIndex = jam.playback?.itemId?.let { id -> jam.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
             QueueBottomSheetContent(
                 statusText = when {
+                    inJam -> "Jam ${jam.code ?: ""} · everyone hears this queue"
                     rec.resolving > 0 -> "Loading next songs… (${rec.resolving})"
                     else -> null
                 },
-                pending = pending,
+                pending = if (inJam) emptyList() else pending,
                 onPlayPending = { id -> musicViewModel.playPendingSong(id) },
                 onRemovePending = { id -> musicViewModel.removePendingSong(id) },
-                heldNext = heldNext,
+                heldNext = if (inJam) emptyList() else heldNext,
                 onPlayNextCopy = { track -> musicViewModel.playNextCopy(track) },
                 onPlayNextPending = { id -> musicViewModel.playNextPending(id) },
                 currentTrack = currentTrack,
-                queue = uiState.queue,
-                queueIndex = uiState.queueIndex,
+                queue = if (inJam) jamQueue else uiState.queue,
+                queueIndex = if (inJam) jamIndex else uiState.queueIndex,
                 uiState = uiState,
                 onClose = { showQueue = false },
-                onMoveTrack = { from, to -> musicViewModel.moveInQueue(from, to) },
-                onRemoveTrack = { id, index -> musicViewModel.removeFromQueue(id, index) },
-                onPlayTrack = { track, index -> musicViewModel.playTrackFromQueue(track, index) },
-                onShuffleUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
-                onSortUpcoming = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
-                onClearPlayed = { musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },
-                onSaveAsPlaylist = { name, includeWaiting -> musicViewModel.saveQueueAsPlaylist(name, includeWaiting) },
+                onMoveTrack = { from, to ->
+                    if (inJam) com.example.juke.jam.JamControls.move(from, to) else musicViewModel.moveInQueue(from, to)
+                },
+                onRemoveTrack = { id, index ->
+                    if (inJam) com.example.juke.jam.JamSession.remove(id) else musicViewModel.removeFromQueue(id, index)
+                },
+                onPlayTrack = { track, index ->
+                    if (inJam) com.example.juke.jam.JamSession.play(track.uuid) else musicViewModel.playTrackFromQueue(track, index)
+                },
+                // These rewrite this phone's own queue, which in a Jam is the room's
+                onShuffleUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
+                onSortUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
+                onClearPlayed = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },
+                onSaveAsPlaylist = { name, includeWaiting -> if (!inJam) musicViewModel.saveQueueAsPlaylist(name, includeWaiting) },
                 suggestedPlaylistName = { musicViewModel.suggestedQueuePlaylistName() }
             )
         }

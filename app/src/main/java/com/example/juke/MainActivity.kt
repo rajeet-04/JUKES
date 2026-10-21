@@ -138,6 +138,9 @@ class MainActivity : ComponentActivity() {
         // Check intent immediately
         handlePlayerIntent(intent)
 
+        // Back into the Jam this phone was in when the app was closed, if it didn't leave it
+        com.example.juke.jam.JamSession.resume(applicationContext)
+
         setContent {
             val musicViewModel: MusicViewModel = viewModel()
             val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
@@ -240,6 +243,13 @@ class MainActivity : ComponentActivity() {
                 }
                 pendingJamCode.value?.let { code ->
                     JoinJamDialog(code, onDismiss = { pendingJamCode.value = null })
+                }
+                val jamActive by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+                LaunchedEffect(jamActive.active) { // follow the room's playback while in a Jam
+                    if (jamActive.active) com.example.juke.jam.JamFollower.run(musicViewModel)
+                }
+                LaunchedEffect(jamActive.active) { // the host's radio keeps the shared queue topped up
+                    if (jamActive.active) com.example.juke.jam.JamRadio.run(musicViewModel)
                 }
                 val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
                 if (jamSheetOpen) {

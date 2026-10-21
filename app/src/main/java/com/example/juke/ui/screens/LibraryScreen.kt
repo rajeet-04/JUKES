@@ -674,7 +674,8 @@ fun LibraryScreen(
                                     } else {
                                         musicViewModel.setQueue(
                                             uiState.tracks,
-                                            uiState.tracks.indexOf(track)
+                                            uiState.tracks.indexOf(track),
+                                            jamSingle = true
                                         )
                                     }
                                 },

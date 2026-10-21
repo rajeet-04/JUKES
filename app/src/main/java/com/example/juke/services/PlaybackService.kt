@@ -23,6 +23,10 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import com.example.juke.jam.JamControls
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import com.example.juke.jam.JamSession
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
@@ -194,6 +198,46 @@ class PlaybackService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
+
+    /**
+     * What the session (notification, lock screen, Bluetooth, car) talks to. In a Jam this phone's own player holds
+     * just the song that is playing, so on its own it would say there is no next or previous song; this wrapper says
+     * there is whenever the room has more than one, and passes those two commands to the room.
+     */
+    private val jamAwarePlayer: JamAwarePlayer by lazy { JamAwarePlayer(player) }
+
+    private inner class JamAwarePlayer(wrapped: Player) : androidx.media3.common.ForwardingPlayer(wrapped) {
+        private val listeners = java.util.concurrent.CopyOnWriteArraySet<Player.Listener>()
+
+        fun roomHasQueue(): Boolean = JamSession.state.value.let { it.active && it.status == JamSession.Status.CONNECTED && it.queue.size > 1 }
+
+        override fun addListener(listener: Player.Listener) { listeners += listener; super.addListener(listener) }
+        override fun removeListener(listener: Player.Listener) { listeners -= listener; super.removeListener(listener) }
+
+        override fun getAvailableCommands(): Player.Commands {
+            val base = super.getAvailableCommands()
+            if (!roomHasQueue()) return base
+            return base.buildUpon().addAll(
+                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
+            ).build()
+        }
+
+        override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
+        override fun hasNextMediaItem(): Boolean = roomHasQueue() || super.hasNextMediaItem()
+        override fun hasPreviousMediaItem(): Boolean = roomHasQueue() || super.hasPreviousMediaItem()
+
+        override fun seekToNext() { if (!JamControls.next()) super.seekToNext() }
+        override fun seekToNextMediaItem() { if (!JamControls.next()) super.seekToNextMediaItem() }
+        override fun seekToPrevious() { if (!JamControls.previous()) super.seekToPrevious() }
+        override fun seekToPreviousMediaItem() { if (!JamControls.previous()) super.seekToPreviousMediaItem() }
+
+        /** The room gained or lost its queue: tell the session so the notification shows or hides Next and Previous. */
+        fun commandsMayHaveChanged() {
+            val commands = availableCommands
+            listeners.forEach { it.onAvailableCommandsChanged(commands) }
+        }
+    }
     private lateinit var database: MusicDatabase
     private val musicService by lazy { MusicService(applicationContext) }
     private val queueManager by lazy { QueueManager.getInstance(applicationContext) }
@@ -727,6 +771,13 @@ class PlaybackService : MediaLibraryService() {
 
         player.addListener(callGuard)
 
+        // Keep the notification's Next/Previous in step with the room having a queue to move through
+        serviceScope.launch {
+            JamSession.state.map { it.active && it.status == JamSession.Status.CONNECTED && it.queue.size > 1 }
+                .distinctUntilChanged()
+                .collect { jamAwarePlayer.commandsMayHaveChanged() }
+        }
+
         // Listen for audio session ID changes to attach audio effects
         player.addAnalyticsListener(object : AnalyticsListener {
             override fun onAudioSessionIdChanged(
@@ -762,7 +813,7 @@ class PlaybackService : MediaLibraryService() {
 
         val bitmapLoader = DataSourceBitmapLoader(this)
 
-        mediaSession = MediaLibrarySession.Builder(this, player, MediaLibrarySessionCallback())
+        mediaSession = MediaLibrarySession.Builder(this, jamAwarePlayer, MediaLibrarySessionCallback())
             .apply {
                 sessionActivityPendingIntent?.let { setSessionActivity(it) }
             }
@@ -1054,6 +1105,19 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             @Player.Command playerCommand: Int
         ): Int {
+            // In a Jam, controls that come from outside the app (notification, lock screen, headset, car) drive the room.
+            // The app's own controller is routed by PlaybackManager, so its commands pass through untouched.
+            if (com.example.juke.jam.JamSession.state.value.active &&
+                (session.isMediaNotificationController(controller) || controller.packageName != packageName)
+            ) {
+                val taken = when (playerCommand) {
+                    Player.COMMAND_PLAY_PAUSE -> com.example.juke.jam.JamControls.togglePlayPause()
+                    Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> com.example.juke.jam.JamControls.next()
+                    Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> com.example.juke.jam.JamControls.previous()
+                    else -> false
+                }
+                if (taken) return SessionResult.RESULT_INFO_SKIPPED
+            }
             rememberManualTrackChangeRequest(playerCommand)
             return super.onPlayerCommandRequest(session, controller, playerCommand)
         }
@@ -2187,7 +2251,11 @@ class PlaybackManager private constructor(private val context: Context) {
         controller?.setPlaybackSpeed(speed)
     }
 
+    /** Set by the Jam while it drives this player, so its own commands aren't re-routed back to the room. */
+    @Volatile var jamApplying = false
+
     fun togglePlayPause() {
+        if (!jamApplying && com.example.juke.jam.JamControls.togglePlayPause()) return // in a Jam the room plays/pauses
         controller?.let {
             if (it.isPlaying) {
                 it.pause()
@@ -2222,11 +2290,13 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun skipToNext() {
+        if (!jamApplying && com.example.juke.jam.JamControls.next()) return
         runTrackChangeStartingPlaybackIfTrackChanged { it.seekToNext() }
         Log.d(tag, "Skip to next")
     }
 
     fun skipToPrevious() {
+        if (!jamApplying && com.example.juke.jam.JamControls.previous()) return
         runTrackChangeStartingPlaybackIfTrackChanged {
             if (it.currentPosition > 3000) {
                 it.seekTo(0)
@@ -2299,6 +2369,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
+        if (!jamApplying && com.example.juke.jam.JamControls.seekTo(positionMs)) return
         val ctrl = controller ?: return
         val item = ctrl.currentMediaItem ?: return
         val target = positionMs.coerceAtLeast(0)

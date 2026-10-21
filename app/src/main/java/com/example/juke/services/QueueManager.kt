@@ -429,6 +429,12 @@ class QueueManager private constructor(private val context: Context) {
     private val inFlight = java.util.concurrent.ConcurrentHashMap<String, Deferred<Track?>>()
     /** Video ids already delivered to the queue this session. */
     private val delivered: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    /** The same songs by title/artist key, for telling radio songs from ones the listener queued (see [isRadioSong]). */
+    private val deliveredKeys: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** True if the radio put this song in the queue, false if the listener did. */
+    fun isRadioSong(track: Track): Boolean =
+        (track.ytVideoId?.let { it in delivered } == true) || songKey(track) in deliveredKeys
     private val _pending = MutableStateFlow<List<PendingSong>>(emptyList())
     val pending: StateFlow<List<PendingSong>> = _pending.asStateFlow()
 
@@ -525,6 +531,7 @@ class QueueManager private constructor(private val context: Context) {
         pendingRecs.clear()
         inFlight.clear()
         delivered.clear()
+        deliveredKeys.clear()
         copies.clear()
         _heldNext.value = emptyList()
         publishPending()
@@ -541,7 +548,7 @@ class QueueManager private constructor(private val context: Context) {
      */
     private fun queuedKeys(current: Track): com.example.juke.network.SongIndex {
         val index = com.example.juke.network.SongIndex()
-        (_currentQueue.value + current).forEach { index.add(songKey(it), it.durationSec) }
+        (_currentQueue.value + current + externalQueued).forEach { index.add(songKey(it), it.durationSec) }
         playedTracksHistory.toList().forEach {
             val key = songKey(it)
             if (dailyPlayCount(key) < indulgePlays) index.add(key, it.durationSec)
@@ -576,7 +583,36 @@ class QueueManager private constructor(private val context: Context) {
         }
     }
 
+    /** Songs the radio must not repeat that this phone's own queue doesn't know about: a Jam's whole queue. */
+    @Volatile var externalQueued: List<Track> = emptyList()
+
+    /** Drops the current radio so the next [takeRadio] starts a fresh one from the playing song (Mix). */
+    fun restartRadio() = resetRecommendationSession()
+
+    /** How many songs the listener wants queued ahead (the "recommendation count" setting). */
+    fun radioLookahead(): Int = lookahead()
+
+    /**
+     * The next [count] songs of the radio for [current], without fetching or queuing them here. A Jam host
+     * uses this to top up the shared queue: same dedupe, ordering and freshness rules as the normal queue,
+     * and the songs are taken from the waiting list first (the greyed songs in Up Next).
+     */
+    suspend fun takeRadio(current: Track, count: Int): List<RecommenderApi.YouTubeRecommendation> = fillMutex.withLock {
+        if (pendingRecs.size < count) {
+            if (reserve.isEmpty()) refillReserve(current)
+            moveReserveToPending(current)
+        }
+        val taken = ArrayList<RecommenderApi.YouTubeRecommendation>()
+        while (taken.size < count) taken += pendingRecs.pollFirst() ?: break
+        publishPending()
+        taken
+    }
+
+    /** True while a Jam is in charge of what plays next, so radio recommendations must not join the queue. */
+    @Volatile var fillSuspended = false
+
     private fun requestFill(current: Track, remaining: Int, ignoreQueue: Boolean = false) {
+        if (fillSuspended) return
         val gen = sessionGen.get()
         sessionScope.launch {
             fillMutex.withLock {
@@ -709,6 +745,7 @@ class QueueManager private constructor(private val context: Context) {
             return _currentQueue.value.firstOrNull { songKey(it) == songKey(track) } ?: track
         }
         seenSongs.add(songKey(track), track.durationSec)
+        deliveredKeys.add(songKey(track))
         // The listener also queued a copy of this song: the original still takes its own place.
         val copied = copies.containsKey(rec.id)
         if (copied) {

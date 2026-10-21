@@ -28,6 +28,8 @@ import com.example.juke.models.fetchLyricsWithRetry
 import com.example.juke.models.mergeCompletedStream
 import com.example.juke.models.withUpdatedLyrics
 import com.example.juke.network.RecommenderApi
+import com.example.juke.jam.JamControls
+import com.example.juke.jam.toJamPick
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.LibraryQueueOrder
 import com.example.juke.services.MusicService
@@ -677,7 +679,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
+    /** In a Jam the room decides what plays: this goes to it, and this phone follows. */
     fun playTrack(track: Track) {
+        if (JamControls.playNow(listOf(track.toJamPick()))) return
+        playTrackLocal(track)
+    }
+
+    /** Plays on this phone only. The Jam's own follower and the internal download flows use this. */
+    fun playTrackLocal(track: Track) {
         viewModelScope.launch {
             // Set up the queue with the current track
             _uiState.update {
@@ -702,6 +711,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startRadio() {
+        if (JamControls.mix()) return // in a Jam the room gets a fresh radio, built by the host
         val current = _uiState.value.currentTrack ?: return
         viewModelScope.launch {
             Log.d("MusicViewModel", "Starting radio for: ${current.title}")
@@ -725,6 +735,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Play a queued song; [index] picks the entry when the song is queued twice. */
     fun playTrackFromQueue(track: Track, index: Int? = null) {
+        if (JamControls.playItem(track.uuid)) return // an entry of the room's queue (its uuid is the room's item id)
+        if (JamControls.playNow(listOf(track.toJamPick()))) return
         viewModelScope.launch {
             val currentState = _uiState.value
             val queue = currentState.queue
@@ -763,7 +775,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
+    /**
+     * [jamSingle]: the caller is a tap on one song inside a list. Normally the list follows it into the queue,
+     * but in a Jam only that song goes into the room, not the rest of a long list.
+     */
+    fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false) {
+        val forJam = if (jamSingle) listOfNotNull(tracks.getOrNull(startIndex)) else tracks.drop(startIndex)
+        if (JamControls.playNow(forJam.map { it.toJamPick() })) return
         viewModelScope.launch {
             playbackManager.setQueue(tracks, startIndex)
             _uiState.update {
@@ -820,6 +838,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Insert selected songs after the current song, preserving pause, position and incoming order. */
     fun addNext(tracks: List<Track>, onComplete: ((Boolean) -> Unit)? = null) {
+        if (JamControls.addNext(tracks.map { it.toJamPick() })) { onComplete?.invoke(true); return }
         placeLibraryTracks(tracks, next = true, onComplete = onComplete)
     }
 
@@ -830,6 +849,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Move selected songs to the queue end, keeping one entry per UUID. */
     fun addToQueue(tracks: List<Track>, onComplete: ((Boolean) -> Unit)? = null) {
+        if (JamControls.addToEnd(tracks.map { it.toJamPick() })) { onComplete?.invoke(true); return }
         placeLibraryTracks(tracks, next = false, onComplete = onComplete)
     }
 
@@ -910,6 +930,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         next: Boolean,
         useStreamMode: Boolean = queueManager.isStreamMode
     ) {
+        val inJam = if (next) JamControls.addNext(listOf(spotifyTrack.toJamPick())) else JamControls.addToEnd(listOf(spotifyTrack.toJamPick()))
+        if (inJam) return
         val spotdownSong = SpotifyApi.spotifyTrackToSong(spotifyTrack)
         val key = "${spotdownSong.title}-${spotdownSong.artist}"
 
@@ -984,6 +1006,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Instant playback for SpotdownSong (used by Search/Artist/Album screens via downloadAndPlay)
      */
     fun playInstant(song: SpotdownSong) {
+        if (JamControls.playNow(listOf(song.toJamPick()))) return
+        playInstantLocal(song)
+    }
+
+    /** Gives a song that was saved without artwork the one the room has, so the player and queue show it. */
+    fun adoptArtwork(track: Track, url: String) {
+        viewModelScope.launch {
+            val updated = track.copy(thumbnailUri = url)
+            withContext(Dispatchers.IO) { trackDao.insertTrack(updated.toEntity()) }
+            playbackManager.replaceTrackInQueue(track.uuid, updated, seamlessIfPlaying = true)
+            _uiState.update { state ->
+                state.copy(
+                    queue = state.queue.map { if (it.uuid == track.uuid) updated else it },
+                    currentTrack = if (state.currentTrack?.uuid == track.uuid) updated else state.currentTrack
+                )
+            }
+        }
+    }
+
+    /** Streams and plays on this phone only; the Jam's follower uses this to start the room's song. */
+    fun playInstantLocal(song: SpotdownSong) {
         // De-duplicate: if a stream request is already live for this song, ignore the tap.
         val requestKey = song.spotifyId?.takeIf { it.isNotBlank() }
             ?: "${song.title.lowercase().trim()}-${song.artist.lowercase().trim()}"
@@ -1006,7 +1049,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         "MusicViewModel",
                         "Track exists locally, playing from storage: ${song.title}"
                     )
-                    playTrack(existingTrack.toTrack())
+                    var local = existingTrack.toTrack()
+                    // A record saved without artwork takes the one we were just given, and keeps it
+                    if (local.thumbnailUri.isNullOrBlank() && song.thumbnail.isNotBlank()) {
+                        local = local.copy(thumbnailUri = song.thumbnail)
+                        trackDao.insertTrack(local.toEntity())
+                    }
+                    playTrackLocal(local)
                     return@launch
                 }
 
@@ -1070,7 +1119,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     // Play immediately from the HTTP URL
-                    playTrack(httpTrack)
+                    playTrackLocal(httpTrack)
 
                     // Hydrate lyrics and YT video ID off the critical path
                     if (httpTrack.ytVideoId.isNullOrBlank()) {
@@ -1112,6 +1161,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * additional checks against active download state to avoid parallel duplicates.
      */
     fun queueSimplifiedTrackNext(track: SpotifySimplifiedTrack, album: SpotifyAlbum) {
+        if (JamControls.addNext(listOf(SpotifyApi.simplifiedTrackToSong(track, album).toJamPick()))) return
         val spotdownSong = SpotifyApi.simplifiedTrackToSong(track, album)
         val key = "${spotdownSong.title}-${spotdownSong.artist}"
 
@@ -1219,6 +1269,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun downloadAndPlay(song: SpotdownSong) {
+        if (JamControls.playNow(listOf(song.toJamPick()))) return
         // Redirect to instant play logic
         playInstant(song)
     }
@@ -1296,7 +1347,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 existingTrack.localUri?.let { File(it).isFile } == true) {
                 Log.d("MusicViewModel", "Song already downloaded: ${song.title}")
                 if (shouldPlayAfterDownload) {
-                    playTrack(existingTrack.toTrack())
+                    playTrackLocal(existingTrack.toTrack())
                 }
                 return@launch
             }
@@ -1420,7 +1471,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                     // Play if requested
                     if (nextItem.shouldPlayAfterDownload) {
-                        playTrack(track)
+                        playTrackLocal(track)
                     }
 
                     // Clear current download after a brief delay
@@ -1880,6 +1931,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Downloads the first track and queues the remaining tracks sequentially
      */
     fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0) {
+        if (JamControls.playNow(spotifyTracks.drop(startIndex).map { it.toJamPick() })) return
         viewModelScope.launch {
             try {
                 if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return@launch
@@ -1924,6 +1976,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         album: SpotifyAlbum,
         startIndex: Int = 0
     ) {
+        if (JamControls.playNow(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album).toJamPick() })) return
         viewModelScope.launch {
             try {
                 if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return@launch

@@ -76,7 +76,6 @@ import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
-import com.example.juke.jam.toJamTrack
 import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassIconButton
 import com.example.juke.ui.components.GlassPillButton
@@ -261,9 +260,9 @@ private fun HomeFeed(
                     itemsIndexed(rotation, key = { _, t -> t.uuid }) { index, track ->
                         LibraryCard(
                             track = track,
-                            onClick = { musicViewModel.setQueue(rotation, index) },
+                            onClick = { musicViewModel.setQueue(rotation, index, jamSingle = true) },
                             actions = libraryTrackActions(track, musicViewModel) {
-                                musicViewModel.setQueue(rotation, index)
+                                musicViewModel.setQueue(rotation, index, jamSingle = true)
                             }
                         )
                     }
@@ -305,6 +304,8 @@ private fun HomeHeader(
                 tint = if (inJam.active) MaterialTheme.colorScheme.primary else LocalContentColor.current
             )
         }
+
+        Spacer(Modifier.width(12.dp))
 
         GlassIconButton(
             onClick = onSettingsClick,
@@ -430,13 +431,10 @@ private fun ActionMenu(expanded: Boolean, onDismiss: () -> Unit, actions: List<M
 private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewModel): List<MenuAction> {
     val context = LocalContext.current
     fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-    val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
-    val jamTrack = track.toJamTrack()
-    return listOfNotNull(
+    return listOf(
         MenuAction("Play") { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
         MenuAction("Play next") { musicViewModel.queueSpotifyTrack(track, next = true); say("${track.name} will play next") },
-        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") },
-        if (jam.active && jamTrack != null) MenuAction("Add to Jam") { if (com.example.juke.jam.JamSession.add(jamTrack)) say("${track.name} added to the Jam") } else null
+        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") }
     )
 }
 
@@ -445,13 +443,10 @@ private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewMo
 private fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, play: () -> Unit): List<MenuAction> {
     val context = LocalContext.current
     fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-    val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
-    val jamTrack = track.toJamTrack()
-    return listOfNotNull(
+    return listOf(
         MenuAction("Play", play),
         MenuAction("Play next") { musicViewModel.addNext(track); say("${track.title} will play next") },
-        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") },
-        if (jam.active && jamTrack != null) MenuAction("Add to Jam") { if (com.example.juke.jam.JamSession.add(jamTrack)) say("${track.title} added to the Jam") } else null
+        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") }
     )
 }
 
