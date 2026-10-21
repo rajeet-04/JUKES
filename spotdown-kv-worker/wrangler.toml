@@ -2,6 +2,25 @@ name = "spotdown-kv-worker"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
+# The app fetches Spotify tokens from the workers.dev address (SPOTIFY_TOKEN_URL): keep it on
+workers_dev = true
+
+# Pretty share links (https://j.rajeet.in/p/<id>); wrangler creates the DNS record for this host only
+routes = [{ pattern = "j.rajeet.in", custom_domain = true }]
+
+# Public: SHA-256 of the key that signs the APK (debug key, builds on the dev Mac), served in assetlinks.json
+[vars]
+CERT_SHA256 = "D7:2C:E0:E4:30:5C:D1:36:A1:9C:F6:42:3D:40:FF:33:40:42:F9:E7:C6:6D:35:6C:9B:C4:5B:1C:F4:D3:09:A7"
+
+# Share snapshots (schema in migrations/); expired rows are swept daily
+[[d1_databases]]
+binding = "DB"
+database_name = "jukes-shares"
+database_id = "b647095b-833f-4c9f-91c4-fb4272031e21"
+
+[triggers]
+crons = ["17 3 * * *"]
+
 # id omitted: wrangler provisions the namespace on first deploy
 [[kv_namespaces]]
 binding = "KV"
