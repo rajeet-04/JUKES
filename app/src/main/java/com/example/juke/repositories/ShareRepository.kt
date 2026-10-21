@@ -92,27 +92,6 @@ class ShareRepository(private val playlistDao: PlaylistDao) {
         return entity.id
     }
 
-    private fun SharedTrack.toSpotifyTrack(): SpotifyTrack? {
-        val id = spotifyId ?: return null
-        val noUrls = SpotifyExternalUrls(spotify = "https://open.spotify.com/track/$id")
-        return SpotifyTrack(
-            album = SpotifyAlbum(
-                artists = emptyList(),
-                externalUrls = SpotifyExternalUrls(),
-                id = albumSpotifyId,
-                images = listOfNotNull(thumb?.let { SpotifyImage(null, null, it) }),
-                name = ""
-            ),
-            artists = artist.split(", ").map { SpotifyArtist(externalUrls = SpotifyExternalUrls(), name = it) },
-            durationMs = durationSec * 1000,
-            explicit = false,
-            externalUrls = noUrls,
-            id = id,
-            name = title,
-            uri = "spotify:track:$id"
-        )
-    }
-
     companion object {
         private val BASE = BuildConfig.SHARE_BASE_URL.trimEnd('/')
 
@@ -122,4 +101,26 @@ class ShareRepository(private val playlistDao: PlaylistDao) {
 
         private val LINK = Regex("""(?:${Regex.escape(BuildConfig.SHARE_BASE_URL.substringAfter("://").trimEnd('/'))}|juke:/)/p/([0-9A-Za-z]{10})\b""")
     }
+}
+
+/** A bare-bones Spotify track rebuilt from a snapshot or Jam entry: enough to stream or download it. */
+fun SharedTrack.toSpotifyTrack(): SpotifyTrack? {
+    val id = spotifyId ?: return null
+    val noUrls = SpotifyExternalUrls(spotify = "https://open.spotify.com/track/$id")
+    return SpotifyTrack(
+        album = SpotifyAlbum(
+            artists = emptyList(),
+            externalUrls = SpotifyExternalUrls(),
+            id = albumSpotifyId,
+            images = listOfNotNull(thumb?.let { SpotifyImage(null, null, it) }),
+            name = ""
+        ),
+        artists = artist.split(", ").map { SpotifyArtist(externalUrls = SpotifyExternalUrls(), name = it) },
+        durationMs = durationSec * 1000,
+        explicit = false,
+        externalUrls = noUrls,
+        id = id,
+        name = title,
+        uri = "spotify:track:$id"
+    )
 }

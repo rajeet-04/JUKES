@@ -126,6 +126,7 @@ class MainActivity : ComponentActivity() {
     private val showPlayerOnLaunch = mutableStateOf(false)
     private val pendingSpotifyLink = mutableStateOf<String?>(null)
     private val pendingShareId = mutableStateOf<String?>(null)
+    private val pendingJamCode = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -236,6 +237,16 @@ class MainActivity : ComponentActivity() {
 
                 pendingShareId.value?.let { id ->
                     SharedPlaylistDialog(id, onDismiss = { pendingShareId.value = null })
+                }
+                pendingJamCode.value?.let { code ->
+                    JoinJamDialog(code, onDismiss = { pendingJamCode.value = null })
+                }
+                val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
+                if (jamSheetOpen) {
+                    com.example.juke.ui.components.JamSheet(
+                        musicViewModel = musicViewModel,
+                        onDismiss = { com.example.juke.jam.JamSession.sheetOpen.value = false }
+                    )
                 }
 
                 val items = listOf(
@@ -635,8 +646,11 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePlayerIntent(intent: Intent?) {
         val text = intent?.dataString ?: intent?.getStringExtra(Intent.EXTRA_TEXT)
+        val jamCode = text?.let { com.example.juke.jam.JamSession.parseCode(it) }
         val shareId = text?.let { com.example.juke.repositories.ShareRepository.parsePlaylistId(it) }
-        if (shareId != null) {
+        if (jamCode != null) {
+            pendingJamCode.value = jamCode
+        } else if (shareId != null) {
             pendingShareId.value = shareId
         } else if (text != null && Regex("""open\.spotify\.com/(intl-\w+/)?(track|album|artist|playlist)/|spotify:(track|album|artist|playlist):|spotify(\.app)?\.link/\w|youtube\.com/watch|youtu\.be/""").containsMatchIn(text)) {
             pendingSpotifyLink.value = text
@@ -697,6 +711,41 @@ private fun SharedPlaylistDialog(id: String, onDismiss: () -> Unit) {
         dismissButton = {
             androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
         }
+    )
+}
+
+/** Asked when someone opens a Jam link: who is in it, and a button to join. */
+@Composable
+private fun JoinJamDialog(code: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var info by remember { mutableStateOf<com.example.juke.jam.JamSession.Info?>(null) }
+    var checked by remember { mutableStateOf(false) }
+    LaunchedEffect(code) {
+        info = com.example.juke.jam.JamSession.info(code)
+        checked = true
+    }
+    val live = info?.exists == true
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (checked && info?.exists == false) "Jam ended" else "Join this Jam?") },
+        text = {
+            Text(
+                when {
+                    !checked -> "Checking $code…"
+                    info == null -> "Couldn't reach the Jam. Check your connection and try again."
+                    live -> "Code $code · ${info!!.members} listening · ${info!!.queue} songs queued"
+                    else -> "This Jam has ended or the code is wrong."
+                }
+            )
+        },
+        confirmButton = {
+            if (live) androidx.compose.material3.TextButton(onClick = {
+                com.example.juke.jam.JamSession.join(context, code, com.example.juke.jam.JamSession.savedName(context))
+                com.example.juke.jam.JamSession.sheetOpen.value = true
+                onDismiss()
+            }) { Text("Join") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 

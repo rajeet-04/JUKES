@@ -49,6 +49,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="j.rajeet.in" android:pathPrefix="/p/" />
+                <data android:pathPrefix="/j/" />
             </intent-filter>
 
             <!-- Spotify links: share sheet and tapped links -->

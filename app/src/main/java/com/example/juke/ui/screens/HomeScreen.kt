@@ -38,6 +38,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -74,6 +76,7 @@ import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.jam.toJamTrack
 import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassIconButton
 import com.example.juke.ui.components.GlassPillButton
@@ -131,6 +134,10 @@ fun HomeScreen(
             onSettingsClick = {
                 haptic.click()
                 onSettingsClick()
+            },
+            onJamClick = {
+                haptic.click()
+                com.example.juke.jam.JamSession.sheetOpen.value = true
             }
         )
 
@@ -269,8 +276,10 @@ private fun HomeFeed(
 @Composable
 private fun HomeHeader(
     greeting: String,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onJamClick: () -> Unit
 ) {
+    val inJam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -285,6 +294,17 @@ private fun HomeHeader(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
+
+        GlassIconButton(
+            onClick = onJamClick,
+            contentDescription = if (inJam.active) "Jam ${inJam.code}" else "Jam"
+        ) {
+            Icon(
+                Icons.Filled.Group,
+                contentDescription = null,
+                tint = if (inJam.active) MaterialTheme.colorScheme.primary else LocalContentColor.current
+            )
+        }
 
         GlassIconButton(
             onClick = onSettingsClick,
@@ -410,10 +430,13 @@ private fun ActionMenu(expanded: Boolean, onDismiss: () -> Unit, actions: List<M
 private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewModel): List<MenuAction> {
     val context = LocalContext.current
     fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-    return listOf(
+    val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+    val jamTrack = track.toJamTrack()
+    return listOfNotNull(
         MenuAction("Play") { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
         MenuAction("Play next") { musicViewModel.queueSpotifyTrack(track, next = true); say("${track.name} will play next") },
-        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") }
+        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") },
+        if (jam.active && jamTrack != null) MenuAction("Add to Jam") { if (com.example.juke.jam.JamSession.add(jamTrack)) say("${track.name} added to the Jam") } else null
     )
 }
 
@@ -422,10 +445,13 @@ private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewMo
 private fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, play: () -> Unit): List<MenuAction> {
     val context = LocalContext.current
     fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-    return listOf(
+    val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+    val jamTrack = track.toJamTrack()
+    return listOfNotNull(
         MenuAction("Play", play),
         MenuAction("Play next") { musicViewModel.addNext(track); say("${track.title} will play next") },
-        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") }
+        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") },
+        if (jam.active && jamTrack != null) MenuAction("Add to Jam") { if (com.example.juke.jam.JamSession.add(jamTrack)) say("${track.title} added to the Jam") } else null
     )
 }
 
