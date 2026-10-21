@@ -402,6 +402,22 @@ object SpotifyApi {
         }
     }
 
+    @kotlinx.serialization.Serializable
+    private data class TracksByIds(val tracks: List<SpotifyTrack?> = emptyList())
+
+    /** Up to 50 tracks by id in one request; ids Spotify doesn't know come back as nulls, dropped here. */
+    suspend fun getTracks(trackIds: List<String>, market: String = defaultMarket): List<SpotifyTrack> {
+        require(trackIds.size <= 50) { "Spotify allows 50 ids per request" }
+        if (trackIds.isEmpty()) return emptyList()
+        val token = getAccessToken()
+        val response: HttpResponse = ApiClient.httpClient.get("$SPOTIFY_API_BASE_URL/tracks") {
+            header("Authorization", "Bearer $token")
+            parameter("ids", trackIds.joinToString(","))
+            parameter("market", market)
+        }
+        return response.body<TracksByIds>().tracks.filterNotNull()
+    }
+
     /**
      * Get a single artist by ID.
      * 

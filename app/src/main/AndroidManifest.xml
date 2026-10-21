@@ -43,6 +43,14 @@
                 <data android:scheme="juke" />
             </intent-filter>
 
+            <!-- Shared-playlist links (snapshot served by the share Worker) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="j.rajeet.in" android:pathPrefix="/p/" />
+            </intent-filter>
+
             <!-- Spotify links: share sheet and tapped links -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

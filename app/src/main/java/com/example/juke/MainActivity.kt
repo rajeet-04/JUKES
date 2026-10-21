@@ -89,6 +89,7 @@ import com.example.juke.viewmodels.SearchViewModel
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 sealed class Screen(
     val route: String,
@@ -124,6 +125,7 @@ class MainActivity : ComponentActivity() {
 
     private val showPlayerOnLaunch = mutableStateOf(false)
     private val pendingSpotifyLink = mutableStateOf<String?>(null)
+    private val pendingShareId = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -176,7 +178,7 @@ class MainActivity : ComponentActivity() {
                     musicViewModel.startDeferredStartupWork()
                     // PostHog setup is ~90 ms of main-thread work: keep it out of the startup window.
                     launch {
-                        delay(1_500)
+                        delay(1_500.milliseconds)
                         AnalyticsManager.getInstance(context).trackAppOpened()
                     }
                     updateAvailable = UpdateManager.checkForUpdates(context)
@@ -230,6 +232,10 @@ class MainActivity : ComponentActivity() {
                         launchSingleTop = true
                     }
                     activityViewModelProvider[SearchViewModel::class.java].search(link)
+                }
+
+                pendingShareId.value?.let { id ->
+                    SharedPlaylistDialog(id, onDismiss = { pendingShareId.value = null })
                 }
 
                 val items = listOf(
@@ -629,7 +635,10 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePlayerIntent(intent: Intent?) {
         val text = intent?.dataString ?: intent?.getStringExtra(Intent.EXTRA_TEXT)
-        if (text != null && Regex("""open\.spotify\.com/(intl-\w+/)?(track|album|artist|playlist)/|spotify:(track|album|artist|playlist):|spotify(\.app)?\.link/\w|youtube\.com/watch|youtu\.be/""").containsMatchIn(text)) {
+        val shareId = text?.let { com.example.juke.repositories.ShareRepository.parsePlaylistId(it) }
+        if (shareId != null) {
+            pendingShareId.value = shareId
+        } else if (text != null && Regex("""open\.spotify\.com/(intl-\w+/)?(track|album|artist|playlist)/|spotify:(track|album|artist|playlist):|spotify(\.app)?\.link/\w|youtube\.com/watch|youtu\.be/""").containsMatchIn(text)) {
             pendingSpotifyLink.value = text
         }
         if (intent?.getBooleanExtra("open_player", false) == true) {
@@ -645,6 +654,50 @@ class MainActivity : ComponentActivity() {
             analytics.endSession()
         }
     }
+}
+
+/** Preview of a playlist someone shared by link, with a button to save a copy to the library. */
+@Composable
+private fun SharedPlaylistDialog(id: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val repo = remember { com.example.juke.repositories.ShareRepository(com.example.juke.database.MusicDatabase.getDatabase(context).playlistDao()) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var loading by remember { mutableStateOf(true) }
+    var shared by remember { mutableStateOf<com.example.juke.repositories.SharedPlaylist?>(null) }
+    LaunchedEffect(id) {
+        shared = try {
+            repo.fetchPlaylist(id)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        loading = false
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(shared?.name ?: if (loading) "Loading playlist…" else "Link unavailable") },
+        text = {
+            Text(
+                shared?.let { "${it.tracks.size} songs" }
+                    ?: if (loading) "" else "This link expired or the playlist is no longer shared."
+            )
+        },
+        confirmButton = {
+            shared?.let { playlist ->
+                androidx.compose.material3.TextButton(onClick = {
+                    scope.launch {
+                        repo.savePlaylist(playlist, com.example.juke.services.PlaylistImportManager.get(context))
+                        Toast.makeText(context, "Saved to your library", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    }
+                }) { Text("Save to library") }
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }
 
 @Composable

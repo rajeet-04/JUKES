@@ -466,6 +466,27 @@ fun LibraryScreen(
                                                     musicViewModel
                                                 )
                                             })
+                                        val shareContext = androidx.compose.ui.platform.LocalContext.current
+                                        DropdownMenuItem(
+                                            text = { Text("Share link") },
+                                            onClick = {
+                                                menuOpen = false
+                                                libraryViewModel.sharePlaylist(playlist) { link ->
+                                                    if (link == null) {
+                                                        android.widget.Toast.makeText(
+                                                            shareContext,
+                                                            "Couldn't create a link for this playlist",
+                                                            android.widget.Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    } else {
+                                                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                            type = "text/plain"
+                                                            putExtra(android.content.Intent.EXTRA_TEXT, link)
+                                                        }
+                                                        shareContext.startActivity(android.content.Intent.createChooser(send, null))
+                                                    }
+                                                }
+                                            })
                                         DropdownMenuItem(
                                             text = { Text("Delete playlist") },
                                             onClick = {

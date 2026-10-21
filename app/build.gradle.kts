@@ -36,6 +36,11 @@ android {
         )
         buildConfigField(
             "String",
+            "SHARE_BASE_URL",
+            "\"${properties.getProperty("SHARE_BASE_URL", "https://j.rajeet.in")}\""
+        )
+        buildConfigField(
+            "String",
             "SPOTIFY_TOKEN_KEY",
             "\"${properties.getProperty("SPOTIFY_TOKEN_KEY", "")}\""
         )

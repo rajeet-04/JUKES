@@ -387,6 +387,21 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Uploads a snapshot of [playlist] and hands back its link; [onResult] gets null on failure or nothing shareable. */
+    fun sharePlaylist(playlist: PlaylistEntity, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            val link = try {
+                com.example.juke.repositories.ShareRepository(playlistDao).createPlaylistLink(playlist.id)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LibraryViewModel", "Share failed: ${e.message}")
+                null
+            }
+            onResult(link)
+        }
+    }
+
     fun deletePlaylist(playlist: PlaylistEntity) {
         viewModelScope.launch {
             playlistDao.deletePlaylist(playlist.id)
