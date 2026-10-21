@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.BatterySaver
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Lock
@@ -94,6 +95,8 @@ fun AudioSettingsScreen(
     var powerUnlocked by remember { mutableStateOf(powerPrefs.getBoolean("power_tools_unlocked", false)) }
     val audioPrefs = remember { powerCtx.getSharedPreferences("audio_effects_prefs", android.content.Context.MODE_PRIVATE) }
     var batterySaver by remember { mutableStateOf(audioPrefs.getBoolean("battery_saver_playback", false)) }
+    var showReport by remember { mutableStateOf(false) }
+    if (showReport) com.example.juke.ui.components.ReportBugDialog(musicViewModel, onDismiss = { showReport = false })
     var versionTaps by remember { mutableIntStateOf(0) }
     var lastVersionTapAt by remember { mutableLongStateOf(0L) }
     var lastBoosterTickBucket by remember { mutableIntStateOf((boosterLevel / 5).coerceIn(0, 20)) }
@@ -733,6 +736,17 @@ fun AudioSettingsScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                }
+
+                item {
+                    GlassCard(modifier = Modifier.fillMaxWidth().clickable { haptic.click(); showReport = true }) {
+                        CompactItem(
+                            headlineContent = { Text("Report a bug", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text("Tell us what went wrong; app info and logs help us fix it fast") },
+                            leadingContent = { Icon(Icons.Rounded.BugReport, contentDescription = null) },
+                            trailingContent = { Icon(JukeIcons.Forward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        )
                     }
                 }
 

@@ -1,4 +1,5 @@
 export { JamRoom } from './jam';
+import { createReport, REPORT_KEEP_MS } from './report';
 
 export interface Env {
     KV: KVNamespace;
@@ -7,6 +8,7 @@ export interface Env {
     SPOTIFY_CLIENT_ID: string;
     SPOTIFY_CLIENT_SECRET: string;
     APP_SECRET: string;
+    GITHUB_TOKEN?: string; // fine-grained PAT, Issues: read and write on the app repo only
     CERT_SHA256?: string; // comma-separated app signing cert fingerprints for assetlinks.json
 }
 
@@ -98,6 +100,7 @@ async function jamLanding(env: Env, code: string): Promise<Response> {
 export default {
     async scheduled(_event: ScheduledController, env: Env): Promise<void> {
         await env.DB.prepare('DELETE FROM shares WHERE expires_at < ?').bind(Date.now()).run();
+        await env.DB.prepare('DELETE FROM reports WHERE created_at < ?').bind(Date.now() - REPORT_KEEP_MS).run();
     },
 
     async fetch(request: Request, env: Env): Promise<Response> {
@@ -109,6 +112,7 @@ export default {
             return share ? Response.json(share) : Response.json({ error: 'Not Found' }, { status: 404 });
         }
         if (m?.[1] === 'p') return landing(env, m[2]);
+        if (pathname === '/report' && request.method === 'POST') return createReport(request, env);
         if (pathname === '/jam' && request.method === 'POST') return createJam(request, env);
         const jam = pathname.match(/^\/(jam|j)\/([A-HJKMNP-Za-hjkmnp-z2-9]{6})(\/ws)?$/);
         if (jam) {

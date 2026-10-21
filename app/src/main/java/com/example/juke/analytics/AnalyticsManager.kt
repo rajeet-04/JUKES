@@ -214,6 +214,9 @@ class AnalyticsManager private constructor(context: Context) {
      * The SDK keeps its own on-disk queue, batches uploads and retries when offline, so events go straight to it
      * with their real time and their real types (numbers stay numbers, so they can be summed and averaged).
      */
+    /** The anonymous per-install id (also the PostHog person), so a report can be matched to its events. */
+    fun installId(): String = userId
+
     fun track(eventName: String, properties: Map<String, Any> = emptyMap()) = trackEvent(eventName, properties)
 
     private fun trackEvent(eventName: String, properties: Map<String, Any>) {
