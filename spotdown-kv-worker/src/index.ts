@@ -1,6 +1,9 @@
+export { JamRoom } from './jam';
+
 export interface Env {
     KV: KVNamespace;
     DB: D1Database;
+    JAM: DurableObjectNamespace;
     SPOTIFY_CLIENT_ID: string;
     SPOTIFY_CLIENT_SECRET: string;
     APP_SECRET: string;
@@ -64,6 +67,33 @@ async function landing(env: Env, id: string): Promise<Response> {
         { status: share ? 200 : 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
+// No I, L, O, 0 or 1: codes get read aloud and typed by hand
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const newCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => CODE_CHARS[b % 31]).join('');
+const room = (env: Env, code: string) => env.JAM.get(env.JAM.idFromName(code));
+
+async function createJam(request: Request, env: Env): Promise<Response> {
+    if (request.headers.get('X-App-Secret') !== env.APP_SECRET) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    for (let i = 0; i < 5; i++) {
+        const code = newCode();
+        if ((await room(env, code).fetch('https://jam/init', { method: 'POST' })).ok) return Response.json({ code });
+    }
+    return Response.json({ error: 'Try again' }, { status: 503 });
+}
+
+async function jamLanding(env: Env, code: string): Promise<Response> {
+    const info = await (await room(env, code).fetch('https://jam/info')).json<{ exists: boolean; members: number }>();
+    const title = info.exists ? 'Join this Jam' : 'Jam ended';
+    const sub = info.exists ? `${info.members} listening` : 'This Jam has ended or the code is wrong.';
+    const open = info.exists ? `<a class="b" href="juke://j/${code}">Open in JUKES</a>` : '';
+    return new Response(
+        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · JUKES</title>` +
+        `<style>body{font:16px system-ui;background:#111;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center}` +
+        `.b{display:inline-block;margin-top:20px;padding:12px 24px;border-radius:24px;background:#1db954;color:#000;text-decoration:none;font-weight:600}` +
+        `code{font-size:28px;letter-spacing:4px}</style><div><h1>${title}</h1><p><code>${code}</code></p><p>${sub}</p>${open}</div>`,
+        { status: info.exists ? 200 : 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
 // ponytail: concurrent cold requests may each refresh once; harmless, add a Durable Object if it ever matters
 export default {
     async scheduled(_event: ScheduledController, env: Env): Promise<void> {
@@ -79,6 +109,13 @@ export default {
             return share ? Response.json(share) : Response.json({ error: 'Not Found' }, { status: 404 });
         }
         if (m?.[1] === 'p') return landing(env, m[2]);
+        if (pathname === '/jam' && request.method === 'POST') return createJam(request, env);
+        const jam = pathname.match(/^\/(jam|j)\/([A-HJKMNP-Za-hjkmnp-z2-9]{6})(\/ws)?$/);
+        if (jam) {
+            const code = jam[2].toUpperCase();
+            if (jam[1] === 'j') return jamLanding(env, code);
+            return jam[3] ? room(env, code).fetch(request) : room(env, code).fetch('https://jam/info');
+        }
         if (pathname === '/.well-known/assetlinks.json') return Response.json([{
             relation: ['delegate_permission/common.handle_all_urls'],
             target: { namespace: 'android_app', package_name: 'com.example.juke', sha256_cert_fingerprints: (env.CERT_SHA256 ?? '').split(',').filter(Boolean) },

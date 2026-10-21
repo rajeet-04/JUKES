@@ -18,6 +18,15 @@ binding = "DB"
 database_name = "jukes-shares"
 database_id = "b647095b-833f-4c9f-91c4-fb4272031e21"
 
+# Jam rooms: one Durable Object per room code (SQLite-backed, required on the free plan)
+[[durable_objects.bindings]]
+name = "JAM"
+class_name = "JamRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["JamRoom"]
+
 [triggers]
 crons = ["17 3 * * *"]
 
