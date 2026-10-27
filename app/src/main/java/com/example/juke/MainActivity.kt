@@ -185,6 +185,7 @@ class MainActivity : ComponentActivity() {
                     launch {
                         delay(1_500.milliseconds)
                         AnalyticsManager.getInstance(context).trackAppOpened()
+                        com.example.juke.report.CrashReporter.sendPending(context.applicationContext)
                     }
                     updateAvailable = UpdateManager.checkForUpdates(context)
 

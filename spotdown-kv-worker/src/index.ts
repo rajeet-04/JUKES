@@ -1,4 +1,5 @@
 export { JamRoom } from './jam';
+import { createCrash } from './crash';
 import { createReport, REPORT_KEEP_MS } from './report';
 
 export interface Env {
@@ -113,6 +114,7 @@ export default {
         }
         if (m?.[1] === 'p') return landing(env, m[2]);
         if (pathname === '/report' && request.method === 'POST') return createReport(request, env);
+        if (pathname === '/crash' && request.method === 'POST') return createCrash(request, env);
         if (pathname === '/jam' && request.method === 'POST') return createJam(request, env);
         const jam = pathname.match(/^\/(jam|j)\/([A-HJKMNP-Za-hjkmnp-z2-9]{6})(\/ws)?$/);
         if (jam) {

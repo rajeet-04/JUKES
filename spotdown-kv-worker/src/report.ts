@@ -21,12 +21,30 @@ export const scrub = (s: string) => s
     .replace(/([?&](?:access_token|token|key|secret|code)=)[^&\s"']+/gi, '$1[redacted]')
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]');
 
-const clip = (v: unknown, n: number) => String(v ?? '').slice(0, n);
+export const clip = (v: unknown, n: number) => String(v ?? '').slice(0, n);
 const id = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
 
-function table(obj: Record<string, unknown> | null | undefined): string {
+export function table(obj: Record<string, unknown> | null | undefined): string {
     const rows = Object.entries(obj ?? {}).slice(0, 25).map(([k, v]) => `| ${clip(k, 40).replace(/\|/g, '')} | ${clip(scrub(String(v)), 120).replace(/[|\n]/g, ' ')} |`);
     return rows.length ? `| | |\n|---|---|\n${rows.join('\n')}` : '_none_';
+}
+
+export const github = (env: Env, path: string, payload: object) => fetch(`https://api.github.com/repos/${GITHUB_REPO}/${path}`, {
+    method: 'POST',
+    headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'jukes-reports',
+        'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify(payload),
+});
+
+/** The new issue's number, or null if GitHub refused it. */
+export async function fileIssue(env: Env, title: string, body: string, label: string): Promise<number | null> {
+    let res = await github(env, 'issues', { title, body, labels: [label] });
+    if (res.status === 422) res = await github(env, 'issues', { title, body }); // label couldn't be applied
+    return res.ok ? ((await res.json()) as { number: number }).number : null;
 }
 
 export async function createReport(request: Request, env: Env): Promise<Response> {
@@ -62,20 +80,8 @@ export async function createReport(request: Request, env: Env): Promise<Response
             `\`bunx wrangler d1 execute jukes-shares --remote --command "SELECT logs FROM reports WHERE id='${reportId}'"\``,
     ].join('\n');
 
-    const gh = (payload: object) => fetch(`https://api.github.com/repos/${GITHUB_REPO}/issues`, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-            Accept: 'application/vnd.github+json',
-            'User-Agent': 'jukes-reports',
-            'X-GitHub-Api-Version': '2022-11-28',
-        },
-        body: JSON.stringify(payload),
-    });
-    let res = await gh({ title, body: issueBody, labels: ['user-report'] });
-    if (res.status === 422) res = await gh({ title, body: issueBody }); // label couldn't be applied
-    if (!res.ok) return Response.json({ error: 'Could not file the report' }, { status: 502 });
-    const issue = ((await res.json()) as { number: number }).number;
+    const issue = await fileIssue(env, title, issueBody, 'user-report');
+    if (issue === null) return Response.json({ error: 'Could not file the report' }, { status: 502 });
 
     await env.DB.prepare('INSERT INTO reports (id, install_id, created_at, issue, logs) VALUES (?, ?, ?, ?, ?)')
         .bind(reportId, installId, now, issue, logs).run();

@@ -57,6 +57,9 @@ class AnalyticsManager private constructor(context: Context) {
             instance?.trackEvent(eventName, properties)
         }
 
+        /** PostHog alone, without starting a session: the Application does this first so crashes from any entry point (a cold-started service too) are captured. */
+        fun setup(context: Context) = ensurePostHogInitialized(context.applicationContext)
+
         private fun ensurePostHogInitialized(context: Context) {
             if (isPostHogInitialized) return
 
@@ -67,6 +70,8 @@ class AnalyticsManager private constructor(context: Context) {
                     apiKey = BuildConfig.POSTHOG_API_KEY,
                     host = BuildConfig.POSTHOG_HOST
                 )
+                // Uncaught exceptions go to PostHog Error tracking ($exception), sent on the next launch if the process dies first
+                config.errorTrackingConfig.autoCapture = true
                 PostHogAndroid.setup(context, config)
                 isPostHogInitialized = true
             }
