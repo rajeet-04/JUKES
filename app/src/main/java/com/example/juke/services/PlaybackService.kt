@@ -3,12 +3,14 @@ package com.example.juke.services
 import kotlin.time.Duration.Companion.milliseconds
 import androidx.core.content.edit
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +19,8 @@ import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
 import androidx.annotation.OptIn
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -392,6 +396,32 @@ class PlaybackService : MediaLibraryService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    /** Keeps the startForegroundService promise when Media3 didn't, then steps back down if nothing is playing. */
+    private val foregroundGuard = Runnable {
+        val nm = getSystemService(NotificationManager::class.java)
+        val posted = nm.activeNotifications.firstOrNull { it.id == 1 }
+        if (posted != null && posted.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0) return@Runnable
+        val notification = posted?.notification
+            ?: NotificationCompat.Builder(this, "media_playback")
+                .setSmallIcon(androidx.media3.session.R.drawable.media3_notification_small_icon)
+                .setContentTitle(getString(R.string.app_name))
+                .setSilent(true)
+                .build()
+        try {
+            ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        } catch (e: Exception) {
+            Log.w(tag, "Foreground guard couldn't start foreground: ${e.message}")
+            return@Runnable
+        }
+        val starting = ::player.isInitialized && player.playWhenReady &&
+            (player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY)
+        if (starting) return@Runnable // Media3 takes over the notification once it plays
+        val empty = !::player.isInitialized || player.mediaItemCount == 0
+        Log.w(tag, "Media button didn't start playback; leaving the foreground (empty=$empty)")
+        ServiceCompat.stopForeground(this, if (empty) ServiceCompat.STOP_FOREGROUND_REMOVE else ServiceCompat.STOP_FOREGROUND_DETACH)
+        if (empty) stopSelf()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Fix: Check if app is in background before attempting anything that might require foreground
         // This prevents ForegroundServiceStartNotAllowedException on Android 12+
@@ -413,8 +443,16 @@ class PlaybackService : MediaLibraryService() {
         }
 
         // We DO NOT startForeground here with a placeholder anymore.
-        // We let MediaLibraryService (Media3) handle notification and foreground promotion 
+        // We let MediaLibraryService (Media3) handle notification and foreground promotion
         // when playback actually starts or a notification is explicitly requested by the session.
+        // Play from the notification (or a headset) after a long pause arrives through
+        // startForegroundService, often into a freshly restarted process. Media3 only goes
+        // foreground once the player really plays; if it doesn't (resumption found nothing, a Jam
+        // took the command, the stream failed), the system killed the app a few seconds later.
+        if (intent?.action == Intent.ACTION_MEDIA_BUTTON) {
+            mainHandler.removeCallbacks(foregroundGuard)
+            mainHandler.postDelayed(foregroundGuard, 2_000)
+        }
 
         return try {
             super.onStartCommand(intent, flags, startId)
@@ -893,6 +931,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         // Clean up pending resume operations
         mainHandler.removeCallbacks(resumeAfterCall)
+        mainHandler.removeCallbacks(foregroundGuard)
 
         mediaSession?.run {
             player.release()
