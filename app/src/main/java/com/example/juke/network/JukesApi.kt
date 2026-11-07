@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
@@ -177,6 +178,14 @@ object JukesApi {
     private val _preparing = MutableStateFlow<String?>(null)
     val preparing: StateFlow<String?> = _preparing.asStateFlow()
 
+    /** Songs the listener is waiting on right now. The link to YouTube is shared, so background fills hold back meanwhile. */
+    private val foreground = MutableStateFlow(0)
+
+    /** Returns once no listener-chosen song is loading, or after [maxMs] so fills never starve. */
+    suspend fun awaitForegroundIdle(maxMs: Long = 20_000) {
+        kotlinx.coroutines.withTimeoutOrNull(maxMs) { foreground.first { it == 0 } }
+    }
+
     private val warmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private suspend inline fun <reified T> call(
@@ -240,7 +249,7 @@ object JukesApi {
         // Title + main artist: every featured artist in the query pulls in their other songs.
         val body = track(title, artist.split(", ").first(), durationSec?.let { it * 1000L })
         val deadline = System.currentTimeMillis() + PREPARE_BUDGET_MS
-        if (showPreparing) _preparing.value = title
+        if (showPreparing) { _preparing.value = title; foreground.update { it + 1 } }
         try {
             var prepares = 0
             prepare@ while (true) {
@@ -319,7 +328,10 @@ object JukesApi {
                 error("Backend still preparing '$title'")
             }
         } finally {
-            if (showPreparing) _preparing.update { if (it == title) null else it }
+            if (showPreparing) {
+                _preparing.update { if (it == title) null else it }
+                foreground.update { it - 1 }
+            }
         }
     }
 

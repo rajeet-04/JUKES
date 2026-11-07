@@ -727,7 +727,10 @@ class QueueManager private constructor(private val context: Context) {
         val job = inFlight.computeIfAbsent(rec.id) {
             sessionScope.async {
                 if (priority) resolveRecommendation(rec, current)
-                else resolveSlots.withPermit { resolveRecommendation(rec, current) }
+                else {
+                    com.example.juke.network.JukesApi.awaitForegroundIdle()
+                    resolveSlots.withPermit { resolveRecommendation(rec, current) }
+                }
             }
         }
         publishPending()
