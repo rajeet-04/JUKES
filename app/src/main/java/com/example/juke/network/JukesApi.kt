@@ -68,6 +68,8 @@ object JukesApi {
         @SerialName("audio_url") val audioUrl: String? = null,
         val streamable: Boolean = false,
         @SerialName("stream_url") val streamUrl: String? = null,
+        /** Exact title and artist, but a longer upload (music videos carry intros): skip our length check. */
+        @SerialName("length_relaxed") val lengthRelaxed: Boolean = false,
     )
 
     @Serializable
@@ -257,7 +259,7 @@ object JukesApi {
                     "Backend match '${prepared.title}' by ${prepared.artist} is not '$title'"
                 }
                 val foundSec = ((prepared.durationMs ?: 0L) / 1000).toInt()
-                check(isLengthOk(foundSec, durationSec)) {
+                check(prepared.lengthRelaxed || isLengthOk(foundSec, durationSec)) {
                     "Backend match ${prepared.videoId} is ${foundSec}s, expected ${durationSec}s"
                 }
                 prepared.audioUrl?.takeIf { prepared.status == "ready" }?.let {
