@@ -73,6 +73,8 @@ object JukesApi {
         val pool: String? = null,
         /** Exact title and artist, but a longer upload (music videos carry intros): skip our length check. */
         @SerialName("length_relaxed") val lengthRelaxed: Boolean = false,
+        /** Right song and length, but the singer is credited instead of the composer (or vice versa): skip our artist check. */
+        @SerialName("artist_relaxed") val artistRelaxed: Boolean = false,
     )
 
     @Serializable
@@ -272,7 +274,9 @@ object JukesApi {
                 reportPrepare(title, artist, prepared, elapsed())
                 // The server picks the best match; the app makes the final call.
                 // An id we sent was already validated by the radio/Spotify match; only title searches need our check.
-                check(videoId != null || AlexaBackendApi.isSameSong(prepared.title, prepared.artist, title, artist)) {
+                // artist_relaxed: the title must still match, only the credited artist may differ.
+                val expectedArtist = if (prepared.artistRelaxed) prepared.artist else artist
+                check(videoId != null || AlexaBackendApi.isSameSong(prepared.title, prepared.artist, title, expectedArtist)) {
                     "Backend match '${prepared.title}' by ${prepared.artist} is not '$title'"
                 }
                 val foundSec = ((prepared.durationMs ?: 0L) / 1000).toInt()
