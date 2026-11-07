@@ -51,6 +51,8 @@ object JukesApi {
     private val POLL_DELAYS_MS = longArrayOf(1_000, 2_000, 3_000) // then every 3 s
     /** The server holds a job poll up to this long and answers the moment the job finishes. */
     private const val LONG_POLL_SEC = 10
+    /** How long prepare may hold the request for a cold song to finish downloading. */
+    private const val PREPARE_WAIT_SEC = 3
 
     /**
      * Audio settings toggle (on by default): for immediate playback, ask for the server's progressive HLS
@@ -188,6 +190,15 @@ object JukesApi {
         kotlinx.coroutines.withTimeoutOrNull(maxMs) { foreground.first { it == 0 } }
     }
 
+    /** Opens the TLS connection to the backend (a new one costs ~1.2 s) so the first real call reuses it. */
+    fun preconnect() {
+        warmScope.launch {
+            runCatching {
+                ApiClient.okHttp.newCall(okhttp3.Request.Builder().head().url(base).build()).execute().close()
+            }
+        }
+    }
+
     private val warmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private suspend inline fun <reified T> call(
@@ -247,6 +258,9 @@ object JukesApi {
         videoId: String? = null,
     ): SpotifyApi.DirectDownloadRequest {
         val opt = if (progressive) "progressive=1" else ""
+        // wait=3: the server holds prepare up to 3 s and answers "ready" with audio_url for a cold song,
+        // so one request replaces prepare + poll (and progressive HLS) for the usual case.
+        val prepareQuery = "?" + listOfNotNull(opt.ifEmpty { null }, "wait=$PREPARE_WAIT_SEC").joinToString("&")
         val started = System.nanoTime()
         fun elapsed() = (System.nanoTime() - started) / 1_000_000
         // Title + main artist: every featured artist in the query pulls in their other songs.
@@ -261,7 +275,7 @@ object JukesApi {
                 if (System.currentTimeMillis() >= deadline) error("Backend still preparing '$title'")
                 prepares++
                 val prepared = try {
-                    call<Prepared>(client, HttpMethod.Post, "/v1/audio/prepare" + (if (progressive) "?$opt" else ""), body)
+                    call<Prepared>(client, HttpMethod.Post, "/v1/audio/prepare$prepareQuery", body)
                 } catch (e: JukesException) {
                     // 429 / 502 / 503 (pending, capacity): wait as told, then ask again.
                     if (prepares < MAX_PREPARES && (e.retryable || e.http in setOf(429, 502, 503))) {

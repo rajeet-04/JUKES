@@ -76,6 +76,7 @@ fun SearchScreen(
     // Warm the YT suggestions connection once when search screen is opened.
     LaunchedEffect(Unit) {
         searchViewModel.warmSuggestionsConnection()
+        com.example.juke.network.JukesApi.preconnect()
     }
 
     LaunchedEffect(uiState.query) {

@@ -64,7 +64,7 @@ class JukesApiTest {
         val body = (requests.single().body as TextContent).text
         // Main artist only; seconds sent as milliseconds.
         assertTrue(body, "\"artist\":\"Arijit Singh\"" in body && "\"duration_ms\":262000" in body)
-        assertEquals("$base/v1/audio/prepare", requests.single().url.toString())
+        assertEquals("$base/v1/audio/prepare?wait=3", requests.single().url.toString())
         assertNull(JukesApi.preparing.value)
     }
 
@@ -80,7 +80,7 @@ class JukesApiTest {
         assertEquals(streamUrl, request.url)
         assertTrue(!request.probeRanges)
         assertTrue(JukesApi.isStreamPlaylist(request.url))
-        assertEquals("$base/v1/audio/prepare?progressive=1", requests[0].url.toString())
+        assertEquals("$base/v1/audio/prepare?progressive=1&wait=3", requests[0].url.toString())
         assertEquals("$base/v1/jobs/j1?wait=10&progressive=1", requests[1].url.toString())
 
         // The background download waits for the completed file with a normal (non-progressive) poll.
@@ -154,7 +154,7 @@ class JukesApiTest {
     @Test
     fun unknownJob_preparesAgain() = runTest {
         play(client(prepared("queued"), error(404, "job_not_found"), prepared("ready")))
-        assertEquals("$base/v1/audio/prepare", requests.last().url.toString())
+        assertEquals("$base/v1/audio/prepare?wait=3", requests.last().url.toString())
     }
 
     @Test
