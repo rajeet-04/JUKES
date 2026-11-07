@@ -67,7 +67,8 @@ object AlexaBackendApi {
         artist: String,
         durationSec: Int?,
         live: Boolean,
-        client: HttpClient = ApiClient.httpClient
+        client: HttpClient = ApiClient.httpClient,
+        videoId: String? = null
     ): SpotifyApi.DirectDownloadRequest {
         check(isConfigured) { "Backend not configured" }
         // `/v1` prepare + poll; the legacy `/audio/` below stays as the rollout fallback.
@@ -75,7 +76,7 @@ object AlexaBackendApi {
             try {
                 return JukesApi.requestForPlayback(
                     title, artist, durationSec, showPreparing = live, client = client,
-                    progressive = live && JukesApi.progressiveEnabled
+                    progressive = live && JukesApi.progressiveEnabled, videoId = videoId
                 )
                     .also { hasV1 = true }
             } catch (_: JukesApi.V1MissingException) {

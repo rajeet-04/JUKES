@@ -906,7 +906,7 @@ class QueueManager private constructor(private val context: Context) {
         val info = DownloadInfo(validated.title, validated.artist, "recommendation")
         _downloadingTracks.update { it + info }
         try {
-            val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(spotifyId))
+            val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(spotifyId)).copy(ytVideoId = rec.id)
             return if (isStreamMode) {
                 // Pin queued uuids so cache eviction never removes a file about to be played.
                 val pinned = _currentQueue.value.map { it.uuid }.toSet()
@@ -1259,7 +1259,8 @@ class QueueManager private constructor(private val context: Context) {
                                 } else null
                             }
 
-                            song?.let { s ->
+                            song?.let { base ->
+                                val s = base.copy(ytVideoId = track.ytVideoId)
                                 val pinnedUuids = _currentQueue.value.map { it.uuid }.toSet()
                                 val updatedTrack = if (isStreamMode || track.isStream) {
                                     musicService.streamTrack(s, preferredUuid = track.uuid, pinnedUuids = pinnedUuids)
@@ -1311,9 +1312,11 @@ class QueueManager private constructor(private val context: Context) {
         if (positionMs > 3000) {
             val upcoming = _currentQueue.value
             val deep = durationMs > 0 && positionMs * 2 >= durationMs
-            upcoming.take(if (deep) 2 else 1).forEach { t ->
+            // Only the very next song is downloaded ahead (nothing else competes with it while the
+            // current one plays); the one after is just resolved, and prepared when it becomes current.
+            upcoming.take(if (deep) 2 else 1).forEachIndexed { i, t ->
                 if (t.localUri?.startsWith("http") != false) {  // already on the phone: nothing to warm
-                    JukesApi.warmup(t.title, t.artist, t.durationSec * 1000L, source = "queue")
+                    JukesApi.warmup(t.title, t.artist, t.durationSec * 1000L, source = "queue", resolveOnly = i > 0)
                 }
             }
         }

@@ -242,12 +242,15 @@ object JukesApi {
         showPreparing: Boolean,
         client: HttpClient = ApiClient.httpClient,
         progressive: Boolean = false,
+        videoId: String? = null,
     ): SpotifyApi.DirectDownloadRequest {
         val opt = if (progressive) "progressive=1" else ""
         val started = System.nanoTime()
         fun elapsed() = (System.nanoTime() - started) / 1_000_000
         // Title + main artist: every featured artist in the query pulls in their other songs.
-        val body = track(title, artist.split(", ").first(), durationSec?.let { it * 1000L })
+        // A known video id skips the server's 1.5-2 s title search and starts the download at once.
+        val body = if (videoId != null) buildJsonObject { put("video_id", videoId) }
+        else track(title, artist.split(", ").first(), durationSec?.let { it * 1000L })
         val deadline = System.currentTimeMillis() + PREPARE_BUDGET_MS
         if (showPreparing) { _preparing.value = title; foreground.update { it + 1 } }
         try {
@@ -268,11 +271,12 @@ object JukesApi {
                 wlog("prepare '$title' -> ${prepared.status} pool=${prepared.pool} video=${prepared.videoId} after ${elapsed()}ms")
                 reportPrepare(title, artist, prepared, elapsed())
                 // The server picks the best match; the app makes the final call.
-                check(AlexaBackendApi.isSameSong(prepared.title, prepared.artist, title, artist)) {
+                // An id we sent was already validated by the radio/Spotify match; only title searches need our check.
+                check(videoId != null || AlexaBackendApi.isSameSong(prepared.title, prepared.artist, title, artist)) {
                     "Backend match '${prepared.title}' by ${prepared.artist} is not '$title'"
                 }
                 val foundSec = ((prepared.durationMs ?: 0L) / 1000).toInt()
-                check(prepared.lengthRelaxed || isLengthOk(foundSec, durationSec)) {
+                check(videoId != null || prepared.lengthRelaxed || isLengthOk(foundSec, durationSec)) {
                     "Backend match ${prepared.videoId} is ${foundSec}s, expected ${durationSec}s"
                 }
                 prepared.audioUrl?.takeIf { prepared.status == "ready" }?.let {
@@ -431,7 +435,8 @@ object JukesApi {
         return t.isNotEmpty() && (q == t || q.startsWith("$t "))
     }
 
-    fun warmupVideo(videoId: String) = warm("v:$videoId", buildJsonObject { put("video_id", videoId) })
+    fun warmupVideo(videoId: String, source: String? = null, resolveOnly: Boolean = false) =
+        warm("v:$videoId" + if (resolveOnly) ":r" else "", buildJsonObject { put("video_id", videoId) }, source, resolveOnly)
 
     /** Server limit is 30 warmups/min per IP; stay well under it and never warm a song twice in a row. */
     private const val WARMUPS_PER_MINUTE = 20

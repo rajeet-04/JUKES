@@ -62,7 +62,7 @@ class MusicService(private val context: Context) {
     ): SpotifyApi.DirectDownloadRequest {
         val durationSec = SpotifyApi.parseDuration(song.duration)
         return when (source) {
-            Source.BACKEND -> AlexaBackendApi.getDownloadRequest(song.title, song.artist, durationSec, live)
+            Source.BACKEND -> AlexaBackendApi.getDownloadRequest(song.title, song.artist, durationSec, live, videoId = song.ytVideoId)
             Source.SPOTSAVER -> SpotsaverApi.getDownloadRequest(song.title, song.artist, durationSec)
             Source.GAMEPVZ -> SpotifyApi.getGamepvzDownloadRequest(song.url).let {
                 if (live) it.copy(url = com.example.juke.network.gamepvzStreamUrl(it.url)) else it

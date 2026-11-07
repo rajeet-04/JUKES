@@ -55,7 +55,9 @@ data class SpotdownSong(
     val cached: Boolean = false,
     val spotifyId: String? = null,
     val albumSpotifyId: String? = null,
-    val artistSpotifyIds: List<String>? = null
+    val artistSpotifyIds: List<String>? = null,
+    /** YouTube video id when already known (radio items): the backend then skips its title search. */
+    val ytVideoId: String? = null
 )
 
 /**

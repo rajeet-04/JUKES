@@ -72,6 +72,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -87,6 +88,9 @@ import java.util.Locale
 /**
  * Media Playback Service using Media3 (ExoPlayer) with Android Auto support.
  */
+/** Songs already retried once after an HTTP 429 (a second 429 is left alone, no retry loops). */
+private val retriedAfter429: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
 @UnstableApi
 class PlaybackService : MediaLibraryService() {
 
@@ -548,13 +552,13 @@ class PlaybackService : MediaLibraryService() {
                 // The next songs stream from the backend: make sure the server still has them (its cache
                 // evicts) so a transition doesn't hit a "pending" file. Free when they are cached.
                 var upcoming = player.currentMediaItemIndex
-                repeat(2) {
+                repeat(2) { n ->
                     if (upcoming == C.INDEX_UNSET || player.currentTimeline.isEmpty) return@repeat
                     upcoming = player.currentTimeline.getNextWindowIndex(upcoming, player.repeatMode, player.shuffleModeEnabled)
                     if (upcoming == C.INDEX_UNSET) return@repeat
                     player.getMediaItemAt(upcoming).localConfiguration?.uri?.toString()
                         ?.let(com.example.juke.network.JukesApi::videoIdOf)
-                        ?.let(com.example.juke.network.JukesApi::warmupVideo)
+                        ?.let { id -> com.example.juke.network.JukesApi.warmupVideo(id, source = "queue", resolveOnly = n > 0) }
                 }
                 // Note: Play count is now incremented only when track reaches 50% via checkPlayCountThreshold()
 
@@ -1723,12 +1727,32 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                 } else if (
                                     error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
-                                    (causeMessage.contains("403") || errorMessage.contains("403"))
+                                    (causeMessage.contains("429") || errorMessage.contains("429"))
+                                ) {
+                                    // Rate limited (the backend or a fallback source): wait a moment and retry
+                                    // once per song instead of looping; the response's Retry-After isn't visible here.
+                                    val trackId = controller?.currentMediaItem?.mediaId ?: return
+                                    if (retriedAfter429.add(trackId)) {
+                                        Log.w(tag, "HTTP 429 for track $trackId, retrying once in 5 s")
+                                        scope.launch {
+                                            delay(5_000)
+                                            withContext(Dispatchers.Main) {
+                                                controller?.takeIf { it.currentMediaItem?.mediaId == trackId }?.prepare()
+                                            }
+                                        }
+                                    }
+                                } else if (
+                                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+                                    (causeMessage.contains("403") || errorMessage.contains("403") ||
+                                        // A failed progressive stream answers 404 and is never restarted: prepare again.
+                                        ((causeMessage.contains("404") || errorMessage.contains("404")) &&
+                                            com.example.juke.network.JukesApi.isStreamPlaylist(
+                                                controller?.currentMediaItem?.localConfiguration?.uri?.toString())))
                                 ) {
                                     val trackId = controller?.currentMediaItem?.mediaId ?: return
                                     Log.w(
                                         tag,
-                                        "Stream URL expired (403) for track $trackId, refreshing..."
+                                        "Stream URL expired (403) or stream failed (404) for track $trackId, refreshing..."
                                     )
 
                                     scope.launch {
