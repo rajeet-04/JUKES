@@ -908,6 +908,32 @@ class PlaybackService : MediaLibraryService() {
         super.onTaskRemoved(rootIntent)
     }
 
+    /**
+     * Whether the service is, or can now become, a foreground service. Media3 calls startForeground from
+     * its own async callback, where a refusal (Android 12+, "mAllowStartForeground false", seen when
+     * resuming from the notification after a long pause) crashes the app. Trying it here, inside our
+     * try/catch, lets us tell Media3 not to attempt it. The placeholder shares Media3's notification id (1)
+     * and is replaced by the real notification right after.
+     */
+    private fun canGoForeground(): Boolean {
+        val nm = getSystemService(NotificationManager::class.java)
+        val posted = nm.activeNotifications.firstOrNull { it.id == 1 }
+        if (posted != null && posted.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0) return true
+        val notification = posted?.notification
+            ?: NotificationCompat.Builder(this, "media_playback")
+                .setSmallIcon(androidx.media3.session.R.drawable.media3_notification_small_icon)
+                .setContentTitle(getString(R.string.app_name))
+                .setSilent(true)
+                .build()
+        return try {
+            ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            true
+        } catch (e: Exception) {
+            Log.w(tag, "System refused foreground (${e.javaClass.simpleName}); updating the notification in the background")
+            false
+        }
+    }
+
     @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         // Never skip the update when the app is in the background: while a song plays,
@@ -917,7 +943,7 @@ class PlaybackService : MediaLibraryService() {
         // does not start it again; if the system still refuses (Android 12+), the exception
         // is caught below and the next update retries.
         try {
-            super.onUpdateNotification(session, startInForegroundRequired)
+            super.onUpdateNotification(session, startInForegroundRequired && canGoForeground())
         } catch (e: Exception) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 e is android.app.ForegroundServiceStartNotAllowedException
