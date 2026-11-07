@@ -79,7 +79,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             """https?://(?:(?:www\.|m\.|music\.)?youtube\.com/watch\?(?:\S*?&)?v=([\w-]{11})|youtu\.be/([\w-]{11}))""".toRegex()
         private const val LIVE_SUGGESTION_DEBOUNCE_MS = 100L
         private const val WARMUP_DEBOUNCE_MS = 400L
-        private const val SEARCH_WARMUP_COUNT = 3
+        private const val SEARCH_WARMUP_COUNT = 5
         private const val MIN_SUGGESTION_QUERY_LENGTH = 2
         private const val SUGGESTION_CACHE_MAX_ENTRIES = 64
         private const val YT_SUGGESTIONS_URL =
@@ -458,15 +458,19 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     // Warm the likeliest results on the backend once the results have settled
                     // (a newer search cancels it); the tap's prepare then finds it downloading.
                     warmupJob?.cancel()
+                    // Two tiers: resolving (match + metadata) is cheap, so do it for the top results;
+                    // a full download only for the one the query clearly names.
                     val likeliest = filteredSpotifyTracks.take(SEARCH_WARMUP_COUNT)
                     if (likeliest.isNotEmpty()) {
                         warmupJob = viewModelScope.launch {
                             delay(WARMUP_DEBOUNCE_MS.milliseconds)
-                            likeliest.forEach { track ->
+                            likeliest.forEachIndexed { i, track ->
                                 JukesApi.warmup(
                                     title = track.name,
                                     artist = track.artists.joinToString(", ") { it.name },
-                                    durationMs = track.durationMs.toLong()
+                                    durationMs = track.durationMs.toLong(),
+                                    source = "search",
+                                    resolveOnly = !(i == 0 && JukesApi.confidentMatch(textQuery, track.name))
                                 )
                             }
                         }

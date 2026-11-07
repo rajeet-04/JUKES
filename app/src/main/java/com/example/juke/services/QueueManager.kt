@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
+import com.example.juke.network.JukesApi
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
@@ -1300,6 +1301,18 @@ class QueueManager private constructor(private val context: Context) {
     fun checkPreFetch(positionMs: Long, durationMs: Long) {
         val now = System.currentTimeMillis()
         if (now - lastPreFetchTime < 5000) return // Throttle checks
+
+        // Sequential play is the likeliest next move: warm the next song a few seconds in, the one
+        // after at the halfway mark. Repeats are free (the warm-up client dedups per song).
+        if (positionMs > 3000) {
+            val upcoming = _currentQueue.value
+            val deep = durationMs > 0 && positionMs * 2 >= durationMs
+            upcoming.take(if (deep) 2 else 1).forEach { t ->
+                if (t.localUri?.startsWith("http") != false) {  // already on the phone: nothing to warm
+                    JukesApi.warmup(t.title, t.artist, t.durationSec * 1000L, source = "queue")
+                }
+            }
+        }
 
         val timeRemaining = durationMs - positionMs
         if (timeRemaining in 1..<15000) { // 15 seconds

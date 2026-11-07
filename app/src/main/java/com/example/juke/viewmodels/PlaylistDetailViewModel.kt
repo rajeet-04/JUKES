@@ -61,9 +61,10 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                     isLoading = false
                 )
                 // Opening a playlist usually means playing it from the top: warm its first songs.
-                tracks.take(2).forEach { track ->
-                    JukesApi.warmup(track.name, track.artists.joinToString(", ") { it.name }, track.durationMs.toLong())
-                }
+                tracks.take(5).forEachIndexed { i, track ->  // first two download, the next three only resolve
+                        JukesApi.warmup(track.name, track.artists.joinToString(", ") { it.name }, track.durationMs.toLong(),
+                            source = "playlist", resolveOnly = i >= 2)
+                    }
                 
                 Log.d("PlaylistDetailViewModel", "Loaded ${tracks.size} tracks for playlist ${playlist.name}")
             } catch (e: Exception) {

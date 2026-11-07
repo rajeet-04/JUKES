@@ -54,8 +54,9 @@ class AlbumDetailViewModel(application: Application) : AndroidViewModel(applicat
                         isLoading = false
                     )
                     // Opening an album usually means playing it from the top: warm its first songs.
-                    tracks.take(2).forEach { track ->
-                        JukesApi.warmup(track.name, track.artists.joinToString(", ") { it.name }, track.durationMs.toLong())
+                    tracks.take(5).forEachIndexed { i, track ->  // first two download, the next three only resolve
+                        JukesApi.warmup(track.name, track.artists.joinToString(", ") { it.name }, track.durationMs.toLong(),
+                            source = "album", resolveOnly = i >= 2)
                     }
 
                     Log.d(

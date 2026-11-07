@@ -16,5 +16,5 @@ object JamWarmup {
         return queue.drop(at + 1).take(count)
     }
 
-    fun warm(items: List<JamItem>) = items.forEach { JukesApi.warmup(it.title, it.artist, it.durationSec * 1000L) }
+    fun warm(items: List<JamItem>) = items.forEach { JukesApi.warmup(it.title, it.artist, it.durationSec * 1000L, source = "jam") }
 }

@@ -68,6 +68,8 @@ object JukesApi {
         @SerialName("audio_url") val audioUrl: String? = null,
         val streamable: Boolean = false,
         @SerialName("stream_url") val streamUrl: String? = null,
+        /** "warmup" when a warmup produced this file, "requested" otherwise. */
+        val pool: String? = null,
         /** Exact title and artist, but a longer upload (music videos carry intros): skip our length check. */
         @SerialName("length_relaxed") val lengthRelaxed: Boolean = false,
     )
@@ -254,6 +256,8 @@ object JukesApi {
                     }
                     throw e
                 }
+                wlog("prepare '$title' -> ${prepared.status} pool=${prepared.pool} video=${prepared.videoId} after ${elapsed()}ms")
+                reportPrepare(title, artist, prepared, elapsed())
                 // The server picks the best match; the app makes the final call.
                 check(AlexaBackendApi.isSameSong(prepared.title, prepared.artist, title, artist)) {
                     "Backend match '${prepared.title}' by ${prepared.artist} is not '$title'"
@@ -365,6 +369,14 @@ object JukesApi {
     }
 
     /** Timing lines for comparing progressive playback on a device (`adb logcat -s JukesApi`). */
+    /** Warmup behaviour, one line per event: `adb logcat -s JukesWarmup`. */
+    private fun wlog(message: String) {
+        try {
+            Log.println(Log.INFO, "JukesWarmup", message) // not Log.i: release R8 strips Log.i
+        } catch (_: RuntimeException) {
+        }
+    }
+
     private fun logProgressive(message: String) {
         try {
             Log.d(TAG, "Progressive: $message")
@@ -394,9 +406,17 @@ object JukesApi {
      * a later prepare promotes it. Fire-and-forget: failures are ignored, and a 429 pauses warmups
      * for its Retry-After.
      */
-    fun warmup(title: String, artist: String, durationMs: Long?) {
+    fun warmup(title: String, artist: String, durationMs: Long?, source: String? = null, resolveOnly: Boolean = false) {
         val mainArtist = artist.split(", ").first()
-        warm("t:${title.trim().lowercase()}|${mainArtist.trim().lowercase()}", track(title, mainArtist, durationMs))
+        warm("t:${title.trim().lowercase()}|${mainArtist.trim().lowercase()}" + if (resolveOnly) ":r" else "",
+            track(title, mainArtist, durationMs), source, resolveOnly)
+    }
+
+    /** The query names this title (plus maybe the artist): worth a full download, not just a resolve. */
+    internal fun confidentMatch(query: String, title: String): Boolean {
+        fun norm(t: String) = t.lowercase().replace(Regex("""[^\p{L}\p{N}]+"""), " ").trim()
+        val q = norm(query); val t = norm(title)
+        return t.isNotEmpty() && (q == t || q.startsWith("$t "))
     }
 
     fun warmupVideo(videoId: String) = warm("v:$videoId", buildJsonObject { put("video_id", videoId) })
@@ -410,12 +430,14 @@ object JukesApi {
 
     /** Whether a warmup for [key] may be sent now; records it when it may. */
     @Synchronized
-    internal fun admitWarmup(key: String, now: Long = System.currentTimeMillis()): Boolean {
+    internal fun admitWarmup(key: String, now: Long = System.currentTimeMillis(), counted: Boolean = true): Boolean {
         if (now < warmPausedUntil) return false
         warmed[key]?.let { if (now - it < REWARM_AFTER_MS) return false }
         while (recentWarmups.isNotEmpty() && now - recentWarmups.first() >= 60_000L) recentWarmups.removeFirst()
-        if (recentWarmups.size >= WARMUPS_PER_MINUTE) return false
-        recentWarmups.addLast(now)
+        if (counted) {  // resolve-only warmups download nothing, so they stay off the download budget
+            if (recentWarmups.size >= WARMUPS_PER_MINUTE) return false
+            recentWarmups.addLast(now)
+        }
         warmed[key] = now
         if (warmed.size > 500) warmed.remove(warmed.keys.first())
         return true
@@ -426,13 +448,47 @@ object JukesApi {
         warmed.clear(); recentWarmups.clear(); warmPausedUntil = 0L
     }
 
-    private fun warm(key: String, body: JsonObject) {
+    /** What this app instance warmed, to join with the prepare that follows (permanent record: PostHog `warmup_prepare`). */
+    private class WarmInfo(val source: String?, val resolveOnly: Boolean, val at: Long)
+    private val warmInfo = LinkedHashMap<String, WarmInfo>()
+    private val warmSent = java.util.concurrent.atomic.AtomicInteger()
+    private val warmSkipped = java.util.concurrent.atomic.AtomicInteger()
+
+    @Synchronized private fun noteWarm(key: String, info: WarmInfo) {
+        warmInfo[key] = info
+        if (warmInfo.size > 500) warmInfo.remove(warmInfo.keys.first())
+    }
+
+    @Synchronized private fun warmFor(key: String): WarmInfo? = warmInfo[key] ?: warmInfo["$key:r"]
+
+    private fun reportPrepare(title: String, artist: String, prepared: Prepared, ms: Long) {
+        val info = warmFor("t:${title.trim().lowercase()}|${artist.split(", ").first().trim().lowercase()}")
+        com.example.juke.analytics.AnalyticsManager.log("warmup_prepare", mapOf(
+                "status" to prepared.status,
+                "pool" to (prepared.pool ?: "unknown"),
+                "ms_to_prepare_response" to ms,
+                "warm_source" to (info?.source ?: if (info != null) "untagged" else "none"),
+                "warm_mode" to (if (info == null) "none" else if (info.resolveOnly) "resolve" else "full"),
+                "warm_age_s" to (info?.let { (System.currentTimeMillis() - it.at) / 1000 } ?: -1L),
+                "warms_sent" to warmSent.get(),
+                "warms_skipped" to warmSkipped.get(),
+        ))
+    }
+
+    private fun warm(key: String, body: JsonObject, source: String? = null, resolveOnly: Boolean = false) {
         if (!AlexaBackendApi.isConfigured || !BuildConfig.JUKE_BACKEND_V1) return
-        if (!admitWarmup(key)) return
+        if (!admitWarmup(key, counted = !resolveOnly)) { warmSkipped.incrementAndGet(); wlog("warm skip ($key) src=$source: deduped or over budget"); return }
+        warmSent.incrementAndGet()
+        noteWarm(key, WarmInfo(source, resolveOnly, System.currentTimeMillis()))
+        val query = listOfNotNull(source?.let { "source=$it" }, if (resolveOnly) "resolve_only=1" else null)
+            .joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
         warmScope.launch {
+            val t0 = System.nanoTime()
             try {
-                call<Prepared>(ApiClient.httpClient, HttpMethod.Post, "/v1/warmup", body)
+                val r = call<Prepared>(ApiClient.httpClient, HttpMethod.Post, "/v1/warmup$query", body)
+                wlog("warm sent ($key) src=$source resolveOnly=$resolveOnly -> ${r.status} video=${r.videoId} ${(System.nanoTime() - t0) / 1_000_000}ms")
             } catch (e: JukesException) {
+                wlog("warm failed ($key) src=$source http=${e.http} code=${e.code}")
                 if (e.http == 429) {
                     warmPausedUntil = System.currentTimeMillis() + (e.retryAfterSec ?: 30).coerceIn(5, 120) * 1000L
                 }

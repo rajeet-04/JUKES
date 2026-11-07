@@ -218,6 +218,17 @@ class JukesApiTest {
     }
 
     @Test
+    fun resolveOnlyWarmupsStayOffTheDownloadBudgetAndConfidenceNeedsTheTitle() {
+        JukesApi.resetWarmups()
+        for (i in 1..30) assertTrue(JukesApi.admitWarmup("r$i:r", 1_000L + i, counted = false))
+        assertTrue(JukesApi.admitWarmup("download", 2_000L))                // budget untouched
+        assertTrue(JukesApi.confidentMatch("Goray Goray Gaal omar mukhtar", "Goray Goray Gaal"))
+        assertTrue(JukesApi.confidentMatch("believer", "Believer"))
+        assertTrue(!JukesApi.confidentMatch("gora gora", "Gora Gora Gaal")) // query is only part of the title
+        JukesApi.resetWarmups()
+    }
+
+    @Test
     fun warmups_areDedupedAndRateLimited() {
         JukesApi.resetWarmups()
         val t0 = 1_000_000L
