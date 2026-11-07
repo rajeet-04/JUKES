@@ -426,6 +426,14 @@ private fun ActionMenu(expanded: Boolean, onDismiss: () -> Unit, actions: List<M
     }
 }
 
+/** "Go to album" / "Go to <artist>" entries, only for ids the song actually carries. */
+@Composable
+private fun mediaActions(albumId: String?, artists: List<Pair<String, String>>): List<MenuAction> {
+    val open = com.example.juke.ui.components.LocalOpenMedia.current
+    return listOfNotNull(albumId?.let { MenuAction("Go to album") { open.album(it) } }) +
+        artists.map { (name, id) -> MenuAction("Go to $name") { open.artist(id) } }
+}
+
 /** Play now, play next, add to queue for a song that isn't in the library yet. */
 @Composable
 private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewModel): List<MenuAction> {
@@ -435,7 +443,7 @@ private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewMo
         MenuAction("Play") { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
         MenuAction("Play next") { musicViewModel.queueSpotifyTrack(track, next = true); say("${track.name} will play next") },
         MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") }
-    )
+    ) + mediaActions(track.album.id, track.artists.take(3).mapNotNull { a -> a.id?.let { a.name to it } })
 }
 
 /** Play now, play next, add to queue for a song already in the library. */
@@ -447,7 +455,7 @@ private fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, pl
         MenuAction("Play", play),
         MenuAction("Play next") { musicViewModel.addNext(track); say("${track.title} will play next") },
         MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") }
-    )
+    ) + mediaActions(track.albumSpotifyId, listOfNotNull(track.artistSpotifyIds?.firstOrNull()?.let { track.artist.substringBefore(", ") to it }))
 }
 
 @Composable

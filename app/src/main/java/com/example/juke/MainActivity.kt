@@ -352,7 +352,22 @@ class MainActivity : ComponentActivity() {
                 }
 
                 com.example.juke.ui.components.PlayerTransitionHost(expanded = showPlayerModal, musicViewModel = musicViewModel) {
-                CompositionLocalProvider(LocalHazeState provides hazeState) {
+                val openMedia = remember(navController) {
+                    com.example.juke.ui.components.OpenMedia(
+                        album = { id ->
+                            activityViewModelProvider[AlbumDetailViewModel::class.java].loadAlbumDetailsById(id)
+                            navController.navigate("album/$id")
+                        },
+                        artist = { id ->
+                            activityViewModelProvider[SearchViewModel::class.java].loadArtistDetailsById(id)
+                            navController.navigate("artist/$id")
+                        }
+                    )
+                }
+                CompositionLocalProvider(
+                    LocalHazeState provides hazeState,
+                    com.example.juke.ui.components.LocalOpenMedia provides openMedia
+                ) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = Color.Transparent,

@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -88,14 +89,19 @@ fun LibraryTrackActionsSheet(
     onRemoveFromPlaylist: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
+    onAlbum: (() -> Unit)? = null,
+    onArtist: (() -> Unit)? = null,
+    artUrl: String? = null,
 ) {
     GlassModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            LibrarySheetHeader(title, subtitle, onDismiss, enabled = enabled)
+            LibrarySheetHeader(title, subtitle, onDismiss, enabled = enabled, artUrl = artUrl)
             LibraryActionRow("Play next", "Immediately after the current song", JukeIcons.Play, enabled, onPlayNext)
             LibraryActionRow("Add to queue end", "After the songs already queued", JukeIcons.Queue, enabled, onQueueEnd)
             LibraryActionRow("Add to playlist", "Choose an existing playlist or create one", JukeIcons.PlaylistAdd, enabled, onPlaylist)
+            onAlbum?.let { LibraryActionRow("Go to album", "Open this song's album", JukeIcons.Album, enabled, it) }
+            onArtist?.let { LibraryActionRow("Go to artist", "Open $subtitle", JukeIcons.MusicNote, enabled, it) }
             HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
             if (playlistName != null) {
                 LibraryActionRow("Remove from this playlist", "From $playlistName; keep downloads and library songs", Icons.Default.RemoveCircleOutline, enabled, onRemoveFromPlaylist)
@@ -106,8 +112,12 @@ fun LibraryTrackActionsSheet(
 }
 
 @Composable
-fun LibrarySheetHeader(title: String, subtitle: String, onDismiss: () -> Unit, enabled: Boolean = true) {
+fun LibrarySheetHeader(title: String, subtitle: String, onDismiss: () -> Unit, enabled: Boolean = true, artUrl: String? = null) {
     Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (artUrl != null) {
+            coil.compose.AsyncImage(artUrl, null, Modifier.padding(end = 16.dp).size(56.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))

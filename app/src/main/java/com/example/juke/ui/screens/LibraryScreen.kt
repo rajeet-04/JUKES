@@ -150,6 +150,7 @@ fun LibraryScreen(
 
     // Changed to support multiple tracks
     var tracksForPlaylistDialog by remember { mutableStateOf<List<Track>?>(null) }
+    val openMedia = com.example.juke.ui.components.LocalOpenMedia.current
     var tracksForActions by remember { mutableStateOf<List<Track>?>(null) }
     var tracksForDelete by remember { mutableStateOf<List<Track>?>(null) }
     var queueActionBusy by remember { mutableStateOf(false) }
@@ -818,7 +819,10 @@ fun LibraryScreen(
                 tracksForActions = null
             },
             onDelete = { tracksForActions = null; tracksForDelete = tracks },
-            onDismiss = { if (!queueActionBusy) tracksForActions = null }
+            onDismiss = { if (!queueActionBusy) tracksForActions = null },
+            artUrl = tracks.singleOrNull()?.thumbnailUri,
+            onAlbum = tracks.singleOrNull()?.albumSpotifyId?.let { id -> { tracksForActions = null; openMedia.album(id) } },
+            onArtist = tracks.singleOrNull()?.artistSpotifyIds?.firstOrNull()?.let { id -> { tracksForActions = null; openMedia.artist(id) } }
         )
     }
 

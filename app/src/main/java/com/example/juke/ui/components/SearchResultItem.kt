@@ -3,7 +3,7 @@ package com.example.juke.ui.components
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.example.juke.ui.theme.pressScale
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,8 +15,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -45,6 +43,7 @@ fun SearchResultItemM3(
 ) {
     val haptic = rememberJukeHaptics()
     val context = LocalContext.current
+    val open = LocalOpenMedia.current
     var menuOpen by remember { mutableStateOf(false) }
     // Prefer the smallest image that is still at least 64px wide so the 48dp slot
     // doesn't upscale a tiny thumbnail. Fall back to the last entry if none qualify.
@@ -54,13 +53,25 @@ fun SearchResultItemM3(
         ?: track.album.images.lastOrNull()?.url
 
     val rowSource = remember { MutableInteractionSource() }
+    if (menuOpen) TrackActionSheet(
+        title = track.name, subtitle = track.artists.joinToString(", ") { it.name }, artUrl = thumbnailUrl,
+        onDismiss = { menuOpen = false },
+        actions = listOfNotNull(
+            SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
+            SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
+            track.album.id?.let { id -> SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
+        ) + track.artists.take(3).mapNotNull { a -> // ponytail: first 3 credited artists
+            a.id?.let { id -> SheetAction("Go to ${a.name}", JukeIcons.MusicNote) { menuOpen = false; open.artist(id) } }
+        }
+    )
     ListItem(
         modifier = Modifier
             .pressScale(rowSource)
-            .clickable(
+            .combinedClickable(
                 interactionSource = rowSource,
                 indication = androidx.compose.foundation.LocalIndication.current,
-                enabled = !isDownloading
+                enabled = !isDownloading,
+                onLongClick = { haptic.heavyClick(); menuOpen = true }
             ) {
                 haptic.click()
                 onClick()
@@ -133,10 +144,6 @@ fun SearchResultItemM3(
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(JukeIcons.More, "Options for ${track.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Play now") }, onClick = { menuOpen = false; onClick() })
-                        DropdownMenuItem(text = { Text("Play next") }, onClick = { menuOpen = false; onPlayNext() })
                     }
                 }
             }

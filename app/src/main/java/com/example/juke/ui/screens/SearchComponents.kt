@@ -2,6 +2,7 @@ package com.example.juke.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -351,11 +352,23 @@ internal fun LocalTrackItem(
     onPlayNext: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val open = com.example.juke.ui.components.LocalOpenMedia.current
+    val haptic = com.example.juke.utils.rememberJukeHaptics()
+    if (menuOpen) com.example.juke.ui.components.TrackActionSheet(
+        title = track.title, subtitle = track.artist, artUrl = track.thumbnailUri,
+        onDismiss = { menuOpen = false },
+        actions = listOfNotNull(
+            com.example.juke.ui.components.SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
+            com.example.juke.ui.components.SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
+            track.albumSpotifyId?.let { id -> com.example.juke.ui.components.SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
+            track.artistSpotifyIds?.firstOrNull()?.let { id -> com.example.juke.ui.components.SheetAction("Go to artist", JukeIcons.MusicNote) { menuOpen = false; open.artist(id) } },
+        )
+    )
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick),
+                .combinedClickable(onLongClick = { haptic.heavyClick(); menuOpen = true }, onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Primary-colored left accent bar
@@ -403,10 +416,6 @@ internal fun LocalTrackItem(
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(JukeIcons.More, "Options for ${track.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Play now") }, onClick = { menuOpen = false; onClick() })
-                        DropdownMenuItem(text = { Text("Play next") }, onClick = { menuOpen = false; onPlayNext() })
                     }
                 }
             }
