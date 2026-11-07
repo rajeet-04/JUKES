@@ -638,7 +638,7 @@ class QueueManager private constructor(private val context: Context) {
         val ready = lookahead()
         val baseline = if (ignoreQueue) upcomingAfter(current, 0) else 0
         fun upcoming() = if (ignoreQueue) upcomingAfter(current, 0) - baseline else upcomingAfter(current, reported)
-        var added = 0
+        val added = java.util.concurrent.atomic.AtomicInteger()
         var round = 0
 
         while (round++ < 6 && gen == sessionGen.get()) {
@@ -660,22 +660,23 @@ class QueueManager private constructor(private val context: Context) {
             _recStatus.value = RecStatus(batch.size, pendingRecs.size)
             try {
                 coroutineScope {
-                    val jobs = batch.map { rec -> async { fetchPending(rec, current, priority = false) } }
-                    // Fetch in parallel, deliver in radio order: each song joins the queue as soon
-                    // as it and the ones before it are ready.
-                    batch.zip(jobs).forEach { (rec, job) ->
-                        val track = job.await() ?: return@forEach
-                        if (gen != sessionGen.get()) return@forEach
-                        deliver(rec, track)
-                        added++
-                    }
+                    // Fetch in parallel; each song joins the queue the moment it is ready
+                    // (completion order, no waiting on slower songs ahead of it).
+                    batch.map { rec ->
+                        async {
+                            val track = fetchPending(rec, current, priority = false) ?: return@async
+                            if (gen != sessionGen.get()) return@async
+                            deliver(rec, track)
+                            added.incrementAndGet()
+                        }
+                    }.awaitAll()
                 }
             } finally {
                 if (gen == sessionGen.get()) _recStatus.value = RecStatus(0, pendingRecs.size)
             }
         }
 
-        if (added == 0 && pendingRecs.isEmpty() && gen == sessionGen.get() && ready - upcoming() > 0) {
+        if (added.get() == 0 && pendingRecs.isEmpty() && gen == sessionGen.get() && ready - upcoming() > 0) {
             Log.d(tag, "Online radio produced nothing. Falling back to offline library.")
             fetchOfflineRecommendations(current, ready - upcoming())
         }
