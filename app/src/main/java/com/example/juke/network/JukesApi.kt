@@ -48,11 +48,12 @@ object JukesApi {
     /** How long a play or download waits for the server to finish the file (handbook: ~2 min). */
     const val PREPARE_BUDGET_MS = 120_000L
     private const val MAX_PREPARES = 3
+    private val NO_RETRY_CODES = setOf("extraction_failed", "authentication_required")
     private val POLL_DELAYS_MS = longArrayOf(1_000, 2_000, 3_000) // then every 3 s
     /** The server holds a job poll up to this long and answers the moment the job finishes. */
     private const val LONG_POLL_SEC = 10
-    /** How long prepare may hold the request for a cold song to finish downloading. */
-    private const val PREPARE_WAIT_SEC = 3
+    /** How long prepare may hold the request: a cold song is ready in ~1 s, an age-gated one in ~12 s (then the job poll takes over). */
+    private const val PREPARE_WAIT_SEC = 10
 
     /**
      * Audio settings toggle (on by default): for immediate playback, ask for the server's progressive HLS
@@ -258,7 +259,7 @@ object JukesApi {
         videoId: String? = null,
     ): SpotifyApi.DirectDownloadRequest {
         val opt = if (progressive) "progressive=1" else ""
-        // wait=3: the server holds prepare up to 3 s and answers "ready" with audio_url for a cold song,
+        // wait=10: the server holds prepare up to 10 s and answers "ready" with audio_url for a cold song,
         // so one request replaces prepare + poll (and progressive HLS) for the usual case.
         val prepareQuery = "?" + listOfNotNull(opt.ifEmpty { null }, "wait=$PREPARE_WAIT_SEC").joinToString("&")
         val started = System.nanoTime()
@@ -337,7 +338,11 @@ object JukesApi {
                         }
                         "failed" -> {
                             val err = job.error
-                            if (err?.retryable == true && prepares < MAX_PREPARES) continue@prepare
+                            // A video that can't be extracted won't be better a moment later: fall through to the next source.
+                            if (err?.retryable == true && err.code !in NO_RETRY_CODES && prepares < MAX_PREPARES) {
+                                delay((prepares * 1_000L).milliseconds) // 1 s, then 2 s
+                                continue@prepare
+                            }
                             throw JukesException(422, err?.code ?: "job_failed", false, null)
                         }
                         else -> if (progressive && job.streamable) job.streamUrl?.let {
