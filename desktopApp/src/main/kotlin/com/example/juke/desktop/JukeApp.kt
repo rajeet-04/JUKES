@@ -342,6 +342,10 @@ fun JukeApp() {
         }
 
         val hazeState = remember { HazeState() }
+        // One Settings at a time: if it's already in the stack, return to it instead of stacking another.
+        val openSettings: () -> Unit = {
+            if (!navController.popBackStack("settings", inclusive = false)) navController.navigate("settings") { launchSingleTop = true }
+        }
         val haptic = rememberJukeHaptics()
         val navItems = items.map { screen ->
             GlassNavItem(
@@ -379,7 +383,7 @@ fun JukeApp() {
                     onHome = { onNavigate(Screen.Home) },
                     onSearch = { onNavigate(Screen.Search) },
                     onJam = { com.example.juke.jam.JamSession.sheetOpen.value = true },
-                    onSettings = { navController.navigate("settings") }
+                    onSettings = openSettings
                 )
             },
             bottomBar = {
@@ -533,7 +537,7 @@ fun JukeApp() {
                     composable(Screen.Home.route) {
                         HomeScreen(
                             musicViewModel = musicViewModel,
-                            onSettingsClick = { navController.navigate("settings") },
+                            onSettingsClick = openSettings,
                             onSearchClick = { onNavigate(Screen.Search) },
                             onSeeAllClick = {
                                 navController.navigate(Screen.Library.route) {

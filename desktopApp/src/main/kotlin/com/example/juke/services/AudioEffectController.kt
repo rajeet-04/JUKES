@@ -31,7 +31,7 @@ class AudioEffectController private constructor(context: Context) {
     private fun apply() {
         val bands = player?.audioEqualizer?.bands ?: return
         val boost = if (_isBoosterEnabled.value) _boosterLevel.value / 100.0 * 9.0 else 0.0
-        val bass = _bassLevel.value / 100.0 * 12.0
+        val bass = if (_isBoosterEnabled.value) _bassLevel.value / 100.0 * 12.0 else 0.0 // one switch gates both, as on Android
         bands.forEachIndexed { i, b -> b.gain = (boost + if (i < 3) bass * (1 - i / 3.0) else 0.0).coerceIn(-24.0, 12.0) }
         player?.audioEqualizer?.isEnabled = boost != 0.0 || bass != 0.0
     }
