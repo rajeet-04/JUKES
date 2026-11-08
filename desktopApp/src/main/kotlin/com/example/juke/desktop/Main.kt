@@ -65,6 +65,11 @@ fun main(args: Array<String>) {
         val img = javax.imageio.ImageIO.read(object {}.javaClass.getResource("/juke_icon.png"))
         if (java.awt.Taskbar.isTaskbarSupported() && java.awt.Taskbar.getTaskbar().isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) java.awt.Taskbar.getTaskbar().iconImage = img
     }
+    // macOS hands juke:// links to the running app through this (not as arguments)
+    runCatching {
+        if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.APP_OPEN_URI))
+            java.awt.Desktop.getDesktop().setOpenURIHandler { AppLinks.incoming.tryEmit(it.uri.toString()) }
+    }
     startup(args)
     application {
         val state = rememberWindowState(size = DpSize(1180.dp, 780.dp))

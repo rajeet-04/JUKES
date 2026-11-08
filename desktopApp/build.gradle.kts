@@ -127,7 +127,19 @@ compose.desktop.application {
         // dmg only builds on mac, msi on windows, deb on linux: one command per OS
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
         packageName = "JUKE"
-        macOS { iconFile.set(project.file("icons/JUKE.icns")) }
+        macOS {
+            iconFile.set(project.file("icons/JUKE.icns"))
+            // juke:// links (the "Open in JUKES" button on shared playlists and Jam pages) open this app
+            infoPlist {
+                extraKeysRawXml = """
+                    <key>CFBundleURLTypes</key>
+                    <array><dict>
+                        <key>CFBundleURLName</key><string>JUKE</string>
+                        <key>CFBundleURLSchemes</key><array><string>juke</string></array>
+                    </dict></array>
+                """.trimIndent()
+            }
+        }
         windows { iconFile.set(project.file("icons/JUKE.ico")) }
         linux { iconFile.set(project.file("icons/JUKE.png")) }
         packageVersion = "1.0.0"
