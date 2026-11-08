@@ -116,7 +116,7 @@ compose.desktop.application {
     buildTypes.release.proguard {
         isEnabled = true
         obfuscate = false // ponytail: obfuscation buys little size, costs debuggability
-        optimize = true
+        optimize = false // shrinking is the win; the optimizer broke nothing here but risks reflective code
         configurationFiles.from("proguard-rules.pro")
     }
     nativeDistributions {
@@ -124,6 +124,6 @@ compose.desktop.application {
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
         packageName = "JUKE"
         packageVersion = "1.0.0"
-        modules("java.base", "java.desktop", "java.logging", "java.sql", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http")
+        modules("java.base", "java.desktop", "java.logging", "java.sql", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http", "java.xml", "java.management")
     }
 }
