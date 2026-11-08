@@ -29,7 +29,9 @@ object NowPlaying {
             val mac = runCatching { Mac(pm) }.onFailure { println("NowPlaying unavailable: $it") }.getOrNull() ?: return@launch
             var shownPos = 0L; var shownAt = 0L; var shownPlaying = false
             combine(pm.currentTrackIdFlow, pm.isPlayingFlow) { id, playing -> id to playing }.collect { (_, playing) ->
-                mac.publish(pm.currentTrackNow, pm.getCurrentPosition(), playing)
+                val t = pm.currentTrackNow
+                mac.publish(t, pm.getCurrentPosition(), playing)
+                if (t != null) scope.launch(Dispatchers.IO) { mac.loadArt(t) { mac.publish(pm.currentTrackNow, pm.getCurrentPosition(), pm.isPlayingFlow.value) } }
                 shownPos = pm.getCurrentPosition(); shownAt = System.currentTimeMillis(); shownPlaying = playing
             }
         }
@@ -71,6 +73,8 @@ object NowPlaying {
         private val kDuration = constant("MPMediaItemPropertyPlaybackDuration")
         private val kElapsed = constant("MPNowPlayingInfoPropertyElapsedPlaybackTime")
         private val kRate = constant("MPNowPlayingInfoPropertyPlaybackRate")
+        private val kArtwork = constant("MPMediaItemPropertyArtwork")
+        init { NativeLibrary.getInstance("/System/Library/Frameworks/AppKit.framework/AppKit") }
 
         class BlockDescriptor : Structure() {
             @JvmField var reserved: Long = 0
@@ -87,15 +91,46 @@ object NowPlaying {
         }
         interface Handler : Callback { fun invoke(block: Pointer?, event: Pointer?): Long }
 
+        private fun makeBlock(handler: Callback): Pointer {
+            val d = BlockDescriptor().also { it.write() }
+            val b = Block().also { it.isa = system.getGlobalVariableAddress("_NSConcreteGlobalBlock"); it.invoke = handler; it.descriptor = d.pointer; it.write() }
+            keep += d; keep += handler; keep += b
+            return b.pointer
+        }
+
         private fun addCommand(name: String, action: (Pointer?) -> Unit) {
             val rc = send(cls("MPRemoteCommandCenter"), "sharedCommandCenter")!!
             val cmd = send(rc, name)!!
             sendL(cmd, "setEnabled:", 1)
-            val d = BlockDescriptor().also { it.write() }
             val h = object : Handler { override fun invoke(block: Pointer?, event: Pointer?): Long { runCatching { action(event) }; return 0 } }
-            val b = Block().also { it.isa = system.getGlobalVariableAddress("_NSConcreteGlobalBlock"); it.invoke = h; it.descriptor = d.pointer; it.write() }
-            keep += d; keep += h; keep += b
-            send(cmd, "addTargetWithHandler:", b.pointer)
+            send(cmd, "addTargetWithHandler:", makeBlock(h))
+        }
+
+        // ---- artwork: the widget shows the song's cover instead of the app icon ----
+        private var artFor: String? = null
+        private var artObj: Pointer? = null
+        private var artImage: Pointer? = null
+        interface ArtHandler : Callback { fun invoke(block: Pointer?, w: Double, h: Double): Pointer? }
+
+        /** Fetches and decodes the cover off the main thread, then republishes with it. */
+        fun loadArt(track: com.example.juke.models.Track, republish: () -> Unit) {
+            if (artFor == track.uuid) return
+            val uri = track.thumbnailUri ?: return
+            val bytes = runCatching {
+                if (uri.startsWith("http", true)) java.net.http.HttpClient.newHttpClient().send(
+                    java.net.http.HttpRequest.newBuilder(java.net.URI(uri)).build(), java.net.http.HttpResponse.BodyHandlers.ofByteArray()).body()
+                else java.io.File(if (uri.startsWith("file:")) java.net.URI(uri).path else uri).readBytes()
+            }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return
+            runCatching {
+                val mem = com.sun.jna.Memory(bytes.size.toLong()).also { it.write(0, bytes, 0, bytes.size) }
+                val data = send(cls("NSData"), "dataWithBytes:length:", mem, bytes.size.toLong())!!
+                val img = send(send(cls("NSImage"), "alloc")!!, "initWithData:", data) ?: return
+                val handler = object : ArtHandler { override fun invoke(block: Pointer?, w: Double, h: Double): Pointer? = img }
+                val art = msg.invokePointer(arrayOf<Any?>(send(cls("MPMediaItemArtwork"), "alloc")!!, sel("initWithBoundsSize:requestHandler:"), 600.0, 600.0, makeBlock(handler)))
+                artImage?.let { send(it, "release") }
+                artImage = img; artObj = art; artFor = track.uuid
+            }.onFailure { println("NowPlaying artwork failed: $it") }
+            republish()
         }
 
         init {
@@ -115,6 +150,7 @@ object NowPlaying {
                 fun put(k: Pointer, v: Pointer) = send(d, "setObject:forKey:", v, k)
                 put(kTitle, nsString(track.title)); put(kArtist, nsString(track.artist))
                 put(kDuration, nsNumber(maxOf(pm.getDuration(), track.durationSec * 1000L) / 1000.0))
+                if (artFor == track.uuid) artObj?.let { put(kArtwork, it) }
                 put(kElapsed, nsNumber(posMs / 1000.0)); put(kRate, nsNumber(if (playing) 1.0 else 0.0))
                 send(center, "setNowPlayingInfo:", d)
                 sendL(center, "setPlaybackState:", if (playing) 1 else 2)

@@ -94,7 +94,8 @@ class PlaybackManager private constructor(private val context: Context) {
     }
     private fun uriOf(t: Track): String? {
         val u = t.localUri ?: return null
-        return if (u.startsWith("http", true)) u else Mp4Defrag.playable(File(u.removePrefix("file://"))).toURI().toString()
+        if (u.startsWith("http", true)) { val c = StreamCache.cached(u) ?: return u; return Mp4Defrag.playable(c).toURI().toString() }
+        return Mp4Defrag.playable(File(u.removePrefix("file://"))).toURI().toString()
     }
 
     // ---- engine ------------------------------------------------------------------------------
@@ -107,6 +108,8 @@ class PlaybackManager private constructor(private val context: Context) {
         Fx.run { disposePlayer() } // old song stops now, even if the new one still has to be fetched
         publish()
         if (missing(track)) { if (track.spotifyId != null) recoverThenLoad(track, startMs) else skipAfterFailure(track); return }
+        val raw = track.localUri
+        if (raw != null && StreamCache.needsFetch(raw)) { fetchThenLoad(track, raw, startMs); return }
         val uri = uriOf(track) ?: return skipAfterFailure(track)
         val myIndex = index
         Fx.run {
@@ -130,6 +133,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
         saveQueueStructure()
         validateUpcoming()
+        prefetchNext()
     }
 
     private fun disposePlayer() { player?.let { runCatching { it.stop(); it.dispose() } }; player = null; _isPlaying.value = false }
@@ -157,6 +161,16 @@ class PlaybackManager private constructor(private val context: Context) {
         recoverThenLoad(track, posMs)
     }
 
+    /** Streams play from a cached copy: fetch it, then load again if this song is still the current one. */
+    private fun fetchThenLoad(track: Track, url: String, startMs: Long) {
+        scope.launch {
+            try { withContext(Dispatchers.IO) { StreamCache.fetch(url) } }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Log.e(tag, "Fetch failed for ${track.title}: ${e.message}"); if (queue.getOrNull(index)?.uuid == track.uuid) onFailed(track); return@launch }
+            if (queue.getOrNull(index)?.uuid == track.uuid) load(startMs, wantPlay)
+        }
+    }
+
     private fun recoverThenLoad(track: Track, startMs: Long) {
         scope.launch {
             val fresh = recoverAudio(track)
@@ -177,6 +191,12 @@ class PlaybackManager private constructor(private val context: Context) {
                 else musicService.smartDownloadAndIndex(song)
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.e(tag, "Recovery failed for ${track.title}: ${e.message}"); null } finally { recovering.remove(track.uuid) }
+    }
+
+    /** The next song's stream is pulled into the cache while this one plays, so the change is instant. */
+    private fun prefetchNext() {
+        val url = synchronized(lock) { queue.getOrNull(index + 1)?.localUri } ?: return
+        if (StreamCache.needsFetch(url)) scope.launch(Dispatchers.IO) { runCatching { StreamCache.fetch(url) } }
     }
 
     /** Re-fetch audio for the next few songs now so they're ready when the current one ends. */
