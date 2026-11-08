@@ -23,9 +23,18 @@ database_id = "b647095b-833f-4c9f-91c4-fb4272031e21"
 name = "JAM"
 class_name = "JamRoom"
 
+# Playback handoff mailboxes: one per pairing code
+[[durable_objects.bindings]]
+name = "HAND"
+class_name = "HandBox"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["JamRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["HandBox"]
 
 [triggers]
 crons = ["17 3 * * *"]
