@@ -274,7 +274,7 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
         musicViewModel.updateProgress()
         while (state.isPlaying) { kotlinx.coroutines.delay(250); musicViewModel.updateProgress() }
     }
-    Row(modifier.fillMaxWidth().height(84.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().height(100.dp).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         // left: what's playing
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             if (track != null) {
@@ -298,6 +298,7 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
                 Tip(JukeIcons.Next, "Next", musicViewModel::skipToNext, tint = MaterialTheme.colorScheme.onSurface)
                 Tip(if (state.repeatMode == Player.REPEAT_MODE_ONE) JukeIcons.RepeatOne else JukeIcons.Repeat, "Repeat", musicViewModel::toggleRepeat, selected = state.repeatMode != Player.REPEAT_MODE_OFF)
             }
+            Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val dur = if (state.duration > 0) state.duration else pm.getDuration()
                 Text(fmt(state.position), style = MaterialTheme.typography.labelSmall, color = Dim, modifier = Modifier.width(38.dp))
