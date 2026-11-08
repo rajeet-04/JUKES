@@ -375,11 +375,25 @@ val LocalWindowScope = staticCompositionLocalOf<androidx.compose.ui.window.Windo
 
 private var restoreBounds: java.awt.Rectangle? = null
 
-/** Fill the screen's usable area (menu bar and Dock stay visible); a second call puts the window back. */
+private var animating: javax.swing.Timer? = null
+
+/** Fill the screen's usable area (menu bar and Dock stay visible); a second call puts the window back. Eased, not snapped. */
 fun toggleMaximize(window: java.awt.Window) {
     val gc = window.graphicsConfiguration ?: return
     val ins = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc)
     val b = gc.bounds
     val full = java.awt.Rectangle(b.x + ins.left, b.y + ins.top, b.width - ins.left - ins.right, b.height - ins.top - ins.bottom)
-    if (window.bounds == full) restoreBounds?.let { window.bounds = it } else { restoreBounds = window.bounds; window.bounds = full }
+    animating?.stop() // a new click retargets from wherever the window is now
+    val from = window.bounds
+    val atFull = from.width >= full.width - 2 && from.height >= full.height - 2
+    val to = if (atFull) (restoreBounds ?: java.awt.Rectangle(full.x + full.width / 8, full.y + full.height / 8, full.width * 3 / 4, full.height * 3 / 4))
+             else { restoreBounds = from; full }
+    val start = System.nanoTime(); val durationMs = 240.0
+    animating = javax.swing.Timer(8) { e ->
+        val t = ((System.nanoTime() - start) / 1e6 / durationMs).coerceIn(0.0, 1.0)
+        val k = 1 - Math.pow(1 - t, 4.0) // ease-out quart: quick start, soft landing
+        fun lerp(x: Int, y: Int) = (x + (y - x) * k).toInt()
+        window.setBounds(lerp(from.x, to.x), lerp(from.y, to.y), lerp(from.width, to.width), lerp(from.height, to.height))
+        if (t >= 1.0) { window.bounds = to; (e.source as javax.swing.Timer).stop() }
+    }.also { it.start() }
 }
