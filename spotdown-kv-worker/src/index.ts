@@ -1,4 +1,5 @@
 export { JamRoom } from './jam';
+export { HandBox } from './hand';
 import { createCrash } from './crash';
 import { createReport, REPORT_KEEP_MS } from './report';
 
@@ -6,6 +7,7 @@ export interface Env {
     KV: KVNamespace;
     DB: D1Database;
     JAM: DurableObjectNamespace;
+    HAND: DurableObjectNamespace;
     SPOTIFY_CLIENT_ID: string;
     SPOTIFY_CLIENT_SECRET: string;
     APP_SECRET: string;
@@ -121,6 +123,12 @@ export default {
             const code = jam[2].toUpperCase();
             if (jam[1] === 'j') return jamLanding(env, code);
             return jam[3] ? room(env, code).fetch(request) : room(env, code).fetch('https://jam/info');
+        }
+        const hand = pathname.match(/^\/hand\/([A-HJKMNP-Za-hjkmnp-z2-9]{6})$/);
+        if (hand) {
+            if (request.headers.get('X-App-Secret') !== env.APP_SECRET) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+            if (request.method !== 'GET' && request.method !== 'PUT') return new Response('Method Not Allowed', { status: 405 });
+            return env.HAND.get(env.HAND.idFromName(hand[1].toUpperCase())).fetch(request);
         }
         if (pathname === '/.well-known/assetlinks.json') return Response.json([{
             relation: ['delegate_permission/common.handle_all_urls'],

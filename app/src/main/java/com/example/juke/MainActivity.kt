@@ -263,6 +263,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                androidx.compose.runtime.LaunchedEffect(Unit) { com.example.juke.jam.Handoff.run(musicViewModel) }
                 val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
                 if (jamSheetOpen) {
                     com.example.juke.ui.components.JamSheet(
