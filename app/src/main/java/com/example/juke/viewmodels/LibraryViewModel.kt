@@ -66,6 +66,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             trackDao.getDownloadedTracksFlow().collect { trackEntities ->
                 val currentState = _uiState.value
+                // this flow's rows carry no lyrics, so while searching reload the full rows instead
+                if (currentState.searchQuery.isNotBlank()) { refreshVisibleTracks(); return@collect }
                 if (!currentState.showFavoritesOnly && currentState.selectedPlaylist == null) {
                     val tracks = trackEntities.map { it.toTrack() }
                     val filteredTracks = filterTracksBySearch(tracks, null)
@@ -275,21 +277,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val query = state.searchQuery.trim()
         if (query.isEmpty()) return visibleTracks
 
-        val lowerQuery = query.lowercase()
-        return visibleTracks.filter { track ->
-            // Search in title
-            track.title.lowercase().contains(lowerQuery) ||
-                    // Search in artist
-                    track.artist.lowercase().contains(lowerQuery) ||
-                    // Search in plain lyrics
-                    (track.plainLyrics?.lowercase()?.contains(lowerQuery) == true) ||
-                    // Search in synced lyrics (remove timestamps for search)
-                    (track.syncedLyrics?.lowercase()?.replace(Regex("\\[\\d+:\\d+\\.\\d+]"), "")
-                        ?.replace(Regex("\\[\\d+:\\d+]"), "")?.trim()?.contains(lowerQuery) == true)
-        }
+        return com.example.juke.utils.TrackSearch.rank(visibleTracks, query)
     }
 
     private fun sortTracks(tracks: List<Track>, sortOption: SortOption): List<Track> {
+        // a search keeps its relevance order
+        if (_uiState.value.searchQuery.isNotBlank()) return tracks
         return when (sortOption) {
             SortOption.RECENTLY_ADDED -> tracks.sortedByDescending { it.downloadedAt ?: 0L }
             SortOption.TITLE -> tracks.sortedBy { it.title.lowercase() }
