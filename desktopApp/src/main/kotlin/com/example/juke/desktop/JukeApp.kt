@@ -87,6 +87,7 @@ import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
+import com.example.juke.desktop.TopSearch
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlin.math.roundToInt
@@ -156,6 +157,8 @@ fun JukeApp() {
         }
         var showPlayerModal by remember { mutableStateOf(false) }
         var searchFocusTrigger by remember { mutableIntStateOf(0) }
+        val topSearchVm = activityViewModelProvider[SearchViewModel::class]
+        val topSearchState by topSearchVm.uiState.collectAsStateWithLifecycle()
         // No keyboard while the full player is open: drop the search field's focus too, so
         // the IME can't come back over the player.
         val keyboard = LocalSoftwareKeyboardController.current
@@ -380,9 +383,14 @@ fun JukeApp() {
             topBar = {
                 if (desktop) com.example.juke.desktop.DesktopTopBar(
                     titleInset = com.example.juke.desktop.LocalTitleInset.current,
-                    searchActive = currentRoute == Screen.Search.route,
+                    query = topSearchState.query,
+                    focusTrigger = TopSearch.focusTrigger,
+                    onQueryChange = { q ->
+                        if (currentRoute != Screen.Search.route) onNavigate(Screen.Search)
+                        topSearchVm.updateQuery(q)
+                    },
+                    onSubmit = { if (topSearchState.query.isNotBlank()) topSearchVm.search(topSearchState.query) },
                     onHome = { onNavigate(Screen.Home) },
-                    onSearch = { onNavigate(Screen.Search) },
                     onJam = { com.example.juke.jam.JamSession.sheetOpen.value = true },
                     onSettings = openSettings
                 )

@@ -30,6 +30,10 @@ val stageAndroid by tasks.registering(Sync::class) {
         filesMatching("**/*.kt") {
             filter { it.replace("import androidx.lifecycle.viewmodel.compose.viewModel", "import com.example.juke.desktop.viewModel") }
         }
+        // desktop's one search bar lives in the top bar
+        filesMatching("**/SearchScreen.kt") {
+            filter { it.replace("            SearchInput(", "            if (false) SearchInput(") }
+        }
         // Android-only blur mask -> Skia's
         filesMatching("**/GlassNavigation.kt") {
             filter { it.replace("var librarySection by rememberSaveable { mutableStateOf(0) }", "var librarySection by rememberSaveable { mutableStateOf(if (uiState.selectedPlaylist != null) 1 else 0) }") }

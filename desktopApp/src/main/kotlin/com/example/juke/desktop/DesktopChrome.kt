@@ -17,6 +17,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material3.*
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,7 +92,7 @@ fun ThinSlider(value: Float, onChange: (Float) -> Unit, modifier: Modifier = Mod
 // Top bar
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun DesktopTopBar(titleInset: Dp, searchActive: Boolean, onHome: () -> Unit, onSearch: () -> Unit, onJam: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier) {
+fun DesktopTopBar(titleInset: Dp, query: String, focusTrigger: Int, onQueryChange: (String) -> Unit, onSubmit: () -> Unit, onHome: () -> Unit, onJam: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(56.dp).padding(horizontal = 12.dp)) {
         // With the title bar hidden this strip is the title bar: drag to move, double-click to fill the screen.
         LocalWindowScope.current?.let { ws ->
@@ -102,13 +107,9 @@ fun DesktopTopBar(titleInset: Dp, searchActive: Boolean, onHome: () -> Unit, onS
                 })
         }
         Spacer(Modifier.width(titleInset))
-        Row(Modifier.align(Alignment.Center).width(512.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.align(Alignment.Center).widthIn(max = 560.dp).fillMaxWidth(0.7f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(44.dp).clip(CircleShape).background(panelColor).clickable(onClick = onHome), contentAlignment = Alignment.Center) { Icon(JukeIcons.Home, "Home", Modifier.size(22.dp)) }
-            // On the Search screen its own field is the one search bar, so the shortcut steps aside.
-            if (!searchActive) Row(Modifier.width(460.dp).height(44.dp).clip(CircleShape).background(panelColor).clickable(onClick = onSearch).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(JukeIcons.Search, null, Modifier.size(20.dp), tint = Dim)
-                Text("What do you want to play?", color = Dim, style = MaterialTheme.typography.bodyMedium)
-            }
+            TopSearchField(query, focusTrigger, onQueryChange, onSubmit, Modifier.weight(1f))
         }
         Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             Tip(JukeIcons.Share, "Jam", onJam, size = 40.dp)
@@ -398,4 +399,45 @@ fun toggleMaximize(window: java.awt.Window) {
         window.setBounds(lerp(from.x, to.x), lerp(from.y, to.y), lerp(from.width, to.width), lerp(from.height, to.height))
         if (t >= 1.0) { window.bounds = to; (e.source as javax.swing.Timer).stop() }
     }.also { it.start() }
+}
+
+/** Shared with the window's key handler: Cmd/Ctrl+K focuses the bar; while typing, Space and Esc belong to the field. */
+object TopSearch {
+    var focusTrigger by mutableIntStateOf(0)
+    @Volatile var typing = false
+}
+
+/** The one search bar: a real field in the top bar. Typing opens Search and drives it; Enter runs the full search. */
+@Composable
+private fun TopSearchField(query: String, focusTrigger: Int, onQueryChange: (String) -> Unit, onSubmit: () -> Unit, modifier: Modifier = Modifier) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    DisposableEffect(Unit) { onDispose { TopSearch.typing = false } }
+    var focused by remember { mutableStateOf(false) }
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    LaunchedEffect(focusTrigger) { if (focusTrigger > 0) runCatching { focus.requestFocus() } }
+    val ring by androidx.compose.animation.animateColorAsState(
+        if (focused) MaterialTheme.colorScheme.onSurface else if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.35f) else Color.Transparent,
+        androidx.compose.animation.core.tween(160),
+    )
+    val fill by androidx.compose.animation.animateColorAsState(if (focused || hovered) panelColor.copy(alpha = 1f) else panelColor, androidx.compose.animation.core.tween(160))
+    Row(modifier.height(44.dp).clip(CircleShape).background(fill).border(2.dp, ring, CircleShape).hoverable(src).padding(start = 14.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(JukeIcons.Search, null, Modifier.size(20.dp), tint = if (focused) MaterialTheme.colorScheme.onSurface else Dim)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (query.isEmpty()) Text("Search songs, artists, lyrics", color = Dim, style = MaterialTheme.typography.bodyMedium, maxLines = 1, softWrap = false)
+            androidx.compose.foundation.text.BasicTextField(
+                value = query, onValueChange = onQueryChange, singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.onSurface),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSubmit() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { focused = it.isFocused; TopSearch.typing = it.isFocused }
+                    .onPreviewKeyEvent { if (it.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && it.key == androidx.compose.ui.input.key.Key.Enter) { onSubmit(); true } else if (it.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && it.key == androidx.compose.ui.input.key.Key.Escape) { focusManager.clearFocus(); true } else false },
+            )
+        }
+        if (query.isNotEmpty()) Tip(JukeIcons.Close, "Clear", { onQueryChange(""); focus.requestFocus() }, size = 32.dp)
+        else Text(if (System.getProperty("os.name").orEmpty().startsWith("Mac")) "⌘K" else "Ctrl K", color = Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = 10.dp))
+    }
 }

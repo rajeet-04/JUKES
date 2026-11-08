@@ -419,27 +419,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     val queryTokens =
                         textQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
 
-                    val localResults = if (queryTokens.isEmpty()) {
-                        emptyList()
-                    } else {
-                        val queryBuilder = StringBuilder("SELECT * FROM tracks WHERE ")
-                        val args = ArrayList<Any>()
-
-                        queryTokens.forEachIndexed { index, token ->
-                            if (index > 0) queryBuilder.append(" AND ")
-                            queryBuilder.append("(LOWER(title) LIKE '%' || LOWER(?) || '%' OR LOWER(artist) LIKE '%' || LOWER(?) || '%')")
-                            args.add(token)
-                            args.add(token)
-                        }
-
-                        queryBuilder.append(" ORDER BY last_played_at DESC")
-                        trackDao.searchTracksRaw(
-                            SimpleSQLiteQuery(
-                                queryBuilder.toString(),
-                                args.toArray()
-                            )
-                        ).map { it.toTrack() }
-                    }
+                    // Saved songs: typo-tolerant, matches artist + title words together and lyrics (incl. romanized)
+                    val localResults = if (queryTokens.isEmpty()) emptyList() else
+                        com.example.juke.utils.TrackSearch.rank((trackDao.getAllTracks() + trackDao.getStreamTracks()).map { it.toTrack() }, textQuery).take(50)
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results

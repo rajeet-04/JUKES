@@ -81,6 +81,8 @@ fun main(args: Array<String>) {
                     val pm = com.example.juke.services.PlaybackManager.getInstance(Application.instance)
                     val mod = e.isMetaPressed || e.isCtrlPressed
                     when {
+                        mod && e.key == Key.K -> { TopSearch.focusTrigger++; true }
+                        TopSearch.typing -> false
                         e.key == Key.Escape -> BackDispatcher.back()
                         e.key == Key.Spacebar -> { pm.togglePlayPause(); true }
                         mod && e.key == Key.DirectionRight -> { pm.skipToNext(); true }
