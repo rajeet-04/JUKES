@@ -250,7 +250,8 @@ class PlaybackManager private constructor(private val context: Context) {
         publish(); saveQueueStructure(); return true
     }
 
-    fun setPlaybackSpeed(s: Float) { speed = s; Fx.run { player?.rate = s.toDouble() } }
+    // On macOS a rate change starts a paused player natively (no status event), so re-pause unless playback is wanted.
+    fun setPlaybackSpeed(s: Float) { speed = s; Fx.run { player?.let { it.rate = s.toDouble(); if (!wantPlay && !_isPlaying.value) it.pause() } } }
 
     fun togglePlayPause() {
         if (!jamApplying && com.example.juke.jam.JamControls.togglePlayPause()) return

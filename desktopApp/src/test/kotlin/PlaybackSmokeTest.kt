@@ -45,6 +45,11 @@ class PlaybackSmokeTest {
         pm.togglePlayPause(); kotlinx.coroutines.delay(2500)
         println("after resume: playing=${pm.isPlayingFlow.value} pos=${pm.getCurrentPosition()}")
         assertTrue(pm.isPlayingFlow.value && pm.getCurrentPosition() > pausedAt, "resume failed")
+        pm.togglePlayPause(); kotlinx.coroutines.delay(800) // pause, then change speed: must stay paused
+        val held = pm.getCurrentPosition(); pm.setPlaybackSpeed(1.5f); kotlinx.coroutines.delay(2000)
+        println("SPEED paused: playing=${pm.isPlayingFlow.value} pos=$held then ${pm.getCurrentPosition()}")
+        assertTrue(!pm.isPlayingFlow.value && pm.getCurrentPosition() - held < 400, "speed change started playback")
+        pm.setPlaybackSpeed(1f); pm.togglePlayPause(); kotlinx.coroutines.delay(1500)
         pm.seekTo(120_000); kotlinx.coroutines.delay(2500)
         println("after seek: pos=${pm.getCurrentPosition()}")
         println("fragmented seek ok=${pm.getCurrentPosition() in 119_000..130_000}")
