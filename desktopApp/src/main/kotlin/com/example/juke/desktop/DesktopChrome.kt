@@ -108,24 +108,26 @@ fun DesktopTopBar(titleInset: Dp, onHome: () -> Unit, onSearch: () -> Unit, onJa
 // Library sidebar
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun LibrarySidebar(libraryViewModel: LibraryViewModel, onOpenSongs: (favourites: Boolean) -> Unit, onOpenPlaylist: (PlaylistEntity) -> Unit, modifier: Modifier = Modifier) {
+fun LibrarySidebar(libraryViewModel: LibraryViewModel, collapsed: Boolean, onToggle: () -> Unit, onOpenSongs: (favourites: Boolean) -> Unit, onOpenPlaylist: (PlaylistEntity) -> Unit, modifier: Modifier = Modifier) {
     val state by libraryViewModel.uiState.collectAsStateWithLifecycle()
     Panel(modifier) {
-        Row(Modifier.padding(start = 18.dp, end = 12.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(JukeIcons.LibrarySelected, null, Modifier.size(22.dp), tint = Dim)
-            Spacer(Modifier.width(10.dp))
+        if (collapsed) Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
+            Tip(JukeIcons.LibrarySelected, "Expand your library", onToggle, size = 44.dp)
+        } else Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Tip(JukeIcons.LibrarySelected, "Collapse your library", onToggle, size = 44.dp)
+            Spacer(Modifier.width(4.dp))
             Text("Your Library", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
-            item { SideRow("Liked Songs", "Playlist", null, MaterialTheme.colorScheme.primary) { onOpenSongs(true) } }
-            item { SideRow("All songs", "${state.tracks.size} downloaded or streamed", null, MaterialTheme.colorScheme.secondary) { onOpenSongs(false) } }
-            items(state.playlists, key = { it.id }) { p -> SideRow(p.name, "Playlist", p) { onOpenPlaylist(p) } }
+            item { SideRow("Liked Songs", "Playlist", null, collapsed, MaterialTheme.colorScheme.primary) { onOpenSongs(true) } }
+            item { SideRow("All songs", "${state.tracks.size} downloaded or streamed", null, collapsed, MaterialTheme.colorScheme.secondary) { onOpenSongs(false) } }
+            items(state.playlists, key = { it.id }) { p -> SideRow(p.name, "Playlist", p, collapsed) { onOpenPlaylist(p) } }
         }
     }
 }
 
 @Composable
-private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, tile: Color = Color.Gray, onClick: () -> Unit) {
+private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, collapsed: Boolean, tile: Color = Color.Gray, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.07f) else Color.Transparent)
@@ -134,10 +136,12 @@ private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, 
         else Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(Brush.linearGradient(listOf(tile, tile.copy(alpha = 0.45f)))), contentAlignment = Alignment.Center) {
             Icon(if (title == "Liked Songs") JukeIcons.HeartSelected else JukeIcons.MusicNote, null, Modifier.size(22.dp), tint = Color.White)
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (!collapsed) {
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

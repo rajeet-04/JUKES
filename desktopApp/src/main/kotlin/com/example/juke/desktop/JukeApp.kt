@@ -295,6 +295,9 @@ fun JukeApp() {
         val isExpanded = windowWidth >= 600.dp
         val desktop = windowWidth >= 900.dp
         var panelOpen by remember { mutableStateOf(true) }
+        val uiPrefs = remember { context.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE) }
+        var libraryCollapsed by remember { mutableStateOf(uiPrefs.getBoolean("library_collapsed", false)) }
+        val libraryWidth by androidx.compose.animation.core.animateDpAsState(if (libraryCollapsed) 76.dp else 300.dp, label = "libraryWidth")
         val playerState by musicViewModel.uiState.collectAsStateWithLifecycle()
         val libraryViewModel = activityViewModelProvider[com.example.juke.viewmodels.LibraryViewModel::class]
         // Scrolling down a list folds the tab bar into one button beside the mini player.
@@ -500,6 +503,8 @@ fun JukeApp() {
                 horizontalArrangement = if (desktop) Arrangement.spacedBy(8.dp) else Arrangement.Start) {
                 if (desktop) com.example.juke.desktop.LibrarySidebar(
                     libraryViewModel = libraryViewModel,
+                    collapsed = libraryCollapsed,
+                    onToggle = { libraryCollapsed = !libraryCollapsed; uiPrefs.edit().putBoolean("library_collapsed", libraryCollapsed).apply() },
                     onOpenSongs = { fav ->
                         if (libraryViewModel.uiState.value.showFavoritesOnly != fav) libraryViewModel.toggleFavoritesFilter() else libraryViewModel.loadTracks()
                         onNavigate(Screen.Library)
@@ -508,7 +513,7 @@ fun JukeApp() {
                         libraryViewModel.loadPlaylistTracks(p.id)
                         onNavigate(Screen.Library)
                     },
-                    modifier = Modifier.width(300.dp).fillMaxHeight()
+                    modifier = Modifier.width(libraryWidth).fillMaxHeight()
                 )
                 if (isExpanded && !desktop && currentRoute != "settings") {
                     GlassNavRail(items = navItems, modifier = Modifier.statusBarsPadding())

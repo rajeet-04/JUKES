@@ -42,6 +42,13 @@ class UiRenderTest {
         val hit = kotlinx.coroutines.runBlocking { SpotifyApi.search("Blinding Lights The Weeknd", listOf("track")).tracks!!.items.first() }
         vm.playInstant(SpotifyApi.spotifyTrackToSong(hit))
         shoot(scene, "home_playing", 14000)
+        edt {
+            val pos = androidx.compose.ui.geometry.Offset(30f, 80f)
+            scene.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move, pos)
+            scene.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Press, pos)
+            scene.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Release, pos)
+        }
+        shoot(scene, "home_collapsed", 1500)
         edt { scene.close() }
 
         val player = edt { ImageComposeScene(1180, 780, Density(1f)) {
