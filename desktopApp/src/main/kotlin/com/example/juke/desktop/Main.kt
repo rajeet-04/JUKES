@@ -60,6 +60,11 @@ private fun startup(args: Array<String>) {
 
 fun main(args: Array<String>) {
     System.setProperty("apple.awt.application.name", "JUKE")
+    // Dock / taskbar icon while running unpackaged (a packaged app gets it from its bundle)
+    runCatching {
+        val img = javax.imageio.ImageIO.read(object {}.javaClass.getResource("/juke_icon.png"))
+        if (java.awt.Taskbar.isTaskbarSupported() && java.awt.Taskbar.getTaskbar().isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) java.awt.Taskbar.getTaskbar().iconImage = img
+    }
     startup(args)
     application {
         val state = rememberWindowState(size = DpSize(1180.dp, 780.dp))
@@ -69,6 +74,7 @@ fun main(args: Array<String>) {
                 exitApplication()
             },
             title = "JUKE",
+            icon = androidx.compose.ui.res.loadImageBitmap(object {}.javaClass.getResourceAsStream("/juke_icon.png")!!).let { androidx.compose.ui.graphics.painter.BitmapPainter(it) },
             state = state,
             onKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown) false else {

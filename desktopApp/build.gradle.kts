@@ -123,6 +123,9 @@ compose.desktop.application {
         // dmg only builds on mac, msi on windows, deb on linux: one command per OS
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
         packageName = "JUKE"
+        macOS { iconFile.set(project.file("icons/JUKE.icns")) }
+        windows { iconFile.set(project.file("icons/JUKE.ico")) }
+        linux { iconFile.set(project.file("icons/JUKE.png")) }
         packageVersion = "1.0.0"
         modules("java.base", "java.desktop", "java.logging", "java.sql", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http", "java.xml", "java.management")
     }
