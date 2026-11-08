@@ -117,12 +117,12 @@ class PlaybackManager private constructor(private val context: Context) {
             val mp = MediaPlayer(Media(uri))
             player = mp
             audioEffectController.attach(mp)
-            mp.rate = speed.toDouble(); mp.volume = _volume.value.toDouble()
+            mp.volume = _volume.value.toDouble()
             mp.setOnReady {
                 if (player !== mp) return@setOnReady
                 durMs = mp.totalDuration.toMillis().takeIf { it > 0 && !it.isNaN() }?.toLong() ?: durMs
                 if (startMs > 0) mp.seek(Duration.millis(startMs.toDouble()))
-                if (wantPlay) mp.play()
+                if (wantPlay) { mp.play(); mp.rate = speed.toDouble() }
             }
             mp.setOnPlaying { _isPlaying.value = true }
             mp.setOnPaused { _isPlaying.value = false }
@@ -250,15 +250,16 @@ class PlaybackManager private constructor(private val context: Context) {
         publish(); saveQueueStructure(); return true
     }
 
-    // On macOS a rate change starts a paused player natively (no status event), so re-pause unless playback is wanted.
-    fun setPlaybackSpeed(s: Float) { speed = s; Fx.run { player?.let { it.rate = s.toDouble(); if (!wantPlay && !_isPlaying.value) it.pause() } } }
+    // On macOS a rate change starts a paused player natively (no status event), so a paused player is
+    // never touched: the speed is stored and applied right after play().
+    fun setPlaybackSpeed(s: Float) { speed = s; if (_isPlaying.value) Fx.run { player?.rate = s.toDouble() } }
 
     fun togglePlayPause() {
         if (!jamApplying && com.example.juke.jam.JamControls.togglePlayPause()) return
         val playing = _isPlaying.value
         wantPlay = !playing
         if (player == null && !playing) { if (synchronized(lock) { queue.isNotEmpty() }) load(posMs, true); return }
-        Fx.run { player?.let { if (playing) it.pause() else it.play() } }
+        Fx.run { player?.let { if (playing) it.pause() else { it.play(); it.rate = speed.toDouble() } } }
     }
 
     fun shouldResumeAfterTrackChange(): Boolean = wantPlay || _isPlaying.value

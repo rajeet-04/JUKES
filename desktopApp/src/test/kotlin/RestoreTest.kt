@@ -43,7 +43,14 @@ class RestoreTest {
         val t0 = System.currentTimeMillis()
         val pm = PlaybackManager.getInstance(app)
         pm.initialize()
-        repeat(240) { kotlinx.coroutines.delay(500); if (pm.hasRestoredState.value && pm.getDuration() > 0) { println("RESTORE ready after ${System.currentTimeMillis() - t0}ms dur=${pm.getDuration()}"); return@runBlocking } }
+        repeat(240) { kotlinx.coroutines.delay(500); if (pm.hasRestoredState.value && pm.getDuration() > 0) { println("RESTORE ready after ${System.currentTimeMillis() - t0}ms dur=${pm.getDuration()}")
+            // restored = loaded but never played: change speed, then press play
+            val p0 = pm.getCurrentPosition(); pm.setPlaybackSpeed(1.5f); kotlinx.coroutines.delay(1500)
+            println("RSPEED after speed: playing=${pm.isPlayingFlow.value} pos=$p0 -> ${pm.getCurrentPosition()}")
+            pm.togglePlayPause(); kotlinx.coroutines.delay(2500)
+            println("RSPEED after play: playing=${pm.isPlayingFlow.value} pos=${pm.getCurrentPosition()}")
+            pm.setPlaybackSpeed(1f); pm.release()
+            return@runBlocking } }
         println("RESTORE never ready restored=${pm.hasRestoredState.value}")
     }
 }
