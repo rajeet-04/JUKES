@@ -80,6 +80,53 @@ object TrackSearch {
         return 0
     }
 
+    /** A lyric line (or two) that holds the words the title and artist don't explain; [startMs] is null for unsynced lyrics. */
+    data class LyricHit(val text: String, val startMs: Long?)
+
+    private fun near(q: String, w: String, allowed: Int) =
+        distance(q, w, allowed) <= allowed || (w.length > q.length && distance(q, w.substring(0, q.length), allowed) <= allowed)
+
+    private fun inMeta(q: String, ix: Index): Boolean {
+        val allowed = budget(q.length)
+        return (q.length >= 2 && (ix.title.contains(q) || ix.artist.contains(q))) ||
+            (allowed > 0 && (ix.titleWords.any { near(q, it, allowed) } || ix.artistWords.any { near(q, it, allowed) }))
+    }
+
+    private fun lineHas(q: String, norm: String, words: List<String>): Boolean {
+        if (q.length >= 2 && norm.contains(q)) return true
+        val allowed = budget(q.length)
+        return q.length >= 4 && allowed > 0 && words.any { near(q, it, allowed) }
+    }
+
+    /**
+     * Where in the song the query was heard: the first line (or pair of lines) that holds every query word the
+     * title/artist don't. Null when the song matched on its title/artist alone, or no line fits.
+     */
+    fun lyricHit(t: Track, query: String): LyricHit? {
+        val words = normalize(query).split(' ').filter { it.isNotEmpty() }.distinct()
+        if (words.isEmpty()) return null
+        val ix = index(t)
+        val needed = words.filterNot { inMeta(it, ix) }
+        if (needed.isEmpty()) return null
+        fun scan(lines: List<Pair<Long?, String>>): LyricHit? {
+            val norm = lines.map { normalize(it.second) }
+            val split = norm.map { n -> n.split(' ').filter { it.isNotEmpty() } }
+            for (i in lines.indices) if (needed.all { lineHas(it, norm[i], split[i]) }) return LyricHit(lines[i].second.trim(), lines[i].first)
+            for (i in 0 until lines.size - 1) {
+                val joined = norm[i] + " " + norm[i + 1]
+                val jw = split[i] + split[i + 1]
+                if (needed.all { lineHas(it, joined, jw) }) return LyricHit(lines[i].second.trim() + " / " + lines[i + 1].second.trim(), lines[i].first)
+            }
+            return null
+        }
+        fun synced(lrc: String?) = lrc?.takeIf { it.isNotBlank() }?.let { l ->
+            com.example.juke.ui.screens.parseSyncedLyrics(l, t.lyricsOffsetMs).map { it.timeMs as Long? to it.text }
+        }.orEmpty()
+        fun plain(p: String?) = p.orEmpty().lines().filter { it.isNotBlank() }.map { null as Long? to it }
+        return scan(synced(t.syncedLyrics)) ?: scan(synced(t.romanizedSyncedLyrics))
+            ?: scan(plain(t.plainLyrics)) ?: scan(plain(t.romanizedPlainLyrics))
+    }
+
     /** Matching tracks, best first; with a blank query, [tracks] unchanged. */
     fun rank(tracks: List<Track>, query: String): List<Track> {
         val words = normalize(query).split(' ').filter { it.isNotEmpty() }.distinct()

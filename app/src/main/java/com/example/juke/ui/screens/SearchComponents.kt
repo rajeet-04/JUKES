@@ -1,5 +1,7 @@
 package com.example.juke.ui.screens
 
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.juke.utils.seekWhenReady
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -239,7 +241,8 @@ internal fun SearchResultsList(
         if ((selectedFilter == "All" || selectedFilter == "Songs") && uiState.localTracks.isNotEmpty()) {
             item { SearchSectionHeader("In your library", preview && uiState.localTracks.size > 2) { onFilterSelected("Songs") } }
             items(localTracks, key = { "local_${it.uuid}" }) { track ->
-                SwipeToAddNextContainer(
+                Column {
+SwipeToAddNextContainer(
                     onAddNext = {
                         musicViewModel.addNext(track)
                     }
@@ -251,6 +254,14 @@ internal fun SearchResultsList(
                         onPlayNext = { musicViewModel.addNext(track) }
                     )
                 }
+                if (uiState.query.isNotBlank()) {
+                    val hitScope = rememberCoroutineScope()
+                    com.example.juke.ui.components.LyricHitRow(track, uiState.query) { ms ->
+                        musicViewModel.setQueue(listOf(track), 0)
+                        hitScope.launch { musicViewModel.seekWhenReady(track, ms) }
+                    }
+                }
+            }
             }
             item { Spacer(Modifier.height(8.dp)) }
         }
