@@ -1,0 +1,3 @@
+-dontwarn **
+-keep class juke.desktop.MainKt { *; }
+-keepclassmembers class * { @androidx.compose.runtime.Composable *; }

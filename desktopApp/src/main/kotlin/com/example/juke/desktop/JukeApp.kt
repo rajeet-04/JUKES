@@ -1,0 +1,822 @@
+// Generated from MainActivity.kt for the desktop app: same navigation and chrome, hosted in a window.
+package com.example.juke.desktop
+
+import android.content.Intent
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.juke.desktop.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.example.juke.analytics.AnalyticsManager
+import com.example.juke.repositories.toSpotifyTrack
+import com.example.juke.models.GithubRelease
+import com.example.juke.network.SpotifyApi
+import com.example.juke.services.UpdateDownloadState
+import com.example.juke.services.UpdateManager
+import com.example.juke.ui.components.GlassNavBar
+import com.example.juke.ui.components.GlassNavItem
+import com.example.juke.ui.components.GlassNavRail
+import com.example.juke.ui.components.MiniPlayer
+import com.example.juke.ui.components.UpdateSheet
+import com.example.juke.ui.icons.JukeIcons
+import com.example.juke.ui.screens.AlbumDetailScreen
+import com.example.juke.ui.screens.ArtistDetailScreen
+import com.example.juke.ui.screens.AudioSettingsScreen
+import com.example.juke.ui.screens.HomeScreen
+import com.example.juke.ui.screens.LibraryScreen
+import com.example.juke.ui.screens.PlayerScreen
+import com.example.juke.ui.screens.PlaylistDetailScreen
+import com.example.juke.ui.screens.SearchScreen
+import com.example.juke.ui.theme.GlassBackdrop
+import com.example.juke.ui.theme.JUKETheme
+import com.example.juke.ui.theme.LocalHazeState
+import com.example.juke.ui.theme.isGlassDark
+import com.example.juke.utils.rememberJukeHaptics
+import com.example.juke.viewmodels.AlbumDetailViewModel
+import com.example.juke.viewmodels.MusicViewModel
+import com.example.juke.viewmodels.PlaylistDetailViewModel
+import com.example.juke.viewmodels.SearchViewModel
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
+import com.example.juke.*
+
+sealed class Screen(
+    val route: String,
+    val title: String,
+    val filledIcon: @Composable () -> Unit,
+    val outlinedIcon: @Composable () -> Unit
+) {
+    object Home : Screen(
+        "home",
+        "Home",
+        { Icon(JukeIcons.HomeSelected, contentDescription = "Home") },
+        { Icon(JukeIcons.Home, contentDescription = "Home") })
+
+    object Search : Screen(
+        "search",
+        "Search",
+        { Icon(JukeIcons.Search, contentDescription = "Search") },
+        { Icon(JukeIcons.Search, contentDescription = "Search") })
+
+    object Library : Screen(
+        "library",
+        "Library",
+        {
+            Icon(
+                imageVector = JukeIcons.LibrarySelected,
+                contentDescription = "Library"
+            )
+        },
+        { Icon(imageVector = JukeIcons.Library, contentDescription = "Library") })
+}
+
+@Composable
+fun JukeApp() {
+    val context = LocalContext.current
+    val showPlayerOnLaunch = remember { mutableStateOf(false) }
+    val pendingSpotifyLink = remember { mutableStateOf<String?>(null) }
+    val pendingShareId = remember { mutableStateOf<String?>(null) }
+    val pendingJamCode = remember { mutableStateOf<String?>(null) }
+    // Links handed to the app (command line, clipboard "open"): Jam codes, shared playlists, Spotify links.
+    LaunchedEffect(Unit) {
+        com.example.juke.desktop.AppLinks.incoming.collect { text ->
+            val jamCode = com.example.juke.jam.JamSession.parseCode(text)
+            val shareId = com.example.juke.repositories.ShareRepository.parsePlaylistId(text)
+            if (jamCode != null) pendingJamCode.value = jamCode
+            else if (shareId != null) pendingShareId.value = shareId
+            else if (Regex("""open\.spotify\.com/(intl-\w+/)?(track|album|artist|playlist)/|spotify:(track|album|artist|playlist):|spotify(\.app)?\.link/\w""").containsMatchIn(text)) pendingSpotifyLink.value = text
+        }
+    }
+    val musicViewModel: MusicViewModel = viewModel()
+    val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
+
+    JUKETheme(
+        extractedColors = uiState.extractedColors
+    ) {
+        val navController = rememberNavController()
+        val activityViewModelProvider = remember { ViewModelProvider.create(com.example.juke.desktop.DesktopViewModels) }
+
+        // Initialize SpotifyApi with saved market code
+        LaunchedEffect(Unit) {
+            val savedMarket = musicViewModel.marketCode.value
+            SpotifyApi.setDefaultMarket(savedMarket)
+        }
+        var showPlayerModal by remember { mutableStateOf(false) }
+        var searchFocusTrigger by remember { mutableIntStateOf(0) }
+        // No keyboard while the full player is open: drop the search field's focus too, so
+        // the IME can't come back over the player.
+        val keyboard = LocalSoftwareKeyboardController.current
+        val focusManager = LocalFocusManager.current
+        LaunchedEffect(showPlayerModal) {
+            if (showPlayerModal) {
+                keyboard?.hide()
+                focusManager.clearFocus(force = true)
+            }
+        }
+
+        // --- UPDATE CHECK LOGIC ---
+        var updateAvailable by remember { mutableStateOf<GithubRelease?>(null) }
+        val updateDownloadState by UpdateManager.downloadState.collectAsStateWithLifecycle()
+
+        LaunchedEffect(Unit) {
+            // Yield the first frame before optional launch work.
+            withFrameNanos { }
+            musicViewModel.startDeferredStartupWork()
+            // PostHog setup is ~90 ms of main-thread work: keep it out of the startup window.
+            launch {
+                delay(1_500.milliseconds)
+                AnalyticsManager.getInstance(context).trackAppOpened()
+                com.example.juke.report.CrashReporter.sendPending(context.applicationContext)
+            }
+            updateAvailable = UpdateManager.checkForUpdates(context)
+
+
+        }
+
+        val manualRelease by UpdateManager.manualRelease.collectAsStateWithLifecycle()
+        LaunchedEffect(manualRelease) {
+            manualRelease?.let {
+                updateAvailable = it
+                UpdateManager.manualRelease.value = null
+            }
+        }
+
+        LaunchedEffect(updateDownloadState) {
+            val errorMessage =
+                (updateDownloadState as? UpdateDownloadState.Error)?.message ?: return@LaunchedEffect
+            Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
+            UpdateManager.clearDownloadState()
+        }
+
+        if (updateAvailable != null || updateDownloadState is UpdateDownloadState.Ready) {
+            UpdateSheet(
+                release = updateAvailable,
+                state = updateDownloadState,
+                onStart = { release -> UpdateManager.startUpdateDownload(context, release) },
+                onDismiss = {
+                    updateAvailable?.let { if (!it.isCritical) UpdateManager.snooze(context, it) }
+                    updateAvailable = null
+                    UpdateManager.clearDownloadState()
+                }
+            )
+        }
+        // --- END UPDATE CHECK LOGIC ---
+
+        // Listen for changes to showPlayerOnLaunch
+        LaunchedEffect(showPlayerOnLaunch.value) {
+            if (showPlayerOnLaunch.value) {
+                showPlayerModal = true
+                showPlayerOnLaunch.value = false
+            }
+        }
+
+        // Spotify link shared to / opened with JUKES: show it in Search
+        LaunchedEffect(pendingSpotifyLink.value) {
+            val link = pendingSpotifyLink.value ?: return@LaunchedEffect
+            pendingSpotifyLink.value = null
+            navController.navigate(Screen.Search.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+            }
+            activityViewModelProvider[SearchViewModel::class].search(link)
+        }
+
+        pendingShareId.value?.let { id ->
+            SharedPlaylistDialog(id, onDismiss = { pendingShareId.value = null })
+        }
+        pendingJamCode.value?.let { code ->
+            JoinJamDialog(code, onDismiss = { pendingJamCode.value = null })
+        }
+        val jamActive by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+        LaunchedEffect(jamActive.active) { // follow the room's playback while in a Jam
+            if (jamActive.active) com.example.juke.jam.JamFollower.run(musicViewModel)
+        }
+        LaunchedEffect(jamActive.active) { // the host's radio keeps the shared queue topped up
+            if (jamActive.active) com.example.juke.jam.JamRadio.run(musicViewModel)
+        }
+        LaunchedEffect(Unit) { // leaving a Jam keeps what was coming up as this phone's own queue
+            for (items in com.example.juke.jam.JamSession.leftWithQueue) {
+                items.forEach { item ->
+                    val track = com.example.juke.repositories.SharedTrack(item.title, item.artist, item.durationSec, item.spotifyId, null, item.thumb).toSpotifyTrack()
+                        ?: return@forEach
+                    musicViewModel.queueSpotifyTrack(track, next = false)
+                    while (musicViewModel.uiState.value.isQueueOperationInProgress) kotlinx.coroutines.delay(50)
+                }
+            }
+        }
+        val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
+        if (jamSheetOpen) {
+            com.example.juke.ui.components.JamSheet(
+                musicViewModel = musicViewModel,
+                onDismiss = { com.example.juke.jam.JamSession.sheetOpen.value = false }
+            )
+        }
+
+        val items = listOf(
+            Screen.Home,
+            Screen.Search,
+            Screen.Library
+        )
+
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = navBackStackEntry?.destination?.route
+
+        var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
+
+        LaunchedEffect(currentRoute) { // which screens people actually use
+            currentRoute?.let { com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
+        }
+        LaunchedEffect(currentRoute) {
+            if (
+                currentRoute == Screen.Home.route ||
+                currentRoute == Screen.Search.route ||
+                currentRoute == Screen.Library.route
+            ) {
+                currentMainTab = currentRoute
+            }
+        }
+
+        val windowWidth = with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.width.toDp()
+        }
+        val isExpanded = windowWidth >= 600.dp
+        val desktop = windowWidth >= 900.dp
+        var panelOpen by remember { mutableStateOf(true) }
+        val playerState by musicViewModel.uiState.collectAsStateWithLifecycle()
+        val libraryViewModel = activityViewModelProvider[com.example.juke.viewmodels.LibraryViewModel::class]
+        // Scrolling down a list folds the tab bar into one button beside the mini player.
+        val chromeThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
+        val chrome = remember(chromeThresholdPx) { com.example.juke.ui.components.CollapsingChrome(chromeThresholdPx) }
+        LaunchedEffect(currentRoute) { chrome.expand() } // a new screen starts unfolded
+        val hasMiniPlayer = musicViewModel.uiState.collectAsStateWithLifecycle().value.currentTrack != null
+        // Settings pages keep the mini player (the equalizer and volume are heard live) but not the tab bar.
+        val inSettings = currentRoute?.startsWith("settings") == true
+        val merged = chrome.collapsed && !isExpanded && hasMiniPlayer && !inSettings
+        // Artist/album/playlist are child screens: they can be opened on top of any tab
+        // (and on top of each other), so a tab tap must first dispose of all of them.
+        fun isDetailRoute(route: String?) =
+            route != null && (route.startsWith("artist/") ||
+                route.startsWith("album/") || route.startsWith("playlist/"))
+
+        val onNavigate: (Screen) -> Unit = { screen ->
+            val wasDetail = isDetailRoute(currentRoute)
+            if (wasDetail) {
+                activityViewModelProvider[SearchViewModel::class].clearArtistDetail()
+                activityViewModelProvider[AlbumDetailViewModel::class].clearAlbumDetail()
+                activityViewModelProvider[PlaylistDetailViewModel::class].clearPlaylistDetail()
+                // Pop before navigating so saveState never captures a child screen.
+                while (isDetailRoute(navController.currentDestination?.route) &&
+                    navController.popBackStack()
+                ) { /* keep popping */ }
+            }
+
+            if (navController.currentDestination?.route == screen.route) {
+                // Already on Search: select the query and open the keyboard for typing.
+                if (!wasDetail && screen == Screen.Search) searchFocusTrigger++
+            } else {
+                navController.navigate(screen.route) {
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+
+        }
+
+        val hazeState = remember { HazeState() }
+        val haptic = rememberJukeHaptics()
+        val navItems = items.map { screen ->
+            GlassNavItem(
+                label = screen.title,
+                selected = currentMainTab == screen.route,
+                onClick = { haptic.nav(); onNavigate(screen) },
+                icon = { if (currentMainTab == screen.route) screen.filledIcon() else screen.outlinedIcon() }
+            )
+        }
+
+        com.example.juke.ui.components.PlayerTransitionHost(expanded = showPlayerModal, musicViewModel = musicViewModel) {
+        val openMedia = remember(navController) {
+            com.example.juke.ui.components.OpenMedia(
+                album = { id ->
+                    activityViewModelProvider[AlbumDetailViewModel::class].loadAlbumDetailsById(id)
+                    navController.navigate("album/$id")
+                },
+                artist = { id ->
+                    activityViewModelProvider[SearchViewModel::class].loadArtistDetailsById(id)
+                    navController.navigate("artist/$id")
+                }
+            )
+        }
+        CompositionLocalProvider(
+            LocalHazeState provides hazeState,
+            com.example.juke.ui.components.LocalOpenMedia provides openMedia
+        ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            topBar = {
+                if (desktop) com.example.juke.desktop.DesktopTopBar(
+                    titleInset = com.example.juke.desktop.LocalTitleInset.current,
+                    onHome = { onNavigate(Screen.Home) },
+                    onSearch = { onNavigate(Screen.Search) },
+                    onJam = { navController.navigate("settings") },
+                    onSettings = { navController.navigate("settings") }
+                )
+            },
+            bottomBar = {
+                if (desktop) {
+                    com.example.juke.desktop.DesktopPlayerBar(
+                        state = playerState, musicViewModel = musicViewModel, panelOpen = panelOpen,
+                        onTogglePanel = { panelOpen = !panelOpen },
+                        onTogglePanelLyrics = { panelOpen = !panelOpen },
+                        onFullscreen = { showPlayerModal = true },
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                } else if (!inSettings || hasMiniPlayer) {
+                    // One progress value (0 = two rows, 1 = merged) drives every part of the
+                    // fold, read only in layout/draw: the tab button's width, scale and fade and
+                    // the tab bar's height (gap included) and fade move together and land on the
+                    // same frame. Nothing is clipped and no gap appears or vanishes in one frame.
+                    val foldProgress = androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (merged) 1f else 0f,
+                        animationSpec = androidx.compose.animation.core.spring(
+                            dampingRatio = 1f, // no overshoot: sizes never go negative
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                        ),
+                        label = "chromeFold"
+                    )
+                    val showTabButton by remember { derivedStateOf { foldProgress.value > 0f } }
+                    val showTabBar by remember { derivedStateOf { foldProgress.value < 1f } }
+                    Column(
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 8.dp)
+                    ) {
+                        // The backend is downloading the tapped song before it can play.
+                        val preparing by com.example.juke.network.JukesApi.preparing.collectAsStateWithLifecycle()
+                        androidx.compose.animation.AnimatedVisibility(visible = preparing != null) {
+                            // The gap travels with the pill, so it never pops in or out.
+                            Box(Modifier.padding(bottom = 8.dp)) { PreparingPill(title = preparing.orEmpty()) }
+                        }
+                        // One composable slot for the mini player in both layouts, so its state
+                        // (live lyric, swipe) carries through the fold.
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (showTabButton) {
+                                val tab = items.firstOrNull { it.route == currentMainTab } ?: items.first()
+                                Box(
+                                    Modifier.layout { measurable, _ ->
+                                        // Full size always (never squeezed or clipped); only the
+                                        // space it takes grows, button + 8 dp gap.
+                                        val size = 56.dp.roundToPx()
+                                        val placeable = measurable.measure(
+                                            androidx.compose.ui.unit.Constraints.fixed(size, size)
+                                        )
+                                        val width = ((size + 8.dp.roundToPx()) * foldProgress.value).roundToInt()
+                                        layout(width, size) {
+                                            placeable.placeRelativeWithLayer(0, 0) {
+                                                val t = foldProgress.value
+                                                // Grows from its left edge at the slot's rate,
+                                                // so it always fits the space it is opening.
+                                                alpha = t
+                                                scaleX = t
+                                                scaleY = t
+                                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    com.example.juke.ui.components.CollapsedTabButton(
+                                        label = tab.title,
+                                        onClick = { chrome.expand() },
+                                        icon = { tab.filledIcon() }
+                                    )
+                                }
+                            }
+                            MiniPlayer(
+                                musicViewModel = musicViewModel,
+                                onExpand = { showPlayerModal = true },
+                                modifier = Modifier.weight(1f),
+                                compact = merged
+                            )
+                        }
+                        if (!isExpanded && showTabBar && !inSettings) {
+                            Box(
+                                Modifier.layout { measurable, constraints ->
+                                    // The bar keeps its size and sinks while its slot (8 dp gap +
+                                    // bar) shrinks to nothing.
+                                    val gap = 8.dp.roundToPx()
+                                    val placeable = measurable.measure(constraints.copy(minHeight = 0))
+                                    val keep = 1f - foldProgress.value
+                                    val height = ((gap + placeable.height) * keep).roundToInt()
+                                    layout(placeable.width, height) {
+                                        placeable.placeRelativeWithLayer(0, gap) { alpha = keep }
+                                    }
+                                }
+                            ) {
+                                GlassNavBar(items = navItems)
+                            }
+                        }
+                    }
+                }
+            }
+        ) { innerPadding ->
+            val layoutDirection = LocalLayoutDirection.current
+            // While the chrome is folded, lists keep the unfolded padding: shrinking it would
+            // resize every list mid-scroll (and could fold/unfold it back and forth).
+            val barPadding = innerPadding.calculateBottomPadding()
+            val unfolded = remember { arrayOf(barPadding) } // plain holder: no extra recomposition
+            if (!merged) unfolded[0] = barPadding
+            val bottomPadding = if (desktop) 24.dp else if (merged) maxOf(barPadding, unfolded[0]) else barPadding
+            val contentPadding = PaddingValues(
+                start = innerPadding.calculateStartPadding(layoutDirection),
+                top = 0.dp,
+                end = innerPadding.calculateEndPadding(layoutDirection),
+                bottom = 0.dp
+            )
+
+            Box(modifier = Modifier.fillMaxSize()) {
+            // Backdrop source: the ambient light field and every screen scroll inside it,
+            // so the floating glass (tab bar, mini player) blurs what is really behind it.
+            Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
+            Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
+            Row(modifier = Modifier.fillMaxSize().then(if (desktop) Modifier.padding(top = innerPadding.calculateTopPadding(), bottom = innerPadding.calculateBottomPadding(), start = 8.dp, end = 8.dp) else Modifier),
+                horizontalArrangement = if (desktop) Arrangement.spacedBy(8.dp) else Arrangement.Start) {
+                if (desktop) com.example.juke.desktop.LibrarySidebar(
+                    libraryViewModel = libraryViewModel,
+                    onOpenSongs = { onNavigate(Screen.Library) },
+                    onOpenPlaylist = { p ->
+                        libraryViewModel.loadPlaylistTracks(p.id)
+                        onNavigate(Screen.Library)
+                    },
+                    modifier = Modifier.width(300.dp).fillMaxHeight()
+                )
+                if (isExpanded && !desktop && currentRoute != "settings") {
+                    GlassNavRail(items = navItems, modifier = Modifier.statusBarsPadding())
+                }
+                NavHost(
+                    navController = navController,
+                    startDestination = Screen.Home.route,
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(if (desktop) Modifier.fillMaxHeight().clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)) else Modifier.padding(contentPadding))
+                        .nestedScroll(chrome.connection),
+                    enterTransition = { with(com.example.juke.ui.theme.Motion) { enter() } },
+                    exitTransition = { with(com.example.juke.ui.theme.Motion) { exit() } },
+                    popEnterTransition = { with(com.example.juke.ui.theme.Motion) { popEnter() } },
+                    popExitTransition = { with(com.example.juke.ui.theme.Motion) { popExit() } }
+                ) {
+                    composable(Screen.Home.route) {
+                        HomeScreen(
+                            musicViewModel = musicViewModel,
+                            onSettingsClick = { navController.navigate("settings") },
+                            onSearchClick = { onNavigate(Screen.Search) },
+                            onSeeAllClick = {
+                                navController.navigate(Screen.Library.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            onAlbumClick = { album ->
+                                activityViewModelProvider[AlbumDetailViewModel::class]
+                                    .loadAlbumDetails(album)
+                                navController.navigate("album/${album.id}")
+                            },
+                            bottomPadding = bottomPadding
+                        )
+                    }
+                    composable(Screen.Search.route) {
+                        val searchViewModel =
+                            activityViewModelProvider[SearchViewModel::class]
+                        SearchScreen(
+                            musicViewModel = musicViewModel,
+                            searchViewModel = searchViewModel,
+                            searchFocusTrigger = searchFocusTrigger,
+                            playerOpen = showPlayerModal,
+                            onNavigateToArtist = { artist ->
+                                searchViewModel.loadArtistDetails(artist)
+                                navController.navigate("artist/${artist.id}")
+                            },
+                            onNavigateToPlaylist = { playlist ->
+                                activityViewModelProvider[PlaylistDetailViewModel::class]
+                                    .loadPlaylistDetails(playlist)
+                                navController.navigate("playlist/${playlist.id}")
+                            },
+                            onNavigateToAlbum = { album ->
+                                activityViewModelProvider[AlbumDetailViewModel::class]
+                                    .loadAlbumDetails(album)
+                                navController.navigate("album/${album.id}")
+                            },
+                            bottomPadding = bottomPadding
+                        )
+                    }
+                    composable(Screen.Library.route) {
+                        LibraryScreen(
+                            musicViewModel = musicViewModel,
+                            bottomPadding = bottomPadding,
+                            floatingBottomPadding = barPadding,
+                            onAlbumClick = { album ->
+                                activityViewModelProvider[AlbumDetailViewModel::class].loadAlbumDetails(album)
+                                navController.navigate("album/${album.id}")
+                            }
+                        )
+                    }
+                    composable("settings") {
+                        AudioSettingsScreen(
+                            musicViewModel = musicViewModel,
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            },
+                            onNavigateToPurge = {
+                                navController.navigate("settings/purge")
+                            },
+                            onNavigateToPowerTools = {
+                                navController.navigate("settings/power")
+                            },
+                            onNavigateToYoutubeSignIn = {
+                                navController.navigate("settings/youtube")
+                            }
+                        )
+                    }
+                    composable("settings/youtube") {
+                        com.example.juke.ui.screens.YoutubeSignInScreen(
+                            onDone = { navController.popBackStack() }
+                        )
+                    }
+                    composable("settings/power") {
+                        com.example.juke.ui.screens.PowerToolsScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                            bottomPadding = bottomPadding
+                        )
+                    }
+                    composable("settings/purge") {
+                        com.example.juke.ui.screens.PurgeSelectionScreen(
+                            musicViewModel = musicViewModel,
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            }
+                        )
+                    }
+                    composable("artist/{artistId}") {
+                        val searchViewModel =
+                            activityViewModelProvider[SearchViewModel::class]
+                        ArtistDetailScreen(
+                            searchViewModel = searchViewModel,
+                            musicViewModel = musicViewModel,
+                            onNavigateBack = {
+                                searchViewModel.clearArtistDetail()
+                                navController.popBackStack()
+                            },
+                            onNavigateToAlbum = { album ->
+                                activityViewModelProvider[AlbumDetailViewModel::class]
+                                    .loadAlbumDetails(album)
+                                navController.navigate("album/${album.id}")
+                            },
+                            bottomPadding = bottomPadding
+                        )
+                    }
+                    composable("playlist/{playlistId}") {
+                        val playlistDetailViewModel =
+                            activityViewModelProvider[PlaylistDetailViewModel::class]
+                        PlaylistDetailScreen(
+                            playlistDetailViewModel = playlistDetailViewModel,
+                            musicViewModel = musicViewModel,
+                            onNavigateBack = {
+                                playlistDetailViewModel.clearPlaylistDetail()
+                                navController.popBackStack()
+                            },
+                            bottomPadding = bottomPadding
+                        )
+                    }
+                    composable("album/{albumId}") {
+                        val albumDetailViewModel =
+                            activityViewModelProvider[AlbumDetailViewModel::class]
+                        AlbumDetailScreen(
+                            albumDetailViewModel = albumDetailViewModel,
+                            musicViewModel = musicViewModel,
+                            onNavigateBack = {
+                                albumDetailViewModel.clearAlbumDetail()
+                                navController.popBackStack()
+                            },
+                            bottomPadding = bottomPadding
+                        )
+                    }
+                }
+                if (desktop && panelOpen) com.example.juke.desktop.NowPlayingPanel(
+                    state = playerState, musicViewModel = musicViewModel,
+                    onClose = { panelOpen = false }, onOpenFullscreen = { showPlayerModal = true },
+                    modifier = Modifier.width(340.dp).fillMaxHeight()
+                )
+            }
+            }
+            }
+        }
+        }
+
+        // Player Modal
+        com.example.juke.ui.components.PlayerTransitionContent(onDismiss = { showPlayerModal = false }) {
+            if (desktop) com.example.juke.desktop.DesktopPlayerScreen(
+                state = playerState, musicViewModel = musicViewModel,
+                onDismiss = { showPlayerModal = false },
+                onNavigateToArtist = { artistId ->
+                    showPlayerModal = false
+                    activityViewModelProvider[SearchViewModel::class].loadArtistDetailsById(artistId)
+                    navController.navigate("artist/$artistId")
+                }
+            ) else PlayerScreen(
+                musicViewModel = musicViewModel,
+                onDismiss = { showPlayerModal = false },
+                onNavigateToArtist = { artistId ->
+                    showPlayerModal = false
+                    activityViewModelProvider[SearchViewModel::class]
+                        .loadArtistDetailsById(artistId)
+                    navController.navigate("artist/$artistId")
+                },
+                onNavigateToAlbum = { albumId ->
+                    showPlayerModal = false
+                    activityViewModelProvider[AlbumDetailViewModel::class]
+                        .loadAlbumDetailsById(albumId)
+                    navController.navigate("album/$albumId")
+                },
+                onShareTrack = { spotifyId ->
+                    val sendIntent: Intent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(
+                            Intent.EXTRA_TEXT,
+                            "https://open.spotify.com/track/$spotifyId"
+                        )
+                        type = "text/plain"
+                    }
+                    val shareIntent = Intent.createChooser(sendIntent, null)
+                    context.startActivity(shareIntent)
+                }
+            )
+        }
+        }
+    }
+}
+
+/** Preview of a playlist someone shared by link, with a button to save a copy to the library. */
+@Composable
+private fun SharedPlaylistDialog(id: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val repo = remember { com.example.juke.repositories.ShareRepository(com.example.juke.database.MusicDatabase.getDatabase(context).playlistDao()) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var loading by remember { mutableStateOf(true) }
+    var shared by remember { mutableStateOf<com.example.juke.repositories.SharedPlaylist?>(null) }
+    LaunchedEffect(id) {
+        shared = try {
+            repo.fetchPlaylist(id)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        loading = false
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(shared?.name ?: if (loading) "Loading playlist…" else "Link unavailable") },
+        text = {
+            Text(
+                shared?.let { "${it.tracks.size} songs" }
+                    ?: if (loading) "" else "This link expired or the playlist is no longer shared."
+            )
+        },
+        confirmButton = {
+            shared?.let { playlist ->
+                androidx.compose.material3.TextButton(onClick = {
+                    scope.launch {
+                        repo.savePlaylist(playlist, com.example.juke.services.PlaylistImportManager.get(context))
+                        Toast.makeText(context, "Saved to your library", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    }
+                }) { Text("Save to library") }
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+/** Asked when someone opens a Jam link: who is in it, and a button to join. */
+@Composable
+private fun JoinJamDialog(code: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var info by remember { mutableStateOf<com.example.juke.jam.JamSession.Info?>(null) }
+    var checked by remember { mutableStateOf(false) }
+    LaunchedEffect(code) {
+        info = com.example.juke.jam.JamSession.info(code)
+        checked = true
+    }
+    val live = info?.exists == true
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (checked && info?.exists == false) "Jam ended" else "Join this Jam?") },
+        text = {
+            Text(
+                when {
+                    !checked -> "Checking $code…"
+                    info == null -> "Couldn't reach the Jam. Check your connection and try again."
+                    live -> "Code $code · ${info!!.members} listening · ${info!!.queue} songs queued"
+                    else -> "This Jam has ended or the code is wrong."
+                }
+            )
+        },
+        confirmButton = {
+            if (live) androidx.compose.material3.TextButton(onClick = {
+                com.example.juke.jam.JamSession.join(context, code, com.example.juke.jam.JamSession.savedName(context), via = "link")
+                com.example.juke.jam.JamSession.sheetOpen.value = true
+                onDismiss()
+            }) { Text("Join") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+private fun PreparingPill(title: String) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp
+            )
+            Text(
+                text = "Preparing $title…",
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
+}

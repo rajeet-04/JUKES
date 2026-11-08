@@ -1,0 +1,101 @@
+package com.example.juke.desktop
+
+import android.app.Application
+import android.content.Context
+import android.widget.Toast
+import androidx.activity.compose.BackDispatcher
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.*
+import androidx.lifecycle.*
+import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import com.example.juke.jam.JamSession
+import com.example.juke.network.JukesApi
+import com.example.juke.services.PlaylistImportManager
+import com.example.juke.ui.theme.GlassPrefs
+import kotlin.reflect.KClass
+import kotlinx.coroutines.flow.MutableSharedFlow
+
+/** One store for the whole app, like the Activity's: every screen shares the same view models. */
+object DesktopViewModels : ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
+    override val viewModelStore = ViewModelStore()
+    override val defaultViewModelProviderFactory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: KClass<T>, extras: CreationExtras): T = create(modelClass.java, extras)
+        fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
+            modelClass.getConstructor(Application::class.java).newInstance(Application.instance)
+    }
+    override val defaultViewModelCreationExtras: CreationExtras get() = CreationExtras.Empty
+}
+
+/** Links given to the app (command line arguments). */
+object AppLinks { val incoming = MutableSharedFlow<String>(replay = 8, extraBufferCapacity = 8) }
+
+private fun startup(args: Array<String>) {
+    val app = Application.instance
+    GlassPrefs.solid = app.getSharedPreferences("ui_prefs", Context.MODE_PRIVATE).getBoolean("solid_surfaces", false)
+    // Heavy singletons off the UI thread, so the first frame doesn't wait for them
+    Thread {
+        com.example.juke.network.ApiClient.httpClient
+        com.example.juke.database.MusicDatabase.getDatabase(app)
+    }.apply { name = "startup-warmup"; isDaemon = true; priority = Thread.NORM_PRIORITY - 1; start() }
+    JukesApi.progressiveEnabled = app.getSharedPreferences("music_settings_prefs", Context.MODE_PRIVATE).getBoolean("progressive_playback", true)
+    JukesApi.init(app)
+    PlaylistImportManager.get(app).resume()
+    JamSession.resume(app)
+    args.forEach { AppLinks.incoming.tryEmit(it) }
+}
+
+fun main(args: Array<String>) {
+    System.setProperty("apple.awt.application.name", "JUKE")
+    startup(args)
+    application {
+        val state = rememberWindowState(size = DpSize(1180.dp, 780.dp))
+        Window(
+            onCloseRequest = {
+                com.example.juke.services.PlaybackManager.getInstance(Application.instance).release()
+                exitApplication()
+            },
+            title = "JUKE",
+            state = state,
+            onKeyEvent = { e -> e.type == KeyEventType.KeyDown && e.key == Key.Escape && BackDispatcher.back() },
+        ) {
+            LaunchedEffect(Unit) { window.minimumSize = java.awt.Dimension(420, 640) }
+            val focused = LocalWindowInfo.current.isWindowFocused
+            LaunchedEffect(focused) { ProcessLifecycleOwner.setForeground(focused) }
+            val density = LocalDensity.current
+            val size = LocalWindowInfo.current.containerSize
+            val config = Configuration(with(density) { size.width.toDp().value.toInt() }, with(density) { size.height.toDp().value.toInt() })
+            CompositionLocalProvider(LocalViewModelStoreOwner provides DesktopViewModels, LocalConfiguration provides config) {
+                JukeApp()
+                ToastHost()
+            }
+        }
+    }
+}
+
+/** Android toasts become a short snackbar at the bottom of the window. */
+@Composable
+private fun ToastHost() {
+    val host = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) { Toast.messages.collect { host.currentSnackbarData?.dismiss(); host.showSnackbar(it, duration = SnackbarDuration.Short) } }
+    Box(Modifier.fillMaxSize().padding(bottom = 96.dp), contentAlignment = Alignment.BottomCenter) { SnackbarHost(host) }
+}
+
+@Composable
+inline fun <reified VM : ViewModel> viewModel(
+    owner: ViewModelStoreOwner = checkNotNull(LocalViewModelStoreOwner.current) { "no ViewModelStoreOwner" },
+    key: String? = null,
+    factory: ViewModelProvider.Factory? = DesktopViewModels.defaultViewModelProviderFactory,
+): VM = androidx.lifecycle.viewmodel.compose.viewModel(owner, key, factory)
