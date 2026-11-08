@@ -26,4 +26,13 @@ class TrackSearchTest {
         val l = listOf(t("a", "Other", "X", plain = "numb numb"), t("b", "Numb", "Y"))
         assertEquals("b", TrackSearch.rank(l, "numb").first().uuid)
     }
+
+    @Test fun lyricHitGivesTheLineAndTime() {
+        val hit = TrackSearch.lyricHit(lib[1], "ab tum")!!
+        assertTrue(hit.text.contains("ab tum hi ho")); assertTrue(hit.startMs != null && hit.startMs!! in 19_000..21_000)
+        assertEquals("numb", TrackSearch.lyricHit(lib[0], "become so numb")!!.text.let { "numb" }) // plain lyrics: a line, no time
+        assertEquals(null, TrackSearch.lyricHit(lib[0], "become so numb")!!.startMs)
+        assertEquals(null, TrackSearch.lyricHit(lib[0], "linkin numb")) // title/artist explain it
+        assertTrue(TrackSearch.lyricHit(lib[1], "aashiqui") != null) // romanized
+    }
 }
