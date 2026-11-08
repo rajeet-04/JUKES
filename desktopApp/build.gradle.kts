@@ -96,6 +96,8 @@ dependencies {
     implementation(libs.ktor.client.websockets)
     implementation(libs.gson)
     implementation("org.json:json:20240303")
+    // Now Playing / media keys on macOS go through the Objective-C runtime; other OSes never load it.
+    if (os.isMacOsX) implementation("net.java.dev.jna:jna:5.17.0") else compileOnly("net.java.dev.jna:jna:5.17.0")
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.sqlite.bundled)

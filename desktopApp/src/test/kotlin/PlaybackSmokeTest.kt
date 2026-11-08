@@ -17,11 +17,24 @@ class PlaybackSmokeTest {
         val track = MusicService(app).streamTrack(SpotifyApi.spotifyTrackToSong(hit))
         println("track uri: ${track.localUri} stream=${track.isStream}")
         val pm = PlaybackManager.getInstance(app)
+        com.example.juke.services.NowPlaying.start(pm)
         pm.setQueue(listOf(track), 0)
         var t = 0L
         repeat(40) { kotlinx.coroutines.delay(500); t = pm.getCurrentPosition(); if (t > 2500) return@repeat }
         println("playing=${pm.isPlayingFlow.value} pos=$t dur=${pm.getDuration()}")
         assertTrue(pm.isPlayingFlow.value && t > 2000, "player did not advance: pos=$t")
+        run { // read back what macOS now shows in the Now Playing widget
+            val f = { n: String -> com.sun.jna.Function.getFunction("objc", n) }
+            val msg = f("objc_msgSend")
+            val c = f("objc_getClass").invokePointer(arrayOf("MPNowPlayingInfoCenter"))
+            val sel = { n: String -> f("sel_registerName").invokePointer(arrayOf(n)) }
+            val center = msg.invokePointer(arrayOf(c, sel("defaultCenter")))
+            val info = msg.invokePointer(arrayOf(center, sel("nowPlayingInfo")))
+            val desc = msg.invokePointer(arrayOf(info, sel("description")))
+            val text = msg.invokePointer(arrayOf(desc, sel("UTF8String"))).getString(0)
+            println("NOWPLAYING: $text")
+            assertTrue(text.contains("Blinding Lights"), "Now Playing info missing")
+        }
         try { pm.togglePlayPause() } catch (t: Throwable) { t.printStackTrace(System.out); throw t }
         kotlinx.coroutines.delay(1500)
         val pausedAt = pm.getCurrentPosition(); kotlinx.coroutines.delay(1500)

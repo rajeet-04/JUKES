@@ -54,6 +54,7 @@ private fun startup(args: Array<String>) {
     JukesApi.init(app)
     PlaylistImportManager.get(app).resume()
     JamSession.resume(app)
+    com.example.juke.services.NowPlaying.start(com.example.juke.services.PlaybackManager.getInstance(app))
     args.forEach { AppLinks.incoming.tryEmit(it) }
 }
 

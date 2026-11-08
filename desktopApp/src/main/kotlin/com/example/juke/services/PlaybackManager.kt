@@ -38,6 +38,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     private val tag = "PlaybackManager"
+    val currentTrackNow: Track? get() = synchronized(lock) { queue.getOrNull(index) }
     private val prefs = context.getSharedPreferences("playback_state_prefs", Context.MODE_PRIVATE)
     private val database: MusicDatabase by lazy { MusicDatabase.getDatabase(context) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
