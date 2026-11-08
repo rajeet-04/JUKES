@@ -421,7 +421,7 @@ private fun TopSearchField(query: String, focusTrigger: Int, onQueryChange: (Str
         if (focused) MaterialTheme.colorScheme.onSurface else if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.35f) else Color.Transparent,
         androidx.compose.animation.core.tween(160),
     )
-    val fill by androidx.compose.animation.animateColorAsState(if (focused || hovered) panelColor.copy(alpha = 1f) else panelColor, androidx.compose.animation.core.tween(160))
+    val fill by androidx.compose.animation.animateColorAsState(if (focused) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f) else if (hovered) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.09f) else panelColor, androidx.compose.animation.core.tween(160))
     Row(modifier.height(44.dp).clip(CircleShape).background(fill).border(2.dp, ring, CircleShape).hoverable(src).padding(start = 14.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Icon(JukeIcons.Search, null, Modifier.size(20.dp), tint = if (focused) MaterialTheme.colorScheme.onSurface else Dim)
