@@ -35,4 +35,11 @@ class TrackSearchTest {
         assertEquals(null, TrackSearch.lyricHit(lib[0], "linkin numb")) // title/artist explain it
         assertTrue(TrackSearch.lyricHit(lib[1], "aashiqui") != null) // romanized
     }
+
+    @Test fun lyricHitWhenWordsAreScatteredOrRespelled() {
+        val song = t("9", "Luka Chippi", "Seedhe Maut", rom = "tera bhai sara wazan\nkhud se uthta hai\nkuch aur likha hai")
+        assertTrue(TrackSearch.rank(listOf(song), "tera bhai sara wajan khud se uthta hai").isNotEmpty())
+        assertEquals("tera bhai sara wazan / khud se uthta hai", TrackSearch.lyricHit(song, "tera bhai sara wajan khud se uthta hai")!!.text)
+        assertEquals("khud se uthta hai", TrackSearch.lyricHit(song, "khud uthta")!!.text)
+    }
 }
