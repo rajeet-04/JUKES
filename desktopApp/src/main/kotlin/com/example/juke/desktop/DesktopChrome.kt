@@ -251,6 +251,11 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
     val volume by pm.volumeFlow.collectAsStateWithLifecycle()
     val preparing by JukesApi.preparing.collectAsStateWithLifecycle()
     var lastVolume by remember { mutableStateOf(0.6f) }
+    // The bar is always on screen in desktop mode, so it drives the progress for every view.
+    LaunchedEffect(state.isPlaying, track?.uuid) {
+        musicViewModel.updateProgress()
+        while (state.isPlaying) { kotlinx.coroutines.delay(250); musicViewModel.updateProgress() }
+    }
     Row(modifier.fillMaxWidth().height(84.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         // left: what's playing
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {

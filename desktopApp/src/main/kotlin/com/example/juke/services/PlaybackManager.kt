@@ -103,6 +103,7 @@ class PlaybackManager private constructor(private val context: Context) {
         synchronized(lock) { track = queue.getOrNull(index) ?: run { stopPlayer(); return } }
         wantPlay = play
         posMs = startMs; durMs = track.durationSec * 1000L
+        Fx.run { disposePlayer() } // old song stops now, even if the new one still has to be fetched
         publish()
         if (missing(track)) { if (track.spotifyId != null) recoverThenLoad(track, startMs) else skipAfterFailure(track); return }
         val uri = uriOf(track) ?: return skipAfterFailure(track)
@@ -122,7 +123,7 @@ class PlaybackManager private constructor(private val context: Context) {
             mp.setOnPlaying { _isPlaying.value = true }
             mp.setOnPaused { _isPlaying.value = false }
             mp.setOnStopped { _isPlaying.value = false }
-            mp.currentTimeProperty().addListener { _, _, t -> posMs = t.toMillis().toLong() }
+            mp.currentTimeProperty().addListener { _, _, t -> if (player === mp) posMs = t.toMillis().toLong() }
             mp.setOnEndOfMedia { if (player === mp) scope.launch { onEnded(myIndex) } }
             mp.setOnError { Log.e(tag, "Player error for ${track.title}: ${mp.error?.message}"); if (player === mp) scope.launch { onFailed(track) } }
         }

@@ -69,7 +69,21 @@ fun main(args: Array<String>) {
             },
             title = "JUKE",
             state = state,
-            onKeyEvent = { e -> e.type == KeyEventType.KeyDown && e.key == Key.Escape && BackDispatcher.back() },
+            onKeyEvent = { e ->
+                if (e.type != KeyEventType.KeyDown) false else {
+                    val pm = com.example.juke.services.PlaybackManager.getInstance(Application.instance)
+                    val mod = e.isMetaPressed || e.isCtrlPressed
+                    when {
+                        e.key == Key.Escape -> BackDispatcher.back()
+                        e.key == Key.Spacebar -> { pm.togglePlayPause(); true }
+                        mod && e.key == Key.DirectionRight -> { pm.skipToNext(); true }
+                        mod && e.key == Key.DirectionLeft -> { pm.skipToPrevious(); true }
+                        mod && e.key == Key.DirectionUp -> { pm.setVolume(pm.volumeFlow.value + 0.1f); true }
+                        mod && e.key == Key.DirectionDown -> { pm.setVolume(pm.volumeFlow.value - 0.1f); true }
+                        else -> false
+                    }
+                }
+            },
         ) {
             LaunchedEffect(Unit) { window.minimumSize = java.awt.Dimension(420, 640) }
             val focused = LocalWindowInfo.current.isWindowFocused
@@ -77,7 +91,18 @@ fun main(args: Array<String>) {
             val density = LocalDensity.current
             val size = LocalWindowInfo.current.containerSize
             val config = Configuration(with(density) { size.width.toDp().value.toInt() }, with(density) { size.height.toDp().value.toInt() })
-            CompositionLocalProvider(LocalViewModelStoreOwner provides DesktopViewModels, LocalConfiguration provides config) {
+            // macOS: content runs under a transparent title bar (traffic lights float over the wide layout).
+            val isMac = remember { System.getProperty("os.name").orEmpty().startsWith("Mac") }
+            val wide = config.screenWidthDp >= 900
+            LaunchedEffect(wide) {
+                if (isMac) with(window.rootPane) {
+                    putClientProperty("apple.awt.fullWindowContent", wide)
+                    putClientProperty("apple.awt.transparentTitleBar", wide)
+                    putClientProperty("apple.awt.windowTitleVisible", !wide)
+                }
+            }
+            CompositionLocalProvider(LocalViewModelStoreOwner provides DesktopViewModels, LocalConfiguration provides config,
+                LocalTitleInset provides (if (isMac && wide) 76.dp else 0.dp)) {
                 JukeApp()
                 ToastHost()
             }

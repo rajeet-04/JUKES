@@ -375,7 +375,7 @@ fun JukeApp() {
                     titleInset = com.example.juke.desktop.LocalTitleInset.current,
                     onHome = { onNavigate(Screen.Home) },
                     onSearch = { onNavigate(Screen.Search) },
-                    onJam = { navController.navigate("settings") },
+                    onJam = { com.example.juke.jam.JamSession.sheetOpen.value = true },
                     onSettings = { navController.navigate("settings") }
                 )
             },
@@ -384,7 +384,7 @@ fun JukeApp() {
                     com.example.juke.desktop.DesktopPlayerBar(
                         state = playerState, musicViewModel = musicViewModel, panelOpen = panelOpen,
                         onTogglePanel = { panelOpen = !panelOpen },
-                        onTogglePanelLyrics = { panelOpen = !panelOpen },
+                        onTogglePanelLyrics = { showPlayerModal = true },
                         onFullscreen = { showPlayerModal = true },
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
@@ -500,7 +500,10 @@ fun JukeApp() {
                 horizontalArrangement = if (desktop) Arrangement.spacedBy(8.dp) else Arrangement.Start) {
                 if (desktop) com.example.juke.desktop.LibrarySidebar(
                     libraryViewModel = libraryViewModel,
-                    onOpenSongs = { onNavigate(Screen.Library) },
+                    onOpenSongs = { fav ->
+                        if (libraryViewModel.uiState.value.showFavoritesOnly != fav) libraryViewModel.toggleFavoritesFilter() else libraryViewModel.loadTracks()
+                        onNavigate(Screen.Library)
+                    },
                     onOpenPlaylist = { p ->
                         libraryViewModel.loadPlaylistTracks(p.id)
                         onNavigate(Screen.Library)
