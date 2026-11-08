@@ -380,6 +380,7 @@ fun JukeApp() {
             topBar = {
                 if (desktop) com.example.juke.desktop.DesktopTopBar(
                     titleInset = com.example.juke.desktop.LocalTitleInset.current,
+                    searchActive = currentRoute == Screen.Search.route,
                     onHome = { onNavigate(Screen.Home) },
                     onSearch = { onNavigate(Screen.Search) },
                     onJam = { com.example.juke.jam.JamSession.sheetOpen.value = true },

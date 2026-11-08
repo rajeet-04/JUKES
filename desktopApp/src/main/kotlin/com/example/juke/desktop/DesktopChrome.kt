@@ -87,7 +87,7 @@ fun ThinSlider(value: Float, onChange: (Float) -> Unit, modifier: Modifier = Mod
 // Top bar
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun DesktopTopBar(titleInset: Dp, onHome: () -> Unit, onSearch: () -> Unit, onJam: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier) {
+fun DesktopTopBar(titleInset: Dp, searchActive: Boolean, onHome: () -> Unit, onSearch: () -> Unit, onJam: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(56.dp).padding(horizontal = 12.dp)) {
         // With the title bar hidden this strip is the title bar: drag to move, double-click to fill the screen.
         LocalWindowScope.current?.let { ws ->
@@ -102,9 +102,10 @@ fun DesktopTopBar(titleInset: Dp, onHome: () -> Unit, onSearch: () -> Unit, onJa
                 })
         }
         Spacer(Modifier.width(titleInset))
-        Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.align(Alignment.Center).width(512.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(44.dp).clip(CircleShape).background(panelColor).clickable(onClick = onHome), contentAlignment = Alignment.Center) { Icon(JukeIcons.Home, "Home", Modifier.size(22.dp)) }
-            Row(Modifier.width(460.dp).height(44.dp).clip(CircleShape).background(panelColor).clickable(onClick = onSearch).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // On the Search screen its own field is the one search bar, so the shortcut steps aside.
+            if (!searchActive) Row(Modifier.width(460.dp).height(44.dp).clip(CircleShape).background(panelColor).clickable(onClick = onSearch).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(JukeIcons.Search, null, Modifier.size(20.dp), tint = Dim)
                 Text("What do you want to play?", color = Dim, style = MaterialTheme.typography.bodyMedium)
             }
