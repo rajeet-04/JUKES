@@ -667,6 +667,10 @@ fun JukeApp() {
                 if (desktop && panelOpen) com.example.juke.desktop.NowPlayingPanel(
                     state = playerState, musicViewModel = musicViewModel,
                     onClose = { panelOpen = false }, onOpenFullscreen = { showPlayerModal = true },
+                    onGoToAlbum = { id ->
+                        activityViewModelProvider[AlbumDetailViewModel::class].loadAlbumDetailsById(id)
+                        navController.navigate("album/$id")
+                    },
                     modifier = Modifier.width(340.dp).fillMaxHeight()
                 )
             }
@@ -684,6 +688,11 @@ fun JukeApp() {
                     showPlayerModal = false
                     activityViewModelProvider[SearchViewModel::class].loadArtistDetailsById(artistId)
                     navController.navigate("artist/$artistId")
+                },
+                onGoToAlbum = { albumId ->
+                    showPlayerModal = false
+                    activityViewModelProvider[AlbumDetailViewModel::class].loadAlbumDetailsById(albumId)
+                    navController.navigate("album/$albumId")
                 }
             ) else PlayerScreen(
                 musicViewModel = musicViewModel,

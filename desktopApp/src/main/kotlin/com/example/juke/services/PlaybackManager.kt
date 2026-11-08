@@ -361,23 +361,27 @@ class PlaybackManager private constructor(private val context: Context) {
     fun savePosition() { prefs.edit { putLong("playback_position", posMs); putInt("queue_start_index", index) } }
 
     private suspend fun restore() {
+        val t0 = System.currentTimeMillis(); fun lap(m: String) = println("RESTORE +${System.currentTimeMillis() - t0}ms $m")
         try {
             if (!prefs.getBoolean("has_saved_state", false)) return
             val ids = prefs.getString("queue_track_ids", "")?.split(",")?.filter { it.isNotEmpty() } ?: return
             val savedIndex = prefs.getInt("queue_start_index", 0); val savedPos = prefs.getLong("playback_position", 0L)
+            lap("ids=${ids.size}")
             val all = ids.mapNotNull { database.trackDao().getTrackByUuid(it)?.toTrack() }
+            lap("loaded ${all.size}")
             if (all.isEmpty()) return
             val start = savedIndex.coerceIn(0, all.size - 1)
             // keep songs we can fetch again; drop the rest. Restore at the first one that is on disk.
             val playable = all.filter { !missing(it) || it.spotifyId != null }
             val at = playable.indexOfFirst { it.uuid == all[start].uuid }.takeIf { it >= 0 } ?: playable.indexOfFirst { !missing(it) }
+            lap("playable=${playable.size} at=$at")
             if (at < 0) return
             if (synchronized(lock) { queue.isNotEmpty() } || _isPlaying.value) return // user already started something
             synchronized(lock) { queue += playable; index = at }
-            queueManager.updateHistory(playable.take(at))
-            queueManager.initializeQueue(playable.drop(at), preserveHistory = true)
+            queueManager.updateHistory(playable.take(at)); lap("history")
+            queueManager.initializeQueue(playable.drop(at), preserveHistory = true); lap("queue init")
             load(if (playable[at].uuid == all[start].uuid) savedPos else 0, false)
-            _hasRestoredState.value = true
+            _hasRestoredState.value = true; lap("done")
         } catch (e: Exception) { Log.e(tag, "Failed to restore playback state: ${e.message}", e) }
     }
 }

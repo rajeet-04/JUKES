@@ -52,6 +52,13 @@ class UiRenderTest {
             }
         } }
         shoot(player, "player", 3000)
+        edt {
+            val pos = androidx.compose.ui.geometry.Offset(1136f, 34f)
+            player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move, pos)
+            player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Press, pos)
+            player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Release, pos)
+        }
+        shoot(player, "player_menu", 800)
         edt { player.close() }
         vm.togglePlayPause()
     }

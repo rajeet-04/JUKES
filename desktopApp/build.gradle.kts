@@ -108,7 +108,7 @@ dependencies {
     for (m in listOf("base", "graphics", "media", "swing")) implementation("org.openjfx:javafx-$m:21.0.5:$fx")
 }
 
-tasks.test { useJUnit(); testLogging { showStandardStreams = true } }
+tasks.test { useJUnit(); System.getProperty("ghostUri")?.let { systemProperty("ghostUri", it) }; System.getProperty("qsize")?.let { systemProperty("qsize", it) }; testLogging { showStandardStreams = true } }
 ksp { arg("room.schemaLocation", layout.buildDirectory.dir("schemas").get().asFile.path) }
 
 compose.desktop.application {

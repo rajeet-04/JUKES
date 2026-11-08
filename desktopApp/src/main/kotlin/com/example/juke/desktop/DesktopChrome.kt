@@ -58,7 +58,7 @@ private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScop
     Column(modifier.clip(PanelShape).background(panelColor), content = content)
 
 @Composable
-private fun Tip(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 36.dp, tint: Color = Dim, selected: Boolean = false) {
+internal fun Tip(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 36.dp, tint: Color = Dim, selected: Boolean = false) {
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
     Box(modifier.size(size).clip(CircleShape).background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.10f) else Color.Transparent)
@@ -147,8 +147,9 @@ private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, 
 // ---------------------------------------------------------------------------------------------
 @Composable
 fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Unit, musicViewModel: MusicViewModel, modifier: Modifier = Modifier) {
-    val synced = track.syncedLyrics?.takeIf { it.isNotBlank() }
-    val plain = track.plainLyrics?.takeIf { it.isNotBlank() }
+    val shown = rememberLyricsTrack(track, musicViewModel)
+    val synced = shown.syncedLyrics?.takeIf { it.isNotBlank() }
+    val plain = shown.plainLyrics?.takeIf { it.isNotBlank() }
     var triedFetch by remember(track.uuid) { mutableStateOf(false) }
     LaunchedEffect(track.uuid, synced, plain) { if (synced == null && plain == null && !triedFetch) { triedFetch = true; musicViewModel.refreshLyrics(track) } }
 
@@ -184,7 +185,7 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
 // Now-playing panel (right)
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose: () -> Unit, onOpenFullscreen: () -> Unit, modifier: Modifier = Modifier) {
+fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose: () -> Unit, onOpenFullscreen: () -> Unit, onGoToAlbum: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     val track = state.currentTrack
     val tint = state.extractedColors?.primary ?: MaterialTheme.colorScheme.primary
     Box(modifier.clip(PanelShape).background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.55f), Color(0xFF161616), Color(0xFF111111))))) {
@@ -198,6 +199,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Now playing", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, size = 36.dp)
                 Tip(JukeIcons.Close, "Close panel", onClose)
             }
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -306,7 +308,7 @@ private fun fmt(ms: Long): String { val s = (ms / 1000).coerceAtLeast(0); return
 // Full player: art + controls on the left, big lyrics on the right
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onDismiss: () -> Unit, onNavigateToArtist: (String) -> Unit, modifier: Modifier = Modifier) {
+fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onDismiss: () -> Unit, onNavigateToArtist: (String) -> Unit, onGoToAlbum: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     androidx.activity.compose.BackHandler(onBack = onDismiss)
     val track = state.currentTrack
     val tint = state.extractedColors?.primary ?: MaterialTheme.colorScheme.primary
@@ -344,6 +346,7 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
             LyricsView(track, state.position, big = true, onSeek = musicViewModel::seekTo, musicViewModel = musicViewModel, modifier = Modifier.weight(1.15f).fillMaxHeight())
         }
         Tip(JukeIcons.ChevronDown, "Close", onDismiss, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 12.dp).padding(start = titleInsetDp()), size = 44.dp, tint = MaterialTheme.colorScheme.onSurface)
+        if (track != null) PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, modifier = Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 12.dp))
     }
     }
 }
