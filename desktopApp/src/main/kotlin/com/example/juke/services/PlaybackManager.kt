@@ -127,7 +127,7 @@ class PlaybackManager private constructor(private val context: Context) {
             mp.setOnPlaying { _isPlaying.value = true }
             mp.setOnPaused { _isPlaying.value = false }
             mp.setOnStopped { _isPlaying.value = false }
-            mp.currentTimeProperty().addListener { _, _, t -> if (player === mp) posMs = t.toMillis().toLong() }
+            mp.currentTimeProperty().addListener { _, _, t -> if (player === mp) { val ms = t.toMillis().toLong(); if (hold > 0 && ms < hold) posMs = hold else { hold = 0; posMs = ms } } }
             mp.setOnEndOfMedia { if (player === mp) scope.launch { onEnded(myIndex) } }
             mp.setOnError { Log.e(tag, "Player error for ${track.title}: ${mp.error?.message}"); if (player === mp) scope.launch { onFailed(track) } }
         }
@@ -291,6 +291,28 @@ class PlaybackManager private constructor(private val context: Context) {
         if (!jamApplying && com.example.juke.jam.JamControls.seekTo(positionMs)) return
         seekToLocal(positionMs)
     }
+    /** While a precise seek is settling, the clock reads the requested time instead of the second the player snapped to. */
+    @Volatile private var hold = 0L
+
+    /**
+     * macOS JavaFX seeks to whole seconds (it floors), so a lyric line can start up to 1 s early, inside the
+     * previous line. Seek to the second below, stay silent until the exact time, then unmute.
+     */
+    fun seekPrecise(ms: Long) {
+        val t = ms.coerceAtLeast(0)
+        if (!jamApplying && com.example.juke.jam.JamControls.seekTo(t)) return
+        val lead = t % 1000
+        if (lead < 150 || !_isPlaying.value) { seekToLocal(t); return }
+        hold = t; posMs = t
+        Fx.run { player?.let { it.volume = 0.0; it.seek(Duration.millis((t - lead).toDouble())) } }
+        scope.launch {
+            val end = System.currentTimeMillis() + 1500
+            while (hold > 0 && System.currentTimeMillis() < end) delay(10)
+            hold = 0
+            Fx.run { player?.volume = _volume.value.toDouble() }
+        }
+    }
+
     private fun seekToLocal(ms: Long) { val t = ms.coerceAtLeast(0); posMs = t; Fx.run { player?.seek(Duration.millis(t.toDouble())) } }
 
     fun seekToIndex(i: Int) { val ok = synchronized(lock) { if (i in queue.indices) { index = i; true } else false }; if (ok) load(0, shouldResumeAfterTrackChange()) }

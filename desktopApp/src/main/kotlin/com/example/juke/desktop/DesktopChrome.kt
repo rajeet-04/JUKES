@@ -238,7 +238,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                             Text("Show all", style = MaterialTheme.typography.labelMedium, color = Dim, modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenFullscreen).padding(4.dp))
                         }
                         Spacer(Modifier.height(8.dp))
-                        LyricsView(track, state.position, big = false, onSeek = musicViewModel::seekTo, musicViewModel = musicViewModel, modifier = Modifier.fillMaxWidth().height(250.dp))
+                        LyricsView(track, state.position, big = false, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.fillMaxWidth().height(250.dp))
                     }
                 }
                 val next = state.queue.drop((state.queueIndex + 1).coerceAtLeast(0)).take(4)
@@ -361,7 +361,7 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                     }
                 }
             }
-            LyricsView(track, state.position, big = true, onSeek = musicViewModel::seekTo, musicViewModel = musicViewModel, modifier = Modifier.weight(1.15f).fillMaxHeight())
+            LyricsView(track, state.position, big = true, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.weight(1.15f).fillMaxHeight())
         }
         Tip(JukeIcons.ChevronDown, "Close", onDismiss, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 12.dp).padding(start = titleInsetDp()), size = 44.dp, tint = MaterialTheme.colorScheme.onSurface)
         if (track != null) PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, modifier = Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 12.dp))
