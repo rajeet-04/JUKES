@@ -108,23 +108,30 @@ object TrackSearch {
         val ix = index(t)
         val needed = words.filterNot { inMeta(it, ix) }
         if (needed.isEmpty()) return null
+        // The best line (or pair): all needed words if any line has them, else the one with the most (at least half):
+        // the song ranked because its words are scattered or spelled differently, and a nearby line is still the place to jump to.
         fun scan(lines: List<Pair<Long?, String>>): LyricHit? {
             val norm = lines.map { normalize(it.second) }
             val split = norm.map { n -> n.split(' ').filter { it.isNotEmpty() } }
-            for (i in lines.indices) if (needed.all { lineHas(it, norm[i], split[i]) }) return LyricHit(lines[i].second.trim(), lines[i].first)
-            for (i in 0 until lines.size - 1) {
-                val joined = norm[i] + " " + norm[i + 1]
-                val jw = split[i] + split[i + 1]
-                if (needed.all { lineHas(it, joined, jw) }) return LyricHit(lines[i].second.trim() + " / " + lines[i + 1].second.trim(), lines[i].first)
+            var best: LyricHit? = null
+            var bestCount = 0
+            fun consider(count: Int, hit: () -> LyricHit): Boolean {
+                if (count > bestCount) { bestCount = count; best = hit() }
+                return count == needed.size
             }
-            return null
+            for (i in lines.indices) if (consider(needed.count { lineHas(it, norm[i], split[i]) }) { LyricHit(lines[i].second.trim(), lines[i].first) }) return best
+            for (i in 0 until lines.size - 1) {
+                val joined = norm[i] + " " + norm[i + 1]; val jw = split[i] + split[i + 1]
+                if (consider(needed.count { lineHas(it, joined, jw) }) { LyricHit(lines[i].second.trim() + " / " + lines[i + 1].second.trim(), lines[i].first) }) return best
+            }
+            return best.takeIf { bestCount * 2 >= needed.size }
         }
         fun synced(lrc: String?) = lrc?.takeIf { it.isNotBlank() }?.let { l ->
             com.example.juke.ui.screens.parseSyncedLyrics(l, t.lyricsOffsetMs).map { it.timeMs as Long? to it.text }
         }.orEmpty()
         fun plain(p: String?) = p.orEmpty().lines().filter { it.isNotBlank() }.map { null as Long? to it }
-        return scan(synced(t.syncedLyrics)) ?: scan(synced(t.romanizedSyncedLyrics))
-            ?: scan(plain(t.plainLyrics)) ?: scan(plain(t.romanizedPlainLyrics))
+        return listOf(synced(t.syncedLyrics), synced(t.romanizedSyncedLyrics), plain(t.plainLyrics), plain(t.romanizedPlainLyrics))
+            .mapNotNull { scan(it) }.firstOrNull()
     }
 
     /** Matching tracks, best first; with a blank query, [tracks] unchanged. */
