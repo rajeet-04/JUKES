@@ -97,14 +97,17 @@ object Handoff {
         val c = vm.getApplication<android.app.Application>(); val code = _code.value ?: return
         val st = vm.uiState.value
         val cur = st.currentTrack ?: run { _status.value = "Nothing is playing"; return }
-        val queue = if (st.queue.isEmpty()) listOf(cur) else st.queue.drop(maxOf(st.queueIndex, 0))
+        // what plays after this song: the player's queue from here on, plus anything only the queue manager holds (radio picks)
+        val upcoming = if (st.queue.isEmpty()) listOf(cur) else st.queue.drop(maxOf(st.queueIndex, 0))
+        val have = upcoming.mapTo(HashSet()) { it.uuid }
+        val queue = upcoming + com.example.juke.services.QueueManager.getInstance(c).currentQueue.value.filter { have.add(it.uuid) }
         val tracks = JamResolver.resolveAll(queue.take(MAX_SONGS).map { it.toJamPick() })
         if (tracks.firstOrNull() == null) { _status.value = "Couldn't match \"${cur.title}\" to send it"; return }
         val pm = vm.playbackManager
         val msg = Msg(UUID.randomUUID().toString(), me(c), JamSession.savedName(c), tracks.filterNotNull(), pm.getCurrentPosition(), pm.isPlayingFlow.value)
         if (!write(code, msg)) { _status.value = "Couldn't reach the other device. Check your connection."; return }
         pendingId = msg.id; pendingAt = System.currentTimeMillis(); wake = true
-        _status.value = "Sending…"
+        _status.value = "Sending ${msg.tracks.size} song${if (msg.tracks.size == 1) "" else "s"}…"
     }
 
     /** "Bring playback here": ask the other device to send. */
@@ -172,6 +175,6 @@ object Handoff {
         pm.seekTo(box.posMs + elapsed)
         if (!box.playing && pm.isPlayingFlow.value) pm.togglePlayPause()
         write(code, box.copy(ack = box.id)) // the sender can stop now
-        _status.value = "Playing here, from ${box.fromName}"
+        _status.value = "Playing here, from ${box.fromName} (${songs.size} in the queue)"
     }
 }
