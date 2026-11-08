@@ -109,7 +109,7 @@ fun main(args: Array<String>) {
                 }
             }
             CompositionLocalProvider(LocalViewModelStoreOwner provides DesktopViewModels, LocalConfiguration provides config,
-                LocalTitleInset provides (if (isMac && wide) 76.dp else 0.dp)) {
+                LocalTitleInset provides (if (isMac && wide) 76.dp else 0.dp), LocalWindowScope provides this@Window) {
                 JukeApp()
                 ToastHost()
             }

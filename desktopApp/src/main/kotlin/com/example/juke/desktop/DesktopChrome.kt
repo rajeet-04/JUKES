@@ -89,6 +89,18 @@ fun ThinSlider(value: Float, onChange: (Float) -> Unit, modifier: Modifier = Mod
 @Composable
 fun DesktopTopBar(titleInset: Dp, onHome: () -> Unit, onSearch: () -> Unit, onJam: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(56.dp).padding(horizontal = 12.dp)) {
+        // With the title bar hidden this strip is the title bar: drag to move, double-click to fill the screen.
+        LocalWindowScope.current?.let { ws ->
+            Box(Modifier.matchParentSize()
+                .pointerInput(Unit) { detectTapGestures(onDoubleTap = { toggleMaximize(ws.window) }) }
+                .pointerInput(Unit) {
+                    var grab = java.awt.Point(); var origin = java.awt.Point()
+                    detectDragGestures(
+                        onDragStart = { grab = java.awt.MouseInfo.getPointerInfo().location; origin = ws.window.location },
+                        onDrag = { change, _ -> change.consume(); val p = java.awt.MouseInfo.getPointerInfo().location; ws.window.setLocation(origin.x + p.x - grab.x, origin.y + p.y - grab.y) },
+                    )
+                })
+        }
         Spacer(Modifier.width(titleInset))
         Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(44.dp).clip(CircleShape).background(panelColor).clickable(onClick = onHome), contentAlignment = Alignment.Center) { Icon(JukeIcons.Home, "Home", Modifier.size(22.dp)) }
@@ -358,3 +370,16 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
 /** Extra left padding for macOS traffic lights when content runs under the title bar. */
 @Composable fun titleInsetDp(): Dp = LocalTitleInset.current
 val LocalTitleInset = staticCompositionLocalOf { 0.dp }
+
+val LocalWindowScope = staticCompositionLocalOf<androidx.compose.ui.window.WindowScope?> { null }
+
+private var restoreBounds: java.awt.Rectangle? = null
+
+/** Fill the screen's usable area (menu bar and Dock stay visible); a second call puts the window back. */
+fun toggleMaximize(window: java.awt.Window) {
+    val gc = window.graphicsConfiguration ?: return
+    val ins = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc)
+    val b = gc.bounds
+    val full = java.awt.Rectangle(b.x + ins.left, b.y + ins.top, b.width - ins.left - ins.right, b.height - ins.top - ins.bottom)
+    if (window.bounds == full) restoreBounds?.let { window.bounds = it } else { restoreBounds = window.bounds; window.bounds = full }
+}
