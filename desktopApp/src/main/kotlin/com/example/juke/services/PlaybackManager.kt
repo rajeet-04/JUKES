@@ -88,6 +88,9 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    /** Playable now (a file or stream URL) or fetchable when its turn comes (a Spotify id to resolve). */
+    private fun hasSource(t: Track) = t.localUri != null || t.spotifyId != null
+
     private fun missing(t: Track): Boolean {
         val u = t.localUri ?: return true
         return !u.startsWith("http", true) && LocalAudio.isMissing(u)
@@ -215,7 +218,11 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun setQueue(tracks: List<Track>, startIndex: Int = 0, startPositionMs: Long = -1L, keepShuffleMode: Boolean = false) {
         if (!keepShuffleMode) _isShuffleEnabled.value = false
-        synchronized(lock) { queue.clear(); queue += tracks.filter { it.localUri != null }; index = startIndex.coerceIn(0, (queue.size - 1).coerceAtLeast(0)) }
+        // A song with no file yet (synced from another device, greyed in the library) stays: load() fetches it when its turn
+        // comes. Dropping it shifted startIndex onto a different song, so tapping it played its neighbour.
+        val keep = tracks.filter(::hasSource)
+        val start = tracks.getOrNull(startIndex)?.let { s -> keep.indexOfFirst { it.uuid == s.uuid } }?.takeIf { it >= 0 } ?: 0
+        synchronized(lock) { queue.clear(); queue += keep; index = start.coerceIn(0, (queue.size - 1).coerceAtLeast(0)) }
         retried.clear()
         load(startPositionMs.coerceAtLeast(0), true)
     }
@@ -223,13 +230,13 @@ class PlaybackManager private constructor(private val context: Context) {
     fun addToQueue(tracks: List<Track>, allowDuplicates: Boolean = false) {
         synchronized(lock) {
             val have = queue.mapTo(HashSet()) { it.uuid }
-            queue += tracks.filter { it.localUri != null && (allowDuplicates || have.add(it.uuid)) }
+            queue += tracks.filter { hasSource(it) && (allowDuplicates || have.add(it.uuid)) }
         }
         publish(); saveQueueStructure()
     }
 
     suspend fun insertNext(track: Track): Boolean {
-        if (track.localUri == null) return false
+        if (!hasSource(track)) return false
         synchronized(lock) { queue.add((index + 1).coerceIn(0, queue.size), track) }
         publish(); saveQueueStructure(); return true
     }
@@ -237,7 +244,7 @@ class PlaybackManager private constructor(private val context: Context) {
     suspend fun placeLibraryTracks(tracks: List<Track>, next: Boolean): Boolean {
         val currentId = synchronized(lock) { queue.getOrNull(index)?.uuid }
         val incoming = tracks.distinctBy { it.uuid }.filterNot { it.uuid == currentId }
-        if (incoming.isEmpty() || incoming.any { it.localUri == null }) return false
+        if (incoming.isEmpty() || incoming.any { !hasSource(it) }) return false
         synchronized(lock) {
             incoming.forEachIndexed { placed, t ->
                 val cur = queue.getOrNull(index)
