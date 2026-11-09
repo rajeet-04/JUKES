@@ -58,6 +58,7 @@ private fun startup(args: Array<String>) {
     JamSession.resume(app)
     com.example.juke.services.NowPlaying.start(com.example.juke.services.PlaybackManager.getInstance(app))
     args.forEach { AppLinks.incoming.tryEmit(it) }
+    Thread { WindowsIntegration.register() }.apply { isDaemon = true }.start()
 }
 
 fun main(args: Array<String>) {

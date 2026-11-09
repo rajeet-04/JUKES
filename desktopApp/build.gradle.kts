@@ -185,8 +185,17 @@ compose.desktop.application {
                 """.trimIndent()
             }
         }
-        windows { iconFile.set(project.file("icons/JUKE.ico")) }
-        linux { iconFile.set(project.file("icons/JUKE.png")) }
+        windows {
+            iconFile.set(project.file("icons/JUKE.ico"))
+            menu = true            // Start menu entry: searchable from Start; right-click it to pin to the taskbar
+            menuGroup = "JUKE"
+            shortcut = true        // desktop shortcut
+            dirChooser = true
+        }
+        linux {
+            iconFile.set(project.file("icons/JUKE.png"))
+            shortcut = true // application-menu entry (found by the launcher search)
+        }
         packageVersion = "1.0.0"
         modules("java.base", "java.desktop", "java.logging", "java.sql", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http", "java.xml", "java.management")
     }
