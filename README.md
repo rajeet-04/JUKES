@@ -3,16 +3,17 @@
 <div align="center">
 
 [![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://www.android.com/)
+[![Desktop](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#-desktop-app)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
 [![Compile SDK](https://img.shields.io/badge/Compile%20SDK-36-blue.svg)](https://developer.android.com/about/versions/api-levels)
-[![Version](https://img.shields.io/badge/Version-2.3.2--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta)
+[![Version](https://img.shields.io/badge/Version-2.9.0--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
-**A modern Android music streaming app with smart recommendations, Spotify integration, offline playback, and advanced audio features**
+**A modern Android and desktop music app with smart recommendations, Spotify integration, offline playback, synced lyrics, and your library on every device**
 
-[Features](#features) • [Screenshots](#screenshots) • [Installation](#installation) • [Architecture](#architecture) • [Contributing](#contributing)
+[Features](#features) • [Desktop app](#-desktop-app) • [Installation](#installation) • [Architecture](#architecture) • [Contributing](#contributing)
 
 </div>
 
@@ -20,21 +21,20 @@
 
 ## 📱 Overview
 
-JUKE is a feature-rich Android music player that combines Spotify's search API, YouTube Music's recommendation engine, and local playback to deliver an exceptional music experience. Download tracks, import playlists, enjoy smart recommendations, and customize your audio with equalizer and effects. Supports offline playback, synced lyrics, and seamless queue management.
+JUKE is a feature-rich music player that combines Spotify's search API, YouTube Music's recommendation engine, and local playback. Download tracks, import playlists, enjoy smart recommendations, and customize your audio with equalizer and effects. Supports offline playback, synced lyrics searchable by a line of the song, and seamless queue management. With a JUKE account your liked songs and playlists follow you to every device, and each device can see and control what the others are playing.
 
 ## 📦 Latest Release
 
-**JUKE v2.3.2-beta** is now available! 🚀
+**JUKE v2.9.0-beta** adds accounts and multi-device control.
 
-**Incremental Beta Release** focused on smarter lyrics fallback, queue-aware download recovery, and faster search interactions.
+- **Accounts and library sync**: liked songs, playlists and settings stay the same on every device you log in on
+- **Your devices**: see what each device plays and control it (play/pause, skip, seek, Up next); **Join**, **Move here** and **Play there** hand playback between devices
+- **Lyrics in Search**: find saved songs by a line of their lyrics, typos and romanization included
+- **Add to playlist** straight from Search and Home
+- **Announcements**: occasional notifications about new versions (Firebase Cloud Messaging, sent by hand)
+- **Desktop app** (macOS, Windows, Linux) built from the same code, see [Desktop app](#-desktop-app)
 
-What's new:
-
-- Three-stage lyrics fallback chain (LRCLib -> YouTube Music lyrics -> YouTube captions)
-- Spotmate queue-aware recovery with immediate fallback and deferred task polling
-- Faster split search architecture with debounced autocomplete suggestions
-
-[📥 Download v2.3.2-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta) | [📝 Full Release Notes](v2.3.2-beta-RELEASE_NOTES.md)
+[📥 Releases](https://github.com/rajeet-04/JUKES/releases)
 
 ## ✨ Features
 
@@ -56,6 +56,8 @@ What's new:
 - **YouTube Music suggestions** - Debounced (100ms) live suggestions with 64-entry cache
 - **Recent searches** - Last 5 queries, removable
 - **Search filters** - Tracks, Local Tracks, Artists, Playlists, Albums tabs
+- **Lyrics search** - find saved songs by title, artist or a line of lyrics (romanized too, typo tolerant); play from the matching line
+- **Add to playlist** from the song menu in Search and Home
 - **Import playlists** - Batch download with progress indicator (max 6 concurrent)
 
 ### 🎼 Smart Recommendations
@@ -78,6 +80,19 @@ What's new:
 - **Swipe to delete** with 5-second undo window
 - **Purge stale tracks** - Remove tracks not played in 14+ days or downloaded 30+ days ago
 - **Import audio files** - Add local audio files via content URI
+
+### 👤 Accounts & Sync
+
+- **JUKE account** with email and password (the password is stretched on the device and never sent as typed; there is no email sending, so change a forgotten password from a device that is still logged in)
+- **Library sync** - liked songs, playlists and settings merge across devices (three-way merge, a safety guard refuses to apply a sync that would remove most of the library)
+- **Songs new to a device** appear dimmed as streams and download when played; songs being downloaded show a spinner
+- **Handoff and Jam** - pair devices with a code to send what is playing, or listen along together
+
+### 📡 Your Devices (Connect)
+
+- Every device on your account shows what it is playing, with its own play/pause, skip, seek and Up next
+- **Join** plays that device's queue here from the same moment, **Move here** also pauses the other device, **Play there** sends this device's playback to another and pauses here
+- Playback stays independent per device; controls are remote
 
 ### 🎛️ Audio Effects
 
@@ -126,8 +141,33 @@ What's new:
 - **Dynamic Theme**: Player screen colors extracted from album art (Vibrant → Light Vibrant → Dark Vibrant → Dominant → Muted)
 - **Intent Handling**: Share tracks via Spotify link, paste Spotify URLs in search, open player via intent extra
 - **Update System**: GitHub Releases check on launch, emergency update detection for critical releases
+- **Announcements**: opt-in notifications (Android 13+ asks once) for new versions, sent from the terminal with `bun tools/notify.ts`
+- **Crash reports**: crashes are sent on the next launch and filed as one GitHub issue per distinct crash; they carry the screen, playback state and the last few event names, never titles, searches or ids
 - **Error Resilience**: Retry with exponential backoff, offline fallback, download source fallback (Spotmate → Gamepvz), offline recommendations
 - **Image Loading**: Coil with thumbnail pre-warming, 25% memory cache, 2% disk cache
+
+## 🖥️ Desktop App
+
+A Compose Desktop port in [`desktopApp/`](desktopApp) reuses the Android sources (the Gradle `stageAndroid` task copies them, minus a list of Android-only files) and adds desktop chrome: library sidebar, now-playing panel, full-screen player with lyrics and Up next, media keys and the Now Playing widget on macOS.
+
+| Platform | Status |
+|---|---|
+| macOS (Apple silicon) | built and tried; ad-hoc signed, so the first launch needs System Settings → Privacy & Security → **Open Anyway** |
+| Windows (x64) | builds on CI, untested; unsigned, SmartScreen will warn |
+| Linux (x86-64) | builds on CI, untested; `.deb` |
+
+Open items per platform (media keys, `juke://` links, signing) are in [`desktopApp/TODO.md`](desktopApp/TODO.md).
+
+**Build** (the installer for an OS has to be built on that OS; needs JDK 21 and a `local.properties` as below):
+
+```bash
+sh ./gradlew :desktopApp:packageReleaseDmg --no-configuration-cache   # macOS
+./gradlew.bat :desktopApp:packageReleaseMsi --no-configuration-cache  # Windows (needs WiX 3)
+sh ./gradlew :desktopApp:packageReleaseDeb --no-configuration-cache   # Linux (needs fakeroot)
+sh ./gradlew :desktopApp:run                                          # run without installing
+```
+
+Or use the **Desktop build** workflow (Actions tab): it builds the Windows `.msi` and Linux `.deb` on GitHub's runners with the app keys from repository secrets (`SPOTIFY_TOKEN_KEY`, `JUKE_BACKEND_URL`, `JUKE_BACKEND_KEY`) and keeps them as artifacts for 3 days. Crashes on desktop, including native ones that kill the JVM, are reported like on Android.
 
 ## 📸 Screenshots
 
@@ -155,12 +195,10 @@ What's new:
 
 ### Prerequisites
 
-- Android Studio Hedgehog (2023.1.1) or later
-- Java 11
-- Kotlin 2.0.21
-- Gradle 8.13.1
-- Android SDK 36 (compile/target)
-- Spotify Developer Account (for API credentials)
+- Android Studio (current stable) with Android SDK 36 (compile/target)
+- JDK 21 (Gradle can fetch it)
+- Kotlin 2.0.21; use the Gradle wrapper in the repo
+- The app key for the backend (`SPOTIFY_TOKEN_KEY`, see below)
 
 ### Setup Instructions
 
@@ -173,35 +211,35 @@ What's new:
 
 2. **Download from Releases** (Recommended for end users)
 
-   **Latest Release: [v2.3.2-beta](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta)**
+   **Latest Release: [v2.9.0-beta](https://github.com/rajeet-04/JUKES/releases)**
    - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
    - Install the APK on your Android device (min SDK 26+)
    - Grant necessary permissions when prompted
 
-3. **Configure Spotify API**
-   - Visit [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-   - Create a new app
-   - Copy your Client ID and Client Secret
-   - Create `local.properties` in the project root:
+3. **Configure the app key**
 
-     ```properties
-     sdk.dir=/path/to/android/sdk
-     SPOTIFY_CLIENT_ID=your_client_id_here
-     SPOTIFY_CLIENT_SECRET=your_client_secret_here
-     ```
+   Spotify's client id and secret are not in the app: they live in the `spotdown-kv-worker` Cloudflare Worker, which hands the app a short-lived token. Create `local.properties` in the project root:
 
-   > 📖 For detailed Spotify setup instructions, see [SPOTIFY_SETUP.md](SPOTIFY_SETUP.md)
+   ```properties
+   sdk.dir=/path/to/android/sdk
+   SPOTIFY_TOKEN_KEY=the_shared_app_secret
+   # optional, these default to the public backend
+   # SPOTIFY_TOKEN_URL=https://spotdown-kv-worker.meek.workers.dev/spotify-token
+   # JUKE_BACKEND_URL=...
+   ```
+
+   To run your own backend, see [`docs/SPOTIFY_SETUP.md`](docs/SPOTIFY_SETUP.md) and [`spotdown-kv-worker/`](spotdown-kv-worker). Push announcements need your own `app/google-services.json` (git-ignored); without it the app builds and runs with push switched off.
 
 4. **Build the project**
 
    ```bash
-   ./gradlew assembleDebug
+   sh ./gradlew assembleDebug
    ```
 
 5. **Install on device/emulator**
 
    ```bash
-   ./gradlew installDebug
+   sh ./gradlew installDebug
    ```
 
 ## 🏗️ Architecture
@@ -230,11 +268,13 @@ What's new:
 - **YouTube Music API**: Recommendation engine, video matching, lyrics
 - **Spotmate/Gamepvz**: MP3 download proxies with fallback support
 - **LRCLib API**: Lyrics database with 5-tier fallback
+- **JUKE backend** (`spotdown-kv-worker`, Cloudflare Worker with D1, KV and a Durable Object): accounts, library sync, shared playlists and Jams, per-device Connect state, crash reports. Runs on free tiers
 - **GitHub Releases API**: Update checking with version comparison
 
 **Media Playback**
 
 - **Media3 ExoPlayer**: Audio playback engine with 256MB LRU stream cache
+- **Firebase Cloud Messaging**: topic announcements only (no accounts or tracking)
 - **MediaLibraryService**: Foreground service with MediaSession
 - **Audio Focus**: Automatic pause/resume with call state detection
 - **Notification Controls**: Custom layout with favorite/download buttons
@@ -245,6 +285,10 @@ What's new:
 app/src/main/java/com/example/juke/
 ├── JukeApplication.kt          # Application class with Coil config, portrait lock
 ├── MainActivity.kt              # Main activity with navigation routes
+├── account/                    # JUKE account, library sync (three-way merge)
+├── jam/                        # Jam sessions, Connect (your devices)
+├── push/                       # FCM announcements
+├── report/                     # Crash reports and breadcrumbs
 ├── database/
 │   ├── MusicDatabase.kt        # Room database configuration
 │   ├── Track.kt                 # Core track model
@@ -289,6 +333,8 @@ app/src/main/java/com/example/juke/
 └── analytics/
     └── AnalyticsManager.kt     # App event tracking
 ```
+
+Outside `app/`: `spotdown-kv-worker/` (the backend), `tools/notify.ts` (push announcements), `desktopApp/` (the desktop app).
 
 ### Data Flow
 
@@ -448,15 +494,15 @@ This project follows [Kotlin Coding Conventions](https://kotlinlang.org/docs/cod
 
 ### Common Issues
 
-**"Spotify credentials not configured"**
+**Spotify search fails or "unauthorized"**
 
-- Ensure `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are in `local.properties`
-- Rebuild the project after adding credentials
+- Ensure `SPOTIFY_TOKEN_KEY` is in `local.properties` and matches the backend's `APP_SECRET`
+- Rebuild the project after changing it
 
 **No search results**
 
 - Check internet connection
-- Verify Spotify credentials are correct
+- Verify the app key and backend URL are correct
 - Try different search terms
 - Check Spotify market code in settings
 
@@ -510,7 +556,9 @@ For issues, questions, or feature requests, please [open an issue](https://githu
 - [x] ~~Blacklist management~~
 - [x] ~~Lyrics offset adjustment~~
 - [x] ~~Purge stale tracks~~
-- [ ] User accounts and cloud sync
+- [x] ~~User accounts and cloud sync~~
+- [x] ~~Control other devices (Connect)~~
+- [x] ~~Desktop app~~ (macOS tried; Windows and Linux builds untested)
 - [ ] Social features (share playlists, collaborative queues)
 - [ ] Chromecast support
 - [ ] Podcast support
@@ -533,6 +581,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY MEEK**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v2.3.2--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases/tag/v2.3.2-beta)
+[![Release](https://img.shields.io/badge/Release-v2.9.0--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases)
 
 </div>
