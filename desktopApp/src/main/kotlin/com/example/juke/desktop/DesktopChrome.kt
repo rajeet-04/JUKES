@@ -31,6 +31,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import com.example.juke.ui.theme.GlassLevel
+import com.example.juke.ui.theme.glassPane
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -124,24 +127,26 @@ fun DesktopTopBar(titleInset: Dp, query: String, focusTrigger: Int, onQueryChang
 @Composable
 fun LibrarySidebar(libraryViewModel: LibraryViewModel, collapsed: Boolean, onToggle: () -> Unit, onOpenSongs: (favourites: Boolean) -> Unit, onOpenPlaylist: (PlaylistEntity) -> Unit, modifier: Modifier = Modifier) {
     val state by libraryViewModel.uiState.collectAsStateWithLifecycle()
+    // labels fade in after the pane has started widening and out before it narrows, so nothing reflows mid-animation
+    val labelAlpha by androidx.compose.animation.core.animateFloatAsState(if (collapsed) 0f else 1f, androidx.compose.animation.core.tween(if (collapsed) 90 else 200, delayMillis = if (collapsed) 0 else 110), label = "libraryLabels")
     Panel(modifier) {
-        if (collapsed) Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
-            Tip(JukeIcons.LibrarySelected, "Expand your library", onToggle, size = 44.dp)
-        } else Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Tip(JukeIcons.LibrarySelected, "Collapse your library", onToggle, size = 44.dp)
-            Spacer(Modifier.width(4.dp))
-            Text("Your Library", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Tip(JukeIcons.LibrarySelected, if (collapsed) "Expand your library" else "Collapse your library", onToggle, size = 44.dp)
+            if (labelAlpha > 0f) {
+                Spacer(Modifier.width(4.dp))
+                Text("Your Library", style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f).graphicsLayer { alpha = labelAlpha })
+            }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
-            item { SideRow("Liked Songs", "Playlist", null, collapsed, MaterialTheme.colorScheme.primary) { onOpenSongs(true) } }
-            item { SideRow("All songs", "${state.tracks.size} downloaded or streamed", null, collapsed, MaterialTheme.colorScheme.secondary) { onOpenSongs(false) } }
-            items(state.playlists, key = { it.id }) { p -> SideRow(p.name, "Playlist", p, collapsed) { onOpenPlaylist(p) } }
+            item { SideRow("Liked Songs", "Playlist", null, labelAlpha, MaterialTheme.colorScheme.primary) { onOpenSongs(true) } }
+            item { SideRow("All songs", "${state.tracks.size} downloaded or streamed", null, labelAlpha, MaterialTheme.colorScheme.secondary) { onOpenSongs(false) } }
+            items(state.playlists, key = { it.id }) { p -> SideRow(p.name, "Playlist", p, labelAlpha) { onOpenPlaylist(p) } }
         }
     }
 }
 
 @Composable
-private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, collapsed: Boolean, tile: Color = Color.Gray, onClick: () -> Unit) {
+private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, labelAlpha: Float, tile: Color = Color.Gray, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.07f) else Color.Transparent)
@@ -150,9 +155,9 @@ private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, 
         else Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(Brush.linearGradient(listOf(tile, tile.copy(alpha = 0.45f)))), contentAlignment = Alignment.Center) {
             Icon(if (title == "Liked Songs") JukeIcons.HeartSelected else JukeIcons.MusicNote, null, Modifier.size(22.dp), tint = Color.White)
         }
-        if (!collapsed) {
+        if (labelAlpha > 0f) {
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f).graphicsLayer { alpha = labelAlpha }) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -333,8 +338,58 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
 
 private fun fmt(ms: Long): String { val s = (ms / 1000).coerceAtLeast(0); return "%d:%02d".format(s / 60, s % 60) }
 
+private enum class PlayerTab { Lyrics, Queue }
+
+/** The Mix (radio) glyph the phone uses: broadcast arcs around a play triangle. */
+private val MixIcon: ImageVector by lazy {
+    ImageVector.Builder("Mix", 24.dp, 24.dp, 18f, 18f).addPath(
+        androidx.compose.ui.graphics.vector.PathParser().parsePathString("M3.166 3.161a.75.75 0 0 1 1.06 1.06 6.753 6.753 0 0 0 0 9.548.75.75 0 0 1-1.06 1.06 8.253 8.253 0 0 1 0-11.668m10.607 0a.75.75 0 0 1 1.061 0 8.25 8.25 0 0 1 0 11.668.75.75 0 0 1-1.06-1.06 6.75 6.75 0 0 0 0-9.547.75.75 0 0 1 0-1.06Zm-2.122 2.126a.75.75 0 0 1 1.06 0 5.25 5.25 0 0 1 0 7.424.75.75 0 0 1-1.06-1.06 3.75 3.75 0 0 0 0-5.303.75.75 0 0 1 0-1.06Zm-6.363-.004a.75.75 0 1 1 1.06 1.06 3.75 3.75 0 0 0-.813 4.088c.189.454.466.867.814 1.216a.75.75 0 0 1-1.06 1.06A5.25 5.25 0 0 1 3.75 8.995a5.25 5.25 0 0 1 1.538-3.712m5.962 3.712-3.75 2.25v-4.5z").toNodes(), fill = androidx.compose.ui.graphics.SolidColor(Color.White)).build()
+}
+
+/** A glass pill: icon + label, used for the player pane's tabs and actions. */
+@Composable
+private fun PlayerChip(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val fill by androidx.compose.animation.animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onSurface.copy(0.16f) else if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.09f) else Color.Transparent,
+        androidx.compose.animation.core.tween(140), label = "chip")
+    Row(Modifier.height(36.dp).clip(CircleShape).background(fill).hoverable(src).clickable(interactionSource = src, indication = null, onClick = onClick).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Icon(icon, null, Modifier.size(18.dp), tint = if (selected || hovered) MaterialTheme.colorScheme.onSurface else Dim)
+        Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = if (selected || hovered) MaterialTheme.colorScheme.onSurface else Dim, maxLines = 1)
+    }
+}
+
+/** The whole queue: what is playing is marked, the rest plays on click. Opens scrolled to the current song. */
+@Composable
+private fun PlayerQueue(state: MusicUiState, musicViewModel: MusicViewModel) {
+    val cur = state.queueIndex
+    if (state.queue.isEmpty()) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("The queue is empty", color = Dim) }; return }
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = (cur - 1).coerceIn(0, state.queue.lastIndex))
+    LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp), list, contentPadding = PaddingValues(bottom = 16.dp)) {
+        itemsIndexed(state.queue, key = { i, t -> "pq_${i}_${t.uuid}" }) { i, t ->
+            val playing = i == cur
+            val src = remember { MutableInteractionSource() }
+            val hovered by src.collectIsHoveredAsState()
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .background(if (playing) MaterialTheme.colorScheme.primary.copy(0.16f) else if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.07f) else Color.Transparent)
+                .hoverable(src).clickable(interactionSource = src, indication = null) { musicViewModel.playTrackFromQueue(t, i) }.padding(horizontal = 8.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(t.thumbnailUri, null, Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(t.title, style = MaterialTheme.typography.bodyLarge, fontWeight = if (playing) FontWeight.Bold else FontWeight.Medium, color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(t.artist, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (playing) Icon(JukeIcons.Play, "Playing", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
-// Full player: art + controls on the left, big lyrics on the right
+// Full player: art + controls on the left, a glass pane with lyrics / up next on the right
 // ---------------------------------------------------------------------------------------------
 @Composable
 fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onDismiss: () -> Unit, onNavigateToArtist: (String) -> Unit, onGoToAlbum: (String) -> Unit = {}, modifier: Modifier = Modifier) {
@@ -346,22 +401,29 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
         if (track?.thumbnailUri != null) AsyncImage(track.thumbnailUri, null, Modifier.fillMaxSize().scale(1.3f).blur(110.dp), contentScale = ContentScale.Crop, alpha = 0.55f)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.25f), Color.Black.copy(alpha = 0.62f), Color.Black.copy(alpha = 0.82f)))))
         if (track == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nothing playing", color = Dim) }; return@Box }
-        Row(Modifier.fillMaxSize().padding(horizontal = 56.dp, vertical = 40.dp), horizontalArrangement = Arrangement.spacedBy(64.dp)) {
-            Column(Modifier.weight(0.85f).fillMaxHeight(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.Start) {
-                AsyncImage(track.thumbnailUri, track.title, Modifier.widthIn(max = 460.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(18.dp)), contentScale = ContentScale.Crop)
-                Spacer(Modifier.height(28.dp))
-                Row(Modifier.widthIn(max = 460.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(track.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(track.artist, style = MaterialTheme.typography.titleMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 44.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
+        var tab by remember { mutableStateOf(PlayerTab.Lyrics) }
+        var copied by remember { mutableStateOf(false) }
+        LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(1800); copied = false } }
+        // art takes whatever height the controls leave; the glass pane beside it takes the rest of the width
+        Row(Modifier.fillMaxSize().padding(start = 48.dp, end = 48.dp, top = 68.dp, bottom = 36.dp), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+            Column(Modifier.weight(0.9f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.weight(1f).fillMaxWidth().widthIn(max = 760.dp), contentAlignment = Alignment.Center) {
+                    AsyncImage(track.thumbnailUri, track.title, Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true)
+                        .glassPane(RoundedCornerShape(22.dp), GlassLevel.Thick).clip(RoundedCornerShape(22.dp)), contentScale = ContentScale.Crop)
                 }
-                Spacer(Modifier.height(18.dp))
-                Column(Modifier.widthIn(max = 460.dp).fillMaxWidth()) {
+                Spacer(Modifier.height(22.dp))
+                Column(Modifier.widthIn(max = 760.dp).fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(track.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(track.artist, style = MaterialTheme.typography.titleMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 44.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
+                    }
+                    Spacer(Modifier.height(10.dp))
                     PlaybackSeekSlider(state.position, if (state.duration > 0) state.duration else musicViewModel.playbackManager.getDuration(), musicViewModel::seekTo)
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(fmt(state.position), style = MaterialTheme.typography.labelMedium, color = Dim); Text(fmt(state.duration), style = MaterialTheme.typography.labelMedium, color = Dim) }
-                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(fmt(state.position), style = MaterialTheme.typography.labelMedium, color = Dim); Text(fmt(state.duration), style = MaterialTheme.typography.labelMedium, color = Dim) }
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Tip(JukeIcons.Shuffle, "Shuffle", musicViewModel::toggleShuffle, size = 48.dp, selected = state.isShuffleEnabled)
                         Tip(JukeIcons.Previous, "Previous", musicViewModel::skipToPrevious, size = 56.dp, tint = MaterialTheme.colorScheme.onSurface)
                         Box(Modifier.size(68.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).clickable(onClick = musicViewModel::togglePlayPause), contentAlignment = Alignment.Center) {
@@ -372,7 +434,24 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                     }
                 }
             }
-            LyricsView(track, state.position, big = true, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.weight(1.15f).fillMaxHeight())
+            Column(Modifier.weight(1.1f).fillMaxHeight().glassPane(RoundedCornerShape(26.dp), GlassLevel.Regular)) {
+                Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PlayerChip(JukeIcons.Lyrics, "Lyrics", tab == PlayerTab.Lyrics) { tab = PlayerTab.Lyrics }
+                    PlayerChip(JukeIcons.Queue, "Up next", tab == PlayerTab.Queue) { tab = PlayerTab.Queue }
+                    Spacer(Modifier.weight(1f))
+                    PlayerChip(MixIcon, "Mix", false) { musicViewModel.startRadio(); tab = PlayerTab.Queue }
+                    if (track.spotifyId != null) PlayerChip(if (copied) JukeIcons.Check else JukeIcons.Share, if (copied) "Link copied" else "Share", copied) {
+                        java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection("https://open.spotify.com/track/${track.spotifyId}"), null)
+                        copied = true
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp)) {
+                    when (tab) {
+                        PlayerTab.Lyrics -> LyricsView(track, state.position, big = true, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.fillMaxSize().padding(top = 14.dp))
+                        PlayerTab.Queue -> PlayerQueue(state, musicViewModel)
+                    }
+                }
+            }
         }
         Tip(JukeIcons.ChevronDown, "Close", onDismiss, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 12.dp).padding(start = titleInsetDp()), size = 44.dp, tint = MaterialTheme.colorScheme.onSurface)
         if (track != null) PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, modifier = Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 12.dp))

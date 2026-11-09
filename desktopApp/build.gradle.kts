@@ -36,6 +36,10 @@ val stageAndroid by tasks.registering(Sync::class) {
         filesMatching("**/SearchScreen.kt") {
             filter { it.replace("            SearchInput(", "            if (false) SearchInput(") }
         }
+        // the sidebar drives the app's LibraryViewModel; a nav entry's own copy would never see what it opens
+        filesMatching("**/LibraryScreen.kt") {
+            filter { it.replace("libraryViewModel: LibraryViewModel = viewModel(),", "libraryViewModel: LibraryViewModel = viewModel(com.example.juke.desktop.DesktopViewModels),") }
+        }
         // Android-only blur mask -> Skia's
         filesMatching("**/GlassNavigation.kt") {
             filter { it.replace("var librarySection by rememberSaveable { mutableStateOf(0) }", "var librarySection by rememberSaveable { mutableStateOf(if (uiState.selectedPlaylist != null) 1 else 0) }") }

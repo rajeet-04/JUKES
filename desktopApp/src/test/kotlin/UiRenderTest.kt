@@ -60,6 +60,13 @@ class UiRenderTest {
         } }
         shoot(player, "player", 3000)
         edt {
+            val pos = androidx.compose.ui.geometry.Offset(740f, 100f)
+            player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move, pos)
+            player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Press, pos)
+            player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Release, pos)
+        }
+        shoot(player, "player_queue", 800)
+        edt {
             val pos = androidx.compose.ui.geometry.Offset(1136f, 34f)
             player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move, pos)
             player.sendPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Press, pos)
@@ -67,6 +74,15 @@ class UiRenderTest {
         }
         shoot(player, "player_menu", 800)
         edt { player.close() }
+        val wide = edt { ImageComposeScene(1920, 1080, Density(1f)) {
+            CompositionLocalProvider(LocalViewModelStoreOwner provides DesktopViewModels, LocalConfiguration provides Configuration(1920, 1080), androidx.lifecycle.compose.LocalLifecycleOwner provides androidx.lifecycle.ProcessLifecycleOwner) {
+                JUKETheme(extractedColors = vm.uiState.value.extractedColors) {
+                    com.example.juke.desktop.DesktopPlayerScreen(vm.uiState.value, vm, onDismiss = {}, onNavigateToArtist = {})
+                }
+            }
+        } }
+        shoot(wide, "player_wide", 2500)
+        edt { wide.close() }
         vm.togglePlayPause()
     }
 }

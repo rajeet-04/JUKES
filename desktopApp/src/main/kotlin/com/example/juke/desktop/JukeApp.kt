@@ -300,7 +300,7 @@ fun JukeApp() {
         var panelOpen by remember { mutableStateOf(true) }
         val uiPrefs = remember { context.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE) }
         var libraryCollapsed by remember { mutableStateOf(uiPrefs.getBoolean("library_collapsed", false)) }
-        val libraryWidth by androidx.compose.animation.core.animateDpAsState(if (libraryCollapsed) 76.dp else 300.dp, label = "libraryWidth")
+        val libraryWidth by androidx.compose.animation.core.animateDpAsState(if (libraryCollapsed) 76.dp else 300.dp, androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "libraryWidth")
         val playerState by musicViewModel.uiState.collectAsStateWithLifecycle()
         val libraryViewModel = activityViewModelProvider[com.example.juke.viewmodels.LibraryViewModel::class]
         com.example.juke.ui.components.PlaylistAdder.PlaylistAdderHost(libraryViewModel) // "Add to playlist" from song menus
