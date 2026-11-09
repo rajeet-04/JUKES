@@ -23,7 +23,7 @@ val androidOnly = listOf(
     "services/AudioEffectController.kt", "services/PlaylistBypassDataSource.kt",
     "services/ArtworkProvider.kt", "utils/HapticHelper.kt", "analytics/AnalyticsManager.kt",
     "ui/screens/YoutubeSignInScreen.kt",
-    "ui/icons/JukeIconPreview.kt", "database/MusicDatabase.kt",
+    "ui/icons/JukeIconPreview.kt", "database/MusicDatabase.kt", "push/Push.kt",
 ).map { "com/example/juke/$it" }
 val stageAndroid by tasks.registering(Sync::class) {
     from(androidSrc) {

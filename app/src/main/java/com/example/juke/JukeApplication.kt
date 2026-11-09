@@ -14,6 +14,7 @@ class JukeApplication : Application(), ImageLoaderFactory {
         // Saves crashes to send on the next launch; PostHog adds its own handler in front once it's set up, a moment
         // later so its ~90 ms stays out of the startup window (crashes before that still reach GitHub, not PostHog).
         com.example.juke.report.CrashReporter.install(this)
+        com.example.juke.push.Push.init(this)
         android.os.Handler(mainLooper).postDelayed({ com.example.juke.analytics.AnalyticsManager.setup(this) }, 1_500)
         // Build the heavy singletons (HTTP client, Room open + migrations, stream cache) on a
         // background thread so the first frame and PlaybackService.onCreate find them ready.
