@@ -1,6 +1,8 @@
 export { JamRoom } from './jam';
 export { HandBox } from './hand';
+export { ConnectHub } from './connect';
 import { createCrash } from './crash';
+import { account, authed } from './account';
 import { createReport, REPORT_KEEP_MS } from './report';
 
 export interface Env {
@@ -8,6 +10,7 @@ export interface Env {
     DB: D1Database;
     JAM: DurableObjectNamespace;
     HAND: DurableObjectNamespace;
+    CONNECT: DurableObjectNamespace;
     SPOTIFY_CLIENT_ID: string;
     SPOTIFY_CLIENT_SECRET: string;
     APP_SECRET: string;
@@ -124,6 +127,14 @@ export default {
             if (jam[1] === 'j') return jamLanding(env, code);
             return jam[3] ? room(env, code).fetch(request) : room(env, code).fetch('https://jam/info');
         }
+        if (pathname === '/connect/ws') { // one live room per account; the login token picks the room
+            if (request.headers.get('X-App-Secret') !== env.APP_SECRET) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+            const me = await authed(request, env);
+            if (!me) return Response.json({ error: 'Logged out' }, { status: 401 });
+            return env.CONNECT.get(env.CONNECT.idFromName(me.userId)).fetch(request);
+        }
+        const acct = pathname.match(/^\/account\/(register|login|logout|library|password|delete)$/);
+        if (acct) return account(request, env, acct[1]);
         const hand = pathname.match(/^\/hand\/([A-HJKMNP-Za-hjkmnp-z2-9]{6})$/);
         if (hand) {
             if (request.headers.get('X-App-Secret') !== env.APP_SECRET) return Response.json({ error: 'Unauthorized' }, { status: 401 });

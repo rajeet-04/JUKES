@@ -28,6 +28,11 @@ class_name = "JamRoom"
 name = "HAND"
 class_name = "HandBox"
 
+# Spotify Connect style remote control: one per account
+[[durable_objects.bindings]]
+name = "CONNECT"
+class_name = "ConnectHub"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["JamRoom"]
@@ -35,6 +40,10 @@ new_sqlite_classes = ["JamRoom"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["HandBox"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ConnectHub"]
 
 [triggers]
 crons = ["17 3 * * *"]
