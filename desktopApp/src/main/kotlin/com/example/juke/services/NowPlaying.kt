@@ -146,11 +146,15 @@ object NowPlaying {
             macRef = this
         }
 
-        fun publish(track: com.example.juke.models.Track?, posMs: Long, playing: Boolean) {
+        /** Objects handed to the OS are retained by us and never released: with no autorelease pool on these threads
+         *  macOS's async Now Playing push (issue #25) can read a value that was already freed. A few bytes per update. */
+        private fun own(o: Pointer): Pointer = send(o, "retain") ?: o
+
+        @Synchronized fun publish(track: com.example.juke.models.Track?, posMs: Long, playing: Boolean) {
             runCatching {
                 if (track == null) { send(center, "setNowPlayingInfo:", null); sendL(center, "setPlaybackState:", 3); return }
-                val d = send(cls("NSMutableDictionary"), "dictionary")!!
-                fun put(k: Pointer, v: Pointer) = send(d, "setObject:forKey:", v, k)
+                val d = send(send(cls("NSMutableDictionary"), "alloc")!!, "init")!!
+                fun put(k: Pointer, v: Pointer) = send(d, "setObject:forKey:", own(v), k)
                 put(kTitle, nsString(track.title)); put(kArtist, nsString(track.artist))
                 put(kDuration, nsNumber(maxOf(pm.getDuration(), track.durationSec * 1000L) / 1000.0))
                 if (artFor == track.uuid) artObj?.let { put(kArtwork, it) }
