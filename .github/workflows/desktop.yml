@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [kotlin-multiplatform]
-    paths: ['.github/workflows/desktop.yml', 'desktopApp/**']
+    paths: ['.github/workflows/desktop.yml', 'desktopApp/**', 'app/src/main/java/**']
 
 permissions:
   contents: read
