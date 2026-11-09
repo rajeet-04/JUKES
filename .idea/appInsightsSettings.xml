@@ -9,10 +9,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.example.juke" />
+                  <option name="mobileSdkAppId" value="1:201165719932:android:5f23337efedb53a83dfcf9" />
+                  <option name="projectId" value="juke-aeb3e" />
+                  <option name="projectNumber" value="201165719932" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

@@ -1,7 +1,11 @@
 name: Desktop build
 
-# Manual: Actions tab > Desktop build > Run workflow. Builds unsigned installers for testing.
-on: workflow_dispatch
+# Runs on desktop changes pushed to kotlin-multiplatform, or by hand. No pull_request trigger: forks never get the secrets. Builds unsigned installers for testing.
+on:
+  workflow_dispatch:
+  push:
+    branches: [kotlin-multiplatform]
+    paths: ['.github/workflows/desktop.yml', 'desktopApp/**']
 
 permissions:
   contents: read
@@ -42,3 +46,4 @@ jobs:
           name: JUKE-desktop-${{ matrix.os }}
           path: ${{ matrix.out }}
           if-no-files-found: error
+          retention-days: 3
