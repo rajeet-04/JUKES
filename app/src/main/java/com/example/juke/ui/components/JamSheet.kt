@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -72,6 +73,8 @@ fun JamSheet(musicViewModel: MusicViewModel, onDismiss: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // Jam, its queue and your devices can outgrow a phone screen; the inner lists cap their own height
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -126,11 +129,11 @@ private fun StartOrJoin(message: String?, musicViewModel: MusicViewModel) {
     ) { Text(if (busy) "Starting…" else "Start a Jam") }
 
     HorizontalDivider()
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = code,
             onValueChange = { code = it.filter(Char::isLetterOrDigit).take(6).uppercase() },
-            label = { Text("Jam code") },
+            placeholder = { Text("Jam code") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
             modifier = Modifier.weight(1f)
@@ -138,7 +141,7 @@ private fun StartOrJoin(message: String?, musicViewModel: MusicViewModel) {
         OutlinedButton(
             enabled = code.length == 6 && name.isNotBlank(),
             onClick = { JamSession.join(context, code, name) },
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.height(56.dp) // the field's height, so the pair reads as one control
         ) { Text("Join") }
     }
     message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
