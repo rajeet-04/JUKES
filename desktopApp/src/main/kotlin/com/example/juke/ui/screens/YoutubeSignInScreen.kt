@@ -9,6 +9,15 @@ import androidx.compose.ui.unit.dp
 import com.example.juke.network.JukesApi
 import kotlinx.coroutines.launch
 
+/** The Cookie header from whatever was pasted: the bare header value, a "cookie: ..." line, or a copied cURL command (-b / -H 'cookie: ...'). */
+internal fun extractCookie(raw: String): String {
+    val t = raw.trim()
+    Regex("""(?i)(?:-H|--header)\s+\$?['"]cookie:\s*([^'"]+)['"]""").find(t)?.let { return it.groupValues[1].trim() }
+    Regex("""(?:-b|--cookie)\s+\$?['"]([^'"]+)['"]""").find(t)?.let { return it.groupValues[1].trim() }
+    Regex("""(?im)^\s*cookie:\s*(.+)$""").find(t)?.let { return it.groupValues[1].trim() }
+    return t
+}
+
 /**
  * Desktop has no embedded browser, so the sign-in is: log in to YouTube Music in your own browser,
  * copy the request Cookie header (DevTools -> Network), paste it here. Same backend call as mobile.
@@ -20,13 +29,14 @@ fun YoutubeSignInScreen(onDone: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp).widthIn(max = 640.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Connect YouTube Music", style = MaterialTheme.typography.headlineSmall)
-        Text("1. Sign in at music.youtube.com in your browser.\n2. Open DevTools → Network, click any request to music.youtube.com and copy its Cookie header.\n3. Paste it below. It is sent to your JUKES backend, never stored in the app.", style = MaterialTheme.typography.bodyMedium)
+        Text("1. Sign in at music.youtube.com in your browser.\n2. Open DevTools (F12, or Cmd+Option+I on Mac) → Network. Reload the page, type \"browse\" in the filter box and right-click the first request → Copy → Copy as cURL.\n3. Paste it below (the cURL text is fine, JUKE finds the cookie in it). It is sent to your JUKES backend, never stored in the app.", style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(onClick = { runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI("https://music.youtube.com")) } }) { Text("Open YouTube Music") }
-        OutlinedTextField(cookie, { cookie = it }, Modifier.fillMaxWidth(), label = { Text("Cookie header") }, minLines = 3, maxLines = 6)
-        Button(enabled = !busy && cookie.contains("__Secure-3PAPISID"), onClick = {
+        OutlinedTextField(cookie, { cookie = it }, Modifier.fillMaxWidth(), label = { Text("Cookie header or copied cURL") }, minLines = 3, maxLines = 6,
+            supportingText = { if (cookie.isNotBlank() && !extractCookie(cookie).contains("__Secure-3PAPISID")) Text("No YouTube Music login found in this text. Make sure you are signed in, and copy a request to music.youtube.com.") })
+        Button(enabled = !busy && extractCookie(cookie).contains("__Secure-3PAPISID"), onClick = {
             busy = true
             scope.launch {
-                val ok = runCatching { JukesApi.connectYoutube(cookie.trim()) }.isSuccess
+                val ok = runCatching { JukesApi.connectYoutube(extractCookie(cookie)) }.isSuccess
                 Toast.makeText(null, if (ok) "Personalised radio connected" else "Could not connect, try again", 0).show()
                 busy = false; if (ok) onDone()
             }

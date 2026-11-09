@@ -236,6 +236,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                             Text(track.artist, style = MaterialTheme.typography.bodyMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 40.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
+                        if (track.isStream) Tip(JukeIcons.Download, "Download", { musicViewModel.promoteTrackToDownload(track) }, size = 40.dp)
                     }
                     Spacer(Modifier.height(14.dp))
                 }
@@ -302,6 +303,7 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
                     Text(track.artist, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
+                if (track.isStream) Tip(JukeIcons.Download, "Download", { musicViewModel.promoteTrackToDownload(track) })
             }
         }
         // centre: transport + seek
@@ -439,6 +441,7 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                     PlayerChip(JukeIcons.Lyrics, "Lyrics", tab == PlayerTab.Lyrics) { tab = PlayerTab.Lyrics }
                     PlayerChip(JukeIcons.Queue, "Up next", tab == PlayerTab.Queue) { tab = PlayerTab.Queue }
                     Spacer(Modifier.weight(1f))
+                    if (track.isStream) PlayerChip(JukeIcons.Download, "Download", false) { musicViewModel.promoteTrackToDownload(track) }
                     PlayerChip(MixIcon, "Mix", false) { musicViewModel.startRadio(); tab = PlayerTab.Queue }
                     if (track.spotifyId != null) PlayerChip(if (copied) JukeIcons.Check else JukeIcons.Share, if (copied) "Link copied" else "Share", copied) {
                         java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection("https://open.spotify.com/track/${track.spotifyId}"), null)
