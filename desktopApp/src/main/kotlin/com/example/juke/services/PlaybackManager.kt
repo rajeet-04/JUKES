@@ -353,7 +353,10 @@ class PlaybackManager private constructor(private val context: Context) {
         var reload = false
         synchronized(lock) {
             val i = queue.indexOfFirst { it.uuid == oldMediaId }; if (i < 0) return false
-            queue[i] = newTrack; reload = i == index
+            queue[i] = newTrack
+            // Saving a streamed song while it plays: the player already has the same audio open, so leave it running
+            // (reloading from the new file stopped the sound for a moment). The saved file is used from the next load on.
+            reload = i == index && !(seamlessIfPlaying && !restartFromStart && player != null)
         }
         if (reload) load(if (seamlessIfPlaying && !restartFromStart) posMs else 0, wantPlay) else publish()
         saveQueueStructure(); return true
