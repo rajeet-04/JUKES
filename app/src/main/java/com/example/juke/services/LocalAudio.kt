@@ -18,6 +18,7 @@ object LocalAudio {
             File(localUri.removePrefix("file://"))
         }
         localUri.startsWith("/") -> File(localUri)
+        localUri.length > 2 && localUri[1] == ':' && localUri[0].isLetter() -> File(localUri) // Windows path
         else -> null
     }
 
