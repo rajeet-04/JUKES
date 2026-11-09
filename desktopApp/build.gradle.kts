@@ -59,8 +59,8 @@ val genBuildConfig by tasks.registering {
             package com.example.juke
             object BuildConfig {
                 const val DEBUG = false
-                const val VERSION_NAME = "2.8.0-beta"
-                const val VERSION_CODE = 26
+                const val VERSION_NAME = "2.9.0-beta"
+                const val VERSION_CODE = 27
                 const val SPOTIFY_TOKEN_URL = "${p("SPOTIFY_TOKEN_URL", "https://spotdown-kv-worker.meek.workers.dev/spotify-token")}"
                 const val SHARE_BASE_URL = "${p("SHARE_BASE_URL", "https://j.rajeet.in")}"
                 const val SPOTIFY_TOKEN_KEY = "${p("SPOTIFY_TOKEN_KEY", "")}"

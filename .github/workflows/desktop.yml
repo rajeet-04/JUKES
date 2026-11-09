@@ -1,0 +1,44 @@
+name: Desktop build
+
+# Manual: Actions tab > Desktop build > Run workflow. Builds unsigned installers for testing.
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            task: packageReleaseMsi
+            out: desktopApp/build/compose/binaries/main-release/msi/*.msi
+          - os: ubuntu-latest
+            task: packageReleaseDeb
+            out: desktopApp/build/compose/binaries/main-release/deb/*.deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Desktop-only build (no Android SDK) with the app's secrets
+        shell: bash
+        env:
+          SPOTIFY_TOKEN_KEY: ${{ secrets.SPOTIFY_TOKEN_KEY }}
+          JUKE_BACKEND_URL: ${{ secrets.JUKE_BACKEND_URL }}
+          JUKE_BACKEND_KEY: ${{ secrets.JUKE_BACKEND_KEY }}
+        run: |
+          rm -f gradle/gradle-daemon-jvm.properties
+          cp desktopApp/ci-settings.gradle.kts settings.gradle.kts
+          printf 'SPOTIFY_TOKEN_KEY=%s\nJUKE_BACKEND_URL=%s\nJUKE_BACKEND_KEY=%s\n' "$SPOTIFY_TOKEN_KEY" "$JUKE_BACKEND_URL" "$JUKE_BACKEND_KEY" > local.properties
+      - run: sh ./gradlew :desktopApp:${{ matrix.task }} --no-configuration-cache --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JUKE-desktop-${{ matrix.os }}
+          path: ${{ matrix.out }}
+          if-no-files-found: error
