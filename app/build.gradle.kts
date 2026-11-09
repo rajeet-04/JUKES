@@ -9,6 +9,10 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
+// Push notifications (FCM) switch on once app/google-services.json is there (git-ignored; from the Firebase console).
+// Without it the app builds and runs as before; Push.kt checks that Firebase is configured before using it.
+if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
+
 android {
     namespace = "com.example.juke"
     compileSdk = 36
@@ -122,6 +126,8 @@ android {
 }
 
 dependencies {
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
     implementation(libs.androidx.core.ktx)

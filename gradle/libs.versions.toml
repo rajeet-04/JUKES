@@ -1,4 +1,6 @@
 [versions]
+firebaseBom = "33.7.0"
+googleServices = "4.4.2"
 baselineprofile = "1.5.0"
 benchmark = "1.5.0"
 posthogAndroid = "3.71.4"
@@ -26,6 +28,8 @@ palette = "1.0.0"
 haze = "1.2.2"
 
 [libraries]
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
 androidx-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
@@ -92,6 +96,7 @@ androidx-compose-foundation-layout = { group = "androidx.compose.foundation", na
 posthog-android = { module = "com.posthog:posthog-android", version.ref = "posthogAndroid" }
 
 [plugins]
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
 android-test = { id = "com.android.test", version.ref = "agp" }
 baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineprofile" }
 android-application = { id = "com.android.application", version.ref = "agp" }

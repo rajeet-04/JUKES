@@ -131,6 +131,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.example.juke.push.Push.askPermissionOnce(this)
 
         enableEdgeToEdge()
         com.example.juke.ui.theme.GlassPrefs.solid =

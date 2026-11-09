@@ -96,6 +96,10 @@
         </activity>
 
         <!-- Playback Service -->
+        <!-- push announcements (FCM, see push/Push.kt) -->
+        <service android:name=".push.JukeMessagingService" android:exported="false">
+            <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
+        </service>
         <service android:name=".services.PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaLibraryService" />

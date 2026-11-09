@@ -26,3 +26,6 @@ diff.txt
 .kiro/*
 /graphify-out/
 /backups/
+
+# Firebase config for push (per developer, from the Firebase console)
+/app/google-services.json
