@@ -1,4 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.nio.file.FileSystems
+import java.nio.file.Files
 import java.util.Properties
 
 plugins {
@@ -114,6 +116,43 @@ dependencies {
 
 tasks.test { useJUnit(); System.getProperty("ghostUri")?.let { systemProperty("ghostUri", it) }; System.getProperty("qsize")?.let { systemProperty("qsize", it) }; testLogging { showStandardStreams = true } }
 ksp { arg("room.schemaLocation", layout.buildDirectory.dir("schemas").get().asFile.path) }
+
+// Skiko's and SQLite's jars carry native libraries for every platform (skiko's macos-arm64 jar even holds the
+// 21 MB Intel one). The app only ever loads this build machine's, so drop the rest from the shrunk jars.
+tasks.matching { it.name == "proguardReleaseJars" }.configureEach {
+    doLast {
+        val os = System.getProperty("os.name").lowercase()
+        val arm = System.getProperty("os.arch").let { it == "aarch64" || it == "arm64" }
+        val (skiko, sqlite) = when {
+            os.contains("mac") -> if (arm) "macos-arm64" to "osx_arm64" else "macos-x64" to "osx_x64"
+            os.contains("win") -> "windows-x64" to "windows_x64"
+            else -> if (arm) "linux-arm64" to "linux_arm64" else "linux-x64" to "linux_x64"
+        }
+        val native = Regex("""\.(dylib|so|dll|jnilib)(\.sha256)?$""")
+        outputs.files.asFileTree.matching { include("skiko-awt-runtime-*.jar", "sqlite-bundled-*.jar") }.forEach { jar ->
+            FileSystems.newFileSystem(jar.toPath()).use { fs ->
+                val drop = Files.walk(fs.getPath("/")).use { s ->
+                    s.filter { native.containsMatchIn(it.toString()) && skiko !in it.toString() && sqlite !in it.toString() }.toList()
+                }
+                drop.forEach { Files.delete(it) }
+                if (drop.isNotEmpty()) logger.lifecycle("${jar.name}: dropped ${drop.size} other-platform native files")
+            }
+        }
+    }
+}
+
+// LZMA instead of jpackage's zlib: ~15 MB smaller download. Opens on macOS 10.15+, and the JDK 21 runtime needs 11+ anyway.
+tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
+    doLast {
+        outputs.files.asFileTree.matching { include("*.dmg") }.forEach { dmg ->
+            val tmp = File(dmg.parentFile, "lzma-${dmg.name}")
+            tmp.delete()
+            providers.exec { commandLine("hdiutil", "convert", dmg.path, "-format", "ULMO", "-o", tmp.path, "-quiet") }.result.get()
+            if (!tmp.renameTo(dmg.also { it.delete() })) error("couldn't replace ${dmg.name}")
+            logger.lifecycle("${dmg.name}: ${dmg.length() / 1_048_576} MB (LZMA)")
+        }
+    }
+}
 
 compose.desktop.application {
     mainClass = "com.example.juke.desktop.MainKt"
