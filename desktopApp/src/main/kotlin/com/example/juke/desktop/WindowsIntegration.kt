@@ -15,7 +15,7 @@ object WindowsIntegration {
             val exe = ProcessHandle.current().info().command().orElse(null)?.let(::File) ?: return
             if (!exe.name.equals("JUKE.exe", true)) return // `gradle run` from the IDE: nothing to register
             val q = "\"${exe.path}\""
-            fun reg(vararg a: String) = ProcessBuilder("reg", *a, "/f").redirectErrorStream(true).start().also { it.inputStream.readBytes() }.waitFor()
+            fun reg(vararg a: String) = ProcessBuilder("reg", *a.map { it.replace("\"", "\\\"") }.toTypedArray(), "/f").redirectErrorStream(true).start().also { it.inputStream.readBytes() }.waitFor()
             val proto = "HKCU\\Software\\Classes\\juke"
             reg("add", proto, "/ve", "/d", "URL:JUKE")
             reg("add", proto, "/v", "URL Protocol", "/d", "")
