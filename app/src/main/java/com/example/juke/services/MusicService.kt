@@ -1227,14 +1227,16 @@ class MusicService(private val context: Context) {
 
     /**
      * One-time cleanup: Remove stale stream entries from the database.
-     * Preserves stream tracks that are part of the saved playback queue
-     * so they survive app restarts.
+     * Preserves stream tracks that are part of the saved playback queue (so they survive app
+     * restarts), liked, or in a playlist.
      *
      * @param preserveUuids UUIDs of tracks in the saved queue that should NOT be purged
      */
     suspend fun purgeStaleStreamEntries(preserveUuids: Set<String> = emptySet()): Int {
         val allStreams = trackDao.getStreamTracks()
-        val toDelete = allStreams.filter { it.uuid !in preserveUuids }
+        // liked songs and playlist songs are library entries (synced from another device, or added from Search), not leftovers
+        val inPlaylists = database.playlistDao().getAllPlaylistTrackUuids().toHashSet()
+        val toDelete = allStreams.filter { it.uuid !in preserveUuids && !it.isFavourite && it.uuid !in inPlaylists }
         if (toDelete.isNotEmpty()) {
             trackDao.deleteTracks(toDelete.map { it.uuid })
             Log.d(

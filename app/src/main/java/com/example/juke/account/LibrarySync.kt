@@ -93,6 +93,29 @@ object LibrarySync {
         prefs = merge(base?.prefs, local.prefs, remote.prefs), types = remote.types + local.types
     )
 
+    /**
+     * [this] with each song's details taken from [ref] where both have it; only the like (and an id [ref] lacks) is this
+     * device's own. The same song has its own uuid, title and art on each device and [apply] never overwrites those,
+     * so comparing them made two devices re-upload each other's copy forever.
+     */
+    fun Doc.informedBy(ref: Doc?): Doc = if (ref == null) this else copy(songs = songs.mapValues { (k, s) ->
+        ref.songs[k]?.let { r -> r.copy(fav = s.fav, yt = r.yt ?: s.yt, sp = r.sp ?: s.sp) } ?: s
+    })
+
+    /**
+     * A message when [merged] would drop most of this device's synced library, else null. Real removals come a few at a time;
+     * losing half at once means a bug or a wiped device somewhere, and applying it here would spread it to every device.
+     */
+    fun lost(local: Doc, merged: Doc): String? {
+        val songs = local.songs.keys.count { it !in merged.songs }
+        val likes = local.songs.count { (k, s) -> s.fav && merged.songs[k]?.fav != true }
+        val tracks = local.playlists.entries.sumOf { (id, p) -> (p.songs.toSet() - merged.playlists[id]?.songs.orEmpty().toSet()).size }
+        val total = local.songs.size
+        return if (total >= 20 && (songs * 2 > total || likes * 2 > maxOf(local.songs.count { it.value.fav }, 10) || tracks * 2 > maxOf(local.playlists.values.sumOf { it.songs.size }, 20)))
+            "Sync paused: it would remove most of your library here ($songs songs, $likes likes). Nothing was changed."
+        else null
+    }
+
     private fun baseFile(c: Context) = File(c.filesDir, "library_sync_base.json")
     fun forgetBase(c: Context) { baseFile(c).delete() }
 
@@ -105,10 +128,11 @@ object LibrarySync {
                     val raw = Account.getLibrary(c) ?: run { _status.value = "Couldn't sync. Check your connection."; return@withContext false }
                     val remote = json.decodeFromString<Remote>(raw)
                     val base = runCatching { json.decodeFromString<Doc>(baseFile(c).readText()) }.getOrNull()
-                    val local = snapshot(c)
+                    val local = snapshot(c).informedBy(base)
                     val merged = merge(base, local, remote.doc ?: Doc())
+                    lost(local, merged)?.let { _status.value = it; Log.w(TAG, it); return@withContext false }
                     apply(c, local, merged)
-                    val now = snapshot(c).let { it.copy(types = merged.types + it.types) } // what this device holds now: what we agree on
+                    val now = snapshot(c).informedBy(merged).let { it.copy(types = merged.types + it.types) } // what this device holds now: what we agree on
                     if (remote.doc != now || remote.rev == 0) {
                         val text = json.encodeToString(now)
                         val res = ApiClient.httpClient.put("${Account.BASE}/account/library?rev=${remote.rev}") {
