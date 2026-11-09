@@ -220,7 +220,8 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                 PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, size = 36.dp)
                 Tip(JukeIcons.Close, "Close panel", onClose)
             }
-            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // no item spacing: the queue's rows sit flush inside one card; the blocks above space themselves
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 item {
                     AsyncImage(track.thumbnailUri, track.title, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onOpenFullscreen), contentScale = ContentScale.Crop)
                     Spacer(Modifier.height(14.dp))
@@ -231,6 +232,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                         }
                         Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 40.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
                     }
+                    Spacer(Modifier.height(14.dp))
                 }
                 item {
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.34f)).padding(16.dp)) {
@@ -241,17 +243,25 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                         Spacer(Modifier.height(8.dp))
                         LyricsView(track, state.position, big = false, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.fillMaxWidth().height(250.dp))
                     }
+                    Spacer(Modifier.height(14.dp))
                 }
-                val next = state.queue.drop((state.queueIndex + 1).coerceAtLeast(0)).take(4)
-                if (next.isNotEmpty()) item {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.06f)).padding(14.dp)) {
-                        Text("Next in queue", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
-                        next.forEach { t ->
-                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { musicViewModel.playTrackFromQueue(t) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                                AsyncImage(t.thumbnailUri, null, Modifier.size(42.dp).clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop)
-                                Spacer(Modifier.width(10.dp))
-                                Column { Text(t.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(t.artist, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                            }
+                // the whole upcoming queue, one lazy row each so a long queue scrolls with the panel; rows share one card
+                val start = (state.queueIndex + 1).coerceAtLeast(0)
+                val next = state.queue.drop(start)
+                val card = Color.White.copy(alpha = 0.06f)
+                if (next.isNotEmpty()) item(key = "queue_header") {
+                    Text("Next in queue · ${next.size}", style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(card).padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 6.dp))
+                }
+                itemsIndexed(next, key = { i, t -> "q_${start + i}_${t.uuid}" }) { i, t ->
+                    val last = i == next.lastIndex
+                    Box(Modifier.fillMaxWidth()
+                        .clip(if (last) RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp) else RoundedCornerShape(0.dp)).background(card)
+                        .padding(start = 14.dp, end = 14.dp, bottom = if (last) 10.dp else 0.dp)) {
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { musicViewModel.playTrackFromQueue(t, start + i) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(t.thumbnailUri, null, Modifier.size(42.dp).clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop)
+                            Spacer(Modifier.width(10.dp))
+                            Column { Text(t.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(t.artist, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }

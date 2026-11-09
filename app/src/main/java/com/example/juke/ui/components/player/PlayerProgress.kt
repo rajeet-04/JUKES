@@ -72,7 +72,10 @@ internal fun PlaybackSeekSlider(
     positionMs: Long,
     durationMs: Long,
     onSeek: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Called when the drag ends. A remote device seeks here only; [onSeek] then just moves the thumb. */
+    onSeekEnd: (() -> Unit)? = null,
+    thumbSize: androidx.compose.ui.unit.Dp = 22.dp
 ) {
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val haptic = rememberJukeHaptics()
@@ -88,11 +91,11 @@ internal fun PlaybackSeekSlider(
             }
             onSeek((value * durationMs).toLong())
         },
-        onValueChangeFinished = { haptic.gestureEnd() },
+        onValueChangeFinished = { haptic.gestureEnd(); onSeekEnd?.invoke() },
         thumb = {
             Box(
                 Modifier
-                    .size(22.dp)
+                    .size(thumbSize)
                     .shadow(6.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.3f), spotColor = Color.Black.copy(alpha = 0.45f))
                     .background(
                         if (durationMs > 0) MaterialTheme.colorScheme.onSurface
