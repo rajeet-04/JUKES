@@ -233,7 +233,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(track.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(track.artist, style = MaterialTheme.typography.bodyMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            ArtistLinks(track, MaterialTheme.typography.bodyMedium, Dim, onGoToArtist)
                         }
                         Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 40.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
                         if (track.isStream) Tip(JukeIcons.Download, "Download", { musicViewModel.promoteTrackToDownload(track) }, size = 40.dp)
@@ -281,7 +281,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
 // Bottom player bar
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelOpen: Boolean, onTogglePanel: () -> Unit, onTogglePanelLyrics: () -> Unit, onFullscreen: () -> Unit, modifier: Modifier = Modifier) {
+fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelOpen: Boolean, onTogglePanel: () -> Unit, onTogglePanelLyrics: () -> Unit, onFullscreen: () -> Unit, onGoToArtist: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     val track = state.currentTrack
     val pm = musicViewModel.playbackManager
     val volume by pm.volumeFlow.collectAsStateWithLifecycle()
@@ -300,7 +300,7 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f, fill = false)) {
                     Text(track.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(track.artist, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    ArtistLinks(track, MaterialTheme.typography.bodySmall, Dim, onGoToArtist)
                 }
                 Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
                 if (track.isStream) Tip(JukeIcons.Download, "Download", { musicViewModel.promoteTrackToDownload(track) })
@@ -334,6 +334,27 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
             ThinSlider(volume, pm::setVolume, Modifier.width(104.dp))
             Spacer(Modifier.width(6.dp))
             Tip(JukeIcons.ChevronUp, "Full screen player", onFullscreen)
+        }
+    }
+}
+
+/** The song's artists as separate links: each name opens its own artist page (names are matched to the artist ids by position). */
+@Composable
+internal fun ArtistLinks(track: Track, style: androidx.compose.ui.text.TextStyle, color: Color, onArtist: (String) -> Unit, modifier: Modifier = Modifier) {
+    val ids = track.artistSpotifyIds.orEmpty()
+    val names = track.artist.split(", ").map { it.trim() }.filter { it.isNotEmpty() }
+    if (ids.isEmpty() || names.size != ids.size) { // can't tell which name is which: the whole line opens the first artist
+        Text(track.artist, modifier.clickable(enabled = ids.isNotEmpty()) { onArtist(ids.first()) }, style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        return
+    }
+    Row(modifier) {
+        names.forEachIndexed { i, n ->
+            val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val hover by src.collectIsHoveredAsState()
+            Text(n, Modifier.weight(1f, fill = false).hoverable(src).clickable(src, null) { onArtist(ids[i]) },
+                style = style, color = if (hover) MaterialTheme.colorScheme.onSurface else color, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                textDecoration = if (hover) androidx.compose.ui.text.style.TextDecoration.Underline else null)
+            if (i < names.lastIndex) Text(", ", style = style, color = color, maxLines = 1)
         }
     }
 }
@@ -418,7 +439,7 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(track.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(track.artist, Modifier.clickable(enabled = !track.artistSpotifyIds.isNullOrEmpty()) { onNavigateToArtist(track.artistSpotifyIds!!.first()) }, style = MaterialTheme.typography.titleMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            ArtistLinks(track, MaterialTheme.typography.titleMedium, Dim, onNavigateToArtist)
                         }
                         Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 44.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
                     }

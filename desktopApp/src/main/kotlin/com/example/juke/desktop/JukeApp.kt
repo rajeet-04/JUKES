@@ -403,6 +403,10 @@ fun JukeApp() {
                         onTogglePanel = { panelOpen = !panelOpen },
                         onTogglePanelLyrics = { showPlayerModal = true },
                         onFullscreen = { showPlayerModal = true },
+                        onGoToArtist = { id ->
+                            activityViewModelProvider[SearchViewModel::class].loadArtistDetailsById(id)
+                            navController.navigate("artist/$id")
+                        },
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 } else if (!inSettings || hasMiniPlayer) {
