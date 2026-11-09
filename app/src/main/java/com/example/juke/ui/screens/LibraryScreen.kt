@@ -124,6 +124,9 @@ fun LibraryScreen(
     val haptic = rememberJukeHaptics()
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var librarySection by rememberSaveable { mutableStateOf(0) }
+    // opened from outside (the desktop sidebar): show it the way the Playlists tab does
+    LaunchedEffect(uiState.selectedPlaylist?.id) { if (uiState.selectedPlaylist != null) librarySection = 1 }
+    LaunchedEffect(uiState.showFavoritesOnly) { if (uiState.showFavoritesOnly) librarySection = 0 }
     var showSongsFilter by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showLibraryMenu by remember { mutableStateOf(false) }
@@ -645,6 +648,11 @@ fun LibraryScreen(
                         }
                     }
 
+                    // downloads carry no ids: match rows by title + artist
+                    val downloadingKeys = (libraryDownloadBannerState.downloadQueue + listOfNotNull(libraryDownloadBannerState.currentDownload))
+                        .map { "${it.song.title}|${it.song.artist}".lowercase() }
+                        .plus(uiState.recommendationDownloads.map { "${it.title}|${it.artist}".lowercase() }).toSet()
+
                     // Show downloaded tracks
                     itemsIndexed(
                         items = uiState.tracks,
@@ -670,6 +678,9 @@ Box(
                         ) {
                             LibraryTrackItem(
                                 track = track,
+                                // ponytail: one stat per visible row; move into the ViewModel if long lists stutter
+                                available = remember(track.uuid, track.localUri, uiState.tracks) { !track.isStream || track.localUri?.let { java.io.File(it).exists() } == true },
+                                downloading = "${track.title}|${track.artist}".lowercase() in downloadingKeys,
                                 isSelectionMode = uiState.isSelectionMode,
                                 isSelected = uiState.selectedTrackUuids.contains(track.uuid),
                                 onPlay = {

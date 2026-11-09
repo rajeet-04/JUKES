@@ -25,6 +25,20 @@ class LibrarySyncTest {
     @Test fun newOnBothSidesKeepsBoth() =
         assertEquals(mapOf("x" to 1, "y" to 2), m(emptyMap(), mapOf("x" to 1), mapOf("y" to 2)))
 
+    @Test fun twoDevicesWithDifferentCopiesOfASongAgree() {
+        val mine = LibrarySync.Song("u1", "Song", "A", "file:/art.jpg", 200, sp = "sp1", fav = true)
+        val theirs = LibrarySync.Song("u2", "Song (Remastered)", "A", "https://art", 201, yt = "yt1", sp = "sp1", fav = false)
+        val doc = with(LibrarySync) { LibrarySync.Doc(songs = mapOf("sp1" to mine)).informedBy(LibrarySync.Doc(songs = mapOf("sp1" to theirs))) }
+        assertEquals(theirs.copy(fav = true), doc.songs["sp1"]) // their details, our like: equal docs once likes match, so no re-upload
+    }
+
+    @Test fun aSyncThatWouldWipeTheLibraryIsRefused() {
+        val songs = (1..40).associate { "s$it" to LibrarySync.Song("u$it", "T$it", "A", fav = true) }
+        val local = LibrarySync.Doc(songs = songs)
+        assert(LibrarySync.lost(local, LibrarySync.Doc(songs = songs.entries.take(5).associate { it.toPair() })) != null)
+        assertEquals(null, LibrarySync.lost(local, LibrarySync.Doc(songs = songs - "s1" - "s2"))) // a couple of real removals go through
+    }
+
     @Test fun passwordStretchIsStableAndKeyedByEmail() {
         val k = Account.stretch(" A@B.co", "hunter22")
         assertEquals(64, k.length)

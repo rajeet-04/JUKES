@@ -19,6 +19,8 @@ import io.ktor.client.request.header
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -36,10 +38,10 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Spotify Connect between the devices of one account (spotdown-kv-worker/src/connect.ts). Every logged-in device
- * keeps a socket to the account's hub. The device playing audio reports what it plays (song, queue, position);
- * the others show that and send commands (play/pause, next, seek, a song in the queue), which only the playing
- * device carries out. "Play here" / "Play on X" moves playback: the new device starts the queue at the same spot
- * and the old one stops when it hears that another device is now playing.
+ * keeps a socket to the account's hub and reports its own playback (song, queue, position). Playback is independent:
+ * each device plays its own music, and any device can see and remote-control each of the others on its own
+ * (play/pause, next, seek, a song in its queue). "Play on this device" starts another device's queue here at the
+ * same spot, and "Play there" does the reverse; the device it came from keeps playing.
  * Also runs [LibrarySync] while logged in: at login, every 10 minutes, and when another device saved changes.
  */
 object Connect {
@@ -49,6 +51,7 @@ object Connect {
 
     @Serializable
     data class State(
+        /** The device this state belongs to (named for the older one-active-device model). */
         val activeId: String = "", val activeName: String = "", val track: Song? = null, val queue: List<Song> = emptyList(),
         val index: Int = 0, val posMs: Long = 0, val playing: Boolean = false, val at: Long = 0
     )
@@ -57,7 +60,7 @@ object Connect {
 
     @Serializable
     private data class In(
-        val t: String, val now: Long = 0, val state: State? = null, val devices: List<Device>? = null,
+        val t: String, val now: Long = 0, val state: State? = null, val states: List<State>? = null, val devices: List<Device>? = null,
         val op: String? = null, val posMs: Long? = null, val index: Int? = null, val by: String? = null, val from: String? = null, val code: String? = null
     )
 
@@ -75,9 +78,9 @@ object Connect {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
     private val WS = Account.BASE.replaceFirst("http", "ws")
 
-    private val _state = MutableStateFlow<State?>(null)
-    /** What the account's playing device last reported (may be this device). */
-    val state: StateFlow<State?> = _state
+    private val _states = MutableStateFlow<Map<String, State>>(emptyMap())
+    /** Each device's playback, by device id (this one's included). */
+    val states: StateFlow<Map<String, State>> = _states
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices
     private val _connected = MutableStateFlow(false)
@@ -88,7 +91,6 @@ object Connect {
     @Volatile private var serverOffset = 0L // server clock minus ours
     @Volatile private var outbox: Channel<String>? = null
     @Volatile private var queueBase = 0     // the local queue index our published queue starts at
-    @Volatile private var taking = false    // moving playback here: don't stop for the old device's last reports
     private val syncNow = Channel<Unit>(Channel.CONFLATED)
 
     private val client by lazy {
@@ -98,16 +100,26 @@ object Connect {
         }
     }
 
-    fun isRemote(s: State? = _state.value) = s != null && s.track != null && s.activeId.isNotEmpty() && s.activeId != me
-    /** Where the playing device is now, by the server's clock. */
+    /** Where that device is in its song now, by the server's clock. */
     fun livePos(s: State): Long = if (s.playing) s.posMs + (System.currentTimeMillis() + serverOffset - s.at) else s.posMs
 
     private fun send(o: Out) { outbox?.trySend(json.encodeToString(o)) }
 
     // ---- remote control, from the UI ----
-    fun command(op: String, posMs: Long? = null, index: Int? = null) = send(Out("cmd", op = op, posMs = posMs, index = index))
-    fun playOn(deviceId: String) = send(Out("cmd", op = "take", target = deviceId))
-    fun playHere() = send(Out("cmd", op = "take", target = me))
+    /** A remote control press for [deviceId]: toggle, next, prev, seek ([posMs]) or index (a song in its published queue). */
+    fun command(deviceId: String, op: String, posMs: Long? = null, index: Int? = null) = send(Out("cmd", op = op, posMs = posMs, index = index, target = deviceId))
+    /** Move this device's playback to [deviceId]: it starts there, and this one pauses once that device reports playing. */
+    fun playOn(deviceId: String) {
+        handingTo = deviceId; handingSince = System.currentTimeMillis()
+        send(Out("cmd", op = "take", target = deviceId))
+    }
+    @Volatile private var handingTo: String? = null
+    @Volatile private var handingSince = 0L
+    private const val HANDOFF_WAIT_MS = 30_000L // it never started there: keep playing here
+    @Volatile private var joinRequest: Pair<String, Boolean>? = null
+    /** Start [deviceId]'s queue here at its position. Join: it keeps playing. [move]: it pauses once this one plays. */
+    fun playHere(deviceId: String, move: Boolean) { joinRequest = deviceId to move; joinNow.trySend(Unit) }
+    private val joinNow = Channel<Unit>(Channel.CONFLATED)
     /** Called after this device saved the library, so the others fetch it now. */
     fun librarySaved() = send(Out("synced"))
     fun requestSync() { syncNow.trySend(Unit) }
@@ -127,6 +139,13 @@ object Connect {
                 kotlinx.coroutines.withTimeoutOrNull(SYNC_EVERY_MS.milliseconds) { syncNow.receive() }
             }
         }
+        launch(Dispatchers.Main) { // "play on this device": the other device's latest state, started here
+            for (u in joinNow) {
+                val (id, move) = joinRequest ?: continue
+                val s = _states.value[id]?.takeIf { it.track != null } ?: continue
+                if (take(vm, s, s.activeName) && move) command(id, "pause")
+            }
+        }
         var attempt = 0
         while (true) {
             Account.email.first { it != null }
@@ -137,11 +156,14 @@ object Connect {
                     val box = Channel<String>(Channel.UNLIMITED)
                     outbox = box
                     val writer = launch { for (text in box) send(Frame.Text(text)) }
-                    val publisher = launch { publishLoop(vm) }
+                    // the player (Media3's controller on Android) only works on the main thread; the socket runs on OkHttp's
+                    val publisher = launch(Dispatchers.Main) { publishLoop(vm) }
                     try {
                         send(Frame.Text(json.encodeToString(Out("hello", deviceId = me, name = Account.deviceName(), kind = if (Account.isDesktop) "desktop" else "phone"))))
                         _connected.value = true; attempt = 0
-                        for (frame in incoming) if (frame is Frame.Text) handle(vm, frame.readText())
+                        for (frame in incoming) if (frame is Frame.Text) { val text = frame.readText(); withContext(Dispatchers.Main) { handle(vm, text) } }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "socket failed", e); throw e
                     } finally {
                         outbox = null; _connected.value = false
                         box.close(); writer.cancel(); publisher.cancel()
@@ -156,7 +178,7 @@ object Connect {
         }
     }
 
-    /** While this device is the playing one (or starts playing), keep the hub's state current. */
+    /** Keep the hub current about this device's own playback: on a new song, play/pause, a queue move or a seek. */
     private suspend fun publishLoop(vm: MusicViewModel) {
         val pm = vm.playbackManager
         var last: Out? = null; var lastAt = 0L
@@ -165,40 +187,39 @@ object Connect {
             val ui = vm.uiState.value
             val cur = ui.currentTrack ?: continue
             val playing = pm.isPlayingFlow.value
-            val s = _state.value
-            val mine = s?.activeId == me
-            if (!mine && !playing) continue // a remote, or idle: nothing to say
             val pos = pm.getCurrentPosition()
-            val base = maxOf(ui.queueIndex, 0)
             val song = cur.toSong()
             val expected = last?.let { (it.posMs ?: 0) + if (it.playing == true) System.currentTimeMillis() - lastAt else 0 } ?: 0
-            val changed = last == null || !mine || last.track != song || last.playing != playing || last.index != ui.queueIndex || abs(pos - expected) > DRIFT_MS
+            val changed = last == null || last.track != song || last.playing != playing || last.index != ui.queueIndex || (playing && abs(pos - expected) > DRIFT_MS)
             if (!changed) continue
+            val base = maxOf(ui.queueIndex, 0)
             queueBase = base
             val queue = (if (ui.queue.isEmpty()) listOf(cur) else ui.queue.drop(base)).take(QUEUE_SENT).map { it.toSong() }
             val out = Out("state", track = song, queue = queue, index = ui.queueIndex, posMs = pos, playing = playing)
-            send(out); last = out; lastAt = System.currentTimeMillis(); taking = false
+            send(out); last = out; lastAt = System.currentTimeMillis()
         }
     }
 
     private suspend fun handle(vm: MusicViewModel, text: String) {
-        val m = runCatching { json.decodeFromString<In>(text) }.getOrNull() ?: return
+        val m = runCatching { json.decodeFromString<In>(text) }.onFailure { Log.w(TAG, "unreadable message (${text.take(200)}): ${it.message}") }.getOrNull() ?: return
         if (m.now > 0) serverOffset = m.now - System.currentTimeMillis()
         val pm = vm.playbackManager
         when (m.t) {
-            "welcome" -> _state.value = m.state
+            "welcome" -> _states.value = m.states.orEmpty().associateBy { it.activeId }
             "devices" -> _devices.value = m.devices.orEmpty()
-            "state" -> {
-                val s = m.state ?: return
-                _state.value = s
-                // another device is playing now: this one stops (Spotify does the same)
-                if (s.activeId != me && s.playing && !taking && pm.isPlayingFlow.value) pm.togglePlayPause()
+            "state" -> m.state?.let { s ->
+                _states.value = _states.value + (s.activeId to s)
+                // "Play there" took (that device now plays our song, not what it had before): stop here
+                if (s.activeId == handingTo && s.playing && s.track?.title == _states.value[me]?.track?.title) {
+                    handingTo = null
+                    if (System.currentTimeMillis() - handingSince < HANDOFF_WAIT_MS && pm.isPlayingFlow.value) pm.togglePlayPause()
+                }
             }
             "synced" -> requestSync()
             "error" -> _message.value = when (m.code) {
-                "device_gone" -> "That device went offline"; "nothing_playing" -> "Nothing is playing on your devices"; else -> "Something went wrong"
+                "device_gone" -> "That device went offline"; "nothing_playing" -> "Nothing is playing on this device"; else -> "Something went wrong"
             }
-            "cmd" -> when (m.op) { // only the playing device gets these
+            "cmd" -> when (m.op) { // a remote control press from another device, for this one
                 "toggle" -> pm.togglePlayPause()
                 "play" -> if (!pm.isPlayingFlow.value) pm.togglePlayPause()
                 "pause" -> if (pm.isPlayingFlow.value) pm.togglePlayPause()
@@ -207,20 +228,21 @@ object Connect {
                 "seek" -> m.posMs?.let { vm.seekTo(it) }
                 "index" -> m.index?.let { i -> val q = vm.uiState.value.queue; q.getOrNull(queueBase + i)?.let { vm.playTrackFromQueue(it, queueBase + i) } }
             }
-            "take" -> take(vm, m.state ?: return, m.from.orEmpty())
+            "take" -> { take(vm, m.state ?: return, m.from.orEmpty()) }
         }
     }
 
     /** Start the other device's queue here at its position. */
-    private suspend fun take(vm: MusicViewModel, s: State, from: String) {
+    private suspend fun take(vm: MusicViewModel, s: State, from: String): Boolean {
         val c = vm.getApplication<Application>()
         val tracks = playable(c, s.queue)
-        val first = tracks.firstOrNull() ?: run { _message.value = "Couldn't play that queue here"; return }
-        taking = true
-        _message.value = "Moving playback here${if (from.isNotBlank()) " from ${s.activeName}" else ""}…"
+        val first = tracks.firstOrNull() ?: run { _message.value = "Couldn't play that queue here"; return false }
+        _message.value = "Playing here from ${from.ifBlank { s.activeName }}…"
+        val startAt = livePos(s)
         val sentAt = System.currentTimeMillis()
-        vm.playFromLine(first, s.posMs) { at -> vm.setQueue(tracks, 0, startPositionMs = at + (System.currentTimeMillis() - sentAt)) }
+        vm.playFromLine(first, startAt) { at -> vm.setQueue(tracks, 0, startPositionMs = at + (System.currentTimeMillis() - sentAt)) }
         _message.value = ""
+        return true
     }
 
     /**

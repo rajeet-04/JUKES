@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
@@ -52,7 +53,10 @@ fun LibraryTrackItem(
     onTrailingIconClick: () -> Unit = {},
     trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = JukeIcons.More,
     /** Reorder handle shown after the actions (playlist custom order). */
-    dragHandle: (@Composable () -> Unit)? = null
+    dragHandle: (@Composable () -> Unit)? = null,
+    /** False: not on this device yet (a synced song). Shown dimmed; playing it streams it. */
+    available: Boolean = true,
+    downloading: Boolean = false
 ) {
     var isFavoritePressed by remember { mutableStateOf(false) }
     val favoriteScale by animateFloatAsState(
@@ -63,7 +67,7 @@ fun LibraryTrackItem(
     val haptic = rememberJukeHaptics()
 
     val rowSource = remember { MutableInteractionSource() }
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().alpha(if (available || downloading) 1f else 0.45f)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -108,6 +112,11 @@ fun LibraryTrackItem(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (downloading) {
+                    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White)
+                    }
+                }
                 if (isSelectionMode) {
                     Box(
                         modifier = Modifier
@@ -142,7 +151,7 @@ fun LibraryTrackItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${track.artist} · ${track.durationSec / 60}:${
+                    text = (if (downloading) "Downloading · " else if (!available) "Not downloaded · " else "") + "${track.artist} · ${track.durationSec / 60}:${
                         (track.durationSec % 60).toString().padStart(2, '0')
                     }",
                     style = MaterialTheme.typography.bodySmall,

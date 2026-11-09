@@ -153,6 +153,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists ORDER BY created_at DESC")
     suspend fun getAllPlaylistsOnce(): List<PlaylistEntity>
 
+    @Query("SELECT DISTINCT track_uuid FROM playlist_tracks")
+    suspend fun getAllPlaylistTrackUuids(): List<String>
+
     @Query("SELECT * FROM playlists WHERE id = :playlistId")
     suspend fun getPlaylist(playlistId: String): PlaylistEntity?
 
