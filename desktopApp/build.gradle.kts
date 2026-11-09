@@ -63,8 +63,8 @@ val genBuildConfig by tasks.registering {
             package com.example.juke
             object BuildConfig {
                 const val DEBUG = false
-                const val VERSION_NAME = "2.9.0-beta"
-                const val VERSION_CODE = 27
+                const val VERSION_NAME = "3.0.0-beta"
+                const val VERSION_CODE = 28
                 const val SPOTIFY_TOKEN_URL = "${p("SPOTIFY_TOKEN_URL", "https://spotdown-kv-worker.meek.workers.dev/spotify-token")}"
                 const val SHARE_BASE_URL = "${p("SHARE_BASE_URL", "https://j.rajeet.in")}"
                 const val SPOTIFY_TOKEN_KEY = "${p("SPOTIFY_TOKEN_KEY", "")}"
@@ -196,7 +196,7 @@ compose.desktop.application {
             iconFile.set(project.file("icons/JUKE.png"))
             shortcut = true // application-menu entry (found by the launcher search)
         }
-        packageVersion = "1.0.0"
+        packageVersion = "3.0.0"
         modules("java.base", "java.desktop", "java.logging", "java.sql", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http", "java.xml", "java.management")
     }
 }
