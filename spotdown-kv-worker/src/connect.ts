@@ -6,26 +6,45 @@ const MAX_MESSAGE_BYTES = 64 * 1024; // a state carries up to ~50 queued songs
 const MSGS_PER_WINDOW = 40;          // per socket, per 10 s
 const WINDOW_MS = 10_000;
 const OPEN = 1;
+const SYNCED_RELAY_MS = 60_000;
 
 interface Device { deviceId: string; name: string; kind: string }
-/** What the playing device last reported. Position is anchored: posMs at server time [at]. */
+/** What one device last reported about its own playback. Position is anchored: posMs at server time [at]. */
 interface State { activeId: string; activeName: string; track: unknown; queue: unknown[]; index: number; posMs: number; playing: boolean; at: number }
 
 /**
  * Spotify Connect for one account: every logged-in device of that account holds a socket here.
- * The device playing audio ("active") reports its state; the others show it and send commands,
- * which are forwarded to the active device only. "Play here" sends a take to the new device, which
- * starts the queue and reports state; the old one sees it is no longer active and stops.
+ * Each device plays on its own and reports its own state; every device sees all of them. A remote control
+ * press names the device it is for and goes to that device only. "Play on <target>" sends the sender's state
+ * to the target, which starts the same queue at the same spot; nobody else stops.
  * The Worker authenticates the login token before forwarding the upgrade, so everything here is one account.
  */
 export class ConnectHub extends DurableObject<Env> {
-    private state: State | null | undefined;
+    private states: Map<string, State> | undefined;
     private buckets = new Map<WebSocket, { start: number; count: number }>();
+    private lastSyncedRelay = 0;
 
-    private async load(): Promise<State | null> {
-        if (this.state === undefined) this.state = (await this.ctx.storage.get<State>('s')) ?? null;
-        return this.state;
+    /** One storage key per device: a state with its queue is ~20 KB and a value may hold 128 KB. */
+    private async load(): Promise<Map<string, State>> {
+        if (!this.states) {
+            const stored = await this.ctx.storage.list<State>({ prefix: 's:' });
+            this.states = new Map([...stored.values()].map(st => [st.activeId, st]));
+        }
+        return this.states;
     }
+
+    private async save(st: State) {
+        const states = await this.load();
+        states.set(st.activeId, st);
+        await this.ctx.storage.put('s:' + st.activeId, st);
+        if (states.size > MAX_DEVICES) { // forget the device heard from longest ago
+            const oldest = [...states.values()].sort((a, b) => a.at - b.at)[0];
+            states.delete(oldest.activeId);
+            await this.ctx.storage.delete('s:' + oldest.activeId);
+        }
+    }
+
+    private live(st: State, now: number): State { return st.playing ? { ...st, posMs: st.posMs + (now - st.at), at: now } : st; }
 
     private devices(): Device[] {
         return this.ctx.getWebSockets().filter(w => w.readyState === OPEN)
@@ -69,7 +88,7 @@ export class ConnectHub extends DurableObject<Env> {
                 if (w !== ws && d?.deviceId === msg.deviceId) { w.serializeAttachment(null); try { w.close(1000, 'replaced'); } catch { /* gone */ } }
             }
             ws.serializeAttachment({ deviceId: msg.deviceId, name, kind: msg.kind === 'desktop' ? 'desktop' : 'phone' } satisfies Device);
-            this.send(ws, { t: 'welcome', now, state: await this.load() });
+            this.send(ws, { t: 'welcome', now, states: [...(await this.load()).values()] });
             this.broadcast({ t: 'devices', devices: this.devices() });
             return;
         }
@@ -78,35 +97,34 @@ export class ConnectHub extends DurableObject<Env> {
         if (msg.t === 'ping') return this.send(ws, { t: 'pong', t0: msg.t0, now });
 
         if (msg.t === 'synced') { // the sender saved the library: the others fetch it now
+            // at most once a minute: two devices that keep disagreeing must not bounce saves back and forth
+            if (now - this.lastSyncedRelay < SYNCED_RELAY_MS) return;
+            this.lastSyncedRelay = now;
             for (const w of this.ctx.getWebSockets()) if (w !== ws && w.readyState === OPEN && w.deserializeAttachment()) this.send(w, { t: 'synced' });
             return;
         }
 
-        if (msg.t === 'state') { // the sender is playing (or was told to): it is the active device now
+        if (msg.t === 'state') { // the sender's own playback
             const state: State = {
                 activeId: me.deviceId, activeName: me.name, track: msg.track ?? null,
                 queue: Array.isArray(msg.queue) ? msg.queue.slice(0, 60) : [], index: Number.isInteger(msg.index) ? msg.index : 0,
                 posMs: Number.isFinite(msg.posMs) ? Math.max(0, msg.posMs) : 0, playing: !!msg.playing, at: now,
             };
-            this.state = state;
-            await this.ctx.storage.put('s', state);
+            await this.save(state);
             this.broadcast({ t: 'state', now, state });
             return;
         }
 
-        if (msg.t === 'cmd') { // a remote control press, for the active device
-            const s = await this.load();
+        if (msg.t === 'cmd') { // a remote control press, for the device it names
             const op = String(msg.op ?? '');
-            if (op === 'take') { // "play on <target>": target defaults to the sender ("play here")
-                const target = typeof msg.target === 'string' ? msg.target : me.deviceId;
-                const w = this.socketOf(target);
-                if (!s || !w) return this.send(ws, { t: 'error', code: s ? 'device_gone' : 'nothing_playing' });
-                const posMs = s.playing ? s.posMs + (now - s.at) : s.posMs;
-                return this.send(w, { t: 'take', state: { ...s, posMs, playing: true }, from: me.name });
-            }
-            if (!s) return this.send(ws, { t: 'error', code: 'nothing_playing' });
-            const w = this.socketOf(s.activeId);
+            const target = typeof msg.target === 'string' ? msg.target : '';
+            const w = this.socketOf(target);
             if (!w) return this.send(ws, { t: 'error', code: 'device_gone' });
+            if (op === 'take') { // "play on <target>": the sender's playback, started there
+                const mine = (await this.load()).get(me.deviceId);
+                if (!mine?.track) return this.send(ws, { t: 'error', code: 'nothing_playing' });
+                return this.send(w, { t: 'take', state: { ...this.live(mine, now), playing: true }, from: me.name });
+            }
             return this.send(w, { t: 'cmd', op, posMs: Number.isFinite(msg.posMs) ? msg.posMs : undefined, index: Number.isInteger(msg.index) ? msg.index : undefined, by: me.name });
         }
     }
@@ -116,12 +134,12 @@ export class ConnectHub extends DurableObject<Env> {
         const gone = ws.deserializeAttachment() as Device | null;
         try { ws.close(); } catch { /* already closed */ }
         if (!gone) return;
-        const s = await this.load();
-        if (s?.activeId === gone.deviceId && s.playing) { // the player went away: freeze its clock
+        const st = (await this.load()).get(gone.deviceId);
+        if (st?.playing) { // it went away mid-song: freeze its clock
             const now = Date.now();
-            this.state = { ...s, playing: false, posMs: s.posMs + (now - s.at), at: now };
-            await this.ctx.storage.put('s', this.state);
-            this.broadcast({ t: 'state', now, state: this.state });
+            const frozen = { ...this.live(st, now), playing: false };
+            await this.save(frozen);
+            this.broadcast({ t: 'state', now, state: frozen });
         }
         this.broadcast({ t: 'devices', devices: this.devices() });
     }
