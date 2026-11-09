@@ -15,21 +15,21 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
-import com.example.juke.database.PlaylistTrackEntity
 import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
+import com.example.juke.jam.JamControls
+import com.example.juke.jam.toJamPick
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyAlbum
-import com.example.juke.models.collectAlbumTracks
 import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.models.collectAlbumTracks
 import com.example.juke.models.fetchLyricsWithRetry
+import com.example.juke.models.findOfflineTrack
 import com.example.juke.models.mergeCompletedStream
 import com.example.juke.models.withUpdatedLyrics
 import com.example.juke.network.RecommenderApi
-import com.example.juke.jam.JamControls
-import com.example.juke.jam.toJamPick
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.LibraryQueueOrder
 import com.example.juke.services.MusicService
@@ -39,9 +39,6 @@ import com.example.juke.services.QueueManager
 import com.example.juke.ui.theme.ExtractedColors
 import com.example.juke.utils.ArtistUtils
 import com.example.juke.utils.DatabaseMigrationHelper
-import java.io.File
-import java.util.UUID
-import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,14 +50,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.flowOn
-import com.example.juke.models.findOfflineTrack
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 
 enum class DownloadStatus {
@@ -120,7 +119,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 // The player gets the song through the recommendation sync; play it once it's there.
-                val queued = withTimeoutOrNull(15_000) {
+                val queued = withTimeoutOrNull(15_000.milliseconds) {
                     playbackManager.queueFlow.first { track.uuid in it }
                     _uiState.first { state -> state.queue.any { it.uuid == track.uuid } }
                 }
@@ -779,11 +778,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * [jamSingle]: the caller is a tap on one song inside a list. Normally the list follows it into the queue,
      * but in a Jam only that song goes into the room, not the rest of a long list.
      */
-    fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false) {
+    fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false, startPositionMs: Long? = null) {
         val forJam = if (jamSingle) listOfNotNull(tracks.getOrNull(startIndex)) else tracks.drop(startIndex)
         if (JamControls.playNow(forJam.map { it.toJamPick() })) return
         viewModelScope.launch {
-            playbackManager.setQueue(tracks, startIndex)
+            if (startPositionMs != null) playbackManager.setQueue(tracks, startIndex, startPositionMs) else playbackManager.setQueue(tracks, startIndex)
             _uiState.update {
                 it.copy(
                     queue = tracks,

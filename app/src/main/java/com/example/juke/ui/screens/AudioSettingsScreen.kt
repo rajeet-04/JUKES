@@ -130,6 +130,7 @@ fun AudioSettingsScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                item { com.example.juke.ui.components.AccountSection() }
                 item {
                     GlassCard(
                         modifier = Modifier.fillMaxWidth()) {

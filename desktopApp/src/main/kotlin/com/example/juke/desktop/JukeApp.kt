@@ -252,15 +252,14 @@ fun JukeApp() {
         }
         LaunchedEffect(Unit) { // leaving a Jam keeps what was coming up as this phone's own queue
             for (items in com.example.juke.jam.JamSession.leftWithQueue) {
-                items.forEach { item ->
-                    val track = com.example.juke.repositories.SharedTrack(item.title, item.artist, item.durationSec, item.spotifyId, null, item.thumb).toSpotifyTrack()
-                        ?: return@forEach
-                    musicViewModel.queueSpotifyTrack(track, next = false)
-                    while (musicViewModel.uiState.value.isQueueOperationInProgress) kotlinx.coroutines.delay(50)
-                }
+                val songs = items.map { com.example.juke.jam.Connect.Song(it.title, it.artist, it.durationSec, it.thumb, it.spotifyId) }
+                val tracks = com.example.juke.jam.Connect.playable(musicViewModel.getApplication(), songs)
+                if (tracks.isNotEmpty()) musicViewModel.addToQueue(tracks) // one step, in order; the playing song carries on
+
             }
         }
         androidx.compose.runtime.LaunchedEffect(Unit) { com.example.juke.jam.Handoff.run(musicViewModel) }
+        androidx.compose.runtime.LaunchedEffect(Unit) { com.example.juke.jam.Connect.run(musicViewModel) }
         val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
         if (jamSheetOpen) {
             com.example.juke.ui.components.JamSheet(
@@ -304,6 +303,7 @@ fun JukeApp() {
         val libraryWidth by androidx.compose.animation.core.animateDpAsState(if (libraryCollapsed) 76.dp else 300.dp, label = "libraryWidth")
         val playerState by musicViewModel.uiState.collectAsStateWithLifecycle()
         val libraryViewModel = activityViewModelProvider[com.example.juke.viewmodels.LibraryViewModel::class]
+        com.example.juke.ui.components.PlaylistAdder.PlaylistAdderHost(libraryViewModel) // "Add to playlist" from song menus
         // Scrolling down a list folds the tab bar into one button beside the mini player.
         val chromeThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
         val chrome = remember(chromeThresholdPx) { com.example.juke.ui.components.CollapsingChrome(chromeThresholdPx) }

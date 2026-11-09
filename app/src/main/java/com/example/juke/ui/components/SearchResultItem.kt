@@ -59,6 +59,7 @@ fun SearchResultItemM3(
         actions = listOfNotNull(
             SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
             SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
+            SheetAction("Add to playlist", JukeIcons.PlaylistAdd) { menuOpen = false; PlaylistAdder.open(track) },
             track.album.id?.let { id -> SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
         ) + track.artists.take(3).mapNotNull { a -> // ponytail: first 3 credited artists
             a.id?.let { id -> SheetAction("Go to ${a.name}", JukeIcons.MusicNote) { menuOpen = false; open.artist(id) } }

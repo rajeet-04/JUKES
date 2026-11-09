@@ -1,7 +1,7 @@
 package com.example.juke.ui.screens
 
 import androidx.compose.runtime.rememberCoroutineScope
-import com.example.juke.utils.seekWhenReady
+import com.example.juke.utils.playFromLine
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -257,8 +257,7 @@ SwipeToAddNextContainer(
                 if (uiState.query.isNotBlank()) {
                     val hitScope = rememberCoroutineScope()
                     com.example.juke.ui.components.LyricHitRow(track, uiState.query) { ms ->
-                        musicViewModel.setQueue(listOf(track), 0)
-                        hitScope.launch { musicViewModel.seekWhenReady(track, ms) }
+                        hitScope.launch { musicViewModel.playFromLine(track, ms) { at -> musicViewModel.setQueue(listOf(track), 0, startPositionMs = at) } }
                     }
                 }
             }
@@ -371,6 +370,7 @@ internal fun LocalTrackItem(
         actions = listOfNotNull(
             com.example.juke.ui.components.SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
             com.example.juke.ui.components.SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
+            com.example.juke.ui.components.SheetAction("Add to playlist", JukeIcons.PlaylistAdd) { menuOpen = false; com.example.juke.ui.components.PlaylistAdder.open(track) },
             track.albumSpotifyId?.let { id -> com.example.juke.ui.components.SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
             track.artistSpotifyIds?.firstOrNull()?.let { id -> com.example.juke.ui.components.SheetAction("Go to artist", JukeIcons.MusicNote) { menuOpen = false; open.artist(id) } },
         )
