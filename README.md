@@ -171,25 +171,27 @@ Or use the **Desktop build** workflow (Actions tab): it builds the Windows `.msi
 
 ## 📸 Screenshots
 
-<!-- Add screenshots here when available -->
+### Desktop (macOS and Windows)
 
-```
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│    Home Screen      │  │   Search Results    │  │   Library View      │
-│                     │  │                     │  │                     │
-│  Recently Played    │  │  🎵 Tracks          │  │  All Tracks  ⭐    │
-│  Most Played        │  │  👤 Artists         │  │                     │
-│  Favorites          │  │  📀 Playlists       │  │  🎵 Playlists      │
-└─────────────────────┘  └─────────────────────┘  └─────────────────────┘
+<p align="center">
+  <img src="SCREENSHOTS/pc_home.png" alt="JUKE desktop: home with library sidebar, now playing panel and lyrics" width="900">
+</p>
 
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│   Now Playing       │  │   Artist Detail     │  │  Playlist Import    │
-│                     │  │                     │  │                     │
-│   🎵 Track Info     │  │  Top Tracks         │  │  Importing...       │
-│   🎚️ Progress Bar   │  │  Albums (Grid)      │  │  Progress: 45/100   │
-│   📝 Synced Lyrics  │  │                     │  │  ▓▓▓▓▓▓▓▓░░         │
-└─────────────────────┘  └─────────────────────┘  └─────────────────────┘
-```
+<p align="center">
+  <img src="SCREENSHOTS/pc_playerscreen.png" alt="JUKE desktop: full-screen player with lyrics, Up next, Mix and Share" width="445">
+  <img src="SCREENSHOTS/pc_home_with_jamscreen.png" alt="JUKE desktop: Jam sheet with Your devices" width="445">
+</p>
+
+### Android
+
+<p align="center">
+  <img src="SCREENSHOTS/mob_home.png" alt="JUKE Android: home" width="190">
+  <img src="SCREENSHOTS/mob_player.png" alt="JUKE Android: player" width="190">
+  <img src="SCREENSHOTS/mob_queue.png" alt="JUKE Android: Up next queue" width="190">
+  <img src="SCREENSHOTS/mob_library.png" alt="JUKE Android: library" width="190">
+  <img src="SCREENSHOTS/mob_search.png" alt="JUKE Android: search by lyric line" width="190">
+</p>
+
 
 ## 🚀 Installation
 
