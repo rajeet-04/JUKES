@@ -25,7 +25,7 @@ export const clip = (v: unknown, n: number) => String(v ?? '').slice(0, n);
 const id = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
 
 export function table(obj: Record<string, unknown> | null | undefined): string {
-    const rows = Object.entries(obj ?? {}).slice(0, 25).map(([k, v]) => `| ${clip(k, 40).replace(/\|/g, '')} | ${clip(scrub(String(v)), 120).replace(/[|\n]/g, ' ')} |`);
+    const rows = Object.entries(obj ?? {}).slice(0, 25).map(([k, v]) => `| ${clip(k, 40).replace(/\|/g, '')} | ${clip(scrub(String(v)), k === 'trail' ? 600 : 120).replace(/[|\n]/g, ' ')} |`);
     return rows.length ? `| | |\n|---|---|\n${rows.join('\n')}` : '_none_';
 }
 

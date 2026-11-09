@@ -160,6 +160,8 @@ tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
 
 compose.desktop.application {
     mainClass = "com.example.juke.desktop.MainKt"
+    // a native crash (JNA, audio, graphics) kills the JVM; this is where it leaves its log (see NativeCrash.kt)
+    jvmArgs += "-XX:ErrorFile=${if (os.isWindows) "C:/Windows/Temp" else "/tmp"}/juke-hs_err_%p.log"
     buildTypes.release.proguard {
         isEnabled = true
         obfuscate = false // ponytail: obfuscation buys little size, costs debuggability

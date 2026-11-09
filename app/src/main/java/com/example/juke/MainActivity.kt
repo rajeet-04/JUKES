@@ -125,6 +125,7 @@ sealed class Screen(
 class MainActivity : ComponentActivity() {
 
     private val showPlayerOnLaunch = mutableStateOf(false)
+    private val resumeOnLaunch = mutableStateOf(false) // opened as "the music app": pick up where playback left off
     private val pendingSpotifyLink = mutableStateOf<String?>(null)
     private val pendingShareId = mutableStateOf<String?>(null)
     private val pendingJamCode = mutableStateOf<String?>(null)
@@ -222,6 +223,13 @@ class MainActivity : ComponentActivity() {
                 }
                 // --- END UPDATE CHECK LOGIC ---
 
+                LaunchedEffect(resumeOnLaunch.value) {
+                    if (!resumeOnLaunch.value) return@LaunchedEffect
+                    resumeOnLaunch.value = false
+                    kotlinx.coroutines.delay(800) // the saved queue loads first
+                    val s = musicViewModel.uiState.value
+                    if (!s.isPlaying && s.currentTrack != null) musicViewModel.togglePlayPause()
+                }
                 // Listen for changes to showPlayerOnLaunch
                 LaunchedEffect(showPlayerOnLaunch.value) {
                     if (showPlayerOnLaunch.value) {
@@ -285,7 +293,7 @@ class MainActivity : ComponentActivity() {
                 var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
 
                 LaunchedEffect(currentRoute) { // which screens people actually use
-                    currentRoute?.let { com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
+                    currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
                 }
                 LaunchedEffect(currentRoute) {
                     if (
@@ -696,6 +704,9 @@ class MainActivity : ComponentActivity() {
             pendingShareId.value = shareId
         } else if (text != null && Regex("""open\.spotify\.com/(intl-\w+/)?(track|album|artist|playlist)/|spotify:(track|album|artist|playlist):|spotify(\.app)?\.link/\w|youtube\.com/watch|youtu\.be/""").containsMatchIn(text)) {
             pendingSpotifyLink.value = text
+        }
+        if (intent != null && (intent.action == "android.intent.action.MUSIC_PLAYER" || intent.hasCategory("android.intent.category.APP_MUSIC"))) {
+            resumeOnLaunch.value = true
         }
         if (intent?.getBooleanExtra("open_player", false) == true) {
             showPlayerOnLaunch.value = true

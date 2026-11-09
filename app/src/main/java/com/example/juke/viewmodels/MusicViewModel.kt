@@ -301,6 +301,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // Observe playback state changes coming from the MediaController (notifications/external)
         viewModelScope.launch {
             playbackManager.isPlayingFlow.collect { playing ->
+                com.example.juke.report.Breadcrumbs.playing(playing)
                 _uiState.update { it.copy(isPlaying = playing) }
             }
         }

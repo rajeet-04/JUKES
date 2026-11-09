@@ -322,7 +322,7 @@ fun QueueBottomSheetContent(
                 }
 
                 // "Play next" picks still loading: they go right after the playing song once ready.
-                items(items = heldNext, key = { "queue_held_${it.id}" }) { song ->
+                items(items = heldNext.distinctBy { it.id }, key = { "queue_held_${it.id}" }) { song ->
                     QueueSongRow(
                         imageUrl = song.thumbnailUrl,
                         title = song.title,
@@ -522,7 +522,7 @@ fun QueueBottomSheetContent(
                     }
                 }
 
-                items(items = pending, key = { "queue_pending_${it.id}" }) { song ->
+                items(items = pending.distinctBy { it.id }, key = { "queue_pending_${it.id}" }) { song ->
                     val copyQueued = remember { mutableStateOf(false) }
                     val dismissState = rememberSwipeToDismissBoxState(
                         positionalThreshold = { distance -> distance * 0.5f },

@@ -121,6 +121,7 @@ object LibrarySync {
 
     /** Pull, merge into this device, push. Safe to call often: it writes only when something changed. */
     suspend fun sync(c: Context): Boolean = lock.withLock {
+        com.example.juke.report.Breadcrumbs.add("sync")
         if (Account.token == null) return false
         withContext(Dispatchers.IO) {
             try {

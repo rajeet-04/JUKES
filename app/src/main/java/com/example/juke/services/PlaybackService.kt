@@ -400,6 +400,20 @@ class PlaybackService : MediaLibraryService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    private fun showResumeHint() {
+        if (!androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, com.example.juke.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val n = NotificationCompat.Builder(this, "media_playback")
+            .setSmallIcon(androidx.media3.session.R.drawable.media3_notification_small_icon)
+            .setContentTitle("Tap to resume playback")
+            .setContentText("Android needs JUKE open to restart the music")
+            .setContentIntent(open).setAutoCancel(true).build()
+        try { androidx.core.app.NotificationManagerCompat.from(this).notify(2, n) } catch (_: SecurityException) {}
+    }
+
     /** Keeps the startForegroundService promise when Media3 didn't, then steps back down if nothing is playing. */
     private val foregroundGuard = Runnable {
         val nm = getSystemService(NotificationManager::class.java)
@@ -427,6 +441,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        com.example.juke.report.Breadcrumbs.add("service start ${intent?.action?.substringAfterLast('.') ?: "-"}")
         // Fix: Check if app is in background before attempting anything that might require foreground
         // This prevents ForegroundServiceStartNotAllowedException on Android 12+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -714,6 +729,11 @@ class PlaybackService : MediaLibraryService() {
             .setChannelId("media_playback")
             .build()
         setMediaNotificationProvider(notificationProvider)
+        // Media3 reports a refused foreground start here, but then still calls startForeground() itself and crashes
+        // (see onUpdateNotification below); this just tells the user how to get playback going again.
+        setListener(object : Listener {
+            override fun onForegroundServiceStartNotAllowedException() = showResumeHint()
+        })
 
         database = MusicDatabase.getDatabase(applicationContext)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -918,7 +938,10 @@ class PlaybackService : MediaLibraryService() {
     private fun canGoForeground(): Boolean {
         val nm = getSystemService(NotificationManager::class.java)
         val posted = nm.activeNotifications.firstOrNull { it.id == 1 }
-        if (posted != null && posted.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0) return true
+        // The app on screen can always start it. In the background only trying tells: the FOREGROUND_SERVICE flag stays
+        // on the posted notification after the service stopped being foreground, so it must not be trusted (issue #23:
+        // it made this return true and Media3's own startForeground then crashed).
+        if (runCatching { androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) }.getOrDefault(false)) return true
         val notification = posted?.notification
             ?: NotificationCompat.Builder(this, "media_playback")
                 .setSmallIcon(androidx.media3.session.R.drawable.media3_notification_small_icon)
@@ -930,6 +953,8 @@ class PlaybackService : MediaLibraryService() {
             true
         } catch (e: Exception) {
             Log.w(tag, "System refused foreground (${e.javaClass.simpleName}); updating the notification in the background")
+            com.example.juke.report.Breadcrumbs.add("fgs_start_refused")
+            showResumeHint()
             false
         }
     }

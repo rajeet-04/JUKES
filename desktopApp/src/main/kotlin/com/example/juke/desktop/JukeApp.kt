@@ -280,7 +280,7 @@ fun JukeApp() {
         var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
 
         LaunchedEffect(currentRoute) { // which screens people actually use
-            currentRoute?.let { com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
+            currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
         }
         LaunchedEffect(currentRoute) {
             if (

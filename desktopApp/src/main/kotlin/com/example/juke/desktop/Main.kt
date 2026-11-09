@@ -43,6 +43,8 @@ object DesktopViewModels : ViewModelStoreOwner, HasDefaultViewModelProviderFacto
 object AppLinks { val incoming = MutableSharedFlow<String>(replay = 8, extraBufferCapacity = 8) }
 
 private fun startup(args: Array<String>) {
+    com.example.juke.report.CrashReporter.install(Application.instance) // uncaught exceptions: saved now, sent next launch
+    NativeCrash.collect(Application.instance)   // a native crash from the last run, if any
     val app = Application.instance
     GlassPrefs.solid = app.getSharedPreferences("ui_prefs", Context.MODE_PRIVATE).getBoolean("solid_surfaces", false)
     // Heavy singletons off the UI thread, so the first frame doesn't wait for them

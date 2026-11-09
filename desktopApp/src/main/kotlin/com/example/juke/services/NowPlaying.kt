@@ -110,6 +110,7 @@ object NowPlaying {
         private var artFor: String? = null
         private var artObj: Pointer? = null
         private var artImage: Pointer? = null
+        private val retired = ArrayList<Pointer>()
         interface ArtHandler : Callback { fun invoke(block: Pointer?, w: Double, h: Double): Pointer? }
 
         /** Fetches and decodes the cover off the main thread, then republishes with it. */
@@ -127,7 +128,9 @@ object NowPlaying {
                 val img = send(send(cls("NSImage"), "alloc")!!, "initWithData:", data) ?: return
                 val handler = object : ArtHandler { override fun invoke(block: Pointer?, w: Double, h: Double): Pointer? = img }
                 val art = msg.invokePointer(arrayOf<Any?>(send(cls("MPMediaItemArtwork"), "alloc")!!, sel("initWithBoundsSize:requestHandler:"), 600.0, 600.0, makeBlock(handler)))
-                artImage?.let { send(it, "release") }
+                // macOS can still hold the previous artwork and call its handler (which returns this image), so a cover is
+                // only released once three newer ones exist; releasing it at once crashed the VM on a song change
+                artImage?.let { retired += it; while (retired.size > 3) send(retired.removeAt(0), "release") }
                 artImage = img; artObj = art; artFor = track.uuid
             }.onFailure { println("NowPlaying artwork failed: $it") }
             republish()
