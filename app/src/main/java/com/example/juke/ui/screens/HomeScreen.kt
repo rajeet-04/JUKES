@@ -199,10 +199,7 @@ private fun HomeFeed(
         if (state.newReleases.isNotEmpty()) {
             item {
                 SectionHeader(title = "New from artists you play")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                com.example.juke.ui.components.ArrowRow {
                     items(state.newReleases.distinctBy { it.id.orEmpty() }, key = { it.id.orEmpty() }) { album ->
                         ReleaseCard(
                             album = album,
@@ -234,10 +231,7 @@ private fun HomeFeed(
         state.likeFavorites?.let { section ->
             item {
                 SectionHeader(title = "More like ${section.seed.title}")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                com.example.juke.ui.components.ArrowRow {
                     items(section.tracks.distinctBy { it.id.orEmpty() }, key = { it.id.orEmpty() }) { track ->
                         RadioCard(
                             track = track,
@@ -253,10 +247,7 @@ private fun HomeFeed(
         if (rotation.isNotEmpty()) {
             item {
                 SectionHeader(title = "Back in rotation", onActionClick = onSeeAllClick)
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                com.example.juke.ui.components.ArrowRow {
                     itemsIndexed(rotation.distinctBy { it.uuid }, key = { _, t -> t.uuid }) { index, track ->
                         LibraryCard(
                             track = track,
