@@ -240,7 +240,7 @@ internal fun SearchResultsList(
         // ── In Your Library ──────────────────────────────────────────────
         if ((selectedFilter == "All" || selectedFilter == "Songs") && uiState.localTracks.isNotEmpty()) {
             item { SearchSectionHeader("In your library", preview && uiState.localTracks.size > 2) { onFilterSelected("Songs") } }
-            items(localTracks, key = { "local_${it.uuid}" }) { track ->
+            items(localTracks.distinctBy { it.uuid }, key = { "local_${it.uuid}" }) { track ->
                 Column {
 SwipeToAddNextContainer(
                     onAddNext = {
@@ -269,7 +269,7 @@ SwipeToAddNextContainer(
         if ((selectedFilter == "All" || selectedFilter == "Songs") && uiState.tracks.isNotEmpty()) {
             item { SearchSectionHeader("Songs", preview && uiState.tracks.size > 3) { onFilterSelected("Songs") } }
             items(
-                songs,
+                songs.distinctBy { it.id ?: it.uri },
                 key = { "song_${it.id ?: it.uri}" }) { track ->
                 SwipeToAddNextContainer(
                     onAddNext = {
@@ -312,7 +312,7 @@ SwipeToAddNextContainer(
 
         if ((preview || selectedFilter == "Artists") && artists.isNotEmpty()) {
             item { SearchSectionHeader("Artists", preview && uiState.artists.size > 2) { onFilterSelected("Artists") } }
-            items(artists, key = { "artist_${it.id ?: it.uri ?: it.name}" }) { artist ->
+            items(artists.distinctBy { it.id ?: it.uri ?: it.name }, key = { "artist_${it.id ?: it.uri ?: it.name}" }) { artist ->
                 SearchCollectionRow(artist.name, "Artist", artist.images.firstOrNull()?.url, roundArtwork = true) {
                     onNavigateToArtist(artist)
                 }
@@ -320,7 +320,7 @@ SwipeToAddNextContainer(
         }
         if ((preview || selectedFilter == "Albums") && albums.isNotEmpty()) {
             item { SearchSectionHeader("Albums", preview && uiState.albums.size > 2) { onFilterSelected("Albums") } }
-            items(albums, key = { "album_${it.id ?: it.uri ?: it.name}" }) { album ->
+            items(albums.distinctBy { it.id ?: it.uri ?: it.name }, key = { "album_${it.id ?: it.uri ?: it.name}" }) { album ->
                 SearchCollectionRow(album.name, "${album.artists.joinToString(", ") { it.name }} · Album", album.images.firstOrNull()?.url) {
                     onNavigateToAlbum(album)
                 }
@@ -328,7 +328,7 @@ SwipeToAddNextContainer(
         }
         if ((preview || selectedFilter == "Playlists") && playlists.isNotEmpty()) {
             item { SearchSectionHeader("Playlists", preview && uiState.playlists.size > 2) { onFilterSelected("Playlists") } }
-            items(playlists, key = { "playlist_${it.id}" }) { playlist ->
+            items(playlists.distinctBy { it.id }, key = { "playlist_${it.id}" }) { playlist ->
                 SearchCollectionRow(playlist.name, "${playlist.tracks?.total ?: 0} songs · Playlist", playlist.images.firstOrNull()?.url) {
                     onNavigateToPlaylist(playlist)
                 }

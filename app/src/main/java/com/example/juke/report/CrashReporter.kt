@@ -47,6 +47,12 @@ object CrashReporter {
 
     fun install(context: Context) {
         val app = context.applicationContext
+        runCatching { // foreground/background trail (Android only: the desktop shim has no process lifecycle events)
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+                override fun onStart(owner: androidx.lifecycle.LifecycleOwner) = Breadcrumbs.add("app foreground")
+                override fun onStop(owner: androidx.lifecycle.LifecycleOwner) = Breadcrumbs.add("app background")
+            })
+        }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
@@ -59,18 +65,24 @@ object CrashReporter {
 
     private fun save(context: Context, thread: Thread, error: Throwable) {
         val root = generateSequence(error) { it.cause }.last()
+        saveReport(context, root.javaClass.name, root.message.orEmpty(), error.stackTraceToString(), thread.name, System.currentTimeMillis())
+    }
+
+    /** Queues one crash for the next send. Also used for crashes that killed the VM itself (desktop native crashes). */
+    fun saveReport(context: Context, type: String, message: String, trace: String, thread: String, at: Long, extra: Map<String, String> = emptyMap()) {
         val crash = Crash(
             installId = AnalyticsManager.getIfInitialized()?.installId() ?: "",
-            type = root.javaClass.name,
-            message = BugReport.scrub(root.message.orEmpty()).take(500),
-            trace = BugReport.scrub(error.stackTraceToString()).take(MAX_TRACE),
-            thread = thread.name,
-            at = System.currentTimeMillis(),
+            type = type,
+            message = BugReport.scrub(message).take(500),
+            trace = BugReport.scrub(trace).take(MAX_TRACE),
+            thread = thread,
+            at = at,
             app = mapOf(
                 "version" to "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 "device" to "${Build.MANUFACTURER} ${Build.MODEL}",
-                "android" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
-            )
+                "android" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                "runtime" to "${System.getProperty("java.vm.name")} ${System.getProperty("java.version")} on ${System.getProperty("os.name")} ${System.getProperty("os.version")} ${System.getProperty("os.arch")}"
+            ) + Breadcrumbs.context() + extra
         )
         val dir = dir(context).apply { mkdirs() }
         File(dir, "${crash.at}.json").writeText(json.encodeToString(crash))

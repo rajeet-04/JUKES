@@ -43,6 +43,18 @@
                 <data android:scheme="juke" />
             </intent-filter>
 
+            <!-- A music app: what headsets, car kits, "open music" shortcuts and the default-app chooser look for.
+                 Launching JUKE this way also resumes what was playing, like other music apps. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MUSIC_PLAYER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
             <!-- Shared-playlist links (snapshot served by the share Worker) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

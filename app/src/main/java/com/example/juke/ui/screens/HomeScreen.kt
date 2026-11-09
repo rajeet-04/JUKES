@@ -203,7 +203,7 @@ private fun HomeFeed(
                     contentPadding = PaddingValues(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(state.newReleases, key = { it.id.orEmpty() }) { album ->
+                    items(state.newReleases.distinctBy { it.id.orEmpty() }, key = { it.id.orEmpty() }) { album ->
                         ReleaseCard(
                             album = album,
                             onClick = { onAlbumClick(album) },
@@ -219,7 +219,7 @@ private fun HomeFeed(
             }
         }
 
-        items(state.becauseYouPlayed, key = { it.seed.uuid }) { section ->
+        items(state.becauseYouPlayed.distinctBy { it.seed.uuid }, key = { it.seed.uuid }) { section ->
             SectionHeader(title = "Because you played ${section.seed.title}")
             RadioList(section = section, musicViewModel = musicViewModel)
             Spacer(Modifier.height(28.dp))
@@ -238,7 +238,7 @@ private fun HomeFeed(
                     contentPadding = PaddingValues(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(section.tracks, key = { it.id.orEmpty() }) { track ->
+                    items(section.tracks.distinctBy { it.id.orEmpty() }, key = { it.id.orEmpty() }) { track ->
                         RadioCard(
                             track = track,
                             onClick = { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
@@ -257,7 +257,7 @@ private fun HomeFeed(
                     contentPadding = PaddingValues(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    itemsIndexed(rotation, key = { _, t -> t.uuid }) { index, track ->
+                    itemsIndexed(rotation.distinctBy { it.uuid }, key = { _, t -> t.uuid }) { index, track ->
                         LibraryCard(
                             track = track,
                             onClick = { musicViewModel.setQueue(rotation, index, jamSingle = true) },

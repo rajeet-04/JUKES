@@ -195,7 +195,7 @@ private fun ActiveJam(state: JamSession.UiState, musicViewModel: MusicViewModel)
         )
     }
     LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
-        itemsIndexed(state.queue, key = { _, item -> item.id }) { index, item ->
+        itemsIndexed(state.queue, key = { i, item -> "${item.id}#$i" }) { index, item ->
             JamRow(
                 item = item,
                 canMoveUp = index > 0,
