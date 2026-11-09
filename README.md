@@ -8,7 +8,7 @@
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
 [![Compile SDK](https://img.shields.io/badge/Compile%20SDK-36-blue.svg)](https://developer.android.com/about/versions/api-levels)
-[![Version](https://img.shields.io/badge/Version-2.9.0--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases)
+[![Version](https://img.shields.io/badge/Version-3.0.0--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 **A modern Android and desktop music app with smart recommendations, Spotify integration, offline playback, synced lyrics, and your library on every device**
@@ -25,7 +25,7 @@ JUKE is a feature-rich music player that combines Spotify's search API, YouTube 
 
 ## 📦 Latest Release
 
-**JUKE v2.9.0-beta** adds accounts and multi-device control.
+**JUKE v3.0.0-beta** adds accounts, multi-device control and a desktop app for macOS and Windows (Linux is in testing). The desktop installers are unsigned: on macOS right-click the app and choose Open the first time; on Windows choose "More info" then "Run anyway" in SmartScreen.
 
 - **Accounts and library sync**: liked songs, playlists and settings stay the same on every device you log in on
 - **Your devices**: see what each device plays and control it (play/pause, skip, seek, Up next); **Join**, **Move here** and **Play there** hand playback between devices
@@ -211,7 +211,7 @@ Or use the **Desktop build** workflow (Actions tab): it builds the Windows `.msi
 
 2. **Download from Releases** (Recommended for end users)
 
-   **Latest Release: [v2.9.0-beta](https://github.com/rajeet-04/JUKES/releases)**
+   **Latest Release: [v3.0.0-beta](https://github.com/rajeet-04/JUKES/releases)**
    - Download the APK file from the [releases page](https://github.com/rajeet-04/JUKES/releases)
    - Install the APK on your Android device (min SDK 26+)
    - Grant necessary permissions when prompted
@@ -581,6 +581,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 **MADE WITH ❤️ BY MEEK**
 
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/rajeet-04/JUKES)
-[![Release](https://img.shields.io/badge/Release-v2.9.0--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases)
+[![Release](https://img.shields.io/badge/Release-v3.0.0--beta-blue?style=for-the-badge)](https://github.com/rajeet-04/JUKES/releases)
 
 </div>
