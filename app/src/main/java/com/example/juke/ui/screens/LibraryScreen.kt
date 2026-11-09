@@ -2,7 +2,7 @@ package com.example.juke.ui.screens
 
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
-import com.example.juke.utils.seekWhenReady
+import com.example.juke.utils.playFromLine
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -768,8 +768,9 @@ Box(
                         if (uiState.searchQuery.isNotBlank() && !uiState.isSelectionMode) {
                             val hitScope = rememberCoroutineScope()
                             com.example.juke.ui.components.LyricHitRow(track, uiState.searchQuery) { ms ->
-                                musicViewModel.setQueue(uiState.tracks, uiState.tracks.indexOf(track), jamSingle = true)
-                                hitScope.launch { musicViewModel.seekWhenReady(track, ms) }
+                                hitScope.launch {
+                                    musicViewModel.playFromLine(track, ms) { at -> musicViewModel.setQueue(uiState.tracks, uiState.tracks.indexOf(track), jamSingle = true, startPositionMs = at) }
+                                }
                             }
                         }
                         }

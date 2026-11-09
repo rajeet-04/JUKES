@@ -442,7 +442,8 @@ private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewMo
     return listOf(
         MenuAction("Play") { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
         MenuAction("Play next") { musicViewModel.queueSpotifyTrack(track, next = true); say("${track.name} will play next") },
-        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") }
+        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") },
+        MenuAction("Add to playlist") { com.example.juke.ui.components.PlaylistAdder.open(track) }
     ) + mediaActions(track.album.id, track.artists.take(3).mapNotNull { a -> a.id?.let { a.name to it } })
 }
 
@@ -454,7 +455,8 @@ private fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, pl
     return listOf(
         MenuAction("Play", play),
         MenuAction("Play next") { musicViewModel.addNext(track); say("${track.title} will play next") },
-        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") }
+        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") },
+        MenuAction("Add to playlist") { com.example.juke.ui.components.PlaylistAdder.open(track) }
     ) + mediaActions(track.albumSpotifyId, listOfNotNull(track.artistSpotifyIds?.firstOrNull()?.let { track.artist.substringBefore(", ") to it }))
 }
 

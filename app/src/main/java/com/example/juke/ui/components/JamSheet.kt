@@ -78,7 +78,7 @@ fun JamSheet(musicViewModel: MusicViewModel, onDismiss: () -> Unit) {
         ) {
             Text("Jam", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             if (state.active) ActiveJam(state, musicViewModel) else StartOrJoin(state.message, musicViewModel)
-            HandoffSection(musicViewModel)
+            if (com.example.juke.account.Account.email.collectAsStateWithLifecycle().value != null) ConnectSection() else HandoffSection(musicViewModel)
         }
     }
 }

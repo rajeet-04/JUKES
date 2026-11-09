@@ -127,6 +127,7 @@ object Handoff {
             var waited = 0
             while (!wake && waited < (if (pendingId != null) 1000 else 4000)) { delay(100); waited += 100 }
             wake = false
+            if (com.example.juke.account.Account.token != null) continue // logged in: Connect does this, live
             val code = _code.value ?: continue
             val r = read(code) ?: continue
             val box = r.box ?: continue
