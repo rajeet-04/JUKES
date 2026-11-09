@@ -208,7 +208,7 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
 // Now-playing panel (right)
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose: () -> Unit, onOpenFullscreen: () -> Unit, onGoToAlbum: (String) -> Unit = {}, modifier: Modifier = Modifier) {
+fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose: () -> Unit, onOpenFullscreen: () -> Unit, onGoToAlbum: (String) -> Unit = {}, onGoToArtist: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     val track = state.currentTrack
     val tint = state.extractedColors?.primary ?: MaterialTheme.colorScheme.primary
     Box(modifier.clip(PanelShape).background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.55f), Color(0xFF161616), Color(0xFF111111))))) {
@@ -222,7 +222,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Now playing", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, size = 36.dp)
+                PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, onGoToArtist = onGoToArtist, size = 36.dp)
                 Tip(JukeIcons.Close, "Close panel", onClose)
             }
             // no item spacing: the queue's rows sit flush inside one card; the blocks above space themselves
@@ -394,7 +394,7 @@ private fun PlayerQueue(state: MusicUiState, musicViewModel: MusicViewModel) {
 // Full player: art + controls on the left, a glass pane with lyrics / up next on the right
 // ---------------------------------------------------------------------------------------------
 @Composable
-fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onDismiss: () -> Unit, onNavigateToArtist: (String) -> Unit, onGoToAlbum: (String) -> Unit = {}, modifier: Modifier = Modifier) {
+fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onDismiss: () -> Unit, onNavigateToArtist: (String) -> Unit, onGoToAlbum: (String) -> Unit = {}, onGoToArtist: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     androidx.activity.compose.BackHandler(onBack = onDismiss)
     val track = state.currentTrack
     val tint = state.extractedColors?.primary ?: MaterialTheme.colorScheme.primary
@@ -418,7 +418,7 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(track.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(track.artist, style = MaterialTheme.typography.titleMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(track.artist, Modifier.clickable(enabled = !track.artistSpotifyIds.isNullOrEmpty()) { onNavigateToArtist(track.artistSpotifyIds!!.first()) }, style = MaterialTheme.typography.titleMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 44.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
                     }
@@ -457,7 +457,7 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
             }
         }
         Tip(JukeIcons.ChevronDown, "Close", onDismiss, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 12.dp).padding(start = titleInsetDp()), size = 44.dp, tint = MaterialTheme.colorScheme.onSurface)
-        if (track != null) PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, modifier = Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 12.dp))
+        if (track != null) PlayerOptionsButton(track, musicViewModel, onGoToAlbum = onGoToAlbum, onGoToArtist = onNavigateToArtist, modifier = Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 12.dp))
     }
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Translate
@@ -67,6 +68,7 @@ fun PlayerOptionsButton(
     track: Track,
     vm: MusicViewModel,
     onGoToAlbum: (String) -> Unit,
+    onGoToArtist: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 44.dp,
 ) {
@@ -112,6 +114,12 @@ fun PlayerOptionsButton(
                 Entry(JukeIcons.PlaylistAdd, "Add to playlist") { close(); playlistDialog = true }
                 Entry(JukeIcons.PlaylistAdd, "Save queue as playlist") { close(); saveQueue = true }
                 track.albumSpotifyId?.let { id -> Entry(JukeIcons.Album, "Go to album") { close(); onGoToAlbum(id) } }
+                val ids = track.artistSpotifyIds.orEmpty()
+                val names = track.artist.split(", ", " & ").map { it.trim() }.filter { it.isNotEmpty() }
+                ids.forEachIndexed { i, id ->
+                    val label = if (ids.size == 1) "Go to artist" else "Go to ${names.takeIf { it.size == ids.size }?.get(i) ?: "artist ${i + 1}"}"
+                    Entry(Icons.Outlined.Person, label) { close(); onGoToArtist(id) }
+                }
             }
             if (track.artist.isNotBlank()) {
                 Divider()

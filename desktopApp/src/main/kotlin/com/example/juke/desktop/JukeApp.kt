@@ -690,6 +690,10 @@ fun JukeApp() {
                         activityViewModelProvider[AlbumDetailViewModel::class].loadAlbumDetailsById(id)
                         navController.navigate("album/$id")
                     },
+                    onGoToArtist = { id ->
+                        activityViewModelProvider[SearchViewModel::class].loadArtistDetailsById(id)
+                        navController.navigate("artist/$id")
+                    },
                     modifier = Modifier.width(340.dp).fillMaxHeight()
                 )
             }
