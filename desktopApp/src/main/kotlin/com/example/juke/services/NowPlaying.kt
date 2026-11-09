@@ -90,6 +90,15 @@ object NowPlaying {
             override fun getFieldOrder() = listOf("isa", "flags", "reserved", "invoke", "descriptor")
         }
         interface Handler : Callback { fun invoke(block: Pointer?, event: Pointer?): Long }
+        class NSSize() : Structure(), Structure.ByValue {
+            @JvmField var width: Double = 0.0
+            @JvmField var height: Double = 0.0
+            constructor(width: Double, height: Double) : this() {
+                this.width = width
+                this.height = height
+            }
+            override fun getFieldOrder() = listOf("width", "height")
+        }
 
         private fun makeBlock(handler: Callback): Pointer {
             val d = BlockDescriptor().also { it.write() }
@@ -127,7 +136,12 @@ object NowPlaying {
                 val data = send(cls("NSData"), "dataWithBytes:length:", mem, bytes.size.toLong())!!
                 val img = send(send(cls("NSImage"), "alloc")!!, "initWithData:", data) ?: return
                 val handler = object : ArtHandler { override fun invoke(block: Pointer?, w: Double, h: Double): Pointer? = img }
-                val art = msg.invokePointer(arrayOf<Any?>(send(cls("MPMediaItemArtwork"), "alloc")!!, sel("initWithBoundsSize:requestHandler:"), 600.0, 600.0, makeBlock(handler)))
+                val art = msg.invokePointer(arrayOf<Any?>(
+                    send(cls("MPMediaItemArtwork"), "alloc")!!,
+                    sel("initWithBoundsSize:requestHandler:"),
+                    NSSize(600.0, 600.0),
+                    makeBlock(handler)
+                ))
                 // macOS can still hold the previous artwork and call its handler (which returns this image), so a cover is
                 // only released once three newer ones exist; releasing it at once crashed the VM on a song change
                 artImage?.let { retired += it; while (retired.size > 3) send(retired.removeAt(0), "release") }
