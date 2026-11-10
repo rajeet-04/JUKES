@@ -90,6 +90,15 @@ object NowPlaying {
             override fun getFieldOrder() = listOf("isa", "flags", "reserved", "invoke", "descriptor")
         }
         interface Handler : Callback { fun invoke(block: Pointer?, event: Pointer?): Long }
+        class NSSize() : Structure(), Structure.ByValue {
+            @JvmField var width: Double = 0.0
+            @JvmField var height: Double = 0.0
+            constructor(width: Double, height: Double) : this() {
+                this.width = width
+                this.height = height
+            }
+            override fun getFieldOrder() = listOf("width", "height")
+        }
 
         private fun makeBlock(handler: Callback): Pointer {
             val d = BlockDescriptor().also { it.write() }
@@ -122,17 +131,23 @@ object NowPlaying {
                     java.net.http.HttpRequest.newBuilder(java.net.URI(uri)).build(), java.net.http.HttpResponse.BodyHandlers.ofByteArray()).body()
                 else java.io.File(if (uri.startsWith("file:")) java.net.URI(uri).path else uri).readBytes()
             }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return
-            runCatching {
+            // one native artwork build at a time, and never concurrent with publish(): parallel loads raced on artImage/retired
+            synchronized(this) { runCatching {
                 val mem = com.sun.jna.Memory(bytes.size.toLong()).also { it.write(0, bytes, 0, bytes.size) }
                 val data = send(cls("NSData"), "dataWithBytes:length:", mem, bytes.size.toLong())!!
                 val img = send(send(cls("NSImage"), "alloc")!!, "initWithData:", data) ?: return
                 val handler = object : ArtHandler { override fun invoke(block: Pointer?, w: Double, h: Double): Pointer? = img }
-                val art = msg.invokePointer(arrayOf<Any?>(send(cls("MPMediaItemArtwork"), "alloc")!!, sel("initWithBoundsSize:requestHandler:"), 600.0, 600.0, makeBlock(handler)))
-                // macOS can still hold the previous artwork and call its handler (which returns this image), so a cover is
-                // only released once three newer ones exist; releasing it at once crashed the VM on a song change
-                artImage?.let { retired += it; while (retired.size > 3) send(retired.removeAt(0), "release") }
+                val art = msg.invokePointer(arrayOf<Any?>(
+                    send(cls("MPMediaItemArtwork"), "alloc")!!,
+                    sel("initWithBoundsSize:requestHandler:"),
+                    NSSize(600.0, 600.0),
+                    makeBlock(handler)
+                ))
+                // macOS can still hold earlier artwork and call its handler, which returns that image, so covers are never
+                // released (a release racing a late callback crashed the VM, issues 26/28/29); about 100 KB per song
+                artImage?.let { retired += it }
                 artImage = img; artObj = art; artFor = track.uuid
-            }.onFailure { println("NowPlaying artwork failed: $it") }
+            }.onFailure { println("NowPlaying artwork failed: $it") } }
             republish()
         }
 
