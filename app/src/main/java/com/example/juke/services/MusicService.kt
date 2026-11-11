@@ -1082,9 +1082,10 @@ class MusicService(private val context: Context) {
             playCount = maxOf(stored?.playCount ?: 0, track.playCount),
             lastPlayedAt = stored?.lastPlayedAt ?: track.lastPlayedAt,
             downloadedAt = System.currentTimeMillis(),
-            spotifyId = track.spotifyId,
-            albumSpotifyId = track.albumSpotifyId,
-            artistSpotifyIds = track.artistSpotifyIds,
+            // the queue copy can lack ids the stored stream already has (a song handed over from another device): never blank them
+            spotifyId = track.spotifyId ?: stored?.spotifyId,
+            albumSpotifyId = track.albumSpotifyId ?: stored?.albumSpotifyId,
+            artistSpotifyIds = track.artistSpotifyIds ?: stored?.artistSpotifyIds,
             isStream = false,
             lyricsOffsetMs = track.lyricsOffsetMs
         ).withUpdatedLyrics(

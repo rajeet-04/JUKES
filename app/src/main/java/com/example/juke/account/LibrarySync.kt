@@ -91,14 +91,14 @@ object LibrarySync {
 
     /** Both devices edited this playlist: details are three-way merged; tracks are too, so additions from both sides survive. */
     fun mergePlaylist(base: Playlist?, l: Playlist, r: Playlist): Playlist {
-        fun <T> pick(b: T?, x: T, y: T) = if (x == y || x != b && y == b) x else if (x == b) y else x
+        fun <T> pick(b: T?, x: T, y: T) = if (x == b) y else x // ours unless only they changed it
         val bs = base?.songs.orEmpty().toSet()
         val songs = when {
             l.songs == r.songs || r.songs == base?.songs -> l.songs
             l.songs == base?.songs -> r.songs
             else -> { // our order; drop what they removed, add what they added; what we removed stays removed
-                val keep = l.songs.filter { it in bs && it in r.songs || it !in bs }
-                (keep + r.songs.filter { it !in bs }).distinct()
+                val rs = r.songs.toSet()
+                (l.songs.filter { it !in bs || it in rs } + r.songs.filter { it !in bs }).distinct()
             }
         }
         return Playlist(pick(base?.name, l.name, r.name), pick(base?.desc, l.desc, r.desc), pick(base?.sp, l.sp, r.sp), pick(base?.created, l.created, r.created), songs)
