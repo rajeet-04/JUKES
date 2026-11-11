@@ -55,6 +55,8 @@ fun FlatTrackRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRing()
+                .onMenuKey { if (actions.isNotEmpty()) menuOpen = true }
                 .pressScale(rowSource)
                 .clip(RoundedCornerShape(10.dp))
                 .onRightClick { menuOpen = true }

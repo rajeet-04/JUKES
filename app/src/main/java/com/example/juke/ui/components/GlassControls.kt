@@ -151,7 +151,7 @@ fun GlassModalBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        modifier = modifier,
+        modifier = modifier.arrowKeyFocus(),
         sheetState = sheetState,
         shape = GlassShapes.Sheet,
         containerColor = glassSheetColor(),

@@ -10,6 +10,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import com.example.juke.ui.components.arrowKeyFocus
 import androidx.compose.ui.platform.Configuration
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -84,15 +88,23 @@ fun main(args: Array<String>) {
             title = "JUKE",
             icon = androidx.compose.ui.res.loadImageBitmap(object {}.javaClass.getResourceAsStream("/juke_icon.png")!!).let { androidx.compose.ui.graphics.painter.BitmapPainter(it) },
             state = state,
+            // any key press switches the focus ring on; a mouse press (below) switches it off
+            onPreviewKeyEvent = { e -> if (e.type == KeyEventType.KeyDown) com.example.juke.ui.components.KeyboardNav.active = true; false },
             onKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown) false else {
                     val pm = com.example.juke.services.PlaybackManager.getInstance(Application.instance)
                     val mod = e.isMetaPressed || e.isCtrlPressed
                     when {
-                        mod && e.key == Key.K -> { TopSearch.focusTrigger++; true }
+                        mod && (e.key == Key.K || e.key == Key.F) -> { TopSearch.focusTrigger++; true }
                         TopSearch.typing -> false
                         e.key == Key.Escape -> BackDispatcher.back()
+                        // back, like a browser: Alt+Left, or Cmd/Ctrl+[
+                        (e.isAltPressed && e.key == Key.DirectionLeft) || (mod && e.key == Key.LeftBracket) -> BackDispatcher.back()
                         e.key == Key.Spacebar -> { pm.togglePlayPause(); true }
+                        e.isShiftPressed && !mod && e.key == Key.DirectionRight -> { pm.seekTo(pm.getCurrentPosition() + 10_000); true }
+                        e.isShiftPressed && !mod && e.key == Key.DirectionLeft -> { pm.seekTo(pm.getCurrentPosition() - 10_000); true }
+                        mod && e.key == Key.S -> { pm.toggleShuffle(); true }
+                        mod && e.key == Key.R -> { pm.toggleRepeatMode(); true }
                         mod && e.key == Key.DirectionRight -> { pm.skipToNext(); true }
                         mod && e.key == Key.DirectionLeft -> { pm.skipToPrevious(); true }
                         mod && e.key == Key.DirectionUp -> { pm.setVolume(pm.volumeFlow.value + 0.1f); true }
@@ -120,8 +132,12 @@ fun main(args: Array<String>) {
             }
             CompositionLocalProvider(LocalViewModelStoreOwner provides DesktopViewModels, LocalConfiguration provides config,
                 LocalTitleInset provides (if (isMac && wide) 76.dp else 0.dp), LocalWindowScope provides this@Window) {
-                JukeApp()
-                ToastHost()
+                Box(Modifier.fillMaxSize().arrowKeyFocus { TopSearch.typing }.pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) { if (awaitPointerEvent(PointerEventPass.Initial).type == PointerEventType.Press) com.example.juke.ui.components.KeyboardNav.active = false } }
+                }) {
+                    JukeApp()
+                    ToastHost()
+                }
             }
         }
     }

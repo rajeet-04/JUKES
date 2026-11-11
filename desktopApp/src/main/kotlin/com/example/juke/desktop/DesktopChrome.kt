@@ -54,6 +54,7 @@ import com.example.juke.database.PlaylistEntity
 import com.example.juke.models.Track
 import com.example.juke.network.JukesApi
 import com.example.juke.ui.components.ActionMenu
+import com.example.juke.ui.components.focusRing
 import com.example.juke.ui.components.MenuAction
 import com.example.juke.ui.components.PlaylistCover
 import com.example.juke.ui.components.libraryTrackActions
@@ -81,7 +82,7 @@ private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScop
 internal fun Tip(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 36.dp, tint: Color = Dim, selected: Boolean = false) {
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
-    Box(modifier.size(size).clip(CircleShape).background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.10f) else Color.Transparent)
+    Box(modifier.size(size).focusRing(CircleShape).clip(CircleShape).background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.10f) else Color.Transparent)
         .hoverable(src).clickable(interactionSource = src, indication = null, onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(icon, label, tint = if (selected) MaterialTheme.colorScheme.primary else if (hovered) MaterialTheme.colorScheme.onSurface else tint, modifier = Modifier.size(size * 0.55f))
     }
@@ -187,7 +188,7 @@ private fun QueueRowMenu(open: Boolean, onDismiss: () -> Unit, t: Track, index: 
 private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, labelAlpha: Float, tile: Color = Color.Gray, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.07f) else Color.Transparent)
+    Row(Modifier.fillMaxWidth().focusRing().clip(RoundedCornerShape(10.dp)).background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.07f) else Color.Transparent)
         .hoverable(src).clickable(interactionSource = src, indication = null, onClick = onClick).padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
         if (playlist != null) PlaylistCover(playlist, Modifier.size(48.dp), RoundedCornerShape(8.dp))
         else Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(Brush.linearGradient(listOf(tile, tile.copy(alpha = 0.45f)))), contentAlignment = Alignment.Center) {

@@ -69,6 +69,8 @@ fun SearchResultItemM3(
     )
     ListItem(
         modifier = Modifier
+            .focusRing()
+            .onMenuKey { if (!isDownloading) menuOpen = true }
             .pressScale(rowSource)
             .onRightClick { if (!isDownloading) menuOpen = true }
             .combinedClickable(
