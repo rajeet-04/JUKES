@@ -490,7 +490,8 @@ class PlaybackService : MediaLibraryService() {
     /**
      * Helper function to create validated MediaItem with artwork checking
      */
-    private fun createValidatedMediaItem(track: Track): MediaItem? {
+    private fun createValidatedMediaItem(t: Track): MediaItem? {
+        val track = t.withStreamPath(filesDir)
         if (track.localUri == null) return null
 
         // Check if it's a remote URL (http/https)
@@ -1705,7 +1706,8 @@ class PlaybackManager private constructor(private val context: Context) {
      * Helper function to create validated MediaItem with artwork checking
      */
     @OptIn(UnstableApi::class)
-    private fun createValidatedMediaItem(track: Track): MediaItem? {
+    private fun createValidatedMediaItem(t: Track): MediaItem? {
+        val track = t.withStreamPath(context.filesDir)
         if (track.localUri == null) return null
 
         val metadataBuilder = MediaMetadata.Builder()
@@ -3011,3 +3013,10 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 }
+
+/**
+ * A stream song whose file was evicted has no localUri. Point it at where the re-fetch writes it (by Spotify id)
+ * instead of dropping it from the queue; the player's missing-file recovery fetches it when it gets there.
+ */
+private fun Track.withStreamPath(filesDir: java.io.File): Track =
+    if (localUri == null && isStream && spotifyId != null) copy(localUri = java.io.File(filesDir, "stream_files/${uuid}_stream.mp3").absolutePath) else this
