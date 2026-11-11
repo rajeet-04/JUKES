@@ -378,9 +378,16 @@ fun JukeApp() {
                 }
             )
         }
+        val share = remember {
+            com.example.juke.ui.components.Share { url ->
+                java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(url), null)
+                android.widget.Toast.makeText(musicViewModel.getApplication(), "Link copied", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
         CompositionLocalProvider(
             LocalHazeState provides hazeState,
-            com.example.juke.ui.components.LocalOpenMedia provides openMedia
+            com.example.juke.ui.components.LocalOpenMedia provides openMedia,
+            com.example.juke.ui.components.LocalShare provides share
         ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),

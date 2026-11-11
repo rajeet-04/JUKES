@@ -92,6 +92,8 @@ fun LibraryTrackActionsSheet(
     onAlbum: (() -> Unit)? = null,
     onArtist: (() -> Unit)? = null,
     artUrl: String? = null,
+    /** Single song with a Spotify id only. */
+    onShare: (() -> Unit)? = null,
 ) {
     GlassModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState())
@@ -100,6 +102,7 @@ fun LibraryTrackActionsSheet(
             LibraryActionRow("Play next", "Immediately after the current song", JukeIcons.Play, enabled, onPlayNext)
             LibraryActionRow("Add to queue end", "After the songs already queued", JukeIcons.Queue, enabled, onQueueEnd)
             LibraryActionRow("Add to playlist", "Choose an existing playlist or create one", JukeIcons.PlaylistAdd, enabled, onPlaylist)
+            onShare?.let { LibraryActionRow("Share", "Send a Spotify link to this song", JukeIcons.Share, enabled, it) }
             onAlbum?.let { LibraryActionRow("Go to album", "Open this song's album", JukeIcons.Album, enabled, it) }
             onArtist?.let { LibraryActionRow("Go to artist", "Open $subtitle", JukeIcons.MusicNote, enabled, it) }
             HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)

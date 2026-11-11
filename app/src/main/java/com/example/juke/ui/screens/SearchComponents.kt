@@ -1,5 +1,6 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.components.onRightClick
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.juke.utils.playFromLine
 import androidx.compose.foundation.background
@@ -364,6 +365,7 @@ internal fun LocalTrackItem(
     var menuOpen by remember { mutableStateOf(false) }
     val open = com.example.juke.ui.components.LocalOpenMedia.current
     val haptic = com.example.juke.utils.rememberJukeHaptics()
+    val share = com.example.juke.ui.components.LocalShare.current
     if (menuOpen) com.example.juke.ui.components.TrackActionSheet(
         title = track.title, subtitle = track.artist, artUrl = track.thumbnailUri,
         onDismiss = { menuOpen = false },
@@ -371,6 +373,7 @@ internal fun LocalTrackItem(
             com.example.juke.ui.components.SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
             com.example.juke.ui.components.SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
             com.example.juke.ui.components.SheetAction("Add to playlist", JukeIcons.PlaylistAdd) { menuOpen = false; com.example.juke.ui.components.PlaylistAdder.open(track) },
+            track.spotifyId?.let { id -> com.example.juke.ui.components.SheetAction("Share", JukeIcons.Share) { menuOpen = false; share.link(com.example.juke.ui.components.spotifyLink("track", id)) } },
             track.albumSpotifyId?.let { id -> com.example.juke.ui.components.SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
             track.artistSpotifyIds?.firstOrNull()?.let { id -> com.example.juke.ui.components.SheetAction("Go to artist", JukeIcons.MusicNote) { menuOpen = false; open.artist(id) } },
         )
@@ -379,6 +382,7 @@ internal fun LocalTrackItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .onRightClick { menuOpen = true }
                 .combinedClickable(onLongClick = { haptic.heavyClick(); menuOpen = true }, onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
         ) {

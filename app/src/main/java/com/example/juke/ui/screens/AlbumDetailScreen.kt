@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.example.juke.ui.components.MenuAction
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.setValue
@@ -114,7 +115,8 @@ fun AlbumDetailScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(JukeIcons.Back, "Back")
                     }
-                }
+                },
+                actions = { com.example.juke.ui.components.ShareButton("album", album?.id) }
             )
         },
         containerColor = androidx.compose.ui.graphics.Color.Transparent
@@ -297,18 +299,19 @@ fun AlbumDetailScreen(
                     }
 
                     items(uiState.tracks) { track ->
-                        SwipeToAddNextContainer(
-                            onAddNext = {
-                                scope.launch {
-                                    val local = track.findOfflineTrack(offlineTracks)
-                                    if (local != null) musicViewModel.addNext(local)
-                                    else musicViewModel.queueSimplifiedTrackNext(track, album)
-                                }
+                        val addNext = {
+                            scope.launch {
+                                val local = track.findOfflineTrack(offlineTracks)
+                                if (local != null) musicViewModel.addNext(local)
+                                else musicViewModel.queueSimplifiedTrackNext(track, album)
                             }
-                        ) {
+                            Unit
+                        }
+                        SwipeToAddNextContainer(onAddNext = addNext) {
                             TrackItem(
                                 track = track,
                                 album = album,
+                                onPlayNext = addNext,
                                 isOffline = track.findOfflineTrack(offlineTracks) != null,
                                 onClick = {
                                     scope.launch {
@@ -336,9 +339,13 @@ private fun TrackItem(
     track: SpotifySimplifiedTrack,
     album: SpotifyAlbum,
     isOffline: Boolean,
+    onPlayNext: () -> Unit,
     onClick: () -> Unit
 ) {
     FlatTrackRow(
+        actions = listOf(MenuAction("Play", onClick), MenuAction("Play next", onPlayNext)) +
+            com.example.juke.ui.components.shareAction("track", track.id) +
+            com.example.juke.ui.components.mediaActions(album.id, track.artists.take(3).mapNotNull { a -> a.id?.let { a.name to it } }),
         imageUrl = album.images.lastOrNull()?.url,
         title = track.name,
         subtitle = track.artists.joinToString(", ") { it.name } + if (isOffline) " • Offline" else "",

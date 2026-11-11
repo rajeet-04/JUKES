@@ -4,7 +4,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.example.juke.ui.theme.pressScale
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.example.juke.ui.icons.JukeIcons
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
 /** Flat, dense track row shared by the album / artist / playlist detail screens (matches Library). */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FlatTrackRow(
     imageUrl: String?,
@@ -35,18 +44,24 @@ fun FlatTrackRow(
     subtitle: String,
     duration: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Long press, right click and the 3 dots open these. Empty: no menu. */
+    actions: List<MenuAction> = emptyList()
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     val rowSource = remember { MutableInteractionSource() }
     Column(modifier = modifier.fillMaxWidth()) {
+        Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(rowSource)
                 .clip(RoundedCornerShape(10.dp))
-                .clickable(
+                .onRightClick { menuOpen = true }
+                .combinedClickable(
                     interactionSource = rowSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
+                    onLongClick = if (actions.isEmpty()) null else ({ menuOpen = true }),
                     onClick = onClick
                 )
                 .heightIn(min = 48.dp)
@@ -86,6 +101,11 @@ fun FlatTrackRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 modifier = Modifier.padding(end = 8.dp)
             )
+            if (actions.isNotEmpty()) IconButton(onClick = { menuOpen = true }, Modifier.size(36.dp)) {
+                Icon(JukeIcons.More, "Options for $title", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        ActionMenu(menuOpen, { menuOpen = false }, actions)
         }
         HorizontalDivider(
             modifier = Modifier.padding(start = 60.dp),

@@ -75,6 +75,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyTrack
+import com.example.juke.ui.components.ActionMenu
+import com.example.juke.ui.components.MenuAction
+import com.example.juke.ui.components.libraryTrackActions
+import com.example.juke.ui.components.onRightClick
+import com.example.juke.ui.components.spotifyTrackActions
 import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassIconButton
@@ -208,7 +213,7 @@ private fun HomeFeed(
                                 MenuAction("Open album") { onAlbumClick(album) },
                                 MenuAction("Play") { musicViewModel.playAlbum(album, shuffle = false) },
                                 MenuAction("Shuffle") { musicViewModel.playAlbum(album, shuffle = true) }
-                            )
+                            ) + com.example.juke.ui.components.shareAction("album", album.id)
                         )
                     }
                 }
@@ -366,6 +371,7 @@ private fun ReleaseCard(album: SpotifyAlbum, onClick: () -> Unit, actions: List<
                 contentDescription =
                     "${album.name}, $kind by $artist${date?.let { ", released $it" }.orEmpty()}"
             }
+            .onRightClick { menuOpen = true }
             .combinedClickable(
                 role = Role.Button,
                 onClickLabel = "Open ${album.name}",
@@ -403,54 +409,6 @@ private fun ReleaseCard(album: SpotifyAlbum, onClick: () -> Unit, actions: List<
     }
 }
 
-/** One entry of a long-press menu. */
-private class MenuAction(val label: String, val run: () -> Unit)
-
-/** Long-press menu shown next to the pressed card or row. */
-@Composable
-private fun ActionMenu(expanded: Boolean, onDismiss: () -> Unit, actions: List<MenuAction>) {
-    if (actions.isEmpty()) return
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        actions.forEach { action ->
-            DropdownMenuItem(text = { Text(action.label) }, onClick = { onDismiss(); action.run() })
-        }
-    }
-}
-
-/** "Go to album" / "Go to <artist>" entries, only for ids the song actually carries. */
-@Composable
-private fun mediaActions(albumId: String?, artists: List<Pair<String, String>>): List<MenuAction> {
-    val open = com.example.juke.ui.components.LocalOpenMedia.current
-    return listOfNotNull(albumId?.let { MenuAction("Go to album") { open.album(it) } }) +
-        artists.map { (name, id) -> MenuAction("Go to $name") { open.artist(id) } }
-}
-
-/** Play now, play next, add to queue for a song that isn't in the library yet. */
-@Composable
-private fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewModel): List<MenuAction> {
-    val context = LocalContext.current
-    fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-    return listOf(
-        MenuAction("Play") { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
-        MenuAction("Play next") { musicViewModel.queueSpotifyTrack(track, next = true); say("${track.name} will play next") },
-        MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") },
-        MenuAction("Add to playlist") { com.example.juke.ui.components.PlaylistAdder.open(track) }
-    ) + mediaActions(track.album.id, track.artists.take(3).mapNotNull { a -> a.id?.let { a.name to it } })
-}
-
-/** Play now, play next, add to queue for a song already in the library. */
-@Composable
-private fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, play: () -> Unit): List<MenuAction> {
-    val context = LocalContext.current
-    fun say(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-    return listOf(
-        MenuAction("Play", play),
-        MenuAction("Play next") { musicViewModel.addNext(track); say("${track.title} will play next") },
-        MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") },
-        MenuAction("Add to playlist") { com.example.juke.ui.components.PlaylistAdder.open(track) }
-    ) + mediaActions(track.albumSpotifyId, listOfNotNull(track.artistSpotifyIds?.firstOrNull()?.let { track.artist.substringBefore(", ") to it }))
-}
-
 @Composable
 private fun RadioList(section: RadioSection, musicViewModel: MusicViewModel) {
     val haptic = rememberJukeHaptics()
@@ -467,6 +425,7 @@ private fun RadioList(section: RadioSection, musicViewModel: MusicViewModel) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onRightClick { menuOpen = true }
                     .combinedClickable(
                         role = Role.Button,
                         onClickLabel = "Play ${track.name}",
@@ -574,6 +533,7 @@ private fun CoverCard(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .glassPane(GlassShapes.Card, GlassLevel.Regular)
             .semantics(mergeDescendants = true) { contentDescription = description }
+            .onRightClick { if (actions.isNotEmpty()) menuOpen = true }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,

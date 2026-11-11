@@ -45,6 +45,7 @@ fun SearchResultItemM3(
     val context = LocalContext.current
     val open = LocalOpenMedia.current
     var menuOpen by remember { mutableStateOf(false) }
+    val share = LocalShare.current
     // Prefer the smallest image that is still at least 64px wide so the 48dp slot
     // doesn't upscale a tiny thumbnail. Fall back to the last entry if none qualify.
     val thumbnailUrl = track.album.images
@@ -60,6 +61,7 @@ fun SearchResultItemM3(
             SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
             SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
             SheetAction("Add to playlist", JukeIcons.PlaylistAdd) { menuOpen = false; PlaylistAdder.open(track) },
+            track.id?.let { id -> SheetAction("Share", JukeIcons.Share) { menuOpen = false; share.link(spotifyLink("track", id)) } },
             track.album.id?.let { id -> SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
         ) + track.artists.take(3).mapNotNull { a -> // ponytail: first 3 credited artists
             a.id?.let { id -> SheetAction("Go to ${a.name}", JukeIcons.MusicNote) { menuOpen = false; open.artist(id) } }
@@ -68,6 +70,7 @@ fun SearchResultItemM3(
     ListItem(
         modifier = Modifier
             .pressScale(rowSource)
+            .onRightClick { if (!isDownloading) menuOpen = true }
             .combinedClickable(
                 interactionSource = rowSource,
                 indication = androidx.compose.foundation.LocalIndication.current,

@@ -53,7 +53,11 @@ import coil.compose.AsyncImage
 import com.example.juke.database.PlaylistEntity
 import com.example.juke.models.Track
 import com.example.juke.network.JukesApi
+import com.example.juke.ui.components.ActionMenu
+import com.example.juke.ui.components.MenuAction
 import com.example.juke.ui.components.PlaylistCover
+import com.example.juke.ui.components.libraryTrackActions
+import com.example.juke.ui.components.onRightClick
 import com.example.juke.ui.components.playerArtworkEndpoint
 import com.example.juke.ui.components.playerBarEndpoint
 import com.example.juke.ui.components.playerStage
@@ -172,6 +176,13 @@ fun LibrarySidebar(libraryViewModel: LibraryViewModel, collapsed: Boolean, onTog
     }
 }
 
+/** Right-click menu for a song in a queue list: the usual song actions, plus taking it out of the queue (not during a Jam). */
+@Composable
+private fun QueueRowMenu(open: Boolean, onDismiss: () -> Unit, t: Track, index: Int, vm: MusicViewModel) {
+    val remove = if (com.example.juke.jam.JamSession.state.value.active) emptyList() else listOf(MenuAction("Remove from queue") { vm.removeFromQueue(t.uuid, index) })
+    ActionMenu(open, onDismiss, libraryTrackActions(t, vm) { vm.playTrackFromQueue(t, index) } + remove)
+}
+
 @Composable
 private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, labelAlpha: Float, tile: Color = Color.Gray, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
@@ -288,10 +299,12 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                 }
                 itemsIndexed(next, key = { i, t -> "q_${start + i}_${t.uuid}" }) { i, t ->
                     val last = i == next.lastIndex
+                    var menu by remember { mutableStateOf(false) }
                     Box(Modifier.fillMaxWidth()
                         .clip(if (last) RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp) else RoundedCornerShape(0.dp)).background(card)
                         .padding(start = 14.dp, end = 14.dp, bottom = if (last) 10.dp else 0.dp)) {
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { musicViewModel.playTrackFromQueue(t, start + i) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).onRightClick { menu = true }.clickable { musicViewModel.playTrackFromQueue(t, start + i) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            QueueRowMenu(menu, { menu = false }, t, start + i, musicViewModel)
                             AsyncImage(t.thumbnailUri, null, Modifier.size(42.dp).clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop)
                             Spacer(Modifier.width(10.dp))
                             Column { Text(t.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(t.artist, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -445,10 +458,12 @@ private fun PlayerQueue(state: MusicUiState, musicViewModel: MusicViewModel) {
             val playing = i == cur
             val src = remember { MutableInteractionSource() }
             val hovered by src.collectIsHoveredAsState()
+            var menu by remember { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                 .background(if (playing) MaterialTheme.colorScheme.primary.copy(0.16f) else if (hovered) MaterialTheme.colorScheme.onSurface.copy(0.07f) else Color.Transparent)
-                .hoverable(src).clickable(interactionSource = src, indication = null) { musicViewModel.playTrackFromQueue(t, i) }.padding(horizontal = 8.dp, vertical = 7.dp),
+                .hoverable(src).onRightClick { menu = true }.clickable(interactionSource = src, indication = null) { musicViewModel.playTrackFromQueue(t, i) }.padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically) {
+                QueueRowMenu(menu, { menu = false }, t, i, musicViewModel)
                 AsyncImage(t.thumbnailUri, null, Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {

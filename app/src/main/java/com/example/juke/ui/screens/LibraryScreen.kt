@@ -157,6 +157,15 @@ fun LibraryScreen(
     // Changed to support multiple tracks
     var tracksForPlaylistDialog by remember { mutableStateOf<List<Track>?>(null) }
     val openMedia = com.example.juke.ui.components.LocalOpenMedia.current
+    val share = com.example.juke.ui.components.LocalShare.current
+    val shareContext = androidx.compose.ui.platform.LocalContext.current
+    // a link to a copy of the playlist; used by the playlist list's menu and the opened playlist's header
+    val sharePlaylist: (com.example.juke.database.PlaylistEntity) -> Unit = { p ->
+        libraryViewModel.sharePlaylist(p) { link ->
+            if (link == null) android.widget.Toast.makeText(shareContext, "Couldn't create a link for this playlist", android.widget.Toast.LENGTH_SHORT).show()
+            else share.link(link)
+        }
+    }
     var tracksForActions by remember { mutableStateOf<List<Track>?>(null) }
     var tracksForDelete by remember { mutableStateOf<List<Track>?>(null) }
     var queueActionBusy by remember { mutableStateOf(false) }
@@ -250,23 +259,6 @@ fun LibraryScreen(
                                     showLibraryMenu = false
                                     libraryViewModel.toggleSortSheet()
                                 })
-                                DropdownMenuItem(
-                                    text = { Text("Play all") },
-                                    enabled = uiState.tracks.isNotEmpty(),
-                                    onClick = {
-                                        showLibraryMenu = false
-                                        musicViewModel.setQueue(uiState.tracks, startIndex = 0)
-                                    })
-                                DropdownMenuItem(
-                                    text = { Text("Shuffle all") },
-                                    enabled = uiState.tracks.isNotEmpty(),
-                                    onClick = {
-                                        showLibraryMenu = false
-                                        musicViewModel.setQueue(
-                                            uiState.tracks.shuffled(),
-                                            startIndex = 0
-                                        )
-                                    })
                                 DropdownMenuItem(
                                     text = { Text("Add all to queue") },
                                     enabled = uiState.tracks.isNotEmpty(),
@@ -473,27 +465,9 @@ fun LibraryScreen(
                                                     musicViewModel
                                                 )
                                             })
-                                        val shareContext = androidx.compose.ui.platform.LocalContext.current
                                         DropdownMenuItem(
                                             text = { Text("Share link") },
-                                            onClick = {
-                                                menuOpen = false
-                                                libraryViewModel.sharePlaylist(playlist) { link ->
-                                                    if (link == null) {
-                                                        android.widget.Toast.makeText(
-                                                            shareContext,
-                                                            "Couldn't create a link for this playlist",
-                                                            android.widget.Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    } else {
-                                                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                            type = "text/plain"
-                                                            putExtra(android.content.Intent.EXTRA_TEXT, link)
-                                                        }
-                                                        shareContext.startActivity(android.content.Intent.createChooser(send, null))
-                                                    }
-                                                }
-                                            })
+                                            onClick = { menuOpen = false; sharePlaylist(playlist) })
                                         DropdownMenuItem(
                                             text = { Text("Delete playlist") },
                                             onClick = {
@@ -627,9 +601,20 @@ fun LibraryScreen(
                             PlaylistHeader(
                                 importStatus = importStatus[playlist.id],
                                 playlist = playlist,
-                                onEditClick = { showEditPlaylistDialog = true }
+                                onEditClick = { showEditPlaylistDialog = true },
+                                onShare = { sharePlaylist(playlist) },
+                                onShuffle = { musicViewModel.setQueue(uiState.tracks.shuffled(), startIndex = 0) }.takeIf { uiState.tracks.isNotEmpty() },
+                                onPlay = { musicViewModel.setQueue(uiState.tracks, startIndex = 0) }
                             )
                         }
+                    }
+
+                    if (uiState.tracks.isNotEmpty() && uiState.selectedPlaylist == null) item(key = "play_shuffle") {
+                        com.example.juke.ui.components.PlayShuffleRow(
+                            title = "${uiState.tracks.size} songs",
+                            onShuffle = { musicViewModel.setQueue(uiState.tracks.shuffled(), startIndex = 0) },
+                            onPlay = { musicViewModel.setQueue(uiState.tracks, startIndex = 0) }
+                        )
                     }
 
                     // Compact download banner — collapses all active downloads into one slim row
@@ -845,6 +830,7 @@ Box(
             onDelete = { tracksForActions = null; tracksForDelete = tracks },
             onDismiss = { if (!queueActionBusy) tracksForActions = null },
             artUrl = tracks.singleOrNull()?.thumbnailUri,
+            onShare = tracks.singleOrNull()?.spotifyId?.let { id -> { tracksForActions = null; share.link(com.example.juke.ui.components.spotifyLink("track", id)) } },
             onAlbum = tracks.singleOrNull()?.albumSpotifyId?.let { id -> { tracksForActions = null; openMedia.album(id) } },
             onArtist = tracks.singleOrNull()?.artistSpotifyIds?.firstOrNull()?.let { id -> { tracksForActions = null; openMedia.artist(id) } }
         )
@@ -984,7 +970,11 @@ private fun SortBottomSheet(
 private fun PlaylistHeader(
     importStatus: com.example.juke.services.ImportStatus?,
     playlist: com.example.juke.database.PlaylistEntity,
-    onEditClick: () -> Unit
+    onEditClick: () -> Unit,
+    onShare: () -> Unit,
+    /** Null while the playlist has no songs to play. */
+    onShuffle: (() -> Unit)?,
+    onPlay: () -> Unit
 ) {
     Column {
     GlassCard(
@@ -1018,23 +1008,24 @@ private fun PlaylistHeader(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                // Edit Button
-                GlassButton(
-                    onClick = onEditClick,
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit Playlist",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Edit", style = MaterialTheme.typography.labelMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    GlassButton(
+                        onClick = onEditClick,
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Playlist",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Edit", style = MaterialTheme.typography.labelMedium)
+                    }
+                    androidx.compose.material3.IconButton(onClick = onShare, modifier = Modifier.size(40.dp)) {
+                        Icon(JukeIcons.Share, "Share playlist", Modifier.size(20.dp))
+                    }
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = JukeIcons.Queue,
                         contentDescription = null,
@@ -1044,8 +1035,11 @@ private fun PlaylistHeader(
                     Text(
                         text = "${playlist.trackCount} tracks",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 8.dp).weight(1f)
                     )
+                    // the controls sit in the card they play, on the info line
+                    if (onShuffle != null) com.example.juke.ui.components.PlayShuffle(onShuffle, onPlay)
                 }
             }
         }
