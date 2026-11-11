@@ -72,7 +72,7 @@ object LibrarySync {
     fun key(t: TrackEntity) = t.spotifyId ?: t.ytVideoId ?: t.uuid
 
     /** Per-key three-way merge. Null [base] = first sync: [remote] wins conflicts. */
-    fun <V> merge(base: Map<String, V>?, local: Map<String, V>, remote: Map<String, V>): Map<String, V> {
+    fun <V> merge(base: Map<String, V>?, local: Map<String, V>, remote: Map<String, V>, both: (V?, V, V) -> V = { _, l, _ -> l }): Map<String, V> {
         val out = LinkedHashMap<String, V>()
         for (k in local.keys + remote.keys) {
             val l = local[k]; val r = remote[k]; val b = base?.get(k)
@@ -81,15 +81,31 @@ object LibrarySync {
                 l == r -> l
                 l == b -> r          // unchanged here: take theirs (including their removal)
                 r == b -> l          // unchanged there: keep ours (including our removal)
-                else -> l ?: r       // both changed: ours, and an edit beats a removal
+                l != null && r != null -> both(b, l, r) // both edited it: [both] decides (default: ours)
+                else -> l ?: r       // one edited, one removed: the edit wins
             }
             if (v != null) out[k] = v
         }
         return out
     }
 
+    /** Both devices edited this playlist: details are three-way merged; tracks are too, so additions from both sides survive. */
+    fun mergePlaylist(base: Playlist?, l: Playlist, r: Playlist): Playlist {
+        fun <T> pick(b: T?, x: T, y: T) = if (x == y || x != b && y == b) x else if (x == b) y else x
+        val bs = base?.songs.orEmpty().toSet()
+        val songs = when {
+            l.songs == r.songs || r.songs == base?.songs -> l.songs
+            l.songs == base?.songs -> r.songs
+            else -> { // our order; drop what they removed, add what they added; what we removed stays removed
+                val keep = l.songs.filter { it in bs && it in r.songs || it !in bs }
+                (keep + r.songs.filter { it !in bs }).distinct()
+            }
+        }
+        return Playlist(pick(base?.name, l.name, r.name), pick(base?.desc, l.desc, r.desc), pick(base?.sp, l.sp, r.sp), pick(base?.created, l.created, r.created), songs)
+    }
+
     fun merge(base: Doc?, local: Doc, remote: Doc) = Doc(
-        songs = merge(base?.songs, local.songs, remote.songs), playlists = merge(base?.playlists, local.playlists, remote.playlists),
+        songs = merge(base?.songs, local.songs, remote.songs), playlists = merge(base?.playlists, local.playlists, remote.playlists, ::mergePlaylist),
         prefs = merge(base?.prefs, local.prefs, remote.prefs), types = remote.types + local.types
     )
 

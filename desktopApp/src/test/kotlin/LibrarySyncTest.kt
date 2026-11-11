@@ -32,6 +32,26 @@ class LibrarySyncTest {
         assertEquals(theirs.copy(fav = true), doc.songs["sp1"]) // their details, our like: equal docs once likes match, so no re-upload
     }
 
+    private fun pl(vararg songs: String, name: String = "P") = LibrarySync.Playlist(name, songs = songs.toList())
+    private fun mp(b: LibrarySync.Playlist?, l: LibrarySync.Playlist, r: LibrarySync.Playlist) = LibrarySync.mergePlaylist(b, l, r)
+
+    @Test fun twoDevicesAddingToOnePlaylistKeepBothAdditions() =
+        assertEquals(listOf("a", "b", "x", "y"), mp(pl("a", "b"), pl("a", "b", "x"), pl("a", "b", "y")).songs)
+
+    @Test fun aRemovalOnOneSideAndAnAddOnTheOtherBothApply() =
+        assertEquals(listOf("b", "y"), mp(pl("a", "b"), pl("b"), pl("a", "b", "y")).songs)
+
+    @Test fun aRenameAndATrackAddMerge() {
+        val m = mp(pl("a"), pl("a", name = "New"), pl("a", "b"))
+        assertEquals("New", m.name); assertEquals(listOf("a", "b"), m.songs)
+    }
+
+    @Test fun mergedPlaylistsGoThroughTheDocMerge() {
+        val base = LibrarySync.Doc(playlists = mapOf("p" to pl("a")))
+        val out = LibrarySync.merge(base, LibrarySync.Doc(playlists = mapOf("p" to pl("a", "x"))), LibrarySync.Doc(playlists = mapOf("p" to pl("a", "y"))))
+        assertEquals(listOf("a", "x", "y"), out.playlists["p"]?.songs)
+    }
+
     @Test fun aSyncThatWouldWipeTheLibraryIsRefused() {
         val songs = (1..40).associate { "s$it" to LibrarySync.Song("u$it", "T$it", "A", fav = true) }
         val local = LibrarySync.Doc(songs = songs)
