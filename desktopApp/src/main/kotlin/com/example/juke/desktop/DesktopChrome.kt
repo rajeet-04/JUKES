@@ -14,6 +14,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material3.*
@@ -49,6 +52,9 @@ import com.example.juke.database.PlaylistEntity
 import com.example.juke.models.Track
 import com.example.juke.network.JukesApi
 import com.example.juke.ui.components.PlaylistCover
+import com.example.juke.ui.components.playerArtworkEndpoint
+import com.example.juke.ui.components.playerBarEndpoint
+import com.example.juke.ui.components.playerStage
 import com.example.juke.ui.components.player.PlaybackSeekSlider
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.parseSyncedLyrics
@@ -292,11 +298,11 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
         musicViewModel.updateProgress()
         while (state.isPlaying) { kotlinx.coroutines.delay(250); musicViewModel.updateProgress() }
     }
-    Row(modifier.fillMaxWidth().height(100.dp).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().height(100.dp).playerBarEndpoint().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         // left: what's playing
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             if (track != null) {
-                AsyncImage(track.thumbnailUri, null, Modifier.size(58.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onFullscreen), contentScale = ContentScale.Crop)
+                AsyncImage(track.thumbnailUri, null, Modifier.size(58.dp).playerArtworkEndpoint(expanded = false).clip(RoundedCornerShape(8.dp)).clickable(onClick = onFullscreen), contentScale = ContentScale.Crop)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f, fill = false)) {
                     Text(track.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -388,7 +394,30 @@ private fun PlayerChip(icon: ImageVector, label: String, selected: Boolean, onCl
 @Composable
 private fun PlayerQueue(state: MusicUiState, musicViewModel: MusicViewModel) {
     val cur = state.queueIndex
+    var showTools by remember { mutableStateOf(false) }
+    var saveQueue by remember { mutableStateOf(false) }
+    val pending by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
+    val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.align(Alignment.End)) {
+            IconButton(onClick = { showTools = true }) { Icon(Icons.Rounded.MoreVert, "Queue options") }
+            DropdownMenu(expanded = showTools, onDismissRequest = { showTools = false }) {
+                listOf("Shuffle upcoming" to MusicViewModel.QueueTool.SHUFFLE_UPCOMING,
+                    "Sort upcoming A–Z" to MusicViewModel.QueueTool.SORT_UPCOMING,
+                    "Clear played" to MusicViewModel.QueueTool.CLEAR_PLAYED).forEach { (label, tool) ->
+                    DropdownMenuItem(text = { Text(label) }, enabled = !jam.active, onClick = { showTools = false; musicViewModel.applyQueueTool(tool) })
+                }
+                DropdownMenuItem(text = { Text("Save queue as playlist") }, enabled = !jam.active, onClick = { showTools = false; saveQueue = true })
+            }
+        }
+        if (saveQueue) com.example.juke.ui.components.player.SaveQueueDialog(
+            initialName = remember { musicViewModel.suggestedQueuePlaylistName() },
+            readyCount = state.queue.distinctBy { it.uuid }.size, waitingCount = pending.size,
+            onDismiss = { saveQueue = false },
+            onSave = { name, includeWaiting -> saveQueue = false; musicViewModel.saveQueueAsPlaylist(name, includeWaiting) })
     if (state.queue.isEmpty()) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("The queue is empty", color = Dim) }; return }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val rowHeightPx = with(density) { 66.dp.toPx() }
     val list = rememberLazyListState(initialFirstVisibleItemIndex = (cur - 1).coerceIn(0, state.queue.lastIndex))
     LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp), list, contentPadding = PaddingValues(bottom = 16.dp)) {
         itemsIndexed(state.queue, key = { i, t -> "pq_${i}_${t.uuid}" }) { i, t ->
@@ -406,8 +435,20 @@ private fun PlayerQueue(state: MusicUiState, musicViewModel: MusicViewModel) {
                     Text(t.artist, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (playing) Icon(JukeIcons.Play, "Playing", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                else if (!jam.active) {
+                    Tip(Icons.Rounded.Delete, "Remove from queue", { musicViewModel.removeFromQueue(t.uuid, i) })
+                    var drag by remember(i, t.uuid) { mutableFloatStateOf(0f) }
+                    Icon(Icons.Rounded.DragHandle, "Drag to reorder", Modifier.size(36.dp).pointerInput(i, state.queue.size, cur) {
+                        detectDragGestures(onDragStart = { drag = 0f }, onDragCancel = { drag = 0f }, onDragEnd = {
+                            val target = (i + kotlin.math.round(drag / rowHeightPx).toInt()).coerceIn(0, state.queue.lastIndex)
+                            if (target != i && (i < cur) == (target < cur) && target != cur) musicViewModel.moveInQueue(i, target)
+                            drag = 0f
+                        }) { change, amount -> change.consume(); drag += amount.y }
+                    }, tint = Dim)
+                }
             }
         }
+    }
     }
 }
 
@@ -428,10 +469,11 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
         var copied by remember { mutableStateOf(false) }
         LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(1800); copied = false } }
         // art takes whatever height the controls leave; the glass pane beside it takes the rest of the width
-        Row(Modifier.fillMaxSize().padding(start = 48.dp, end = 48.dp, top = 68.dp, bottom = 36.dp), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+        Row(Modifier.fillMaxSize().playerStage(0.25f, 0.8f, 0.dp).padding(start = 32.dp, end = 32.dp, top = 68.dp, bottom = 36.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Column(Modifier.weight(0.9f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.weight(1f).fillMaxWidth().widthIn(max = 760.dp), contentAlignment = Alignment.Center) {
-                    AsyncImage(track.thumbnailUri, track.title, Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true)
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().widthIn(max = 760.dp), contentAlignment = Alignment.Center) {
+                    val artworkSize = minOf(maxWidth, maxHeight)
+                    AsyncImage(track.thumbnailUri, track.title, Modifier.size(artworkSize).playerArtworkEndpoint(expanded = true)
                         .glassPane(RoundedCornerShape(22.dp), GlassLevel.Thick).clip(RoundedCornerShape(22.dp)), contentScale = ContentScale.Crop)
                 }
                 Spacer(Modifier.height(22.dp))
@@ -458,10 +500,9 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                 }
             }
             Column(Modifier.weight(1.1f).fillMaxHeight().glassPane(RoundedCornerShape(26.dp), GlassLevel.Regular)) {
-                Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PlayerChip(JukeIcons.Lyrics, "Lyrics", tab == PlayerTab.Lyrics) { tab = PlayerTab.Lyrics }
                     PlayerChip(JukeIcons.Queue, "Up next", tab == PlayerTab.Queue) { tab = PlayerTab.Queue }
-                    Spacer(Modifier.weight(1f))
                     if (track.isStream) PlayerChip(JukeIcons.Download, "Download", false) { musicViewModel.promoteTrackToDownload(track) }
                     PlayerChip(MixIcon, "Mix", false) { musicViewModel.startRadio(); tab = PlayerTab.Queue }
                     if (track.spotifyId != null) PlayerChip(if (copied) JukeIcons.Check else JukeIcons.Share, if (copied) "Link copied" else "Share", copied) {
