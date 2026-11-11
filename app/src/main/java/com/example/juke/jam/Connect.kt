@@ -73,6 +73,7 @@ object Connect {
 
     private const val TAG = "Connect"
     private const val QUEUE_SENT = 50
+    private const val QUEUE_BEHIND = 10 // played songs kept before the current one, so the order survives a handoff
     private const val SYNC_EVERY_MS = 10 * 60_000L
     private const val DRIFT_MS = 3000L // a jump this big from where we said we'd be is a seek: tell the others
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
@@ -123,6 +124,14 @@ object Connect {
     /** Called after this device saved the library, so the others fetch it now. */
     fun librarySaved() = send(Out("synced"))
     fun requestSync() { syncNow.trySend(Unit) }
+
+    private fun same(a: Song, b: Song) = (a.spotifyId != null && a.spotifyId == b.spotifyId) || (a.yt != null && a.yt == b.yt) || (a.title == b.title && a.artist == b.artist)
+
+    /** [queue] as it should travel: the song playing now first, then what follows it. The position belongs to that song, so it must lead. */
+    fun currentFirst(cur: Song, queue: List<Song>): List<Song> {
+        val i = queue.indexOfFirst { same(it, cur) }
+        return if (i == 0) queue else listOf(cur) + (if (i > 0) queue.drop(i + 1) else queue)
+    }
 
     private fun Track.toSong() = Song(title, artist, durationSec, thumbnailUri?.takeIf { it.startsWith("http") }, spotifyId, ytVideoId)
 
@@ -190,12 +199,18 @@ object Connect {
             val pos = pm.getCurrentPosition()
             val song = cur.toSong()
             val expected = last?.let { (it.posMs ?: 0) + if (it.playing == true) System.currentTimeMillis() - lastAt else 0 } ?: 0
-            val changed = last == null || last.track != song || last.playing != playing || last.index != ui.queueIndex || (playing && abs(pos - expected) > DRIFT_MS)
+            // the queue exactly as it is here (played songs before the current one included), windowed to what fits in a message
+            val full = ui.queue.map { it.toSong() }
+            val at = ui.queueIndex
+            val exact = at in full.indices && same(full[at], song)
+            val start = if (exact) maxOf(0, at - QUEUE_BEHIND) else 0
+            val queue = (if (exact) full.drop(start) else currentFirst(song, full.drop(maxOf(at, 0)))).take(QUEUE_SENT)
+            val index = if (exact) at - start else 0
+            queueBase = if (exact) start else maxOf(at, 0)
+            // a reordered, removed or added song counts too, not only a new song
+            val changed = last == null || last.track != song || last.playing != playing || last.index != index || last.queue != queue || (playing && abs(pos - expected) > DRIFT_MS)
             if (!changed) continue
-            val base = maxOf(ui.queueIndex, 0)
-            queueBase = base
-            val queue = (if (ui.queue.isEmpty()) listOf(cur) else ui.queue.drop(base)).take(QUEUE_SENT).map { it.toSong() }
-            val out = Out("state", track = song, queue = queue, index = ui.queueIndex, posMs = pos, playing = playing)
+            val out = Out("state", track = song, queue = queue, index = index, posMs = pos, playing = playing)
             send(out); last = out; lastAt = System.currentTimeMillis()
         }
     }
@@ -235,12 +250,20 @@ object Connect {
     /** Start the other device's queue here at its position. */
     private suspend fun take(vm: MusicViewModel, s: State, from: String): Boolean {
         val c = vm.getApplication<Application>()
-        val tracks = playable(c, s.queue)
-        val first = tracks.firstOrNull() ?: run { _message.value = "Couldn't play that queue here"; return false }
+        val track = s.track ?: s.queue.getOrNull(s.index) ?: s.queue.firstOrNull() ?: run { _message.value = "Couldn't play that queue here"; return false }
+        // the queue as the other device holds it; its current song is at s.index (found by identity, else put in front)
+        val at = s.index.takeIf { s.queue.getOrNull(it)?.let { q -> same(q, track) } == true } ?: s.queue.indexOfFirst { same(it, track) }
+        val songs = if (at >= 0) s.queue else listOf(track) + s.queue
+        val cur = maxOf(at, 0)
+        val resolved = resolve(c, songs)
+        // the song playing there must be the one that starts here: never fall through to another at the wrong position
+        val first = resolved[cur] ?: run { _message.value = "Couldn't play \"${songs[cur].title}\" here"; return false }
+        val tracks = resolved.filterNotNull()
+        val startIndex = resolved.take(cur).count { it != null }
         _message.value = "Playing here from ${from.ifBlank { s.activeName }}…"
         val startAt = livePos(s)
         val sentAt = System.currentTimeMillis()
-        vm.playFromLine(first, startAt) { at -> vm.setQueue(tracks, 0, startPositionMs = at + (System.currentTimeMillis() - sentAt)) }
+        vm.playFromLine(first, startAt) { pos -> vm.setQueue(tracks, startIndex, startPositionMs = pos + (System.currentTimeMillis() - sentAt)) }
         _message.value = ""
         return true
     }
@@ -249,12 +272,15 @@ object Connect {
      * Songs from another device as tracks this one can play: the local copy when the song is saved here,
      * else a stream entry the player fetches when it gets to it (needs a Spotify id; others are left out).
      */
-    suspend fun playable(c: android.content.Context, songs: List<Song>): List<Track> {
+    suspend fun playable(c: android.content.Context, songs: List<Song>): List<Track> = resolve(c, songs).filterNotNull()
+
+    /** One entry per song, in order; null for a song this device can't play. */
+    suspend fun resolve(c: android.content.Context, songs: List<Song>): List<Track?> {
         val dao = MusicDatabase.getDatabase(c).trackDao()
         val local = dao.getAllTracks() + dao.getStreamTracks()
         val bySp = local.filter { it.spotifyId != null }.associateBy { it.spotifyId }
         val byYt = local.filter { it.ytVideoId != null }.associateBy { it.ytVideoId }
-        return songs.mapNotNull { q ->
+        return songs.map { q ->
             (q.spotifyId?.let { bySp[it] } ?: q.yt?.let { byYt[it] })?.toTrack()
                 ?: q.spotifyId?.let { pendingStream(c, UUID.randomUUID().toString().replace("-", ""), q.title, q.artist, q.durationSec, q.thumb, it, q.yt) }
         }
