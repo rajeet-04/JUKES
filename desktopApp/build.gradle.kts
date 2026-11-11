@@ -63,7 +63,7 @@ val genBuildConfig by tasks.registering {
             package com.example.juke
             object BuildConfig {
                 const val DEBUG = false
-                const val VERSION_NAME = "3.0.1-beta"
+                const val VERSION_NAME = "3.0.1-beta-unreleased"
                 const val VERSION_CODE = 29
                 const val SPOTIFY_TOKEN_URL = "${p("SPOTIFY_TOKEN_URL", "https://spotdown-kv-worker.meek.workers.dev/spotify-token")}"
                 const val SHARE_BASE_URL = "${p("SHARE_BASE_URL", "https://j.rajeet.in")}"
@@ -161,6 +161,9 @@ tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
 compose.desktop.application {
     mainClass = "com.example.juke.desktop.MainKt"
     // a native crash (JNA, audio, graphics) kills the JVM; this is where it leaves its log (see NativeCrash.kt)
+    // JVM defaults are G1 and a heap ceiling of a quarter of RAM, and a ~100 MB young generation whose pages all stay resident.
+    // The live heap here is ~20 MB, so: leanest collector, a cap, and a young generation that fits the churn.
+    jvmArgs += listOf("-XX:+UseSerialGC", "-Xmx768m", "-Xmn24m")
     jvmArgs += "-XX:ErrorFile=${if (os.isWindows) "C:/Windows/Temp" else "/tmp"}/juke-hs_err_%p.log"
     buildTypes.release.proguard {
         isEnabled = true

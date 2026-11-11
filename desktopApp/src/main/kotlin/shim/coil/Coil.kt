@@ -17,7 +17,27 @@ import okhttp3.Request
 
 /** Coil-shaped image loader: memory LRU + on-disk byte cache, http(s)/file/content paths. */
 class ImageLoader {
-    private val mem = object : LinkedHashMap<String, ImageBitmap>(64, .75f, true) { override fun removeEldestEntry(e: MutableMap.MutableEntry<String, ImageBitmap>?) = size > 120 }
+    // Bounded by bytes, not count: decoded covers are native memory (w*h*4 each), so 120 full-size ones were ~200 MB.
+    private val mem = LinkedHashMap<String, ImageBitmap>(64, .75f, true)
+    private var memBytes = 0L
+    private fun put(k: String, b: ImageBitmap) = synchronized(mem) {
+        mem.put(k, b)?.let { memBytes -= it.width.toLong() * it.height * 4 }
+        memBytes += b.width.toLong() * b.height * 4
+        val it = mem.entries.iterator()
+        while (memBytes > MEM_BUDGET && mem.size > 1 && it.hasNext()) { val e = it.next(); memBytes -= e.value.width.toLong() * e.value.height * 4; it.remove() }
+    }
+    /** Covers are shown at most ~500 px wide; decode no bigger than [MAX_SIDE] (raster copy, so the encoded original is released). */
+    private fun decode(bytes: ByteArray): ImageBitmap {
+        val img = org.jetbrains.skia.Image.makeFromEncoded(bytes)
+        val scale = minOf(1f, MAX_SIDE / maxOf(img.width, img.height))
+        if (scale >= 1f) return img.toComposeImageBitmap()
+        val w = (img.width * scale).toInt().coerceAtLeast(1); val h = (img.height * scale).toInt().coerceAtLeast(1)
+        return org.jetbrains.skia.Surface.makeRasterN32Premul(w, h).use { surface ->
+            surface.canvas.drawImageRect(img, org.jetbrains.skia.Rect.makeWH(img.width.toFloat(), img.height.toFloat()), org.jetbrains.skia.Rect.makeWH(w.toFloat(), h.toFloat()), org.jetbrains.skia.SamplingMode.MITCHELL, null, true)
+            img.close()
+            surface.makeImageSnapshot().toComposeImageBitmap()
+        }
+    }
     private val disk by lazy { File(Context.dataDir, "cache/img").also { it.mkdirs() } }
     fun cached(key: String): ImageBitmap? = synchronized(mem) { mem[key] }
 
@@ -32,7 +52,7 @@ class ImageLoader {
                     src.startsWith("file:") -> File(java.net.URI(src)).readBytes()
                     else -> File(src).readBytes()
                 }
-                org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap().also { synchronized(mem) { mem[k] = it } }
+                decode(bytes).also { put(k, it) }
             }.getOrNull()
         }
     }
@@ -47,7 +67,7 @@ class ImageLoader {
         load(r.data, r.memoryCacheKey)?.let { SuccessResult(BitmapDrawable(Bitmap(it))) } ?: ErrorResult()
     @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     fun enqueue(r: ImageRequest) { kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) { load(r.data, r.memoryCacheKey) } }
-    companion object { val shared = ImageLoader() }
+    companion object { val shared = ImageLoader(); const val MEM_BUDGET = 48L shl 20; const val MAX_SIDE = 512f }
 }
 
 val Context.imageLoader: ImageLoader get() = ImageLoader.shared
