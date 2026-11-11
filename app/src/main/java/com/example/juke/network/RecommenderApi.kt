@@ -26,39 +26,40 @@ object RecommenderApi {
 
     private const val TAG = "RecommenderApi"
     private const val SEARCH_URL = "https://mp3juice3.ninja/api/yt-data"
-    private const val YT_MUSIC_API_URL = "https://music.youtube.com/youtubei/v1/next?prettyPrint=true"
+    private const val YT_MUSIC_API_URL =
+        "https://music.youtube.com/youtubei/v1/next?prettyPrint=true"
 
     private val gson = Gson()
 
     private val OFFICIAL_KEYWORDS = listOf(
-    "official", "official video", "official music video", "official lyric video",
-    "music video", "vevo", "official audio", "audio", "visualizer", "official visualizer",
-    "from the album", "album version", "single", "ep", "lp",
-    "remastered", "anniversary edition", "deluxe edition",
-    "radio edit", "clean", "explicit",
-    "prod by", "produced by", "ft.", "feat.", "featuring",
-    "original", "original song", "original soundtrack", "ost", "soundtrack",
-    "theme", "title track", "lead single", "debut single",
-    "official performance", "official live video", "session", "studio version"
-)
+        "official", "official video", "official music video", "official lyric video",
+        "music video", "vevo", "official audio", "audio", "visualizer", "official visualizer",
+        "from the album", "album version", "single", "ep", "lp",
+        "remastered", "anniversary edition", "deluxe edition",
+        "radio edit", "clean", "explicit",
+        "prod by", "produced by", "ft.", "feat.", "featuring",
+        "original", "original song", "original soundtrack", "ost", "soundtrack",
+        "theme", "title track", "lead single", "debut single",
+        "official performance", "official live video", "session", "studio version"
+    )
 
 
     private val SPAM_KEYWORDS = listOf(
-    "remix", "cover", "fan made", "fanmade", "ai cover", "ai version", "voice model",
-    "karaoke", "instrumental", "no vocals", "vocals removed",
-    "8d", "8d audio", "slowed", "reverb", "nightcore", "bass boosted",
-    "sped up", "speed up", "pitch shifted", "chipmunk",
-    "live", "acoustic", "tutorial", "how to", "reaction", "review",
-    "mashup", "mix", "lyrics", "lyric video", "english translation",
-    "reaction video", "reactionplus", "mashup reaction",
-    "tiktok", "shorts", "edit", "edit audio", "overlay", "transition",
-    "loop", "extended", "hour version", "1 hour", "10 hour", "24/7",
-    "background music", "study", "sleep", "relaxing", "meditation", "ambience", "ambient",
-    "stem", "stems", "multitrack", "isolation",
-    "behind the scenes", "bts", "making of", "explained", "breakdown",
-    "teaser", "trailer", "preview", "snippet",
-    "leak", "leaked", "unreleased", "demo", "rough mix", "work in progress", "wip"
-)
+        "remix", "cover", "fan made", "fanmade", "ai cover", "ai version", "voice model",
+        "karaoke", "instrumental", "no vocals", "vocals removed",
+        "8d", "8d audio", "slowed", "reverb", "nightcore", "bass boosted",
+        "sped up", "speed up", "pitch shifted", "chipmunk",
+        "live", "acoustic", "tutorial", "how to", "reaction", "review",
+        "mashup", "mix", "lyrics", "lyric video", "english translation",
+        "reaction video", "reactionplus", "mashup reaction",
+        "tiktok", "shorts", "edit", "edit audio", "overlay", "transition",
+        "loop", "extended", "hour version", "1 hour", "10 hour", "24/7",
+        "background music", "study", "sleep", "relaxing", "meditation", "ambience", "ambient",
+        "stem", "stems", "multitrack", "isolation",
+        "behind the scenes", "bts", "making of", "explained", "breakdown",
+        "teaser", "trailer", "preview", "snippet",
+        "leak", "leaked", "unreleased", "demo", "rough mix", "work in progress", "wip"
+    )
 
 
     @Serializable
@@ -67,7 +68,8 @@ object RecommenderApi {
     @Serializable
     private data class SearchItem(
         val id: String,
-        val title: String
+        val title: String,
+        val duration: String? = null // "m:ss", used to reject wrong-length versions
     )
 
     @Serializable
@@ -89,7 +91,15 @@ object RecommenderApi {
         var score = 0.0
 
         OFFICIAL_KEYWORDS.forEach { keyword ->
-            if (lowerTitle.contains(keyword.lowercase())) {
+            val kwLower = keyword.lowercase()
+            // Use word boundaries to prevent substring matches (e.g. "ost" in "lost", "ep" in "deep")
+            val pattern = if (kwLower.all { it.isLetterOrDigit() }) {
+                Regex("\\b${Regex.escape(kwLower)}\\b")
+            } else {
+                // For keywords with special chars (like "ft.", "prod by"), match standalone
+                Regex("(?:^|\\s)${Regex.escape(kwLower)}(?:\\s|$)")
+            }
+            if (pattern.containsMatchIn(lowerTitle)) {
                 score += 1.0
             }
         }
@@ -104,11 +114,17 @@ object RecommenderApi {
     /**
      * Check if a song title contains spam/unwanted keywords.
      */
-    private fun isSpamOrVariant(title: String): Boolean {
+    private fun isSpamOrVariant(title: String): String? {
         val lowerTitle = title.lowercase()
-        return SPAM_KEYWORDS.any { keyword ->
-            lowerTitle.contains(keyword.lowercase())
+        for (keyword in SPAM_KEYWORDS) {
+            val kwLower = keyword.lowercase()
+            // Use word boundaries to prevent substring matches (e.g. "mix" in "mixed signals")
+            val pattern = Regex("\\b${Regex.escape(kwLower)}\\b")
+            if (pattern.containsMatchIn(lowerTitle)) {
+                return keyword
+            }
         }
+        return null
     }
 
     /**
@@ -145,7 +161,10 @@ object RecommenderApi {
      * @param youtubeArtists Artists from YouTube recommendation
      * @return Similarity score from 0.0 to 1.0
      */
-    private fun artistListSimilarity(spotifyArtists: List<String>, youtubeArtists: List<String>): Double {
+    private fun artistListSimilarity(
+        spotifyArtists: List<String>,
+        youtubeArtists: List<String>
+    ): Double {
         if (spotifyArtists.isEmpty() || youtubeArtists.isEmpty()) {
             return 0.0
         }
@@ -215,6 +234,14 @@ object RecommenderApi {
     }
 
     /**
+     * Clean title by removing content in parentheses or brackets to improve matching.
+     * e.g., "Song Name (feat. Artist)" -> "Song Name"
+     */
+    private fun cleanTitle(title: String): String {
+        return title.replace(Regex("\\s*[(\\[].*?[)\\]]"), "").trim()
+    }
+
+    /**
      * Extract all artist text from JSON runs array.
      * 
      * The YouTube Music API returns artist names in multiple runs separated by commas/and.
@@ -267,15 +294,17 @@ object RecommenderApi {
                     val seconds = parts[1].toIntOrNull() ?: 0
                     minutes * 60 + seconds
                 }
+
                 3 -> { // HH:MM:SS
                     val hours = parts[0].toIntOrNull() ?: 0
                     val minutes = parts[1].toIntOrNull() ?: 0
                     val seconds = parts[2].toIntOrNull() ?: 0
                     hours * 3600 + minutes * 60 + seconds
                 }
+
                 else -> null
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Log.w(TAG, "Failed to parse duration: $durationStr")
             null
         }
@@ -289,11 +318,6 @@ object RecommenderApi {
         if (youtubeDuration == null || spotifyDuration == null) return 0.3 // Lower neutral score
 
         val diff = abs(youtubeDuration - spotifyDuration)
-        val maxDuration = maxOf(youtubeDuration, spotifyDuration)
-
-        // Calculate similarity as percentage difference
-        val similarity = 1.0 - (diff.toDouble() / maxDuration.toDouble())
-
         // Apply stricter thresholds
         return when {
             diff <= 15 -> 1.0    // Within 15 seconds = perfect match
@@ -308,12 +332,23 @@ object RecommenderApi {
     }
 
     /**
-     * Get the best video match for a song query.
-     * 
-     * Searches YouTube and returns the most relevant video ID,
-     * prioritizing official releases and using advanced scoring.
+     * Best YouTube video for a song. Pass [artists] (every credited artist, as Spotify lists them)
+     * and [expectedDurationSec] so a different song or a different cut is not picked on title alone.
      */
-    suspend fun getBestVideoMatch(songName: String): String? {
+    suspend fun getBestVideoMatch(
+        songName: String,
+        expectedDurationSec: Int? = null,
+        artists: String? = null
+    ): String? = rankVideoMatches(songName, expectedDurationSec, artists).firstOrNull()
+
+    /** All plausible videos, best first. Videos whose length is clearly off are dropped. */
+    suspend fun rankVideoMatches(
+        songName: String,
+        durationSec: Int? = null,
+        artists: String? = null
+    ): List<String> {
+        val expectedDurationSec = durationSec?.takeIf { it > 0 } // 0 means "unknown"
+
         Log.d(TAG, "getBestVideoMatch called with songName: \"$songName\"")
 
         return try {
@@ -329,21 +364,14 @@ object RecommenderApi {
 
             if (items.isEmpty()) {
                 Log.d(TAG, "No results found for: $songName")
-                return null
+                return emptyList()
             }
 
-            // First, try to find official match
-            items.forEach { item ->
-                val officialScore = getOfficialScore(item.title)
-                if (officialScore > 0.0) {
-                    Log.d(TAG, "Official Match Found: ${item.title}, Official Score: $officialScore")
-                    return item.id
-                }
-            }
-
-            // Advanced scoring for best match
-            var bestMatchItem: SearchItem? = null
-            var highestScore = 0.0
+            // Score all items — title similarity is the primary gate.
+            // Official keywords are only rewarded when the item already looks like a match.
+            val scored = mutableListOf<Pair<SearchItem, Double>>()
+            val artistKeys = artists?.let { parseArtists(it) }.orEmpty()
+                .map { it.lowercase().filter(Char::isLetterOrDigit) }.filter { it.isNotEmpty() }
 
             val queryLower = songName.lowercase()
             val queryWords = queryLower.split("\\s+".toRegex()).filter { it.length > 1 }
@@ -351,72 +379,182 @@ object RecommenderApi {
             items.forEachIndexed { index, item ->
                 val titleLower = item.title.lowercase()
 
-                // Skip spam content
-                if (isSpamOrVariant(item.title)) {
+                // Step 1: Skip spam/variant content regardless of anything else
+                if (isSpamOrVariant(item.title) != null) {
                     Log.d(TAG, "Skipping spam item: ${item.title}")
                     return@forEachIndexed
                 }
 
-                // Calculate comprehensive score
                 var score = 0.0
 
-                // Position bonus (earlier results are better)
-                val positionBonus = maxOf(0.0, 10.0 - index * 0.5)
-                score += positionBonus
+                // Duration: the strongest evidence it is the same recording. A clearly different
+                // length (extended mix, music video with intro, wrong song) is dropped.
+                val itemSec = parseDurationToSeconds(item.duration)
+                if (expectedDurationSec != null && itemSec != null) {
+                    val diff = abs(itemSec - expectedDurationSec)
+                    if (diff > 15) {
+                        Log.d(TAG, "Skipping '${item.title}': ${itemSec}s vs expected ${expectedDurationSec}s")
+                        return@forEachIndexed
+                    }
+                    score += when {
+                        diff <= 3 -> 30.0
+                        diff <= 6 -> 20.0
+                        diff <= 10 -> 8.0
+                        else -> 0.0
+                    }
+                }
 
-                // Title similarity
-                val titleSimilarity = similarity(queryLower, titleLower)
-                score += titleSimilarity * 30.0
+                // Artists: every credited name found in the video title earns its share.
+                if (artistKeys.isNotEmpty()) {
+                    val flatTitle = titleLower.filter(Char::isLetterOrDigit)
+                    score += 25.0 * artistKeys.count { flatTitle.contains(it) } / artistKeys.size
+                }
 
-                // Word match bonus
+                // Step 2: Title similarity — must be computed first
+                val rawTitleSim = similarity(queryLower, titleLower)
+                val cleanTitleSim = similarity(cleanTitle(queryLower), cleanTitle(titleLower))
+                val titleSimilarity = maxOf(rawTitleSim, cleanTitleSim)
+                score += titleSimilarity * 50.0 // Dominant factor to ensure the right song wins
+
+                // Step 3: Word-match bonus (query words present in title)
                 var wordMatches = 0
                 queryWords.forEach { word ->
                     if (titleLower.contains(word)) {
                         wordMatches++
                     }
                 }
-                score += wordMatches * 5.0
+                val matchRatio = if (queryWords.isNotEmpty()) wordMatches.toDouble() / queryWords.size else 0.0
+                score += matchRatio * 30.0 // Heavily reward containing the exact requested words
 
-                // Length similarity bonus (prefer similar duration)
-                // This is a rough heuristic - official versions tend to be similar length
+                // Step 4: Title-length similarity bonus
                 val titleWords = titleLower.split("\\s+".toRegex()).size
                 val lengthDiff = abs(queryWords.size - titleWords)
                 score += maxOf(0.0, 5.0 - lengthDiff)
 
-                // Prefer titles that look like official music videos
-                if (titleLower.contains("official") || titleLower.contains("music video") ||
-                    titleLower.contains("prod by") || titleLower.contains("ft.")) {
-                    score += 10.0
+                // Step 5: Official-keyword bonus — ONLY if the title already resembles the query.
+                // Scale the bonus by matchRatio so an unrelated song by the same artist 
+                // doesn't win just by having "Official" in its title.
+                if (titleSimilarity >= 0.3 || matchRatio >= 0.5) {
+                    val officialBonus = getOfficialScore(item.title)
+                    if (officialBonus > 0.0) {
+                        val scaledBonus = officialBonus * 5.0 * matchRatio
+                        score += scaledBonus
+                        Log.d(TAG, "Official bonus ($scaledBonus) applied to '${item.title}'")
+                    }
                 }
 
-                // Prefer titles without extra qualifiers
-                val badIndicators = listOf("lyrics", "remix", "cover", "live", "acoustic",
-                                         "slowed", "reverb", "8d", "reaction", "tutorial")
+                // Step 6: No-bad-indicator bonus (clean original, no remixes/covers etc.)
+                val badIndicators = listOf(
+                    "lyrics", "remix", "cover", "live", "acoustic",
+                    "slowed", "reverb", "8d", "reaction", "tutorial"
+                )
                 val hasBadIndicator = badIndicators.any { titleLower.contains(it) }
                 if (!hasBadIndicator) {
                     score += 5.0
                 }
 
-                Log.d(TAG, "Item [$index] '${item.title}' - Score: ${score.toInt()}, Similarity: ${(titleSimilarity * 100).toInt()}%")
+                // Step 7: Position bonus (earlier API results are slightly preferred)
+                val positionBonus = maxOf(0.0, 5.0 - index * 0.5)
+                score += positionBonus
 
-                if (score > highestScore) {
-                    highestScore = score
-                    bestMatchItem = item
-                }
+                Log.d(
+                    TAG,
+                    "Item [$index] '${item.title}' - Score: ${score.toInt()}, TitleSim: ${(titleSimilarity * 100).toInt()}%"
+                )
+
+                scored += item to score
             }
 
-            if (bestMatchItem != null && highestScore > 15.0) { // Minimum threshold
-                Log.d(TAG, "Best Match Selected: ${bestMatchItem?.title}, Final Score: ${highestScore.toInt()}")
-                return bestMatchItem?.id
-            }
+            val ranked = scored.filter { it.second > 15.0 }.sortedByDescending { it.second }
+            Log.d(TAG, "Ranked ${ranked.size} matches; best: ${ranked.firstOrNull()?.first?.title}")
+            ranked.map { it.first.id }
 
-            Log.d(TAG, "No suitable match found (best score: ${highestScore.toInt()})")
-            null
-
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // canceled (e.g. a new song started), not a failure
         } catch (e: Exception) {
             Log.e(TAG, "Search Network error: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    /** True when a title looks like a remix/cover/spam variant that should never be auto-queued. */
+    fun isSpamTitle(title: String): Boolean = isSpamOrVariant(title) != null
+
+    /**
+     * Stable identity for "the same song" across YouTube and Spotify spellings: upload labels and
+     * credits dropped, version tags (remix, live, female version...) kept, first artist only.
+     * See [SongTitle]; recordings that share a key are told apart by length ([SongIndex]).
+     */
+    fun songKey(title: String, artist: String): String = SongTitle.key(title, artist)
+
+    /** Match one YouTube Music item to its Spotify track (null if no confident match). */
+    suspend fun matchOnSpotify(rec: YouTubeRecommendation): ValidatedRecommendation? =
+        validateSingleRecommendation(rec, ytIndex = 0)
+
+    // A song's radio depends on which upload seeds it: YouTube Music seeds with the album-track
+    // (audio) upload, while a stored id is often the music video, whose radio is quite different
+    // (about a third of the audio radio's picks for the same song). Cached per song.
+    private val audioSeeds = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private const val YT_MUSIC_SEARCH_URL = "https://music.youtube.com/youtubei/v1/search?prettyPrint=false"
+    private const val YT_SONGS_FILTER = "EgWKAQIIAWoSEAMQBBAJEA4QChAFEBEQEBAV"
+
+    /** The album-track (audio) video id for a song, or null when none matches the title and length. */
+    suspend fun audioSeedFor(title: String, artist: String, durationSec: Int): String? {
+        val key = songKey(title, artist)
+        audioSeeds[key]?.let { return it.takeIf { id -> id.isNotEmpty() } }
+        return try {
+            val body = mapOf(
+                "query" to "$title $artist",
+                "params" to YT_SONGS_FILTER,
+                "context" to mapOf(
+                    "client" to mapOf(
+                        "hl" to "en-IN", "gl" to "IN",
+                        "clientName" to "WEB_REMIX", "clientVersion" to "1.20251203.02.00"
+                    )
+                )
+            )
+            val response = ApiClient.httpClient.post(YT_MUSIC_SEARCH_URL) {
+                contentType(ContentType.Application.Json)
+                setBody(gson.toJson(body))
+                header("User-Agent", "Mozilla/5.0")
+            }
+            val root = gson.fromJson(response.body<ByteArray>().decodeToString(), JsonObject::class.java)
+            val wanted = SongTitle.parse(title)
+            val found = songRows(root).firstNotNullOfOrNull { row ->
+                val id = row.getAsJsonObject("playlistItemData")?.get("videoId")?.asString ?: return@firstNotNullOfOrNull null
+                val columns = row.getAsJsonArray("flexColumns") ?: return@firstNotNullOfOrNull null
+                fun text(i: Int): String {
+                    if (i >= columns.size()) return ""
+                    val runs = columns[i].asJsonObject
+                        .getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.getAsJsonObject("text")?.getAsJsonArray("runs") ?: return ""
+                    return runs.joinToString("") { it.asJsonObject.get("text")?.asString.orEmpty() }
+                }
+                val rowTitle = text(0)
+                val length = SongTitle.clockSeconds(text(1).substringAfterLast(" • "))
+                val sameSong = SongTitle.parse(rowTitle).core == wanted.core && !SongTitle.differentVersion(rowTitle, title)
+                val sameLength = durationSec <= 0 || length == null || abs(length - durationSec) <= 5
+                id.takeIf { sameSong && sameLength }
+            }
+            audioSeeds[key] = found.orEmpty()
+            found
+        } catch (e: Exception) {
+            Log.w(TAG, "Audio seed lookup failed for '$title': ${e.message}")
             null
         }
+    }
+
+    /** Song rows from a YouTube Music (songs-filtered) search response, best first. */
+    private fun songRows(node: com.google.gson.JsonElement, out: MutableList<JsonObject> = mutableListOf()): List<JsonObject> {
+        when {
+            node.isJsonObject -> {
+                val obj = node.asJsonObject
+                obj.getAsJsonObject("musicResponsiveListItemRenderer")?.let { out += it }
+                obj.entrySet().forEach { songRows(it.value, out) }
+            }
+            node.isJsonArray -> node.asJsonArray.forEach { songRows(it, out) }
+        }
+        return out
     }
 
     /**
@@ -522,6 +660,16 @@ object RecommenderApi {
                 return emptyList()
             }
 
+            // A real radio starts with its seed. YouTube sometimes answers with an unrelated
+            // generic list instead (seen on device: a Seedhe Maut seed returned folk/bhajan
+            // trending songs); queueing that poisons the whole session, so reject it.
+            val firstId = tracks.firstOrNull()?.asJsonObject
+                ?.getAsJsonObject("playlistPanelVideoRenderer")?.get("videoId")?.asString
+            if (firstId != videoId) {
+                Log.w(TAG, "Radio for $videoId starts with $firstId, not the seed; ignoring it")
+                return emptyList()
+            }
+
             val recommendations = mutableListOf<YouTubeRecommendation>()
 
             // Skip index 0 (the original song), get 1 to last
@@ -582,276 +730,120 @@ object RecommenderApi {
     }
 
     /**
-     * Validate and filter recommendations using Spotify search.
-     * 
-     * Smart artist-based prioritization:
-     * - Recommendations with matching artists are validated first
-     * - Higher priority given to recommendations featuring 1+ original artists
-     * 
-     * For each YouTube recommendation:
-     * 1. Check if it features any original track's artists (prioritized)
-     * 2. Search Spotify for the song
-     * 3. Check confidence score (title + artist + duration match)
-     * 4. Filter out spam/variant versions
-     * 5. Return top matches with valid Spotify links
-     * 
-     * @param recommendations List of YouTube recommendations
-     * @param originalArtists Artists from the original song (for artist-based prioritization)
-     * @param maxResults Maximum number of validated results to return (default 10)
-     * @return List of validated recommendations with Spotify links
+     * Validate a single YouTube recommendation against Spotify.
+     * Returns a ValidatedRecommendation if the match is accepted, null otherwise.
+     *
+     * @param rec The YouTube recommendation to validate
+     * @param ytIndex The original index in the YouTube recommendations list
      */
-    suspend fun validateAndFilterWithSpotify(
-        recommendations: List<YouTubeRecommendation>,
-        originalArtists: String = "",
-        maxResults: Int = 10
-    ): List<ValidatedRecommendation> {
-        Log.d(TAG, "Validating ${recommendations.size} recommendations with Spotify")
-        Log.d(TAG, "Original track artists: $originalArtists")
+    private suspend fun validateSingleRecommendation(
+        rec: YouTubeRecommendation,
+        ytIndex: Int
+    ): ValidatedRecommendation? {
+        try {
+            // Search Spotify
+            val query = "${rec.title} ${rec.artist}"
+            val searchResponse = try {
+                SpotifyApi.search(query, listOf("track"))
+            } catch (offlineEx: OfflineException) {
+                Log.w(TAG, "Device offline while validating '${rec.title}'. Stopping.")
+                throw offlineEx
+            }
 
-        val validated = mutableListOf<ValidatedRecommendation>()
+            val spotifyResults = searchResponse.tracks?.items ?: emptyList()
+            if (spotifyResults.isEmpty()) {
+                Log.d(TAG, "No Spotify results for: $query")
+                return null
+            }
 
-        // Parse original track's artists for artist-based prioritization
-        val originalArtistsList = parseArtists(originalArtists)
+            // Try top 5 Spotify results for best matching
+            var bestMatch: SpotifyTrack? = null
+            var bestConfidence = 0.0
+            var bestTitleSimilarity = 0.0
+            var bestDurationSimilarity = 0.0
 
-        // Create a scored list with artist match count
-        data class ScoredRecommendation(
-            val rec: YouTubeRecommendation,
-            val matchingArtistCount: Int
-        )
+            for (spotifyTrack in spotifyResults.take(5)) {
+                val rawTitleSim = similarity(rec.title, spotifyTrack.name)
+                val cleanTitleSim = similarity(cleanTitle(rec.title), cleanTitle(spotifyTrack.name))
+                // A different version (remix vs original, live vs studio) is not the same song even
+                // when the bare titles match: judge it on the raw title and halve that.
+                val titleSimilarity = if (SongTitle.differentVersion(rec.title, spotifyTrack.name)) rawTitleSim * 0.5
+                else maxOf(rawTitleSim, cleanTitleSim)
 
-        // Score recommendations by matching artists
-        val scoredRecs = recommendations.map { rec ->
-            val recArtists = parseArtists(rec.artist)
-            var matchCount = 0
+                val spotifyArtists = parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
+                val youtubeArtists = parseArtists(rec.artist)
+                val artistSimilarity = artistListSimilarity(spotifyArtists, youtubeArtists)
 
-            // Count how many original artists appear in this recommendation
-            for (originalArtist in originalArtistsList) {
-                for (recArtist in recArtists) {
-                    if (similarity(originalArtist, recArtist) > 0.75) {
-                        matchCount++
-                        break // Count each original artist only once
-                    }
+                val youtubeDurationSec = parseDurationToSeconds(rec.duration)
+                val spotifyDurationSec = spotifyTrack.durationMs / 1000
+                val durSim = durationSimilarity(youtubeDurationSec, spotifyDurationSec)
+                // A clearly different length is a different recording (live, extended, wrong song).
+                if (youtubeDurationSec != null && abs(youtubeDurationSec - spotifyDurationSec) > 20) continue
+
+                // Text confidence: 70% artist, 30% title
+                val textConfidence = (titleSimilarity * 0.3) + (artistSimilarity * 0.7)
+                var overallConfidence = (textConfidence * 0.6) + (durSim * 0.4)
+
+                // Boost for excellent artist matches
+                if (artistSimilarity >= 0.9) {
+                    overallConfidence += 0.15
+                } else if (artistSimilarity >= 0.7) {
+                    overallConfidence += 0.1
+                } else if (artistSimilarity >= 0.5) {
+                    overallConfidence += 0.05
+                }
+
+                if (overallConfidence > bestConfidence) {
+                    bestConfidence = overallConfidence
+                    bestMatch = spotifyTrack
+                    bestTitleSimilarity = titleSimilarity
+                    bestDurationSimilarity = durSim
                 }
             }
 
-            ScoredRecommendation(rec, matchCount)
-        }
-
-        // Sort by matching artist count (descending), then by original order
-        val sortedByArtistMatch = scoredRecs.sortedByDescending { it.matchingArtistCount }
-
-        // Validate in order of artist match priority
-        for (scored in sortedByArtistMatch) {
-            if (validated.size >= maxResults) break
-
-            val rec = scored.rec
-            val artistMatchCount = scored.matchingArtistCount
-
-            try {
-                // Check for spam keywords first
-                if (isSpamOrVariant(rec.title)) {
-                    Log.d(TAG, "Skipping spam/variant: ${rec.title}")
-                    continue
-                }
-
-                // Log artist matching status
-                if (artistMatchCount > 0) {
-                    Log.d(TAG, "⭐ Found $artistMatchCount matching artist(s) in: ${rec.title} by ${rec.artist}")
-                }
-
-                // Search Spotify
-                val query = "${rec.title} ${rec.artist}"
-                val searchResponse = try {
-                    SpotifyApi.search(query, listOf("track"))
-                } catch (offlineEx: OfflineException) {
-                    // Propagate offline exceptions up to caller
-                    Log.w(TAG, "Device offline while validating recommendations. Stopping validation.")
-                    throw offlineEx
-                }
-                
-                val spotifyResults = searchResponse.tracks?.items ?: emptyList()
-
-                if (spotifyResults.isEmpty()) {
-                    Log.d(TAG, "No Spotify results for: $query")
-                    continue
-                }
-
-                // Try multiple Spotify results for better matching
-                var bestMatch: SpotifyTrack? = null
-                var bestConfidence = 0.0
-                var bestTitleSimilarity = 0.0
-                var bestDurationSimilarity = 0.0
-
-                for (spotifyTrack in spotifyResults.take(5)) { // Check top 5 results for better matching
-                    // Calculate match confidence with multiple factors
-                    val titleSimilarity = similarity(rec.title, spotifyTrack.name)
-
-                    // Parse artists individually for better matching
-                    val spotifyArtists = parseArtists(spotifyTrack.artists.joinToString(", ") { it.name })
-                    val youtubeArtists = parseArtists(rec.artist)
-
-                    // Compare artists intelligently with multi-artist support
-                    val artistSimilarity = artistListSimilarity(spotifyArtists, youtubeArtists)
-
-                    // Parse durations
-                    val youtubeDurationSec = parseDurationToSeconds(rec.duration)
-                    val spotifyDurationSec = spotifyTrack.durationMs / 1000
-                    val durationSimilarity = durationSimilarity(youtubeDurationSec, spotifyDurationSec)
-
-                    // Calculate text confidence with higher weight on artist matches
-                    // Artist similarity gets 70% weight, title gets 30% weight
-                    val textConfidence = (titleSimilarity * 0.3) + (artistSimilarity * 0.7)
-
-                    // Special logic: if both title and duration match well, boost confidence significantly
-                    var overallConfidence = (textConfidence * 0.6) + (durationSimilarity * 0.4)
-
-                    // Additional boost for excellent artist matches (prioritize artist over title)
-                    if (artistSimilarity >= 0.9) {
-                        overallConfidence += 0.15 // Significant boost for near-perfect artist match
-                        Log.d(TAG, "🎯 Excellent artist match! Artists: Spotify${spotifyArtists.size} vs YouTube${youtubeArtists.size}, similarity: ${(artistSimilarity * 100).toInt()}%")
-                    } else if (artistSimilarity >= 0.7) {
-                        overallConfidence += 0.1 // Good boost for strong artist match
-                        Log.d(TAG, "✓ Good artist match! Artists matched, similarity: ${(artistSimilarity * 100).toInt()}%")
-                    } else if (artistSimilarity >= 0.5) {
-                        overallConfidence += 0.05 // Moderate boost for decent artist match
-                    }
-
-                    Log.d(TAG, "Comparing '${rec.title}' (${rec.duration ?: "unknown"}) with '${spotifyTrack.name}' (${spotifyTrack.durationMs/1000}s)")
-                    Log.d(TAG, "  Spotify Artists: $spotifyArtists")
-                    Log.d(TAG, "  YouTube Artists: $youtubeArtists")
-                    Log.d(TAG, "  Title: ${(titleSimilarity * 100).toInt()}%, Artist: ${(artistSimilarity * 100).toInt()}%, Duration: ${(durationSimilarity * 100).toInt()}%, Overall: ${(overallConfidence * 100).toInt()}%")
-
-                    if (overallConfidence > bestConfidence) {
-                        bestConfidence = overallConfidence
-                        bestMatch = spotifyTrack
-                        bestTitleSimilarity = titleSimilarity
-                        bestDurationSimilarity = durationSimilarity
-                    }
-                }
-
-                // Stricter acceptance criteria based on match quality
-                val shouldAccept = when {
-                    // Excellent match: high confidence in both title and duration
-                    bestTitleSimilarity >= 0.8 && bestDurationSimilarity >= 0.8 && bestConfidence >= 0.75 -> true
-                    // Good match: reasonable confidence in both
-                    bestTitleSimilarity >= 0.7 && bestDurationSimilarity >= 0.6 && bestConfidence >= 0.65 -> true
-                    // Strong duration match: if duration is perfect, accept with lower overall threshold (handles cases where YouTube title has extra metadata)
-                    bestDurationSimilarity >= 0.95 && bestConfidence >= 0.5 && bestTitleSimilarity >= 0.05 -> true
-                    // Fallback: overall confidence is high enough
-                    bestConfidence >= 0.7 -> true
-                    else -> false
-                }
-
-                if (bestMatch != null && shouldAccept && bestMatch.externalUrls.spotify != null) {
-                    val officialScore = getOfficialScore(rec.title)
-
-                    validated.add(
-                        ValidatedRecommendation(
-                            youtubeVideoId = rec.id,
-                            title = bestMatch.name,
-                            artist = bestMatch.artists.joinToString(", ") { it.name },
-                            spotifyUrl = bestMatch.externalUrls.spotify!!,
-                            confidence = bestConfidence,
-                            isOfficial = officialScore > 0.0,
-                            durationSec = (bestMatch.durationMs / 1000).toInt()
-                        )
-                    )
-
-                    Log.d(TAG, "✓ Validated: ${bestMatch.name} by ${bestMatch.artists.first().name} (Title: ${(bestTitleSimilarity * 100).toInt()}%, Duration: ${(bestDurationSimilarity * 100).toInt()}%, Overall: ${(bestConfidence * 100).toInt()}%)")
-                } else {
-                    Log.d(TAG, "✗ Rejected: ${rec.title} (Best: Title ${(bestTitleSimilarity * 100).toInt()}%, Duration ${(bestDurationSimilarity * 100).toInt()}%, Overall ${(bestConfidence * 100).toInt()}%)")
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error validating ${rec.title}: ${e.message}", e)
-            }
-        }
-
-        Log.d(TAG, "Validated ${validated.size} out of ${recommendations.size} recommendations")
-
-        // Sort by confidence and official status
-        return validated.sortedWith(
-            compareByDescending<ValidatedRecommendation> { it.isOfficial }
-                .thenByDescending { it.confidence }
-        )
-    }
-
-    /**
-     * Test method to debug video selection scoring.
-     * Returns all items with their scores for analysis.
-     */
-    suspend fun debugVideoSelection(songName: String): List<Triple<String, String, Double>> {
-        Log.d(TAG, "debugVideoSelection called with songName: \"$songName\"")
-
-        return try {
-            val response = ApiClient.httpClient.post(SEARCH_URL) {
-                contentType(ContentType.Application.Json)
-                setBody(SearchRequest(query = songName))
+            // Acceptance criteria
+            val shouldAccept = when {
+                bestTitleSimilarity >= 0.8 && bestDurationSimilarity >= 0.8 && bestConfidence >= 0.75 -> true
+                bestTitleSimilarity >= 0.7 && bestDurationSimilarity >= 0.6 && bestConfidence >= 0.65 -> true
+                bestDurationSimilarity >= 0.95 && bestConfidence >= 0.5 && bestTitleSimilarity >= 0.05 -> true
+                bestConfidence >= 0.7 -> true
+                else -> false
             }
 
-            val searchResponse: SearchResponse = response.body()
-            val items = searchResponse.items
+            if (bestMatch != null && shouldAccept && bestMatch.externalUrls.spotify != null) {
+                val officialScore = getOfficialScore(rec.title)
 
-            val queryLower = songName.lowercase()
-            val queryWords = queryLower.split("\\s+".toRegex()).filter { it.length > 1 }
+                Log.d(
+                    TAG,
+                    "✓ Validated [$ytIndex]: ${bestMatch.name} by ${bestMatch.artists.first().name} (Title: ${(bestTitleSimilarity * 100).toInt()}%, Duration: ${(bestDurationSimilarity * 100).toInt()}%, Conf: ${(bestConfidence * 100).toInt()}%)"
+                )
 
-            val scoredItems = items.mapIndexed { index, item ->
-                val titleLower = item.title.lowercase()
-
-                // Skip spam content
-                if (isSpamOrVariant(item.title)) {
-                    return@mapIndexed Triple(item.id, item.title, -1.0)
-                }
-
-                // Calculate comprehensive score
-                var score = 0.0
-
-                // Position bonus (earlier results are better)
-                val positionBonus = maxOf(0.0, 10.0 - index * 0.5)
-                score += positionBonus
-
-                // Title similarity
-                val titleSimilarity = similarity(queryLower, titleLower)
-                score += titleSimilarity * 30.0
-
-                // Word match bonus
-                var wordMatches = 0
-                queryWords.forEach { word ->
-                    if (titleLower.contains(word)) {
-                        wordMatches++
-                    }
-                }
-                score += wordMatches * 5.0
-
-                // Length similarity bonus
-                val titleWords = titleLower.split("\\s+".toRegex()).size
-                val lengthDiff = abs(queryWords.size - titleWords)
-                score += maxOf(0.0, 5.0 - lengthDiff)
-
-                // Prefer titles that look like official music videos
-                if (titleLower.contains("official") || titleLower.contains("music video") ||
-                    titleLower.contains("prod by") || titleLower.contains("ft.")) {
-                    score += 10.0
-                }
-
-                // Prefer titles without extra qualifiers
-                val badIndicators = listOf("lyrics", "remix", "cover", "live", "acoustic",
-                                         "slowed", "reverb", "8d", "reaction", "tutorial")
-                val hasBadIndicator = badIndicators.any { titleLower.contains(it) }
-                if (!hasBadIndicator) {
-                    score += 5.0
-                }
-
-                Triple(item.id, item.title, score)
+                return ValidatedRecommendation(
+                    youtubeVideoId = rec.id,
+                    title = bestMatch.name,
+                    artist = bestMatch.artists.joinToString(", ") { it.name },
+                    spotifyUrl = bestMatch.externalUrls.spotify,
+                    confidence = bestConfidence,
+                    isOfficial = officialScore > 0.0,
+                    durationSec = bestMatch.durationMs / 1000,
+                    ytIndex = ytIndex
+                )
+            } else {
+                Log.d(
+                    TAG,
+                    "✗ Rejected [$ytIndex]: ${rec.title} (Title ${(bestTitleSimilarity * 100).toInt()}%, Duration ${(bestDurationSimilarity * 100).toInt()}%, Conf ${(bestConfidence * 100).toInt()}%)"
+                )
             }
-
-            scoredItems.sortedByDescending { it.third }
-
+        } catch (e: OfflineException) {
+            throw e // Propagate offline to stop all batches
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // canceled (e.g. a new song started), not a failure
         } catch (e: Exception) {
-            Log.e(TAG, "Debug search error: ${e.message}", e)
-            emptyList()
+            Log.e(TAG, "Error validating ${rec.title}: ${e.message}", e)
         }
+        return null
     }
+
 
     /**
      * Validated recommendation with Spotify link.
@@ -864,7 +856,9 @@ object RecommenderApi {
         val spotifyUrl: String,
         val confidence: Double,
         val isOfficial: Boolean,
-        val durationSec: Int
+        val durationSec: Int,
+        val ytIndex: Int = 0,
+        val composite: Double = 0.0
     )
 
 }

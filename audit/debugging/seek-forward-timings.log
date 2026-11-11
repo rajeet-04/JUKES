@@ -1,0 +1,7 @@
+10-04 01:40:55.296  4151  4151 D PlaybackService: Is playing: true
+10-04 01:40:55.299  4151  4151 D PlaybackManager: Deferred local stream handoff until user seeks: seek-probe
+10-04 01:40:55.300  4151  4151 D PlaybackManager: Switched stream to local file for seek to 120000 ms
+10-04 01:40:55.305  4151  4151 D PlaybackService: Is playing: false
+10-04 01:40:55.333  4151  4151 D PlaybackService: Is playing: true
+10-04 01:40:55.410  4151  4151 D PlaybackManager: Seeked to 60000 ms
+10-04 01:40:55.411  4151  4151 D PlaybackService: Is playing: false

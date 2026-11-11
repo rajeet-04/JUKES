@@ -5,18 +5,17 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.Upsert
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteQuery
-import androidx.room.RawQuery
 import com.example.juke.models.Track
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
@@ -150,6 +149,64 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/**
+ * Migration from version 7 to 8
+ * Adds lyrics_offset_ms column to tracks table
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN lyrics_offset_ms INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/**
+ * Migration from version 8 to 9
+ * Adds persisted romanized lyrics columns to tracks table
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN romanized_synced_lyrics TEXT")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN romanized_plain_lyrics TEXT")
+    }
+}
+
+/** Migration from version 9 to 10: resumable playlist imports. */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS pending_imports (" +
+                "playlist_id TEXT NOT NULL, position INTEGER NOT NULL, " +
+                "track_json TEXT NOT NULL, attempts INTEGER NOT NULL, " +
+                "PRIMARY KEY(playlist_id, position))"
+        )
+    }
+}
+
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS song_exposure (" +
+                "song_key TEXT NOT NULL, play_score REAL NOT NULL, skip_score REAL NOT NULL, " +
+                "rec_score REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(song_key))"
+        )
+    }
+}
+
+/** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "DELETE FROM playlist_tracks WHERE EXISTS (SELECT 1 FROM playlist_tracks o " +
+                "WHERE o.playlist_id = playlist_tracks.playlist_id AND o.track_uuid = playlist_tracks.track_uuid " +
+                "AND o.position < playlist_tracks.position)"
+        )
+        db.execSQL(
+            "UPDATE playlists SET track_count = " +
+                "(SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id)"
+        )
+    }
+}
+
 class Converters {
     @TypeConverter
     fun fromStringList(value: List<String>?): String? {
@@ -166,14 +223,15 @@ class Converters {
  * Room Database for JUKE music player.
  */
 @Database(
-    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
-    version = 7,
+    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
     abstract fun playlistDao(): PlaylistDao
+    abstract fun songExposureDao(): SongExposureDao
 
     companion object {
         @Volatile
@@ -192,9 +250,14 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                        MIGRATION_8_9,
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12
                     )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
                 INSTANCE = instance
                 instance
@@ -235,6 +298,12 @@ data class TrackEntity(
     @ColumnInfo(name = "plain_lyrics")
     val plainLyrics: String? = null,
 
+    @ColumnInfo(name = "romanized_synced_lyrics")
+    val romanizedSyncedLyrics: String? = null,
+
+    @ColumnInfo(name = "romanized_plain_lyrics")
+    val romanizedPlainLyrics: String? = null,
+
     @ColumnInfo(name = "is_favourite", defaultValue = "0")
     val isFavourite: Boolean = false,
 
@@ -258,7 +327,10 @@ data class TrackEntity(
     val artistSpotifyIds: List<String>? = null,
 
     @ColumnInfo(name = "is_stream", defaultValue = "0")
-    val isStream: Boolean = false
+    val isStream: Boolean = false,
+
+    @ColumnInfo(name = "lyrics_offset_ms", defaultValue = "0")
+    val lyricsOffsetMs: Long = 0L
 )
 
 /**
@@ -275,6 +347,8 @@ fun TrackEntity.toTrack(): Track {
         ytVideoId = ytVideoId,
         syncedLyrics = syncedLyrics,
         plainLyrics = plainLyrics,
+        romanizedSyncedLyrics = romanizedSyncedLyrics,
+        romanizedPlainLyrics = romanizedPlainLyrics,
         isFavourite = isFavourite,
         playCount = playCount,
         lastPlayedAt = lastPlayedAt,
@@ -282,7 +356,8 @@ fun TrackEntity.toTrack(): Track {
         spotifyId = spotifyId,
         albumSpotifyId = albumSpotifyId,
         artistSpotifyIds = artistSpotifyIds,
-        isStream = isStream
+        isStream = isStream,
+        lyricsOffsetMs = lyricsOffsetMs
     )
 }
 
@@ -300,6 +375,8 @@ fun Track.toEntity(): TrackEntity {
         ytVideoId = ytVideoId,
         syncedLyrics = syncedLyrics,
         plainLyrics = plainLyrics,
+        romanizedSyncedLyrics = romanizedSyncedLyrics,
+        romanizedPlainLyrics = romanizedPlainLyrics,
         isFavourite = isFavourite,
         playCount = playCount,
         lastPlayedAt = lastPlayedAt,
@@ -307,7 +384,8 @@ fun Track.toEntity(): TrackEntity {
         spotifyId = spotifyId,
         albumSpotifyId = albumSpotifyId,
         artistSpotifyIds = artistSpotifyIds,
-        isStream = isStream
+        isStream = isStream,
+        lyricsOffsetMs = lyricsOffsetMs
     )
 }
 
@@ -317,17 +395,20 @@ fun Track.toEntity(): TrackEntity {
 @Dao
 interface TrackDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Upsert, never REPLACE: SQLite carries out REPLACE as delete + insert, and the delete
+    // cascades to playlist_tracks, so re-saving a track (lyrics, romanization, stream promoted to a
+    // download) silently removed it from every playlist.
+    @Upsert
     suspend fun insertTrack(track: TrackEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertTracks(tracks: List<TrackEntity>)
 
-    @Query("SELECT * FROM tracks ORDER BY last_played_at DESC")
+    @Query("SELECT * FROM tracks WHERE is_stream = 0 ORDER BY last_played_at DESC")
     suspend fun getAllTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_stream = 0 ORDER BY last_played_at DESC")
     fun getAllTracksFlow(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
@@ -339,22 +420,52 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     suspend fun getFavourites(): List<TrackEntity>
 
+    // Android Auto lists: no lyrics columns, so long lists can't overflow the CursorWindow
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun getRecentlyPlayedLight(limit: Int): List<TrackEntity>
+
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun getFavouritesLight(limit: Int): List<TrackEntity>
+
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun getDownloadedTracksLight(limit: Int): List<TrackEntity>
+
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY last_played_at DESC LIMIT :limit")
+    suspend fun searchTracksLight(query: String, limit: Int): List<TrackEntity>
+
+    // Title/artist only: enough to build song keys without loading lyrics columns
+    @Query("SELECT title, artist FROM tracks WHERE is_favourite = 1")
+    suspend fun getFavouriteTitleArtists(): List<TitleArtist>
+
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE is_favourite = 1 ORDER BY last_played_at DESC")
     fun getFavouritesFlow(): Flow<List<TrackEntity>>
 
-    @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
+    @Query("SELECT * FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC")
     suspend fun getDownloadedTracks(): List<TrackEntity>
 
     // Lightweight flow query - excludes large lyrics columns to prevent CursorWindow overflow
-    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream FROM tracks WHERE local_uri IS NOT NULL ORDER BY last_played_at DESC")
+    @Query("SELECT uuid, title, artist, thumbnail_uri, duration_sec, local_uri, yt_video_id, NULL as synced_lyrics, NULL as plain_lyrics, NULL as romanized_synced_lyrics, NULL as romanized_plain_lyrics, is_favourite, play_count, last_played_at, downloaded_at, spotify_id, album_spotify_id, artist_spotify_ids, is_stream, lyrics_offset_ms FROM tracks WHERE local_uri IS NOT NULL AND is_stream = 0 ORDER BY last_played_at DESC")
     fun getDownloadedTracksFlow(): Flow<List<TrackEntity>>
+
+    @Query("UPDATE tracks SET lyrics_offset_ms = :offsetMs WHERE uuid = :uuid")
+    suspend fun updateLyricsOffset(uuid: String, offsetMs: Long)
 
     @Query("UPDATE tracks SET local_uri = :streamUrl WHERE uuid = :uuid")
     suspend fun updateTrackStreamUrl(uuid: String, streamUrl: String)
 
+    @Query("UPDATE tracks SET local_uri = NULL WHERE is_stream = 1 AND uuid IN (:uuids)")
+    suspend fun clearStreamLocalUris(uuids: List<String>)
+
     @Query("UPDATE tracks SET is_favourite = :isFavourite WHERE uuid = :uuid")
     suspend fun updateTrackFavourite(uuid: String, isFavourite: Boolean)
+
+    @Query("UPDATE tracks SET thumbnail_uri = :thumbnail WHERE uuid = :uuid")
+    suspend fun updateThumbnail(uuid: String, thumbnail: String)
+
+    /** Account sync: the fields that travel between devices (see LibrarySync). */
+    @Query("UPDATE tracks SET is_favourite = :fav, yt_video_id = :yt, spotify_id = :sp, album_spotify_id = :al, artist_spotify_ids = :ar, thumbnail_uri = :th WHERE uuid = :uuid")
+    suspend fun updateSyncedFields(uuid: String, fav: Boolean, yt: String?, sp: String?, al: String?, ar: List<String>?, th: String?)
 
     @Query("UPDATE tracks SET play_count = play_count + 1, last_played_at = :lastPlayedAt WHERE uuid = :uuid")
     suspend fun incrementPlayCount(uuid: String, lastPlayedAt: String)
@@ -370,6 +481,12 @@ interface TrackDao {
 
     @Query("DELETE FROM tracks")
     suspend fun deleteAllTracks()
+
+    @Query("SELECT * FROM tracks WHERE is_stream = 1")
+    suspend fun getStreamTracks(): List<TrackEntity>
+
+    @Query("DELETE FROM tracks WHERE is_stream = 1")
+    suspend fun deleteStreamTracks(): Int
 
     @Query("SELECT * FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT :limit")
     suspend fun getMostPlayed(limit: Int = 10): List<TrackEntity>
@@ -396,7 +513,8 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT * FROM tracks 
         WHERE (
             (play_count < 5 AND last_played_at < :lastPlayedThreshold) OR 
@@ -407,6 +525,10 @@ interface TrackDao {
         AND is_favourite = 0 
         AND uuid NOT IN (SELECT track_uuid FROM playlist_tracks)
         ORDER BY downloaded_at ASC
-    """)
-    suspend fun getPurgeableTracks(lastPlayedThreshold: String, downloadedThreshold: Long): List<TrackEntity>
+    """
+    )
+    suspend fun getPurgeableTracks(
+        lastPlayedThreshold: String,
+        downloadedThreshold: Long
+    ): List<TrackEntity>
 }

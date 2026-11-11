@@ -1,30 +1,32 @@
 package com.example.juke.ui.components.player
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicUiState
 import com.example.juke.viewmodels.MusicViewModel
 
@@ -36,16 +38,12 @@ fun PlayerProgress(
     modifier: Modifier = Modifier
 ) {
     val duration = if (uiState.duration > 0) uiState.duration else musicViewModel.playbackManager.getDuration()
-    val progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f
 
     Column(modifier = modifier.fillMaxWidth()) {
-        CustomSeekBar(
-            progress = progress,
-            onProgressChange = { newProgress ->
-                val newPosition = (newProgress * duration).toLong()
-                musicViewModel.seekTo(newPosition)
-            },
-            modifier = Modifier.fillMaxWidth()
+        PlaybackSeekSlider(
+            positionMs = currentPosition,
+            durationMs = duration,
+            onSeek = musicViewModel::seekTo
         )
 
         Row(
@@ -68,79 +66,59 @@ fun PlayerProgress(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CustomSeekBar(
-    progress: Float,
-    onProgressChange: (Float) -> Unit,
-    modifier: Modifier = Modifier
+internal fun PlaybackSeekSlider(
+    positionMs: Long,
+    durationMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    /** Called when the drag ends. A remote device seeks here only; [onSeek] then just moves the thumb. */
+    onSeekEnd: (() -> Unit)? = null,
+    thumbSize: androidx.compose.ui.unit.Dp = 22.dp
 ) {
-    val haptic = LocalHapticFeedback.current
-    var isDragging by remember { mutableStateOf(false) }
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-
-    Box(
-        modifier = modifier
-            .height(32.dp)
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onProgressChange(newProgress)
-                }
+    val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val haptic = rememberJukeHaptics()
+    var lastBucket by remember(durationMs) { mutableIntStateOf((progress * 24).toInt()) }
+    Slider(
+        value = progress,
+        enabled = durationMs > 0,
+        onValueChange = { value ->
+            val bucket = (value * 24).toInt()
+            if (bucket != lastBucket) {
+                haptic.tick()
+                lastBucket = bucket
             }
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { 
-                        isDragging = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    },
-                    onDragEnd = { 
-                        isDragging = false 
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    },
-                    onHorizontalDrag = { change, _ ->
-                        val newProgress = (change.position.x / size.width).coerceIn(0f, 1f)
-                        if (newProgress != progress) {
-                           haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
-                        onProgressChange(newProgress)
-                    }
-                )
-            }
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val centerY = size.height / 2
-            val strokeWidth = 6.dp.toPx()
-            
-            // Inactive track
-            drawLine(
-                color = trackColor,
-                start = Offset(0f, centerY),
-                end = Offset(size.width, centerY),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round
+            onSeek((value * durationMs).toLong())
+        },
+        onValueChangeFinished = { haptic.gestureEnd(); onSeekEnd?.invoke() },
+        thumb = {
+            Box(
+                Modifier
+                    .size(thumbSize)
+                    .shadow(6.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.3f), spotColor = Color.Black.copy(alpha = 0.45f))
+                    .background(
+                        if (durationMs > 0) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        CircleShape
+                    )
             )
-            
-            // Active track
-            drawLine(
-                color = primaryColor,
-                start = Offset(0f, centerY),
-                end = Offset(size.width * progress, centerY),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round
-            )
-            
-            // Thumb
-            if (isDragging) {
-                drawCircle(
-                    color = primaryColor,
-                    radius = 12.dp.toPx(),
-                    center = Offset(size.width * progress, centerY)
+        },
+        track = { state ->
+            SliderDefaults.Track(
+                sliderState = state,
+                modifier = Modifier.height(6.dp),
+                thumbTrackGapSize = 0.dp,
+                drawStopIndicator = null,
+                enabled = durationMs > 0,
+                colors = SliderDefaults.colors(
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
                 )
-            }
-        }
-    }
+            )
+        },
+        modifier = modifier.fillMaxWidth().semantics { contentDescription = "Playback position" }
+    )
 }
 
 private fun formatTime(milliseconds: Long): String {

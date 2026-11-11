@@ -1,12 +1,14 @@
 package com.example.juke.ui.components.player
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,22 +18,20 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,28 +43,39 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.juke.R
+import com.example.juke.ui.components.SwipeRevealBackground
+import com.example.juke.ui.components.swipeGlass
+import com.example.juke.ui.icons.JukeIcons
+import com.example.juke.ui.theme.GlassCard
+import com.example.juke.ui.theme.pressScale
+import androidx.compose.ui.semantics.Role
+import com.example.juke.ui.theme.GlassLevel
+import com.example.juke.ui.theme.GlassShapes
+import com.example.juke.ui.theme.glassPane
+import com.example.juke.utils.rememberJukeHaptics
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QueueBottomSheetContent(
     currentTrack: com.example.juke.models.Track,
@@ -73,10 +84,25 @@ fun QueueBottomSheetContent(
     uiState: com.example.juke.viewmodels.MusicUiState,
     onClose: () -> Unit,
     onMoveTrack: (fromIndex: Int, toIndex: Int) -> Unit,
-    onRemoveTrack: (trackId: String) -> Unit,
-    onPlayTrack: (track: com.example.juke.models.Track) -> Unit
+    onRemoveTrack: (trackId: String, index: Int) -> Unit,
+    onPlayTrack: (track: com.example.juke.models.Track, index: Int) -> Unit,
+    statusText: String? = null,
+    pending: List<com.example.juke.services.QueueManager.PendingSong> = emptyList(),
+    onPlayPending: (id: String) -> Unit = {},
+    onRemovePending: (id: String) -> Unit = {},
+    heldNext: List<com.example.juke.services.QueueManager.PendingSong> = emptyList(),
+    onPlayNextCopy: (track: com.example.juke.models.Track) -> Unit = {},
+    onPlayNextPending: (id: String) -> Unit = {},
+    onShuffleUpcoming: () -> Unit = {},
+    onSortUpcoming: () -> Unit = {},
+    onClearPlayed: () -> Unit = {},
+    onSaveAsPlaylist: (name: String, includeWaiting: Boolean) -> Unit = { _, _ -> },
+    suggestedPlaylistName: () -> String = { "Queue" }
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
+    // Songs already loaded when the sheet opened don't replay the colour-up.
+    val openedWith = remember { queue.drop(queueIndex + 1).mapTo(HashSet()) { it.uuid } }
+    var showSave by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -88,12 +114,12 @@ fun QueueBottomSheetContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp),
+                .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close")
+                Icon(JukeIcons.Back, "Close")
             }
             Text(
                 "Up Next",
@@ -101,26 +127,78 @@ fun QueueBottomSheetContent(
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center
             )
-            // Spacer to balance the layout
-            Spacer(modifier = Modifier.width(48.dp))
+            var showTools by remember { mutableStateOf(false) }
+
+            if (showSave) {
+                SaveQueueDialog(
+                    initialName = remember { suggestedPlaylistName() },
+                    readyCount = queue.distinctBy { it.uuid }.size,
+                    waitingCount = pending.size,
+                    onDismiss = { showSave = false },
+                    onSave = { name, includeWaiting ->
+                        showSave = false
+                        onSaveAsPlaylist(name, includeWaiting)
+                    }
+                )
+            }
+            Box {
+                IconButton(onClick = { haptic.click(); showTools = true }) {
+                    Icon(JukeIcons.More, "Queue tools")
+                }
+                androidx.compose.material3.DropdownMenu(expanded = showTools, onDismissRequest = { showTools = false }) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Shuffle upcoming") },
+                        onClick = { showTools = false; onShuffleUpcoming() }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Sort upcoming A–Z") },
+                        onClick = { showTools = false; onSortUpcoming() }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Clear played") },
+                        onClick = { showTools = false; onClearPlayed() }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Save queue as playlist") },
+                        onClick = { showTools = false; showSave = true }
+                    )
+                }
+            }
+        }
+        if (statusText != null) {
+            Text(
+                statusText,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp, bottom = 8.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Drag-to-reorder: while a row is held the upcoming order is previewed (rows slide aside as it
+        // passes them); the real queue moves once, on drop.
+        val listState = rememberLazyListState()
+        var preview by remember { mutableStateOf<List<com.example.juke.models.Track>?>(null) }
+        var dragKey by remember { mutableStateOf<String?>(null) }
+        var dragOffset by remember { mutableFloatStateOf(0f) }
+        var dragFrom by remember { mutableIntStateOf(-1) }
+        // The queue moved (or the drop was refused): stop previewing.
+        LaunchedEffect(queue) { if (dragKey == null) preview = null }
+        LaunchedEffect(dragKey) {
+            if (dragKey == null && preview != null) {
+                kotlinx.coroutines.delay(1500)
+                if (dragKey == null) preview = null
+            }
+        }
+
         // Queue list with swipe-to-remove
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Current track indicator
             item(key = "now_playing_card") {
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
+        accent = MaterialTheme.colorScheme.primaryContainer) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -162,7 +240,7 @@ fun QueueBottomSheetContent(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.Filled.PlayArrow,
+                                    imageVector = JukeIcons.Play,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -197,38 +275,118 @@ fun QueueBottomSheetContent(
                 }
             }
 
-            // Upcoming tracks - only show tracks after current index
-            val upcomingTracks = queue.drop(queueIndex + 1)
-            if (upcomingTracks.isNotEmpty()) {
+            // Upcoming: fetched songs first, then the ones still waiting to be fetched.
+            val upcomingTracks = preview ?: queue.drop(queueIndex + 1)
+            if (upcomingTracks.isNotEmpty() || pending.isNotEmpty() || heldNext.isNotEmpty()) {
                 item(key = "queue_header_text") {
-                    Text(
-                        "Up Next",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            buildString {
+                                append("${upcomingTracks.size} ready")
+                                if (pending.isNotEmpty() || heldNext.isNotEmpty()) {
+                                    append(" · ${pending.size + heldNext.size} waiting")
+                                }
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        // A queue worth keeping: save it where the list starts.
+                        Row(
+                            modifier = Modifier
+                                .heightIn(min = 40.dp)
+                                .glassPane(GlassShapes.Pill, GlassLevel.Thin)
+                                .clickable(role = Role.Button) { haptic.click(); showSave = true }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                JukeIcons.PlaylistAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Save as playlist",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
 
+                // "Play next" picks still loading: they go right after the playing song once ready.
+                items(items = heldNext.distinctBy { it.id }, key = { "queue_held_${it.id}" }) { song ->
+                    QueueSongRow(
+                        imageUrl = song.thumbnailUrl,
+                        title = song.title,
+                        artist = "Plays next · ${song.artist}",
+                        ready = false,
+                        onClick = {},
+                        modifier = Modifier.animateItem()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .size(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                val rowKeys = upcomingRowKeys(upcomingTracks)
                 itemsIndexed(
                     items = upcomingTracks,
-                    key = { index, track -> "queue_item_${track.uuid}_$index" }
+                    key = { index, _ -> rowKeys[index] }
                 ) { index, track ->
                     val actualQueueIndex = queueIndex + 1 + index
-                    val density = LocalDensity.current
+                    val rowKey = rowKeys[index]
+                    val isDragging = dragKey == rowKey
+                    // The drag handler outlives recompositions: read the live values, not captured ones.
+                    val indexNow by rememberUpdatedState(index)
+                    val upcomingNow by rememberUpdatedState(upcomingTracks)
+                    val queueIndexNow by rememberUpdatedState(queueIndex)
+                    val moveNow by rememberUpdatedState(onMoveTrack)
 
-                    // Drag state for visual feedback
-                    var dragOffset by remember { mutableFloatStateOf(0f) }
-                    var isDragging by remember { mutableStateOf(false) }
-
+                    // The swipe callback can fire repeatedly while past the threshold: one copy per swipe.
+                    val copyQueued = remember { mutableStateOf(false) }
                     val dismissState = rememberSwipeToDismissBoxState(
+                        positionalThreshold = { distance -> distance * 0.5f },
                         confirmValueChange = { dismissValue ->
-                            // Only allow dismiss when not dragging
-                            if (!isDragging && dismissValue == SwipeToDismissBoxValue.EndToStart) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onRemoveTrack(track.uuid)
-                                true
-                            } else {
-                                false
+                            // Allow swipe dismissal only when the item is not being reordered.
+                            when {
+                                isDragging -> false
+                                dismissValue == SwipeToDismissBoxValue.Settled -> {
+                                    copyQueued.value = false
+                                    false
+                                }
+                                dismissValue == SwipeToDismissBoxValue.EndToStart -> {
+                                    haptic.reject()
+                                    onRemoveTrack(track.uuid, actualQueueIndex)
+                                    true
+                                }
+                                // Swipe right: a copy plays next; this one keeps its place.
+                                dismissValue == SwipeToDismissBoxValue.StartToEnd -> {
+                                    if (!copyQueued.value) {
+                                        copyQueued.value = true
+                                        haptic.confirm()
+                                        onPlayNextCopy(track)
+                                    }
+                                    false
+                                }
+                                else -> false
                             }
                         }
                     )
@@ -240,167 +398,204 @@ fun QueueBottomSheetContent(
                         }
                     }
 
+                    // Songs that finish loading while the sheet is open colour up from the greyed state.
+                    val arrived = track.uuid !in openedWith
+                    var ready by remember { mutableStateOf(!arrived) }
+                    LaunchedEffect(Unit) { ready = true }
+
                     SwipeToDismissBox(
                         state = dismissState,
-                        enableDismissFromStartToEnd = false,
+                        enableDismissFromStartToEnd = !isDragging,
                         enableDismissFromEndToStart = !isDragging,
                         backgroundContent = {
-                            val color by animateColorAsState(
-                                when (dismissState.targetValue) {
-                                    SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
-                                    else -> Color.Transparent
-                                }, label = "DismissColor"
-                            )
-
-                            if (!isDragging && dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(color),
-                                    contentAlignment = Alignment.CenterEnd
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Delete,
-                                        contentDescription = "Remove",
-                                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.padding(end = 16.dp)
-                                    )
-                                }
+                            if (!isDragging) {
+                                SwipeRevealBackground(
+                                    dismissState = dismissState,
+                                    startLabel = "Play next",
+                                    startIcon = JukeIcons.Queue,
+                                    endLabel = "Remove",
+                                    endIcon = JukeIcons.Delete
+                                )
                             }
                         },
                         modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .zIndex(if (dragOffset != 0f) 100f else 0f)
+                            .then(if (isDragging) Modifier else Modifier.animateItem())
+                            .zIndex(if (isDragging) 100f else 0f)
                     ) {
                         val scale by animateFloatAsState(
-                            if (isDragging) 1.05f else 1f,
+                            if (isDragging) 1.03f else 1f,
                             label = "DragScale"
                         )
 
-                        Card(
+                        QueueSongRow(
+                            imageUrl = track.thumbnailUri,
+                            title = track.title,
+                            artist = track.artist,
+                            ready = ready,
+                            onClick = {
+                                haptic.click()
+                                onPlayTrack(track, actualQueueIndex)
+                            },
                             modifier = Modifier
-                                .fillMaxWidth()
                                 .graphicsLayer {
-                                    translationY = dragOffset
-                                    shadowElevation = if (dragOffset != 0f) 12f else 0f
+                                    translationY = if (isDragging) dragOffset else 0f
+                                    shadowElevation = if (isDragging) 12f else 0f
                                     this.scaleX = scale
                                     this.scaleY = scale
                                 }
-                                .zIndex(if (dragOffset != 0f) 100f else 0f),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
-                            elevation = CardDefaults.cardElevation(
-                                defaultElevation = if (dragOffset != 0f) 8.dp else 1.dp
-                            )
+                                .swipeGlass(dismissState)
                         ) {
-                            Row(
+                            // Drag handle
+                            Icon(
+                                imageVector = JukeIcons.List,
+                                contentDescription = "Drag to reorder",
+                                tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                    alpha = 0.5f
+                                ),
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp)
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onPlayTrack(track)
-                                    },
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (track.thumbnailUri != null) {
-                                        AsyncImage(
-                                            model = track.thumbnailUri,
-                                            contentDescription = null,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Filled.PlayArrow,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    .padding(end = 4.dp)
+                                    .size(24.dp)
+                                    .pointerInput(rowKey, uiState.isQueueOperationInProgress) {
+                                        if (uiState.isQueueOperationInProgress) return@pointerInput
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                haptic.gestureStart()
+                                                dragOffset = 0f
+                                                dragFrom = indexNow
+                                                preview = upcomingNow
+                                                dragKey = rowKey
+                                            },
+                                            onDragEnd = {
+                                                val order = preview
+                                                val to = order?.let { upcomingRowKeys(it).indexOf(rowKey) } ?: dragFrom
+                                                if (dragFrom >= 0 && to >= 0 && to != dragFrom) {
+                                                    moveNow(queueIndexNow + 1 + dragFrom, queueIndexNow + 1 + to)
+                                                } else {
+                                                    preview = null
+                                                }
+                                                dragKey = null
+                                                dragOffset = 0f
+                                                haptic.gestureEnd()
+                                            },
+                                            onDragCancel = {
+                                                preview = null
+                                                dragKey = null
+                                                dragOffset = 0f
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                dragOffset += dragAmount.y
+                                                val order = preview ?: return@detectDragGestures
+                                                val keys = upcomingRowKeys(order)
+                                                val info = listState.layoutInfo
+                                                val rows = info.visibleItemsInfo
+                                                val cur = rows.firstOrNull { it.key == rowKey } ?: return@detectDragGestures
+                                                val center = cur.offset + cur.size / 2f + dragOffset
+                                                // Swap with the song under the dragged row's centre.
+                                                val target = rows.firstOrNull {
+                                                    it.key != rowKey && it.key in keys &&
+                                                            center >= it.offset && center < it.offset + it.size
+                                                }
+                                                if (target != null) {
+                                                    val from = keys.indexOf(rowKey)
+                                                    val to = keys.indexOf(target.key)
+                                                    if (from >= 0 && to >= 0) {
+                                                        preview = order.toMutableList().apply { add(to, removeAt(from)) }
+                                                        haptic.tick()
+                                                        val newOffset =
+                                                            if (to > from) target.offset + target.size - cur.size else target.offset
+                                                        dragOffset += cur.offset - newOffset
+                                                    }
+                                                }
+                                                // Edge auto-scroll keeps a long queue reachable.
+                                                val scroll = when {
+                                                    center > info.viewportEndOffset - 96f -> 24f
+                                                    center < info.viewportStartOffset + 96f -> -24f
+                                                    else -> 0f
+                                                }
+                                                if (scroll != 0f) dragOffset += listState.dispatchRawDelta(scroll)
+                                            }
                                         )
                                     }
+                            )
+                        }
+                    }
+                }
+
+                items(items = pending.distinctBy { it.id }, key = { "queue_pending_${it.id}" }) { song ->
+                    val copyQueued = remember { mutableStateOf(false) }
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        positionalThreshold = { distance -> distance * 0.5f },
+                        confirmValueChange = { value ->
+                            when (value) {
+                                SwipeToDismissBoxValue.EndToStart -> if (!song.loading) {
+                                    haptic.reject()
+                                    onRemovePending(song.id)
+                                    true
+                                } else false
+                                // Swipe right: fetch a copy now and play it next once it is ready.
+                                SwipeToDismissBoxValue.StartToEnd -> {
+                                    if (!copyQueued.value) {
+                                        copyQueued.value = true
+                                        haptic.confirm()
+                                        onPlayNextPending(song.id)
+                                    }
+                                    false
                                 }
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        track.title,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.basicMarquee()
+                                SwipeToDismissBoxValue.Settled -> {
+                                    copyQueued.value = false
+                                    false
+                                }
+                            }
+                        }
+                    )
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        enableDismissFromStartToEnd = true,
+                        enableDismissFromEndToStart = !song.loading,
+                        backgroundContent = {
+                            SwipeRevealBackground(
+                                dismissState = dismissState,
+                                startLabel = "Play next",
+                                startIcon = JukeIcons.Queue,
+                                endLabel = if (song.loading) null else "Remove",
+                                endIcon = JukeIcons.Delete
+                            )
+                        },
+                        modifier = Modifier.animateItem()
+                    ) {
+                        QueueSongRow(
+                            imageUrl = song.thumbnailUrl,
+                            title = song.title,
+                            artist = song.artist,
+                            ready = false,
+                            onClick = {
+                                haptic.click()
+                                onPlayPending(song.id)
+                            },
+                            modifier = Modifier.swipeGlass(dismissState)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(end = 4.dp)
+                                    .size(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (song.loading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                } else if (song.duration != null) {
                                     Text(
-                                        track.artist,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        song.duration,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.basicMarquee()
+                                        softWrap = false
                                     )
                                 }
-
-                                // Drag handle
-                                Icon(
-                                    imageVector = Icons.Filled.Menu,
-                                    contentDescription = "Drag to reorder",
-                                    tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                        alpha = 0.5f
-                                    ),
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .pointerInput(Unit) {
-                                            if (!uiState.isQueueOperationInProgress) {
-                                                detectDragGestures(
-                                                    onDragStart = {
-                                                        haptic.performHapticFeedback(
-                                                            HapticFeedbackType.LongPress
-                                                        )
-                                                        dragOffset = 0f
-                                                        isDragging = true
-                                                    },
-                                                    onDragEnd = {
-                                                        val itemHeightPx =
-                                                            with(density) { 72.dp.toPx() } // Approx height
-                                                        val positionsToMove =
-                                                            (dragOffset / itemHeightPx).toInt()
-
-                                                        if (positionsToMove != 0) {
-                                                            val targetIndex =
-                                                                (actualQueueIndex + positionsToMove).coerceIn(
-                                                                    queueIndex + 1,
-                                                                    queue.size - 1
-                                                                )
-                                                            if (targetIndex != actualQueueIndex) {
-                                                                onMoveTrack(
-                                                                    actualQueueIndex,
-                                                                    targetIndex
-                                                                )
-                                                            }
-                                                        }
-                                                        dragOffset = 0f
-                                                        isDragging = false
-                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    },
-                                                    onDragCancel = {
-                                                        dragOffset = 0f
-                                                        isDragging = false
-                                                    },
-                                                    onDrag = { change, dragAmount ->
-                                                        change.consume()
-                                                        dragOffset += dragAmount.y
-                                                    }
-                                                )
-                                            }
-                                        }
-                                )
                             }
                         }
                     }
@@ -423,4 +618,178 @@ fun QueueBottomSheetContent(
             }
         }
     }
+}
+
+/** One unique key per upcoming row: the same song can be queued twice. */
+private fun upcomingRowKeys(tracks: List<com.example.juke.models.Track>): List<String> {
+    val seen = HashMap<String, Int>()
+    return tracks.map { t ->
+        val n = seen.merge(t.uuid, 1, Int::plus)!! - 1
+        "queue_item_${t.uuid}#$n"
+    }
+}
+
+/**
+ * Flat queue row in the Library / Search style: artwork, title and artist, a trailing slot and a
+ * hairline underneath. A song that isn't fetched yet is greyed (desaturated artwork, dimmed text)
+ * and colours up when it becomes ready.
+ */
+@Composable
+private fun QueueSongRow(
+    imageUrl: String?,
+    title: String,
+    artist: String,
+    ready: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailing: @Composable () -> Unit
+) {
+    val readiness by animateFloatAsState(
+        targetValue = if (ready) 1f else 0f,
+        animationSpec = tween(durationMillis = 420, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)),
+        label = "QueueRowReady"
+    )
+    val source = remember { MutableInteractionSource() }
+    val artFilter = remember(readiness) {
+        ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(readiness) })
+    }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .pressScale(source)
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(
+                    interactionSource = source,
+                    indication = LocalIndication.current,
+                    onClick = onClick
+                )
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    .graphicsLayer { alpha = 0.5f + 0.5f * readiness },
+                contentAlignment = Alignment.Center
+            ) {
+                if (imageUrl != null) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        colorFilter = if (readiness < 1f) artFilter else null
+                    )
+                } else {
+                    Icon(
+                        imageVector = JukeIcons.Play,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { alpha = 0.45f + 0.55f * readiness }
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            trailing()
+        }
+        HorizontalDivider(
+            modifier = Modifier.padding(start = 64.dp),
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        )
+    }
+}
+
+/** Name the saved queue; optionally bring the greyed waiting songs along (they load in the background). */
+@Composable
+internal fun SaveQueueDialog(
+    initialName: String,
+    readyCount: Int,
+    waitingCount: Int,
+    onDismiss: () -> Unit,
+    onSave: (name: String, includeWaiting: Boolean) -> Unit
+) {
+    val haptic = rememberJukeHaptics()
+    var name by remember { mutableStateOf(initialName) }
+    var includeWaiting by remember { mutableStateOf(waitingCount > 0) }
+    com.example.juke.ui.components.GlassAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save queue as playlist") },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Playlist name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "$readyCount ${if (readyCount == 1) "song" else "songs"} from the queue",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (waitingCount > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { includeWaiting = !includeWaiting }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = includeWaiting,
+                            onCheckedChange = { includeWaiting = it }
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text("Also add $waitingCount waiting songs", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "They download in the background",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    haptic.heavyClick()
+                    onSave(name, includeWaiting)
+                },
+                enabled = name.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = { haptic.click(); onDismiss() }) { Text("Cancel") }
+        }
+    )
 }

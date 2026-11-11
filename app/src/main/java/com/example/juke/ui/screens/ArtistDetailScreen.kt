@@ -1,5 +1,8 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,46 +15,46 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyImage
 import com.example.juke.models.SpotifyTrack
+import com.example.juke.ui.components.FlatTrackRow
+import com.example.juke.ui.components.GlassTopAppBar
+import com.example.juke.ui.components.MediaDetailSkeleton
 import com.example.juke.ui.components.SwipeToAddNextContainer
+import com.example.juke.ui.theme.GlassCard
+import com.example.juke.utils.BlacklistManager
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistDetailScreen(
     searchViewModel: SearchViewModel = viewModel(),
@@ -60,41 +63,63 @@ fun ArtistDetailScreen(
     onNavigateToAlbum: (SpotifyAlbum) -> Unit = {},
     bottomPadding: Dp = 0.dp
 ) {
-    val uiState by searchViewModel.artistDetailState.collectAsState()
+    val uiState by searchViewModel.artistDetailState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-
-    if (uiState.artist == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
-    val artist = uiState.artist!!
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val artist = uiState.artist
 
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(artist.name) },
+            GlassTopAppBar(
+                title = { Text(artist?.name ?: "Artist") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(JukeIcons.Back, "Back")
+                    }
+                },
+                actions = {
+                    if (artist != null) {
+                        com.example.juke.ui.components.ShareButton("artist", artist.id)
+                        val isBlacklisted = remember(artist.name) {
+                            BlacklistManager.containsBlacklistedArtist(context, artist.name)
+                        }
+                        var blacklisted by remember(artist.name) { mutableStateOf(isBlacklisted) }
+                        IconButton(onClick = {
+                            if (blacklisted) {
+                                BlacklistManager.removeArtist(context, artist.name)
+                                Toast.makeText(context, "${artist.name} unblocked", Toast.LENGTH_SHORT).show()
+                            } else {
+                                BlacklistManager.addArtist(context, artist.name)
+                                Toast.makeText(context, "${artist.name} blocked", Toast.LENGTH_SHORT).show()
+                            }
+                            blacklisted = !blacklisted
+                        }) {
+                            Icon(
+                                imageVector = if (blacklisted)
+                                    Icons.Filled.Block
+                                else
+                                    Icons.Outlined.Block,
+                                contentDescription = if (blacklisted) "Unblock Artist" else "Block Artist",
+                                tint = if (blacklisted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             )
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) { paddingValues ->
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+        if (uiState.isLoading || artist == null) {
+            MediaDetailSkeleton(
+                modifier = Modifier.padding(paddingValues),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    top = 16.dp,
+                    end = 20.dp,
+                    bottom = 16.dp + bottomPadding
+                )
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -106,7 +131,7 @@ fun ArtistDetailScreen(
                     end = 20.dp,
                     bottom = 16.dp + bottomPadding
                 ),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Artist Header
                 item {
@@ -116,7 +141,7 @@ fun ArtistDetailScreen(
                     ) {
                         AsyncImage(
                             model = bestImageUrl(artist.images) ?: artist.images.firstOrNull()?.url
-                            ?: "",
+                                ?: "",
                             contentDescription = artist.name,
                             modifier = Modifier
                                 .size(200.dp)
@@ -152,9 +177,11 @@ fun ArtistDetailScreen(
                 // Top Tracks Section
                 if (uiState.topTracks.isNotEmpty()) {
                     item {
-                        Text(
-                            text = "Top Tracks",
-                            style = MaterialTheme.typography.titleLarge
+                        val top = uiState.topTracks.take(10)
+                        com.example.juke.ui.components.PlayShuffleRow(
+                            title = "Top Tracks",
+                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(top.shuffled(), 0) },
+                            onPlay = { musicViewModel.setQueueFromSpotifyTracks(top, 0) }
                         )
                     }
 
@@ -169,6 +196,7 @@ fun ArtistDetailScreen(
                         ) {
                             TrackItem(
                                 track = track,
+                                musicViewModel = musicViewModel,
                                 onClick = {
                                     scope.launch {
                                         // Queue this track and all tracks below it
@@ -224,80 +252,17 @@ fun ArtistDetailScreen(
 @Composable
 private fun TrackItem(
     track: SpotifyTrack,
+    musicViewModel: MusicViewModel,
     onClick: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick,
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Card(
-                modifier = Modifier.size(72.dp),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                AsyncImage(
-                    model = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url
-                    ?: "",
-                    contentDescription = track.name,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = track.name,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = track.artists.joinToString(", ") { it.name },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = track.album.name,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Text(
-                    text = formatDuration(track.durationMs),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-        }
-    }
+    FlatTrackRow(
+        actions = com.example.juke.ui.components.spotifyTrackActions(track, musicViewModel, play = onClick),
+        imageUrl = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url,
+        title = track.name,
+        subtitle = "${track.artists.joinToString(", ") { it.name }} · ${track.album.name}",
+        duration = formatDuration(track.durationMs),
+        onClick = onClick
+    )
 }
 
 @Composable
@@ -305,14 +270,11 @@ private fun AlbumItem(
     album: SpotifyAlbum,
     onClick: () -> Unit
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        onClick = onClick,
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp)
-    ) {
+        onClick = onClick) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

@@ -1,13 +1,23 @@
 package com.example.juke.ui.screens
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
+import android.net.ConnectivityManager
+import android.net.Network
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import android.widget.Toast
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,17 +31,16 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,67 +49,102 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.example.juke.models.SpotifyAlbum
+import com.example.juke.models.SpotifyTrack
+import com.example.juke.ui.components.ActionMenu
+import com.example.juke.ui.components.MenuAction
+import com.example.juke.ui.components.libraryTrackActions
+import com.example.juke.ui.components.onRightClick
+import com.example.juke.ui.components.spotifyTrackActions
 import com.example.juke.models.Track
-import com.example.juke.ui.components.HeroTrackCard
+import com.example.juke.network.SpotifyApi
+import com.example.juke.ui.components.GlassIconButton
+import com.example.juke.ui.components.GlassPillButton
+import com.example.juke.ui.components.HomeSkeleton
+import com.example.juke.ui.components.ShapedSkeletonBlock
+import com.example.juke.ui.icons.JukeIcons
+import com.example.juke.ui.theme.GlassLevel
+import com.example.juke.ui.theme.GlassShapes
+import com.example.juke.ui.theme.glassPane
+import com.example.juke.utils.rememberJukeHaptics
+import com.example.juke.viewmodels.HomeUiState
 import com.example.juke.viewmodels.HomeViewModel
 import com.example.juke.viewmodels.MusicViewModel
-import kotlinx.coroutines.delay
+import com.example.juke.viewmodels.RadioSection
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     musicViewModel: MusicViewModel,
     homeViewModel: HomeViewModel = viewModel(),
     onSettingsClick: () -> Unit = {},
     onSeeAllClick: () -> Unit = {},
+    onSearchClick: () -> Unit = {},
+    onAlbumClick: (SpotifyAlbum) -> Unit = {},
     bottomPadding: Dp = 0.dp
 ) {
-    val uiState by homeViewModel.uiState.collectAsState()
+    val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
+    val haptic = rememberJukeHaptics()
 
     LaunchedEffect(Unit) {
         homeViewModel.loadHomeData()
     }
 
-    if (uiState.isLoading) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator()
+    // Fill the feed as soon as connectivity returns instead of waiting for a manual refresh.
+    val context = LocalContext.current
+    DisposableEffect(context) {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = homeViewModel.onNetworkAvailable()
         }
+        runCatching { cm?.registerDefaultNetworkCallback(callback) }
+        onDispose { runCatching { cm?.unregisterNetworkCallback(callback) } }
+    }
+
+    if (uiState.isLoading) {
+        HomeSkeleton(bottomPadding = bottomPadding)
         return
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Frozen header
         HomeHeader(
             greeting = uiState.greeting,
-            onSettingsClick = onSettingsClick
+            onSettingsClick = {
+                haptic.click()
+                onSettingsClick()
+            },
+            onJamClick = {
+                haptic.click()
+                com.example.juke.jam.JamSession.sheetOpen.value = true
+            }
         )
 
-        // Scrollable content with pull-to-refresh
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
             onRefresh = { homeViewModel.refresh() },
@@ -110,47 +154,113 @@ fun HomeScreen(
         ) {
             if (uiState.recentlyPlayed.isEmpty() && uiState.mostPlayed.isEmpty() && uiState.favorites.isEmpty()) {
                 EmptyHomeState(
-                    onSettingsClick = onSettingsClick,
-                    modifier = Modifier.fillMaxSize()
+                    onSearchClick = onSearchClick,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = bottomPadding)
                 )
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 24.dp + bottomPadding)
-                ) {
-                    if (uiState.recentlyPlayed.isNotEmpty()) {
-                        item {
-                            RecentlyPlayedSection(
-                                tracks = uiState.recentlyPlayed,
-                                onTrackClick = { index ->
-                                    musicViewModel.setQueue(uiState.recentlyPlayed, index)
-                                },
-                                onSeeAllClick = onSeeAllClick
-                            )
-                        }
-                    }
+                HomeFeed(
+                    state = uiState,
+                    musicViewModel = musicViewModel,
+                    onSeeAllClick = onSeeAllClick,
+                    onAlbumClick = onAlbumClick,
+                    onRetry = { homeViewModel.refresh() },
+                    bottomPadding = bottomPadding
+                )
+            }
+        }
+    }
+}
 
-                    if (uiState.mostPlayed.isNotEmpty()) {
-                        item {
-                            HorizontalTrackSection(
-                                title = "Most Played",
-                                tracks = uiState.mostPlayed,
-                                onTrackClick = { index ->
-                                    musicViewModel.setQueue(uiState.mostPlayed, index)
-                                }
-                            )
-                        }
-                    }
+@Composable
+private fun HomeFeed(
+    state: HomeUiState,
+    musicViewModel: MusicViewModel,
+    onSeeAllClick: () -> Unit,
+    onAlbumClick: (SpotifyAlbum) -> Unit,
+    onRetry: () -> Unit,
+    bottomPadding: Dp
+) {
+    val rotation = remember(state.recentlyPlayed, state.mostPlayed) {
+        (state.recentlyPlayed + state.mostPlayed).distinctBy { it.uuid }.take(12)
+    }
+    val hasDiscovery = state.newReleases.isNotEmpty() || state.becauseYouPlayed.isNotEmpty() ||
+            state.likeFavorites != null
 
-                    if (uiState.favorites.isNotEmpty()) {
-                        item {
-                            FavoritesSection(
-                                tracks = uiState.favorites,
-                                onTrackClick = { index ->
-                                    musicViewModel.setQueue(uiState.favorites, index)
-                                }
-                            )
-                        }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .animateContentSize(),
+        contentPadding = PaddingValues(bottom = 24.dp + bottomPadding)
+    ) {
+        if (state.releasesPending && state.newReleases.isEmpty()) {
+            item(key = "releases_skeleton") { CardRowSkeleton() }
+        }
+        if (state.discoveryOffline && !hasDiscovery) {
+            item(key = "offline") { OfflineNotice(onRetry = onRetry) }
+        }
+
+        if (state.newReleases.isNotEmpty()) {
+            item {
+                SectionHeader(title = "New from artists you play")
+                com.example.juke.ui.components.ArrowRow {
+                    items(state.newReleases.distinctBy { it.id.orEmpty() }, key = { it.id.orEmpty() }) { album ->
+                        ReleaseCard(
+                            album = album,
+                            onClick = { onAlbumClick(album) },
+                            actions = listOf(
+                                MenuAction("Open album") { onAlbumClick(album) },
+                                MenuAction("Play") { musicViewModel.playAlbum(album, shuffle = false) },
+                                MenuAction("Shuffle") { musicViewModel.playAlbum(album, shuffle = true) }
+                            ) + com.example.juke.ui.components.shareAction("album", album.id)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(28.dp))
+            }
+        }
+
+        items(state.becauseYouPlayed.distinctBy { it.seed.uuid }, key = { it.seed.uuid }) { section ->
+            SectionHeader(title = "Because you played ${section.seed.title}")
+            RadioList(section = section, musicViewModel = musicViewModel)
+            Spacer(Modifier.height(28.dp))
+        }
+        if (state.becausePending > 0) {
+            items(state.becausePending, key = { "because_skeleton_$it" }) { ListSectionSkeleton() }
+        }
+        if (state.likePending && state.likeFavorites == null) {
+            item(key = "like_skeleton") { CardRowSkeleton() }
+        }
+
+        state.likeFavorites?.let { section ->
+            item {
+                SectionHeader(title = "More like ${section.seed.title}")
+                com.example.juke.ui.components.ArrowRow {
+                    items(section.tracks.distinctBy { it.id.orEmpty() }, key = { it.id.orEmpty() }) { track ->
+                        RadioCard(
+                            track = track,
+                            onClick = { musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
+                            actions = spotifyTrackActions(track, musicViewModel)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(28.dp))
+            }
+        }
+
+        if (rotation.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Back in rotation", onActionClick = onSeeAllClick)
+                com.example.juke.ui.components.ArrowRow {
+                    itemsIndexed(rotation.distinctBy { it.uuid }, key = { _, t -> t.uuid }) { index, track ->
+                        LibraryCard(
+                            track = track,
+                            onClick = { musicViewModel.setQueue(rotation, index, jamSingle = true) },
+                            actions = libraryTrackActions(track, musicViewModel) {
+                                musicViewModel.setQueue(rotation, index, jamSingle = true)
+                            }
+                        )
                     }
                 }
             }
@@ -161,153 +271,44 @@ fun HomeScreen(
 @Composable
 private fun HomeHeader(
     greeting: String,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onJamClick: () -> Unit
 ) {
+    val inJam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 20.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Text(
-                text = "JUKE",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = greeting,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "What are we listening to?",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        IconButton(onClick = onSettingsClick) {
+        Text(
+            text = greeting,
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+
+        GlassIconButton(
+            onClick = onJamClick,
+            contentDescription = if (inJam.active) "Jam ${inJam.code}" else "Jam"
+        ) {
             Icon(
-                Icons.Filled.Settings,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun RecentlyPlayedSection(
-    tracks: List<Track>,
-    onTrackClick: (Int) -> Unit,
-    onSeeAllClick: () -> Unit
-) {
-    val pagerState = rememberPagerState(pageCount = { tracks.size })
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    LaunchedEffect(pagerState, tracks) {
-        while (true) {
-            delay(4000)
-            val isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-            if (!pagerState.isScrollInProgress && tracks.isNotEmpty() && isResumed) {
-                pagerState.animateScrollToPage((pagerState.currentPage + 1) % tracks.size)
-            }
-        }
-    }
-
-    Column {
-        SectionHeader(title = "Recently Played", onActionClick = onSeeAllClick)
-
-        HorizontalPager(
-            state = pagerState,
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            pageSpacing = 12.dp
-        ) { page ->
-            HeroTrackCard(
-                track = tracks[page],
-                onClick = { onTrackClick(page) }
+                Icons.Filled.Group,
+                contentDescription = null,
+                tint = if (inJam.active) MaterialTheme.colorScheme.primary else LocalContentColor.current
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(Modifier.width(12.dp))
 
-        // Animated pill indicators
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+        GlassIconButton(
+            onClick = onSettingsClick,
+            contentDescription = "Settings"
         ) {
-            repeat(tracks.size.coerceAtMost(8)) { index ->
-                val isSelected = index == pagerState.currentPage
-                val pillWidth by animateDpAsState(
-                    targetValue = if (isSelected) 22.dp else 6.dp,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "pillWidth"
-                )
-                val pillColor by animateColorAsState(
-                    targetValue = if (isSelected)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                    animationSpec = tween(durationMillis = 300),
-                    label = "pillColor"
-                )
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 3.dp)
-                        .height(6.dp)
-                        .width(pillWidth)
-                        .clip(CircleShape)
-                        .background(pillColor)
-                )
-            }
+            Icon(Icons.Filled.Settings, contentDescription = null)
         }
-
-        Spacer(modifier = Modifier.height(28.dp))
-    }
-}
-
-@Composable
-private fun HorizontalTrackSection(
-    title: String,
-    tracks: List<Track>,
-    onTrackClick: (Int) -> Unit
-) {
-    Column {
-        SectionHeader(title = title)
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            itemsIndexed(tracks) { index, track ->
-                MusicCard(track = track, onClick = { onTrackClick(index) })
-            }
-        }
-        Spacer(modifier = Modifier.height(28.dp))
-    }
-}
-
-@Composable
-private fun FavoritesSection(
-    tracks: List<Track>,
-    onTrackClick: (Int) -> Unit
-) {
-    Column {
-        SectionHeader(title = "Favorites")
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            itemsIndexed(tracks) { index, track ->
-                FavoriteCard(track = track, onClick = { onTrackClick(index) })
-            }
-        }
-        Spacer(modifier = Modifier.height(28.dp))
     }
 }
 
@@ -319,251 +320,414 @@ private fun SectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 14.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
         )
         if (onActionClick != null) {
-            TextButton(onClick = onActionClick) {
+            TextButton(
+                onClick = onActionClick,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
                 Text(
                     "See All",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
     }
 }
 
+private val releaseDateFormat = DateTimeFormatter.ofPattern("MMM d")
+
 @Composable
-private fun MusicCard(
-    track: Track,
-    onClick: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    Box(
+private fun ReleaseCard(album: SpotifyAlbum, onClick: () -> Unit, actions: List<MenuAction>) {
+    val haptic = rememberJukeHaptics()
+    var menuOpen by remember { mutableStateOf(false) }
+    val date = remember(album.releaseDate) {
+        album.releaseDate?.let {
+            runCatching {
+                LocalDate.parse(it).format(releaseDateFormat)
+            }.getOrNull()
+        }
+    }
+    val artist = album.artists.joinToString(", ") { it.name }
+    val kind = if (album.albumType == "single") "Single" else "Album"
+    Column(
         modifier = Modifier
-            .size(140.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onClick()
-                })
+            .width(148.dp)
+            .glassPane(GlassShapes.Card, GlassLevel.Regular)
+            .semantics(mergeDescendants = true) {
+                contentDescription =
+                    "${album.name}, $kind by $artist${date?.let { ", released $it" }.orEmpty()}"
+            }
+            .onRightClick { menuOpen = true }
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "Open ${album.name}",
+                onLongClickLabel = "More options for ${album.name}",
+                onLongClick = { haptic.heavyClick(); menuOpen = true }
+            ) {
+                haptic.click()
+                onClick()
             }
     ) {
-        if (track.thumbnailUri != null) {
-            AsyncImage(
-                model = track.thumbnailUri,
-                contentDescription = track.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+        ActionMenu(menuOpen, { menuOpen = false }, actions)
+        ArtImage(
+            url = album.images.firstOrNull()?.url,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(148.dp)
+        )
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                album.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-        } else {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+            Text(
+                listOfNotNull(artist, date).joinToString(" · "),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun RadioList(section: RadioSection, musicViewModel: MusicViewModel) {
+    val haptic = rememberJukeHaptics()
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth()
+            .glassPane(GlassShapes.Card, GlassLevel.Regular)
+            .padding(vertical = 4.dp)
+    ) {
+        section.tracks.take(5).forEach { track ->
+            val artist = track.artists.joinToString(", ") { it.name }
+            var menuOpen by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onRightClick { menuOpen = true }
+                    .combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = "Play ${track.name}",
+                        onLongClickLabel = "More options for ${track.name}",
+                        onLongClick = { haptic.heavyClick(); menuOpen = true }
+                    ) {
+                        haptic.click()
+                        musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track))
+                    }
+                    .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Filled.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                ActionMenu(menuOpen, { menuOpen = false }, spotifyTrackActions(track, musicViewModel))
+                ArtImage(
+                    url = track.album.images.lastOrNull { (it.width ?: 0) >= 128 }?.url
+                        ?: track.album.images.firstOrNull()?.url,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(10.dp))
                 )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 14.dp)
+                ) {
+                    Text(
+                        track.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        artist,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        haptic.click()
+                        musicViewModel.queueSpotifyTrackNext(track)
+                    }
+                ) {
+                    Icon(
+                        JukeIcons.Queue,
+                        contentDescription = "Play ${track.name} next",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
+    }
+}
 
-        // Gradient overlay
+@Composable
+private fun RadioCard(track: SpotifyTrack, onClick: () -> Unit, actions: List<MenuAction>) {
+    CoverCard(
+        actions = actions,
+        title = track.name,
+        subtitle = track.artists.joinToString(", ") { it.name },
+        imageUrl = track.album.images.firstOrNull()?.url,
+        onClick = onClick,
+        description = "${track.name} by ${track.artists.joinToString(", ") { it.name }}"
+    )
+}
+
+@Composable
+private fun LibraryCard(track: Track, onClick: () -> Unit, actions: List<MenuAction>) {
+    CoverCard(
+        actions = actions,
+        title = track.title,
+        subtitle = track.artist,
+        imageUrl = track.thumbnailUri,
+        onClick = onClick,
+        description = "${track.title} by ${track.artist}"
+    )
+}
+
+/** Square art with a glass caption plate; the shared shape for song lanes. */
+@Composable
+private fun CoverCard(
+    title: String,
+    subtitle: String,
+    imageUrl: String?,
+    onClick: () -> Unit,
+    description: String,
+    actions: List<MenuAction> = emptyList()
+) {
+    val haptic = rememberJukeHaptics()
+    var menuOpen by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 140),
+        label = "coverCardScale"
+    )
+    Box(
+        modifier = Modifier
+            .size(148.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .glassPane(GlassShapes.Card, GlassLevel.Regular)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .onRightClick { if (actions.isNotEmpty()) menuOpen = true }
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = "Play $title",
+                onLongClickLabel = if (actions.isEmpty()) null else "More options for $title",
+                onLongClick = if (actions.isEmpty()) null else ({ haptic.heavyClick(); menuOpen = true })
+            ) {
+                haptic.click()
+                onClick()
+            }
+    ) {
+        ActionMenu(menuOpen, { menuOpen = false }, actions)
+        ArtImage(url = imageUrl, modifier = Modifier.fillMaxSize())
         Box(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f)),
-                        startY = 80f
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                        startY = 160f
                     )
                 )
         )
-
-        // Title and artist at bottom
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(10.dp)
-        ) {
+        Column(Modifier
+            .align(Alignment.BottomStart)
+            .padding(12.dp)) {
             Text(
-                text = track.title,
+                title,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f),
+                subtitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.78f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+}
 
-        // Play count pill (top-right)
-        if (track.playCount > 0) {
+@Composable
+private fun ArtImage(url: String?, modifier: Modifier) {
+    if (url != null) {
+        AsyncImage(
+            model = url,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Box(
+            modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                JukeIcons.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun CardRowSkeleton() {
+    Column(Modifier.padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        ShapedSkeletonBlock(
+            Modifier
+                .padding(horizontal = 24.dp)
+                .width(190.dp)
+                .height(20.dp),
+            RoundedCornerShape(6.dp)
+        )
+        Row(
+            Modifier.padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            repeat(3) { ShapedSkeletonBlock(Modifier.size(148.dp), GlassShapes.Card) }
+        }
+    }
+}
+
+@Composable
+private fun ListSectionSkeleton() {
+    Column(
+        Modifier
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ShapedSkeletonBlock(Modifier
+            .width(230.dp)
+            .height(20.dp), RoundedCornerShape(6.dp))
+        repeat(3) {
             Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(7.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(50))
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(
-                    Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(10.dp),
-                    tint = Color.White
-                )
-                Text(
-                    text = track.playCount.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    fontSize = 10.sp
-                )
+                ShapedSkeletonBlock(Modifier.size(52.dp), RoundedCornerShape(10.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ShapedSkeletonBlock(
+                        Modifier
+                            .width(170.dp)
+                            .height(14.dp),
+                        RoundedCornerShape(5.dp)
+                    )
+                    ShapedSkeletonBlock(
+                        Modifier
+                            .width(110.dp)
+                            .height(12.dp),
+                        RoundedCornerShape(5.dp)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun FavoriteCard(
-    track: Track,
-    onClick: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    Column(
-        modifier = Modifier
-            .width(90.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onClick()
-                })
-            },
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun OfflineNotice(onRetry: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .glassPane(GlassShapes.Card, GlassLevel.Thin)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(90.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            if (track.thumbnailUri != null) {
-                AsyncImage(
-                    model = track.thumbnailUri,
-                    contentDescription = track.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    Icons.Filled.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(
-                Icons.Filled.Favorite,
-                contentDescription = null,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(5.dp)
-                    .size(13.dp),
-                tint = Color(0xFFE91E63)
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = track.title,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            "You're offline. New picks appear when you're back online.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
         )
+        GlassPillButton(text = "Retry", onClick = onRetry)
     }
+    Spacer(Modifier.height(20.dp))
 }
 
 @Composable
 private fun EmptyHomeState(
-    onSettingsClick: () -> Unit,
+    onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
-        // Settings icon top-right
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-            contentAlignment = Alignment.TopEnd
-        ) {
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    Icons.Filled.Settings,
-                    contentDescription = "Settings",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
+        val isShort = maxHeight < 400.dp
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(40.dp)
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(if (isShort) 16.dp else 32.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .size(if (isShort) 48.dp else 80.dp)
+                    .glassPane(CircleShape, GlassLevel.Thick),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.MusicNote,
+                    JukeIcons.MusicNote,
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(if (isShort) 28.dp else 40.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(if (isShort) 12.dp else 24.dp))
             Text(
                 "Welcome to JUKE",
-                style = MaterialTheme.typography.headlineMedium,
+                style = if (isShort) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                "Your library is empty.\nSearch and download your favorite music to get started.",
-                style = MaterialTheme.typography.bodyLarge,
+                "Play a few songs and Home fills with picks from your history and new releases from your artists.",
+                style = if (isShort) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 24.sp
             )
+            Spacer(modifier = Modifier.height(if (isShort) 12.dp else 24.dp))
+            GlassPillButton(text = "Find music", onClick = onSearchClick)
         }
     }
 }
-

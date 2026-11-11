@@ -1,125 +1,197 @@
 package com.example.juke.ui.components
 
 import android.annotation.SuppressLint
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.example.juke.ui.icons.JukeIcons
+import com.example.juke.ui.theme.LocalGlassAccent
+import com.example.juke.ui.theme.isGlassDark
+import com.example.juke.utils.rememberJukeHaptics
+import kotlin.math.abs
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeToAddNextContainer(
     onAddNext: () -> Unit,
     onDelete: (() -> Unit)? = null,
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
 
-    // Increased threshold to reduce sensitivity (requires 65% swipe to trigger)
-    // This ensures users must swipe deliberately to trigger delete/add-next actions
+    // Guard flag: ensures the action fires only ONCE per swipe gesture.
+    // confirmValueChange can be called multiple times during a single drag
+    // (every time the item crosses the threshold), which caused rapid-fire
+    // duplicate insertions. Resetting on Settled prevents cross-gesture leakage.
+    val actionFired = remember { mutableStateOf(false) }
+
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { distance -> distance * 0.65f },
         confirmValueChange = { value ->
+            if (!enabled) return@rememberSwipeToDismissBoxState false
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onAddNext()
-                    false // Reset after triggering action
+                    if (!actionFired.value) {
+                        actionFired.value = true
+                        haptic.confirm()
+                        onAddNext()
+                    }
+                    false // Reset swipe position after action
                 }
 
                 SwipeToDismissBoxValue.EndToStart -> {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onDelete?.invoke()
-                    false // Reset after triggering action
+                    if (!actionFired.value) {
+                        actionFired.value = true
+                        haptic.reject()
+                        onDelete?.invoke()
+                    }
+                    false // Reset swipe position after action
                 }
 
-                else -> false
+                SwipeToDismissBoxValue.Settled -> {
+                    // Swipe returned to neutral — allow the next swipe to fire
+                    actionFired.value = false
+                    false
+                }
             }
         }
     )
 
     SwipeToDismissBox(
         state = dismissState,
-        enableDismissFromEndToStart = onDelete != null,
+        enableDismissFromStartToEnd = enabled,
+        enableDismissFromEndToStart = enabled && onDelete != null,
         backgroundContent = {
-            // Right swipe background (Add Next)
-            if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Row(
-                        modifier = Modifier.padding(start = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.PlayArrow,
-                            contentDescription = "Add next",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = "Add to queue next",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-            }
-            // Left swipe background (Delete) - only show if onDelete is provided
-            else if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart && onDelete != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.errorContainer),
-                    contentAlignment = Alignment.CenterEnd
-                ) {
-                    Row(
-                        modifier = Modifier.padding(end = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "Delete",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-            }
+            SwipeRevealBackground(
+                dismissState = dismissState,
+                startLabel = "Add to queue next",
+                startIcon = JukeIcons.Play,
+                endLabel = if (onDelete != null) "Delete" else null,
+                endIcon = JukeIcons.Delete
+            )
         },
-        content = content,
+        content = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .swipeGlass(dismissState),
+                content = content
+            )
+        },
         modifier = modifier
     )
+}
+
+private val SwipeShape = RoundedCornerShape(12.dp)
+
+/**
+ * What a swiped row reveals: a tinted glow that lights up from behind the sliding glass card
+ * (no opaque fill), and the action label only in the strip the card has slid away from, so it
+ * never sits under the song title. [endLabel] null = no end-to-start action.
+ */
+@Composable
+fun SwipeRevealBackground(
+    dismissState: SwipeToDismissBoxState,
+    startLabel: String,
+    startIcon: ImageVector,
+    endLabel: String?,
+    endIcon: ImageVector
+) {
+    val dark = isGlassDark()
+    val direction = dismissState.dismissDirection
+    val glow = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
+        SwipeToDismissBoxValue.EndToStart -> if (endLabel != null) MaterialTheme.colorScheme.error else null
+        else -> null
+    } ?: return
+    val toEnd = direction == SwipeToDismissBoxValue.StartToEnd
+    val strength = dismissState.progress.coerceIn(0f, 1f)
+    val onGlow = if (dark) Color.White else MaterialTheme.colorScheme.onSurface
+    val offsetPx = runCatching { dismissState.requireOffset() }.getOrDefault(0f)
+    val revealed = with(LocalDensity.current) { abs(offsetPx).toDp() }
+    Box(Modifier.fillMaxSize().clip(SwipeShape)) {
+        // Light source behind the glass: blurred so it reads as a glow, never as shapes.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .blur(18.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        if (toEnd) listOf(glow.copy(alpha = 0.55f * strength + 0.15f), glow.copy(alpha = 0.04f))
+                        else listOf(glow.copy(alpha = 0.04f), glow.copy(alpha = 0.55f * strength + 0.15f))
+                    )
+                )
+        )
+        Box(
+            Modifier
+                .width(revealed)
+                .fillMaxHeight()
+                .align(if (toEnd) Alignment.CenterStart else Alignment.CenterEnd)
+                .clipToBounds(),
+            contentAlignment = if (toEnd) Alignment.CenterStart else Alignment.CenterEnd
+        ) {
+            Row(
+                modifier = Modifier
+                    .wrapContentWidth(if (toEnd) Alignment.Start else Alignment.End, unbounded = true)
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (toEnd) {
+                    Icon(startIcon, contentDescription = null, tint = onGlow)
+                    Text(startLabel, style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
+                } else if (endLabel != null) {
+                    Text(endLabel, style = MaterialTheme.typography.bodyLarge, color = onGlow, maxLines = 1, softWrap = false)
+                    Icon(endIcon, contentDescription = null, tint = onGlow)
+                }
+            }
+        }
+    }
+}
+
+/** The row turns into tinted glass while it is dragged, so the glow reads through it. */
+@Composable
+fun Modifier.swipeGlass(dismissState: SwipeToDismissBoxState): Modifier {
+    val dark = isGlassDark()
+    val accent = LocalGlassAccent.current
+    val dragging = dismissState.dismissDirection != SwipeToDismissBoxValue.Settled
+    val glass by animateFloatAsState(targetValue = if (dragging) 1f else 0f, label = "swipeGlass")
+    return this
+        .clip(SwipeShape)
+        .background((if (dark) Color(0xFF14141A) else Color.White).copy(alpha = 0.55f * glass))
+        .background(accent.copy(alpha = (if (dark) 0.14f else 0.10f) * glass))
+        .border(0.6.dp, Color.White.copy(alpha = (if (dark) 0.22f else 0.5f) * glass), SwipeShape)
 }

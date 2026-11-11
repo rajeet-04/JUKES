@@ -1,10 +1,10 @@
 package com.example.juke.ui.components
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.example.juke.ui.theme.pressScale
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,14 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,27 +28,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
+import com.example.juke.ui.icons.JukeIcons
+import com.example.juke.utils.rememberJukeHaptics
+import kotlin.time.Duration.Companion.milliseconds
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LibraryTrackItem(
     track: Track,
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    modifier: Modifier = Modifier,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
-    onPlay: () -> Unit,
     onLongClick: () -> Unit = {},
-    onToggleFavorite: () -> Unit,
     onTrailingIconClick: () -> Unit = {},
-    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.MoreVert,
-    modifier: Modifier = Modifier
+    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = JukeIcons.More,
+    /** Reorder handle shown after the actions (playlist custom order). */
+    dragHandle: (@Composable () -> Unit)? = null,
+    /** False: not on this device yet (a synced song). Shown dimmed; playing it streams it. */
+    available: Boolean = true,
+    downloading: Boolean = false
 ) {
     var isFavoritePressed by remember { mutableStateOf(false) }
     val favoriteScale by animateFloatAsState(
@@ -63,168 +64,145 @@ fun LibraryTrackItem(
         label = "favoriteScale"
     )
 
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberJukeHaptics()
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            else MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
+    val rowSource = remember { MutableInteractionSource() }
+    Column(modifier = modifier.fillMaxWidth().alpha(if (available || downloading) 1f else 0.45f)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRing()
+                .onMenuKey(onTrailingIconClick)
+                .pressScale(rowSource)
+                .clip(RoundedCornerShape(10.dp))
+                .onRightClick(onTrailingIconClick) // same as the 3 dots
                 .combinedClickable(
-                    onClick = onPlay,
+                    interactionSource = rowSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    onClick = {
+                        haptic.click()
+                        onPlay()
+                    },
                     onLongClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.heavyClick()
                         onLongClick()
                     }
                 )
-                .padding(16.dp),
+                .padding(start = 4.dp, top = 5.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Album Art
-            Card(
-                modifier = Modifier.size(72.dp),
-                shape = RoundedCornerShape(8.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            // Artwork (44dp, small continuous radius)
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (track.thumbnailUri != null) {
-                        AsyncImage(
-                            model = track.thumbnailUri,
-                            contentDescription = track.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
+                if (track.thumbnailUri != null) {
+                    AsyncImage(
+                        model = track.thumbnailUri,
+                        contentDescription = track.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        JukeIcons.Play,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(22.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (downloading) {
+                    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White)
+                    }
+                }
+                if (isSelectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                                else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
                             Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(36.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                                imageVector = JukeIcons.Check,
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                     }
-
-                    // Selection indicator overlay
-                    if (isSelectionMode) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                                    else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = "Selected",
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                        }
-                    }
                 }
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-            // Track Info
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+            // Title + "artist · m:ss"
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee()
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = track.artist,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = (if (downloading) "Downloading · " else if (!available) "Not downloaded · " else "") + "${track.artist} · ${track.durationSec / 60}:${
+                        (track.durationSec % 60).toString().padStart(2, '0')
+                    }",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee()
+                    overflow = TextOverflow.Ellipsis
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${track.durationSec / 60}:${
-                            (track.durationSec % 60).toString().padStart(2, '0')
-                        }",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
-                    Text(
-                        text = "•",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Text(
-                        text = "${track.playCount} plays",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
-                }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Favorite Button (Disabled in selection mode)
             if (!isSelectionMode) {
                 IconButton(
                     onClick = {
                         isFavoritePressed = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptic.confirm()
                         onToggleFavorite()
                     },
                     modifier = Modifier.scale(favoriteScale)
                 ) {
                     Icon(
-                        if (track.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
                         contentDescription = if (track.isFavourite) "Remove from favorites" else "Add to favorites",
-                        tint = if (track.isFavourite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (track.isFavourite) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-            }
-
-            LaunchedEffect(isFavoritePressed) {
-                if (isFavoritePressed) {
-                    kotlinx.coroutines.delay(150)
-                    isFavoritePressed = false
-                }
-            }
-
-            // Trailing Icon (Disabled in selection mode)
-            if (!isSelectionMode) {
                 IconButton(onClick = onTrailingIconClick) {
                     Icon(
                         imageVector = trailingIcon,
-                        contentDescription = "Action",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = "More actions for ${track.title}",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-            } else {
-                // Spacing placeholder to keep alignment if needed, or just omit to shift items
-                Spacer(modifier = Modifier.width(48.dp))
+                dragHandle?.invoke()
             }
+        }
+        HorizontalDivider(
+            modifier = Modifier.padding(start = 60.dp),
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        )
+    }
+
+    LaunchedEffect(isFavoritePressed) {
+        if (isFavoritePressed) {
+            kotlinx.coroutines.delay(150.milliseconds)
+            isFavoritePressed = false
         }
     }
 }

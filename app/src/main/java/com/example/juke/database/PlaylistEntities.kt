@@ -1,6 +1,20 @@
 package com.example.juke.database
 
-import androidx.room.*
+import androidx.room.ColumnInfo
+import androidx.room.Dao
+import androidx.room.Embedded
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.Insert
+import androidx.room.Junction
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.Relation
+import androidx.room.Transaction
+import androidx.room.Update
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -10,24 +24,36 @@ import kotlinx.coroutines.flow.Flow
 data class PlaylistEntity(
     @PrimaryKey
     val id: String,
-    
+
     @ColumnInfo(name = "name")
     val name: String,
-    
+
     @ColumnInfo(name = "description")
     val description: String? = null,
-    
+
     @ColumnInfo(name = "thumbnail_uri")
     val thumbnailUri: String? = null,
-    
+
     @ColumnInfo(name = "spotify_id")
     val spotifyId: String? = null,
-    
+
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis(),
-    
+
     @ColumnInfo(name = "track_count")
     val trackCount: Int = 0
+)
+
+/**
+ * A Spotify import that has not finished: one row per track still to download. Deleted row by row
+ * as tracks land, so the table is the resumable state of an import (survives the app being closed).
+ */
+@Entity(tableName = "pending_imports", primaryKeys = ["playlist_id", "position"])
+data class PendingImportEntity(
+    @ColumnInfo(name = "playlist_id") val playlistId: String,
+    @ColumnInfo(name = "position") val position: Int,
+    @ColumnInfo(name = "track_json") val trackJson: String,
+    @ColumnInfo(name = "attempts") val attempts: Int = 0
 )
 
 /**
@@ -55,13 +81,13 @@ data class PlaylistEntity(
 data class PlaylistTrackEntity(
     @ColumnInfo(name = "playlist_id")
     val playlistId: String,
-    
+
     @ColumnInfo(name = "track_uuid")
     val trackUuid: String,
-    
+
     @ColumnInfo(name = "position")
     val position: Int,
-    
+
     @ColumnInfo(name = "added_at")
     val addedAt: Long = System.currentTimeMillis()
 )
@@ -88,64 +114,167 @@ data class PlaylistWithTracks(
  */
 @Dao
 interface PlaylistDao {
-    
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+
+    // Upsert, not REPLACE: REPLACE deletes the old row first, which cascades and wipes the
+    // playlist's tracks (re-importing a playlist emptied it).
+    @Upsert
     suspend fun insertPlaylist(playlist: PlaylistEntity)
-    
+
     @Update
     suspend fun updatePlaylist(playlist: PlaylistEntity)
-    
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTrack(playlistTrack: PlaylistTrackEntity)
-    
+
+    /**
+     * Insert unless the playlist already has this song. `position` is part of the primary key, so
+     * a plain insert at a new position would add the same song a second time.
+     */
+    @Query(
+        """
+        INSERT INTO playlist_tracks (playlist_id, track_uuid, position, added_at)
+        SELECT :playlistId, :trackUuid, :position, :addedAt
+        WHERE NOT EXISTS (SELECT 1 FROM playlist_tracks WHERE playlist_id = :playlistId AND track_uuid = :trackUuid)
+    """
+    )
+    suspend fun insertPlaylistTrackIfAbsent(
+        playlistId: String,
+        trackUuid: String,
+        position: Int,
+        addedAt: Long = System.currentTimeMillis()
+    )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTracks(playlistTracks: List<PlaylistTrackEntity>)
-    
+
     @Query("SELECT * FROM playlists ORDER BY created_at DESC")
     fun getAllPlaylists(): Flow<List<PlaylistEntity>>
-    
+
+    @Query("SELECT * FROM playlists ORDER BY created_at DESC")
+    suspend fun getAllPlaylistsOnce(): List<PlaylistEntity>
+
+    @Query("SELECT DISTINCT track_uuid FROM playlist_tracks")
+    suspend fun getAllPlaylistTrackUuids(): List<String>
+
     @Query("SELECT * FROM playlists WHERE id = :playlistId")
     suspend fun getPlaylist(playlistId: String): PlaylistEntity?
-    
+
     @Transaction
     @Query("SELECT * FROM playlists WHERE id = :playlistId")
     suspend fun getPlaylistWithTracks(playlistId: String): PlaylistWithTracks?
-    
-    @Query("""
+
+    @Query(
+        """
         SELECT t.* FROM tracks t
         INNER JOIN playlist_tracks pt ON t.uuid = pt.track_uuid
         WHERE pt.playlist_id = :playlistId
         ORDER BY pt.position ASC
-    """)
+    """
+    )
     suspend fun getPlaylistTracks(playlistId: String): List<TrackEntity>
-    
-    @Query("""
+
+    /** Artwork of the first songs in the playlist, in order (for the cover mosaic). */
+    @Query(
+        """
+        SELECT t.thumbnail_uri FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.uuid = pt.track_uuid
+        WHERE pt.playlist_id = :playlistId AND t.thumbnail_uri IS NOT NULL AND t.thumbnail_uri != ''
+        ORDER BY pt.position ASC
+        LIMIT 16
+    """
+    )
+    fun getPlaylistArtwork(playlistId: String): Flow<List<String>>
+
+    @Query("SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = :playlistId")
+    suspend fun getNextPlaylistPosition(playlistId: String): Int
+
+    @Query(
+        """
         SELECT t.* FROM tracks t
         INNER JOIN playlist_tracks pt ON t.uuid = pt.track_uuid
         WHERE pt.playlist_id = :playlistId
         ORDER BY pt.position ASC
-    """)
+    """
+    )
     fun getPlaylistTracksFlow(playlistId: String): Flow<List<TrackEntity>>
-    
+
+    @Query("SELECT * FROM playlist_tracks WHERE playlist_id = :playlistId ORDER BY position ASC")
+    suspend fun getPlaylistTrackRows(playlistId: String): List<PlaylistTrackEntity>
+
+    /**
+     * Persist a user-chosen order: position = index in [trackUuids]. `position` is part of the primary
+     * key and a song can be in a playlist more than once, so the rows are rewritten (keeping each
+     * row's added_at) rather than updated in place.
+     */
+    @Transaction
+    suspend fun setPlaylistOrder(playlistId: String, trackUuids: List<String>) {
+        val pending = getPlaylistTrackRows(playlistId).groupBy { it.trackUuid }
+            .mapValues { ArrayDeque(it.value) }
+        val ordered = ArrayList<PlaylistTrackEntity>()
+        trackUuids.forEach { uuid -> pending[uuid]?.removeFirstOrNull()?.let { ordered += it } }
+        pending.values.forEach { ordered += it } // rows the list did not show keep their place at the end
+        deletePlaylistTracks(playlistId)
+        insertPlaylistTracks(ordered.mapIndexed { i, row -> row.copy(position = i) })
+    }
+
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: String)
-    
+
     @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun deletePlaylistTracks(playlistId: String)
-    
+
     @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId AND track_uuid = :trackUuid")
     suspend fun removeTrackFromPlaylist(playlistId: String, trackUuid: String)
-    
+
     @Query("UPDATE playlists SET track_count = :count WHERE id = :playlistId")
     suspend fun updatePlaylistTrackCount(playlistId: String, count: Int)
-    
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPendingImports(items: List<PendingImportEntity>)
+
+    @Query("SELECT * FROM pending_imports ORDER BY playlist_id, position LIMIT :limit")
+    suspend fun nextPendingImports(limit: Int): List<PendingImportEntity>
+
+    @Query("DELETE FROM pending_imports WHERE playlist_id = :playlistId AND position = :position")
+    suspend fun deletePendingImport(playlistId: String, position: Int)
+
+    @Query("UPDATE pending_imports SET attempts = attempts + 1 WHERE playlist_id = :playlistId AND position = :position")
+    suspend fun bumpPendingAttempts(playlistId: String, position: Int)
+
+    @Query("SELECT COUNT(*) FROM pending_imports")
+    suspend fun pendingImportCount(): Int
+
+    /** playlist id -> tracks still to download, live. */
+    @Query("SELECT playlist_id AS playlistId, COUNT(*) AS remaining FROM pending_imports GROUP BY playlist_id")
+    fun pendingImportCounts(): Flow<List<PendingCount>>
+
+    @Query("DELETE FROM pending_imports WHERE playlist_id = :playlistId")
+    suspend fun deletePendingImports(playlistId: String)
+
     @Query("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun getPlaylistTrackCount(playlistId: String): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT p.* FROM playlists p
         INNER JOIN playlist_tracks pt ON p.id = pt.playlist_id
         WHERE pt.track_uuid = :trackUuid
-    """)
+    """
+    )
     suspend fun getPlaylistsForTrack(trackUuid: String): List<PlaylistEntity>
+
+    /**
+     * Delete all playlist_tracks entries for a track - must be called before deleting a track
+     * to avoid FK constraint errors. This is more reliable than relying on CASCADE.
+     */
+    @Query("DELETE FROM playlist_tracks WHERE track_uuid = :trackUuid")
+    suspend fun deletePlaylistTracksForTrack(trackUuid: String)
+
+    /**
+     * Delete all playlist_tracks entries for multiple tracks - must be called before bulk deleting tracks.
+     */
+    @Query("DELETE FROM playlist_tracks WHERE track_uuid IN (:trackUuids)")
+    suspend fun deletePlaylistTracksForTracks(trackUuids: List<String>)
 }
+
+data class PendingCount(val playlistId: String, val remaining: Int)

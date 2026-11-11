@@ -1,0 +1,15 @@
+10-03 20:48:49.436  1894  1894 D MusicViewModel: Track not local, starting instant HTTP stream: Gulabi Aankhen
+10-03 20:48:51.696  1894  3699 D MusicService: Stream URL resolved in 2258ms
+10-03 20:48:51.697  1894  3699 D MusicService: streamTrackInstant: background download started for 'Gulabi Aankhen'
+10-03 20:49:08.814  1894  3780 D PlaybackService: Stream HTTP connected in 17048ms (cdn-spotify.zm.io.vn)
+10-03 20:49:08.845  1894  3780 D PlaybackService: Stream first bytes in 17078ms
+10-03 20:49:09.849  1894  1894 D PlaybackService: Is playing: true
+10-03 20:49:26.713  1894  3446 D MusicService: streamTrackInstant: background download complete for 'Gulabi Aankhen' (3226KB)
+10-03 20:52:31.999  4324  4324 D MusicViewModel: Track not local, starting instant HTTP stream: Gulabi Aankhen
+10-03 20:52:33.739  4324  4603 D MusicService: Stream URL resolved in 1738ms
+10-03 20:52:40.777  4324  4665 D PlaybackService: Stream HTTP connected in 6953ms (cdn-spotify-inter.zm.io.vn)
+10-03 20:52:40.790  4324  4665 D PlaybackService: Stream first bytes in 6966ms
+10-03 20:52:41.615  4324  4324 D PlaybackService: Is playing: true
+10-03 20:52:41.639  4324  4410 D MusicService: streamTrackInstant: background download started for 'Gulabi Aankhen'
+10-03 20:53:02.678  4324  4605 D MusicService: streamTrackInstant: background download complete for 'Gulabi Aankhen' (3226KB)
+10-03 20:53:16.941  4324  4324 D PlaybackService: Is playing: false

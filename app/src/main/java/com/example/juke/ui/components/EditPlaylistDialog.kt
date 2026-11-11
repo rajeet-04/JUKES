@@ -1,6 +1,5 @@
 package com.example.juke.ui.components
 
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +32,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
+import com.example.juke.utils.rememberJukeHaptics
     
 @Composable
 fun EditPlaylistDialog(
@@ -43,7 +42,8 @@ fun EditPlaylistDialog(
     onConfirm: (String, String?) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
-    var selectedUri by remember { mutableStateOf<Uri?>(initialThumbnailUri?.let { it.toUri() }) }
+    var selectedUri by remember { mutableStateOf(initialThumbnailUri?.toUri()) }
+    val haptic = rememberJukeHaptics()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -54,7 +54,7 @@ fun EditPlaylistDialog(
         }
     )
 
-    AlertDialog(
+    GlassAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Playlist") },
         text = {
@@ -111,6 +111,7 @@ fun EditPlaylistDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    haptic.heavyClick()
                     onConfirm(name.trim(), selectedUri?.toString())
                 },
                 enabled = name.isNotBlank()
@@ -119,7 +120,10 @@ fun EditPlaylistDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                haptic.click()
+                onDismiss()
+            }) {
                 Text("Cancel")
             }
         }

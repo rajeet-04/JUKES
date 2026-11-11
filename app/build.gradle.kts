@@ -3,11 +3,15 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.baselineprofile)
 }
+
+// Push notifications (FCM) switch on once app/google-services.json is there (git-ignored; from the Firebase console).
+// Without it the app builds and runs as before; Push.kt checks that Firebase is configured before using it.
+if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
 
 android {
     namespace = "com.example.juke"
@@ -17,8 +21,8 @@ android {
         applicationId = "com.example.juke"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "2.0.0-stable"
+        versionCode = 29
+        versionName = "3.0.2-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -31,14 +35,52 @@ android {
 
         buildConfigField(
             "String",
-            "SPOTIFY_CLIENT_ID",
-            "\"${properties.getProperty("SPOTIFY_CLIENT_ID", "")}\""
+            "SPOTIFY_TOKEN_URL",
+            "\"${properties.getProperty("SPOTIFY_TOKEN_URL", "https://spotdown-kv-worker.meek.workers.dev/spotify-token")}\""
         )
         buildConfigField(
             "String",
-            "SPOTIFY_CLIENT_SECRET",
-            "\"${properties.getProperty("SPOTIFY_CLIENT_SECRET", "")}\""
+            "SHARE_BASE_URL",
+            "\"${properties.getProperty("SHARE_BASE_URL", "https://j.rajeet.in")}\""
         )
+        buildConfigField(
+            "String",
+            "SPOTIFY_TOKEN_KEY",
+            "\"${properties.getProperty("SPOTIFY_TOKEN_KEY", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "POSTHOG_API_KEY",
+            "\"${properties.getProperty("POSTHOG_API_KEY", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "POSTHOG_HOST",
+            "\"${properties.getProperty("POSTHOG_HOST", "")}\""
+        )
+        // JUKES backend (youtube-music-alexa-skill): first audio source when both are set. The URL
+        // is public. The server ignores the key now, but the app's gate still needs it non-blank.
+        buildConfigField(
+            "String",
+            "JUKE_BACKEND_URL",
+            "\"${properties.getProperty("JUKE_BACKEND_URL", "https://ms.rajeet.in")}\""
+        )
+        buildConfigField(
+            "String",
+            "JUKE_BACKEND_KEY",
+            "\"${properties.getProperty("JUKE_BACKEND_KEY", "unused")}\""
+        )
+        // Rollout flag: false = use only the legacy /audio/ endpoint instead of /v1 prepare + poll.
+        buildConfigField(
+            "boolean",
+            "JUKE_BACKEND_V1",
+            properties.getProperty("JUKE_BACKEND_V1", "true")
+        )
+    }
+
+    androidResources {
+        // Strips all languages except English
+        localeFilters += "en"
     }
 
     signingConfigs {
@@ -54,16 +96,28 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("debug")
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    packaging {
+        resources {
+            // Build metadata the app never reads at runtime.
+            excludes += setOf(
+                "META-INF/*.version",
+                "META-INF/*.kotlin_module",
+                "DebugProbesKt.bin",
+                "kotlin-tooling-metadata.json"
+            )
         }
+    }
+    dependenciesInfo {
+        // Play-only dependency report; this APK is side-loaded from GitHub.
+        includeInApk = false
+        includeInBundle = false
     }
     buildFeatures {
         compose = true
@@ -72,8 +126,13 @@ android {
 }
 
 dependencies {
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
@@ -83,7 +142,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.palette)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
@@ -94,7 +152,8 @@ dependencies {
 
     // Ktor
     implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.websockets)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.client.logging)
     implementation(libs.ktor.serialization.kotlinx.json)
@@ -108,18 +167,24 @@ dependencies {
     // Media3
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
-    implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.datasource)
+    implementation(libs.androidx.media3.datasource.okhttp)
+    // Experimental progressive playback: the backend serves an AAC HLS playlist while it downloads
+    implementation(libs.androidx.media3.exoplayer.hls)
 
     // Coil
     implementation(libs.coil.compose)
+    implementation(libs.haze)
 
     // Gson
     implementation(libs.gson)
 
     // PostHog
-    implementation("com.posthog:posthog-android:3.32.+")
+    implementation(libs.posthog.android)
 
     testImplementation(libs.junit)
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

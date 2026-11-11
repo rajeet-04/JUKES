@@ -1,7 +1,11 @@
 package com.example.juke.ui.screens
 
+import com.example.juke.ui.icons.JukeIcons
+
 import android.content.Intent
-import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,334 +16,511 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.BatterySaver
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juke.network.SpotifyApi
-import com.example.juke.ui.components.GlassCard
+import com.example.juke.services.UpdateManager
+import kotlinx.coroutines.launch
+import com.example.juke.ui.components.GlassAlertDialog
+import com.example.juke.ui.components.GlassButton
+import com.example.juke.ui.components.GlassTopAppBar
+import com.example.juke.ui.theme.GlassCard
+import com.example.juke.utils.BlacklistManager
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
+import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioSettingsScreen(
     musicViewModel: MusicViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToPurge: () -> Unit
+    onNavigateToPurge: () -> Unit,
+    onNavigateToPowerTools: () -> Unit = {},
+    onNavigateToYoutubeSignIn: () -> Unit = {}
 ) {
-    val isBoosterEnabled by musicViewModel.isBoosterEnabled.collectAsState()
-    val boosterLevel by musicViewModel.boosterLevel.collectAsState()
-    val isNormalizationEnabled by musicViewModel.isNormalizationEnabled.collectAsState()
+    val isBoosterEnabled by musicViewModel.isBoosterEnabled.collectAsStateWithLifecycle()
+    val boosterLevel by musicViewModel.boosterLevel.collectAsStateWithLifecycle()
+    val bassLevel by musicViewModel.bassLevel.collectAsStateWithLifecycle()
+    val isNormalizationEnabled by musicViewModel.isNormalizationEnabled.collectAsStateWithLifecycle()
+    val isStreamMode by musicViewModel.isStreamMode.collectAsStateWithLifecycle()
+    val isSkipSilenceEnabled by musicViewModel.isSkipSilenceEnabled.collectAsStateWithLifecycle()
+    val isMiniPlayerLyricsEnabled by musicViewModel.isMiniPlayerLyricsEnabled.collectAsStateWithLifecycle()
+    val recommendationCount by musicViewModel.recommendationCount.collectAsStateWithLifecycle()
+    val haptic = rememberJukeHaptics()
+    // Power Tools stay locked until the version line is tapped 7 times (like Android's developer options).
+    val powerCtx = LocalContext.current
+    val powerPrefs = remember { powerCtx.getSharedPreferences("power_prefs", android.content.Context.MODE_PRIVATE) }
+    var powerUnlocked by remember { mutableStateOf(powerPrefs.getBoolean("power_tools_unlocked", false)) }
+    val audioPrefs = remember { powerCtx.getSharedPreferences("audio_effects_prefs", android.content.Context.MODE_PRIVATE) }
+    var batterySaver by remember { mutableStateOf(audioPrefs.getBoolean("battery_saver_playback", false)) }
+    var showReport by remember { mutableStateOf(false) }
+    if (showReport) com.example.juke.ui.components.ReportBugDialog(musicViewModel, onDismiss = { showReport = false })
+    var versionTaps by remember { mutableIntStateOf(0) }
+    var lastVersionTapAt by remember { mutableLongStateOf(0L) }
+    var lastBoosterTickBucket by remember { mutableIntStateOf((boosterLevel / 5).coerceIn(0, 20)) }
+    var lastRecommendationTick by remember {
+        mutableIntStateOf(recommendationCount.coerceIn(3, 15))
+    }
 
     // Gradient Background
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF1A1C1E), // Dark
-                        Color(0xFF0F1113), // Darker
-                        Color.Black
-                    )
-                )
-            )
     ) {
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
             // Header
-            TopAppBar(
+            GlassTopAppBar(
                 title = { Text("Audio Control", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                        Icon(JukeIcons.Back, "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    titleContentColor = Color.White
-                )
-            )
+                })
 
             LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 4.dp,
+                    bottom = 24.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Stream Mode Section
+                item { com.example.juke.ui.components.AccountSection() }
+                item { com.example.juke.ui.components.DesktopAppSection() }
                 item {
-                    val isStreamMode by musicViewModel.isStreamMode.collectAsState()
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.Public, // Using Public icon for streaming
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Column {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            CompactItem(
+                                headlineContent = {
                                     Text(
                                         "Stream Mode",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        "Stream music to save storage",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.6f)
+                                },
+                                supportingContent = {
+                                    Text("Play instantly without saving to device")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.CloudSync, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isStreamMode,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleStreamMode(it)
+                                        }
                                     )
                                 }
-                            }
-                            Switch(
-                                checked = isStreamMode,
-                                onCheckedChange = { musicViewModel.toggleStreamMode(it) }
                             )
-                        }
-                    }
-                }
 
-                // Volume Normalization
-                item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.GraphicEq,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Column {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            CompactItem(
+                                headlineContent = {
                                     Text(
                                         "Stable Volume",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        "Consistent volume for all tracks",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.6f)
+                                },
+                                supportingContent = {
+                                    Text("Keep loudness steady across tracks")
+                                },
+                                leadingContent = {
+                                    Icon(JukeIcons.Equalizer, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isNormalizationEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleVolumeNormalization(it)
+                                        }
                                     )
                                 }
-                            }
-                            Switch(
-                                checked = isNormalizationEnabled,
-                                onCheckedChange = { musicViewModel.toggleVolumeNormalization(it) }
                             )
-                        }
-                    }
-                }
 
-                // Skip Silence Section
-                item {
-                    val isSkipSilenceEnabled by musicViewModel.isSkipSilenceEnabled.collectAsState()
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.HourglassEmpty,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Column {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            CompactItem(
+                                headlineContent = {
                                     Text(
                                         "Skip Silence",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        "Skip silent parts at start/end of tracks",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.6f)
+                                },
+                                supportingContent = {
+                                    Text("Trim quiet intros and outros")
+                                },
+                                leadingContent = {
+                                    Icon(JukeIcons.Next, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isSkipSilenceEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleSkipSilence(it)
+                                        }
                                     )
                                 }
-                            }
-                            Switch(
-                                checked = isSkipSilenceEnabled,
-                                onCheckedChange = { musicViewModel.toggleSkipSilence(it) }
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            // Offloaded playback bypasses the in-app audio processing, so it only
+                            // engages while boost, stable volume and skip silence are off.
+                            val effectsActive = isBoosterEnabled || isNormalizationEnabled || isSkipSilenceEnabled
+                            CompactItem(
+                                headlineContent = {
+                                    Text(
+                                        "Battery Saver Playback",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(
+                                        if (batterySaver && effectsActive) "Paused while boost, stable volume or skip silence is on"
+                                        else "Decode on the audio chip so the CPU can sleep"
+                                    )
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.BatterySaver, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = batterySaver,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            batterySaver = it
+                                            audioPrefs.edit { putBoolean("battery_saver_playback", it) }
+                                        }
+                                    )
+                                }
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            CompactItem(
+                                headlineContent = {
+                                    Text(
+                                        "Mini-Player Lyrics",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                supportingContent = {
+                                    Text("Show synced lyrics directly in the mini-player")
+                                },
+                                leadingContent = {
+                                    Icon(JukeIcons.Lyrics, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isMiniPlayerLyricsEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleMiniPlayerLyrics(it)
+                                        }
+                                    )
+                                }
                             )
                         }
                     }
                 }
 
-
-                // Volume Booster Section
                 item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.VolumeUp,
-                                        null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            CompactItem(
+                                headlineContent = {
                                     Text(
                                         "Bass & Volume Boost",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                supportingContent = {
+                                    Text("Raise volume and bass separately")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isBoosterEnabled,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            musicViewModel.toggleVolumeBooster(it)
+                                        }
                                     )
                                 }
-                                Switch(
-                                    checked = isBoosterEnabled,
-                                    onCheckedChange = { musicViewModel.toggleVolumeBooster(it) }
-                                )
-                            }
+                            )
 
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            if (isBoosterEnabled) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "${boosterLevel}%",
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
+                            AnimatedVisibility(
+                                visible = isBoosterEnabled,
+                                enter = expandVertically(),
+                                exit = shrinkVertically()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .padding(horizontal = 16.dp)
+                                        .padding(bottom = 4.dp)
+                                ) {
+                                    BoostSlider(
+                                        label = "Volume",
+                                        level = boosterLevel,
+                                        onLevel = { value ->
+                                            val intValue = value.roundToInt().coerceIn(0, 100)
+                                            val currentBucket = intValue / 5
+                                            if (currentBucket != lastBoosterTickBucket) {
+                                                haptic.tick()
+                                                lastBoosterTickBucket = currentBucket
+                                            }
+                                            musicViewModel.setVolumeBoosterLevel(intValue)
+                                        }
+                                    )
+                                    BoostSlider(
+                                        label = "Bass",
+                                        level = bassLevel,
+                                        onLevel = { value ->
+                                            val intValue = value.roundToInt().coerceIn(0, 100)
+                                            if (intValue / 5 != bassLevel / 5) haptic.tick()
+                                            musicViewModel.setBassLevel(intValue)
+                                        }
                                     )
 
-                                    Slider(
-                                        value = boosterLevel.toFloat(),
-                                        onValueChange = { musicViewModel.setVolumeBoosterLevel(it.toInt()) },
-                                        valueRange = 0f..100f,
+                                    Text(
+                                        "High boost levels may distort audio.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        textAlign = TextAlign.Center,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Text(
-                                    "WARNING: Output > 100% may distort audio or damage speakers.",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
                             }
                         }
                     }
                 }
 
-                // Recommendation Settings Section
                 item {
-                    val recommendationCount by musicViewModel.recommendationCount.collectAsState()
-
+                    val ctx = LocalContext.current
+                    var progressive by remember {
+                        mutableStateOf(
+                            ctx.getSharedPreferences("music_settings_prefs", android.content.Context.MODE_PRIVATE)
+                                .getBoolean("progressive_playback", true)
+                        )
+                    }
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.GraphicEq,
-                                        null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
+                        CompactItem(
+                            headlineContent = {
+                                Text(
+                                    "Progressive playback",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            supportingContent = { Text("Start songs while they download. Downloads still save the full file") },
+                            leadingContent = { Icon(Icons.Rounded.CloudSync, contentDescription = null) },
+                            trailingContent = {
+                                Switch(
+                                    checked = progressive,
+                                    onCheckedChange = {
+                                        haptic.toggle()
+                                        progressive = it
+                                        ctx.getSharedPreferences("music_settings_prefs", android.content.Context.MODE_PRIVATE)
+                                            .edit { putBoolean("progressive_playback", it) }
+                                        com.example.juke.network.JukesApi.progressiveEnabled = it
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    val session by com.example.juke.network.JukesApi.session.collectAsStateWithLifecycle()
+                    var personalised by remember {
+                        mutableStateOf(com.example.juke.network.JukesApi.personalisedRadio)
+                    }
+                    val connected = session != com.example.juke.network.JukesApi.Session.OFF
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            CompactItem(
+                                headlineContent = {
                                     Text(
-                                        "Recommendations",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold
+                                        "Personalised radio",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(
+                                        if (connected) "Radio from your YouTube Music account. Off uses anonymous radio"
+                                        else "Connect your YouTube Music account to use it"
+                                    )
+                                },
+                                leadingContent = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = personalised && connected,
+                                        enabled = connected,
+                                        onCheckedChange = {
+                                            haptic.toggle()
+                                            personalised = it
+                                            com.example.juke.network.JukesApi.setPersonalisedRadio(it)
+                                        }
                                     )
                                 }
-                            }
+                            )
+                            CompactItem(
+                                headlineContent = {
+                                    Text(
+                                        when (session) {
+                                            com.example.juke.network.JukesApi.Session.OFF -> "Connect YouTube Music"
+                                            com.example.juke.network.JukesApi.Session.CONNECTED -> "Disconnect and delete my data"
+                                            com.example.juke.network.JukesApi.Session.RECONNECT -> "Reconnect YouTube Music"
+                                        },
+                                        modifier = Modifier.clickable {
+                                            if (session == com.example.juke.network.JukesApi.Session.CONNECTED) {
+                                                scope.launch { runCatching { com.example.juke.network.JukesApi.disconnectYoutube() } }
+                                            } else onNavigateToYoutubeSignIn()
+                                        },
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                supportingContent = {
+                                    Text("Your session is sent to the JUKES server, stored encrypted, and used only for your recommendations")
+                                }
+                            )
+                        }
+                    }
+                }
 
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                item {
+                    val ctx = LocalContext.current
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        CompactItem(
+                            headlineContent = {
                                 Text(
-                                    text = "$recommendationCount tracks per session",
+                                    "Solid surfaces",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            supportingContent = { Text("Turn off blur and transparency") },
+                            leadingContent = { Icon(JukeIcons.Equalizer, contentDescription = null) },
+                            trailingContent = {
+                                Switch(
+                                    checked = com.example.juke.ui.theme.GlassPrefs.solid,
+                                    onCheckedChange = {
+                                        haptic.toggle()
+                                        com.example.juke.ui.theme.GlassPrefs.solid = it
+                                        ctx.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE)
+                                            .edit { putBoolean("solid_surfaces", it) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            CompactItem(
+                                headlineContent = {
+                                    Text(
+                                        "Recommendation Queue",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                supportingContent = {
+                                    Text("Songs loaded ahead in Up Next. The rest of the radio waits and loads as you reach it or tap it")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                                }
+                            )
+
+                            Column(
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp)
+                                    .padding(bottom = 10.dp)
+                            ) {
+                                Text(
+                                    text = "$recommendationCount tracks",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
                                 )
-
-                                Spacer(modifier = Modifier.height(8.dp))
 
                                 Slider(
                                     value = recommendationCount.toFloat(),
-                                    onValueChange = { musicViewModel.setRecommendationCount(it.toInt()) },
+                                    onValueChange = { value ->
+                                        val intValue = value.roundToInt().coerceIn(3, 15)
+                                        if (intValue != lastRecommendationTick) {
+                                            haptic.tick()
+                                            lastRecommendationTick = intValue
+                                        }
+                                        musicViewModel.setRecommendationCount(intValue)
+                                    },
                                     valueRange = 3f..15f,
                                     steps = 11,
                                     modifier = Modifier.fillMaxWidth()
@@ -352,36 +533,27 @@ fun AudioSettingsScreen(
                                     Text(
                                         "3",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White.copy(alpha = 0.5f)
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                                     )
                                     Text(
                                         "15",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White.copy(alpha = 0.5f)
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                                     )
                                 }
                             }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Text(
-                                "Controls how many songs are automatically queued when your queue runs low.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
                         }
                     }
                 }
 
                 // Market Selection Section
                 item {
-                    val marketCode by musicViewModel.marketCode.collectAsState()
+                    val marketCode by musicViewModel.marketCode.collectAsStateWithLifecycle()
                     var showDialog by remember { mutableStateOf(false) }
 
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -402,22 +574,18 @@ fun AudioSettingsScreen(
                                         Text(
                                             "Spotify Region",
                                             style = MaterialTheme.typography.titleMedium,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             fontWeight = FontWeight.SemiBold
                                         )
                                         Text(
                                             getCountryName(marketCode),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = Color.White.copy(alpha = 0.6f)
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
-                                OutlinedButton(
-                                    onClick = { showDialog = true },
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = Color.White
-                                    )
-                                ) {
+                                GlassButton(
+                                    onClick = { showDialog = true }) {
                                     Text(marketCode, fontWeight = FontWeight.Bold)
                                 }
                             }
@@ -427,7 +595,7 @@ fun AudioSettingsScreen(
                             Text(
                                 "Controls which region's music catalog appears in search results.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -447,9 +615,90 @@ fun AudioSettingsScreen(
                     }
                 }
 
+                // Blocked Artists Section
+                item {
+                    val context = LocalContext.current
+                    var blacklistedArtists by remember {
+                        mutableStateOf(BlacklistManager.getBlacklistedArtists(context).sorted())
+                    }
+
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Block,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Column {
+                                    Text(
+                                        "Blocked Artists",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        "Songs from these artists won't be recommended",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            if (blacklistedArtists.isEmpty()) {
+                                Text(
+                                    "No blocked artists",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            } else {
+                                blacklistedArtists.forEach { artist ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = artist.replaceFirstChar { it.uppercase() },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                BlacklistManager.removeArtist(context, artist)
+                                                blacklistedArtists = BlacklistManager.getBlacklistedArtists(context).sorted()
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                JukeIcons.Close,
+                                                contentDescription = "Unblock $artist",
+                                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Storage / Purge Section
                 item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
                                 .clickable { onNavigateToPurge() }
@@ -464,7 +713,7 @@ fun AudioSettingsScreen(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(
-                                    Icons.Default.Delete,
+                                    JukeIcons.Delete,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(24.dp)
@@ -473,22 +722,76 @@ fun AudioSettingsScreen(
                                     Text(
                                         "Purge Redundant Tracks",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
                                         "Free up space by deleting unused songs",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.6f)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
                             Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
+                                JukeIcons.Forward,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.6f)
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                }
+
+                item {
+                    GlassCard(modifier = Modifier.fillMaxWidth().clickable { haptic.click(); showReport = true }) {
+                        CompactItem(
+                            headlineContent = { Text("Report a bug", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text("Tell us what went wrong; app info and logs help us fix it fast") },
+                            leadingContent = { Icon(Icons.Rounded.BugReport, contentDescription = null) },
+                            trailingContent = { Icon(JukeIcons.Forward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        )
+                    }
+                }
+
+                item {
+                    GlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .alpha(if (powerUnlocked) 1f else 0.45f)
+                            .clickable {
+                                if (powerUnlocked) {
+                                    haptic.click()
+                                    onNavigateToPowerTools()
+                                } else {
+                                    haptic.reject()
+                                    android.widget.Toast.makeText(
+                                        powerCtx, "Locked. Tap the version below 7 times to unlock.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                    ) {
+                        CompactItem(
+                            headlineContent = {
+                                Text("Power Tools", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            },
+                            supportingContent = {
+                                Text(
+                                    if (powerUnlocked) "Sources, repeat threshold, gestures, diagnostics and backup"
+                                    else "Locked. Tap the version below 7 times to unlock"
+                                )
+                            },
+                            leadingContent = {
+                                Icon(
+                                    if (powerUnlocked) Icons.Rounded.AutoAwesome else Icons.Rounded.Lock,
+                                    contentDescription = if (powerUnlocked) null else "Locked"
+                                )
+                            },
+                            trailingContent = {
+                                if (powerUnlocked) {
+                                    Icon(JukeIcons.Forward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        )
                     }
                 }
 
@@ -498,29 +801,76 @@ fun AudioSettingsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 16.dp),
+                            .padding(vertical = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
+                            "JUKE v${com.example.juke.BuildConfig.VERSION_NAME}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                val now = System.currentTimeMillis()
+                                if (now - lastVersionTapAt > 2000L) versionTaps = 0
+                                lastVersionTapAt = now
+                                if (powerUnlocked) {
+                                    android.widget.Toast.makeText(powerCtx, "Power Tools are already unlocked", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    versionTaps++
+                                    haptic.tick()
+                                    val left = 7 - versionTaps
+                                    if (left <= 0) {
+                                        powerUnlocked = true
+                                        powerPrefs.edit { putBoolean("power_tools_unlocked", true) }
+                                        haptic.confirm()
+                                        android.widget.Toast.makeText(powerCtx, "Power Tools unlocked", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else if (versionTaps >= 3) {
+                                        android.widget.Toast.makeText(
+                                            powerCtx, "$left more tap${if (left == 1) "" else "s"} to unlock Power Tools",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                        )
+                        Text(
                             "Made with ❤️ by MEEK",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
 
-                        Button(
+                        val scope = androidx.compose.runtime.rememberCoroutineScope()
+                        var checking by remember { mutableStateOf(false) }
+                        GlassButton(
+                            onClick = {
+                                if (checking) return@GlassButton
+                                checking = true
+                                scope.launch {
+                                    val release = UpdateManager.checkForUpdates(context, force = true)
+                                    checking = false
+                                    if (release != null) {
+                                        UpdateManager.manualRelease.value = release
+                                    } else {
+                                        android.widget.Toast.makeText(
+                                            context, "You're on the latest version", android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }) {
+                            Text(if (checking) "Checking…" else "Check for updates")
+                        }
+
+                        GlassButton(
                             onClick = {
                                 val intent = Intent(
                                     Intent.ACTION_VIEW,
                                     "https://github.com/rajeet-04/JUKES".toUri()
                                 )
                                 context.startActivity(intent)
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
+                            }) {
                             Text("⭐ Star on GitHub")
                         }
                     }
@@ -561,8 +911,12 @@ private fun MarketCodeDialog(
     onSelect: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    val haptic = rememberJukeHaptics()
 
-    AlertDialog(
+    val windowHeight = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.height.toDp()
+    }
+    GlassAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
@@ -576,6 +930,7 @@ private fun MarketCodeDialog(
                 TextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
+                    label = { Text("Country or code") },
                     placeholder = { Text("Search country or code...") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -583,7 +938,7 @@ private fun MarketCodeDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                LazyColumn(modifier = Modifier.height(400.dp)) {
+                LazyColumn(modifier = Modifier.heightIn(max = windowHeight * 0.4f)) {
                     val filtered = popularMarkets.filter {
                         it.first.contains(searchQuery, ignoreCase = true) ||
                                 it.second.contains(searchQuery, ignoreCase = true)
@@ -591,7 +946,10 @@ private fun MarketCodeDialog(
 
                     items(filtered) { (code, name) ->
                         TextButton(
-                            onClick = { onSelect(code) },
+                            onClick = {
+                                haptic.click()
+                                onSelect(code)
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.textButtonColors(
                                 contentColor = if (code == currentCode)
@@ -621,7 +979,10 @@ private fun MarketCodeDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                haptic.click()
+                onDismiss()
+            }) {
                 Text("Close")
             }
         }
@@ -630,4 +991,64 @@ private fun MarketCodeDialog(
 
 private fun getCountryName(code: String): String {
     return popularMarkets.firstOrNull { it.first == code }?.second ?: code
+}
+
+@Composable
+private fun BoostSlider(label: String, level: Int, onLevel: (Float) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "$level%",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = level.toFloat(),
+            onValueChange = onLevel,
+            valueRange = 0f..100f,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/** Dense replacement for Material ListItem (which reserves 56-88dp and 16dp gutters). */
+@Composable
+private fun CompactItem(
+    headlineContent: @Composable () -> Unit,
+    supportingContent: (@Composable () -> Unit)? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (leadingContent != null) {
+            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { leadingContent() }
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            headlineContent()
+            if (supportingContent != null) {
+                androidx.compose.material3.ProvideTextStyle(
+                    MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    supportingContent
+                )
+            }
+        }
+        if (trailingContent != null) {
+            Spacer(Modifier.width(8.dp))
+            trailingContent()
+        }
+    }
 }

@@ -15,6 +15,11 @@ object ArtistUtils {
         return a1 == a2
     }
     
+    /**
+     * Normalizes an artist credit into a set so order and separator differences compare equal.
+     *
+     * This intentionally treats `,`, `&`, `;`, `feat.` and `ft.` as equivalent separators.
+     */
     private fun normalizeArtist(artist: String): Set<String> {
         // Replace common delimiters/separators with a unique token
         // We handle "," "&" ";" and "feat." "ft."

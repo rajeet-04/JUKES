@@ -136,10 +136,10 @@ data class SpotifyUser(
     @SerialName("display_name")
     val displayName: String? = null,
     @SerialName("external_urls")
-    val externalUrls: SpotifyExternalUrls,
-    val href: String,
-    val id: String,
-    val uri: String
+    val externalUrls: SpotifyExternalUrls? = null,
+    val href: String? = null,
+    val id: String? = null,
+    val uri: String? = null
 )
 
 @Serializable
@@ -221,7 +221,7 @@ data class SpotifyTokenResponse(
     @SerialName("access_token")
     val accessToken: String,
     @SerialName("token_type")
-    val tokenType: String,
+    val tokenType: String = "Bearer",
     @SerialName("expires_in")
     val expiresIn: Int
 )

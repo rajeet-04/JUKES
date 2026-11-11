@@ -16,6 +16,8 @@ data class Track(
     val ytVideoId: String? = null,
     val syncedLyrics: String? = null,
     val plainLyrics: String? = null,
+    val romanizedSyncedLyrics: String? = null,
+    val romanizedPlainLyrics: String? = null,
     val isFavourite: Boolean = false,
     val playCount: Int = 0,
     val lastPlayedAt: String? = null,
@@ -23,8 +25,21 @@ data class Track(
     val spotifyId: String? = null,
     val albumSpotifyId: String? = null,
     val artistSpotifyIds: List<String>? = null,
-    val isStream: Boolean = false
+    val isStream: Boolean = false,
+    val lyricsOffsetMs: Long = 0L
 )
+
+fun Track.withUpdatedLyrics(
+    syncedLyrics: String?,
+    plainLyrics: String?
+): Track {
+    return copy(
+        syncedLyrics = syncedLyrics,
+        plainLyrics = plainLyrics,
+        romanizedSyncedLyrics = if (this.syncedLyrics == syncedLyrics) romanizedSyncedLyrics else null,
+        romanizedPlainLyrics = if (this.plainLyrics == plainLyrics) romanizedPlainLyrics else null
+    )
+}
 
 /**
  * Spotdown song search result from Spotify.
@@ -40,7 +55,9 @@ data class SpotdownSong(
     val cached: Boolean = false,
     val spotifyId: String? = null,
     val albumSpotifyId: String? = null,
-    val artistSpotifyIds: List<String>? = null
+    val artistSpotifyIds: List<String>? = null,
+    /** YouTube video id when already known (radio items): the backend then skips its title search. */
+    val ytVideoId: String? = null
 )
 
 /**
@@ -63,7 +80,7 @@ data class LRCLibResult(
     val trackName: String,
     val artistName: String,
     val albumName: String,
-    val duration: Double,
+    val duration: Double? = null, // LRCLib sends null for some entries
     val instrumental: Boolean,
     val plainLyrics: String?,
     val syncedLyrics: String?

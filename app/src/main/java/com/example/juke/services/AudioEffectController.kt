@@ -1,14 +1,10 @@
 package com.example.juke.services
 
 import android.content.Context
-import android.media.audiofx.DynamicsProcessing
-import android.media.audiofx.DynamicsProcessing.Config
-import android.media.audiofx.DynamicsProcessing.Limiter
 import android.media.audiofx.Equalizer
-import android.media.audiofx.LoudnessEnhancer
-import android.os.Build
 import android.util.Log
 import androidx.core.content.edit
+import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,26 +13,41 @@ import kotlinx.coroutines.flow.asStateFlow
  * Controls audio effects (Equalizer and Volume Booster) for media playback.
  * Attaches to ExoPlayer via audio session ID.
  */
-class AudioEffectController(private val context: Context) {
+@androidx.annotation.OptIn(UnstableApi::class)
+class AudioEffectController private constructor(context: Context) {
 
-    private val TAG = "AudioEffectController"
+    companion object {
+        @Volatile private var instance: AudioEffectController? = null
+
+        /** One controller per process: the service owns the audio session, the UI drives the same object. */
+        fun get(context: Context): AudioEffectController =
+            instance ?: synchronized(this) {
+                instance ?: AudioEffectController(context.applicationContext).also { instance = it }
+            }
+    }
+
+
+    private val tag = "AudioEffectController"
     private val prefs = context.getSharedPreferences("audio_effects_prefs", Context.MODE_PRIVATE)
 
     private var equalizer: Equalizer? = null
-    private var loudnessEnhancer: LoudnessEnhancer? = null
-    private var dynamicsProcessing: DynamicsProcessing? = null
+    /** Volume/bass boost runs in ExoPlayer's audio sink (see BoostAudioProcessor). */
+    val boostProcessor = BoostAudioProcessor()
+    val edgeSilence = EdgeSilenceProcessor()
     private var currentAudioSessionId: Int = 0
 
     // Equalizer state (10 bands)
     private val _equalizerBands = MutableStateFlow(loadEqualizerBands())
-    val equalizerBands: StateFlow<List<Int>> = _equalizerBands.asStateFlow()
 
     private val _isEqualizerEnabled = MutableStateFlow(prefs.getBoolean("equalizer_enabled", false))
-    val isEqualizerEnabled: StateFlow<Boolean> = _isEqualizerEnabled.asStateFlow()
 
     // Volume booster state (0-100%)
     private val _boosterLevel = MutableStateFlow(prefs.getInt("booster_level", 0))
     val boosterLevel: StateFlow<Int> = _boosterLevel.asStateFlow()
+
+    // Bass boost level (0-100%), independent of the volume boost
+    private val _bassLevel = MutableStateFlow(prefs.getInt("bass_level", 0))
+    val bassLevel: StateFlow<Int> = _bassLevel.asStateFlow()
 
     private val _isBoosterEnabled = MutableStateFlow(prefs.getBoolean("booster_enabled", false))
     val isBoosterEnabled: StateFlow<Boolean> = _isBoosterEnabled.asStateFlow()
@@ -44,6 +55,27 @@ class AudioEffectController(private val context: Context) {
     private val _isNormalizationEnabled =
         MutableStateFlow(prefs.getBoolean("normalization_enabled", false))
     val isNormalizationEnabled: StateFlow<Boolean> = _isNormalizationEnabled.asStateFlow()
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val pendingWrites = mutableListOf<android.content.SharedPreferences.Editor.() -> Unit>()
+    private val flush = Runnable {
+        val writes = pendingWrites.toList(); pendingWrites.clear()
+        prefs.edit { writes.forEach { it() } }
+    }
+
+    /** Slider drags fire per pixel; write the latest values once the drag settles. */
+    private fun persistLater(write: android.content.SharedPreferences.Editor.() -> Unit) {
+        pendingWrites.add(write)
+        handler.removeCallbacks(flush)
+        handler.postDelayed(flush, 400)
+    }
+
+    /** 0-100% -> up to +14 dB gain and +9 dB low shelf. */
+    private fun applyBoost() {
+        val level = _boosterLevel.value
+        val bass = _bassLevel.value
+        boostProcessor.configure(_isBoosterEnabled.value, level * 0.14f, bass * 0.12f, _isNormalizationEnabled.value)
+    }
 
     private fun loadEqualizerBands(): List<Int> {
         return (0 until 10).map { index ->
@@ -74,12 +106,12 @@ class AudioEffectController(private val context: Context) {
                     val levelRange = bandLevelRange
                     val minLevel = levelRange[0]
                     val maxLevel = levelRange[1]
-                    Log.d(TAG, "Equalizer initialized: $numBands bands, Range: $minLevel to $maxLevel mB")
+                    Log.d(tag, "Equalizer initialized: $numBands bands, Range: $minLevel to $maxLevel mB")
 
                     // Log frequencies for debugging
                     for (i in 0 until numBands) {
                         val centerFreq = getCenterFreq(i.toShort()) / 1000
-                        Log.d(TAG, "  Band $i: ${centerFreq}Hz")
+                        Log.d(tag, "  Band $i: ${centerFreq}Hz")
                     }
 
                     // Apply saved band levels (up to available bands)
@@ -87,7 +119,7 @@ class AudioEffectController(private val context: Context) {
                         if (index < numBands) {
                             val safeLevel = level.coerceIn(minLevel.toInt(), maxLevel.toInt())
                             setBandLevel(index.toShort(), safeLevel.toShort())
-                            Log.d(TAG, "  Applied Band $index: $safeLevel mB")
+                            Log.d(tag, "  Applied Band $index: $safeLevel mB")
                         }
                     }
                     
@@ -95,127 +127,12 @@ class AudioEffectController(private val context: Context) {
                     enabled = _isEqualizerEnabled.value
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Equalizer not available on this device: ${e.message}")
+                Log.w(tag, "Equalizer not available on this device: ${e.message}")
             }
 
-            // Initialize Loudness Enhancer
-            try {
-                loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
-                    enabled = _isBoosterEnabled.value
-                    // Map 0-100% to 0-50000mB (0-500dB)
-                    val targetGain = _boosterLevel.value * 500
-                    setTargetGain(targetGain) 
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "LoudnessEnhancer not available: ${e.message}")
-            }
-
-            // Initialize DynamicsProcessing for normalization (API 28+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                try {
-                    // Config: 2 channels, Variant Favor Frequency, PreEq off, MBC on (1 band), PostEq off, Limiter on
-                    val config = Config.Builder(
-                        DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                        2, // channels
-                        false, // preEqInUse
-                        0, // preEqBands
-                        true, // mbcInUse
-                        1, // mbcBands
-                        false, // postEqInUse
-                        0, // postEqBands
-                        true // limiterInUse
-                    ).build()
-
-                    dynamicsProcessing = DynamicsProcessing(0, audioSessionId, config).apply {
-                        enabled = _isNormalizationEnabled.value
-
-                        // Configure Limiter for safety (Threshold -1dB, release 60ms)
-                        // params: inUse, enabled, linkGroup, attackTime, releaseTime, ratio, threshold, postGain
-                        val limiter = Limiter(
-                            /* inUse = */ true,
-                            /* enabled = */ true,
-                            /* linkGroup = */ 0,
-                            /* attackTime = */ 1.0f,
-                            /* releaseTime = */ 60.0f,
-                            /* ratio = */ 10.0f,
-                            /* threshold = */ -1.0f,
-                            /* postGain = */ 0.0f
-                        )
-                        setLimiterAllChannelsTo(limiter)
-
-                        // Configure MBC for Normalization (bringing up quiet parts)
-                        // Single band spanning all frequencies
-                        // params: enabled, cutoffFreq, attackTime, releaseTime, ratio, threshold, kneeWidth, noiseGateThreshold, expanderRatio, preGain, postGain
-                        // Ratio 3:1 to compress dynamic range, PostGain 3dB to boost perceived volume
-                        val mbcBand = DynamicsProcessing.MbcBand(
-                            /* enabled = */ true,
-                            /* cutoffFrequency = */ 20.0f,
-                            /* attackTime = */ 10.0f,
-                            /* releaseTime = */ 100.0f,
-                            /* ratio = */ 3.0f,
-                            /* threshold = */ -30.0f,
-                            /* kneeWidth = */ 6.0f,
-                            /* noiseGateThreshold = */ -90.0f,
-                            /* expanderRatio = */ 1.0f,
-                            /* preGain = */ 0.0f,
-                            /* postGain = */ 3.0f
-                        )
-                        setMbcBandAllChannelsTo(0, mbcBand)
-                    }
-                    Log.d(TAG, "DynamicsProcessing initialized for normalization")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to create DynamicsProcessing: ${e.message}")
-                }
-            } else {
-                Log.w(TAG, "DynamicsProcessing not available (requires Android 9+)")
-            }
-
-            Log.d(TAG, "Audio effects attached to session $audioSessionId")
+            Log.d(tag, "Audio effects attached to session $audioSessionId")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize audio effects: ${e.message}", e)
-        }
-    }
-
-    /**
-     * Set equalizer band level.
-     * @param bandIndex Band index (0-9)
-     * @param level Level in millibels (-5000 to 5000)
-     */
-    fun setEqualizerBandLevel(bandIndex: Int, level: Int) {
-        val eq = equalizer
-        if (eq == null) {
-            // Save pref even if eq not ready, so it applies later
-            saveEqualizerBandPref(bandIndex, level)
-            return
-        }
-
-        val numBands = eq.numberOfBands.toInt()
-        if (bandIndex !in 0 until numBands) {
-            Log.w(TAG, "Invalid band index $bandIndex (max $numBands)")
-            return
-        }
-
-        // Clamp level to valid range reported by engine
-        val range = try {
-            eq.bandLevelRange
-        } catch (e: Exception) {
-            ShortArray(2).apply {
-                this[0] = -1500
-                this[1] = 1500
-            }
-        }
-
-        val minLevel = range[0].toInt()
-        val maxLevel = range[1].toInt()
-        val clampedLevel = level.coerceIn(minLevel, maxLevel)
-
-        saveEqualizerBandPref(bandIndex, clampedLevel)
-
-        try {
-            eq.setBandLevel(bandIndex.toShort(), clampedLevel.toShort())
-            Log.d(TAG, "Set equalizer band $bandIndex to $clampedLevel")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to set equalizer band: ${e.message}")
+            Log.e(tag, "Failed to initialize audio effects: ${e.message}", e)
         }
     }
 
@@ -230,192 +147,40 @@ class AudioEffectController(private val context: Context) {
     }
 
     /**
-     * Toggle equalizer on/off.
-     */
-    fun setEqualizerEnabled(enabled: Boolean) {
-        _isEqualizerEnabled.value = enabled
-        prefs.edit { putBoolean("equalizer_enabled", enabled) }
-        try {
-            equalizer?.enabled = enabled
-            Log.d(TAG, "Equalizer enabled: $enabled")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to toggle equalizer: ${e.message}")
-        }
-    }
-
-    /**
      * Set volume booster level.
      * @param percentage 0-100%
      */
     fun setBoosterLevel(percentage: Int) {
-        val clampedLevel = percentage.coerceIn(0, 100)
-        _boosterLevel.value = clampedLevel
-        prefs.edit { putInt("booster_level", clampedLevel) }
+        _boosterLevel.value = percentage.coerceIn(0, 100)
+        persistLater { putInt("booster_level", _boosterLevel.value) }
+        applyBoost()
+    }
 
-        try {
-            // Map 0-100% to 0-5000mB (0-500dB)
-            // Increased to 50x factor as 15x was reported insufficient
-            val targetGain = clampedLevel * 500 
-            loudnessEnhancer?.setTargetGain(targetGain)
-            Log.d(TAG, "Volume booster set to $clampedLevel% (${targetGain}mB)")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to set booster level: ${e.message}")
-        }
+    fun setBassLevel(percentage: Int) {
+        _bassLevel.value = percentage.coerceIn(0, 100)
+        persistLater { putInt("bass_level", _bassLevel.value) }
+        applyBoost()
     }
 
     /**
-     * Toggle volume booster on/off.
+     * Toggle volume + bass booster on/off.
      */
     fun setBoosterEnabled(enabled: Boolean) {
         _isBoosterEnabled.value = enabled
         prefs.edit { putBoolean("booster_enabled", enabled) }
-        try {
-            loudnessEnhancer?.enabled = enabled
-            Log.d(TAG, "Volume booster enabled: $enabled")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to toggle booster: ${e.message}")
-        }
+        applyBoost()
     }
 
-    /**
-     * Toggle simple loudness normalization using Automatic Gain Control (if available).
-     */
+    /** Stable volume: AGC inside the audio sink (see BoostAudioProcessor). */
     fun setNormalizationEnabled(enabled: Boolean) {
         _isNormalizationEnabled.value = enabled
         prefs.edit { putBoolean("normalization_enabled", enabled) }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                dynamicsProcessing?.enabled = enabled
-                Log.d(TAG, "Volume normalization (DynamicsProcessing) enabled: $enabled")
-            } else {
-                Log.w(TAG, "Volume normalization requires Android 9+")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to toggle normalization: ${e.message}")
-        }
+        applyBoost()
     }
-
-    /**
-     * Get equalizer band level range.
-     */
-    fun getEqualizerBandLevelRange(): Pair<Int, Int> {
-        return try {
-            val range = equalizer?.bandLevelRange
-            (range?.get(0)?.toInt() ?: -5000) to (range?.get(1)?.toInt() ?: 5000)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get level range: ${e.message}")
-            -5000 to 5000
-        }
-    }
-
-    /**
-     * Reset all equalizer bands to 0.
-     */
-    fun resetEqualizer() {
-        _equalizerBands.value = List(10) { 0 }
-
-        // Save to preferences
-        prefs.edit().apply {
-            for (i in 0 until 10) {
-                putInt("eq_band_$i", 0)
-            }
-            apply()
-        }
-
-        try {
-            val numBands = equalizer?.numberOfBands?.toInt() ?: 0
-            for (i in 0 until minOf(10, numBands)) {
-                equalizer?.setBandLevel(i.toShort(), 0)
-            }
-            Log.d(TAG, "Equalizer reset to flat")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to reset equalizer: ${e.message}")
-        }
-    }
-
-    private val prefListener =
-        android.content.SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
-            try {
-                when {
-                    key == "equalizer_enabled" -> {
-                        val enabled = sharedPreferences.getBoolean(key, false)
-                        // Only update if changed to avoid loops
-                        if (_isEqualizerEnabled.value != enabled) {
-                            _isEqualizerEnabled.value = enabled
-                        }
-                        if (equalizer?.enabled != enabled) {
-                            equalizer?.enabled = enabled
-                            Log.d(TAG, "Listener: Equalizer enabled updated to $enabled")
-                        }
-                    }
-
-                    key?.startsWith("eq_band_") == true -> {
-                        val index = key.removePrefix("eq_band_").toIntOrNull()
-                        if (index != null && index in 0..9) {
-                            val level = sharedPreferences.getInt(key, 0)
-
-                            // Update flow if needed
-                            val currentBands = _equalizerBands.value.toMutableList()
-                            if (currentBands[index] != level) {
-                                currentBands[index] = level
-                                _equalizerBands.value = currentBands
-                            }
-
-                            // Apply to hardware equalizer
-                            equalizer?.let { eq ->
-                                val shortLevel = level.toShort()
-                                if (eq.getBandLevel(index.toShort()) != shortLevel) {
-                                    eq.setBandLevel(index.toShort(), shortLevel)
-                                    Log.d(TAG, "Listener: Set band $index to $level")
-                                }
-                            }
-                        }
-                    }
-
-                    key == "booster_enabled" -> {
-                        val enabled = sharedPreferences.getBoolean(key, false)
-                        if (_isBoosterEnabled.value != enabled) {
-                            _isBoosterEnabled.value = enabled
-                        }
-                        if (loudnessEnhancer?.enabled != enabled) {
-                            loudnessEnhancer?.enabled = enabled
-                            Log.d(TAG, "Listener: Booster enabled updated to $enabled")
-                        }
-                    }
-
-                    key == "booster_level" -> {
-                        val level = sharedPreferences.getInt(key, 0)
-                        if (_boosterLevel.value != level) {
-                            _boosterLevel.value = level
-                        }
-                        loudnessEnhancer?.let { le ->
-                            val targetGain = level * 500
-                            if (le.targetGain.toInt() != targetGain) {
-                                le.setTargetGain(targetGain)
-                                Log.d(TAG, "Listener: Set booster gain to ${targetGain}mB")
-                            }
-                        }
-                    }
-
-                    key == "normalization_enabled" -> {
-                        val enabled = sharedPreferences.getBoolean(key, false)
-                        if (_isNormalizationEnabled.value != enabled) {
-                            _isNormalizationEnabled.value = enabled
-                        }
-                        if (dynamicsProcessing?.enabled != enabled) {
-                            dynamicsProcessing?.enabled = enabled
-                            Log.d(TAG, "Listener: Normalization enabled updated to $enabled")
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in preference listener: ${e.message}")
-            }
-        }
 
     init {
         loadPreferences()
-        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        applyBoost()
     }
 
     private fun loadPreferences() {
@@ -426,6 +191,7 @@ class AudioEffectController(private val context: Context) {
         
         // Load booster level
         _boosterLevel.value = prefs.getInt("booster_level", 0)
+        _bassLevel.value = prefs.getInt("bass_level", 0)
         
         // Load eq bands
         val loadedBands = MutableList(10) { 0 }
@@ -434,7 +200,7 @@ class AudioEffectController(private val context: Context) {
         }
         _equalizerBands.value = loadedBands
         
-        Log.d(TAG, "Loaded preferences: EqEnabled=${_isEqualizerEnabled.value}, BoosterEnabled=${_isBoosterEnabled.value}, Level=${_boosterLevel.value}")
+        Log.d(tag, "Loaded preferences: EqEnabled=${_isEqualizerEnabled.value}, BoosterEnabled=${_isBoosterEnabled.value}, Level=${_boosterLevel.value}")
     }
 
     /**
@@ -443,14 +209,10 @@ class AudioEffectController(private val context: Context) {
     private fun releaseEffects() {
         try {
             equalizer?.release()
-            loudnessEnhancer?.release()
-            dynamicsProcessing?.release()
             equalizer = null
-            loudnessEnhancer = null
-            dynamicsProcessing = null
-            Log.d(TAG, "Audio effects keys released")
+            Log.d(tag, "Audio effects keys released")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to release audio effects: ${e.message}")
+            Log.e(tag, "Failed to release audio effects: ${e.message}")
         }
     }
 
@@ -459,12 +221,11 @@ class AudioEffectController(private val context: Context) {
      */
     fun release() {
         try {
-            prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
             releaseEffects()
             currentAudioSessionId = 0
-            Log.d(TAG, "Audio effects fully released")
+            Log.d(tag, "Audio effects fully released")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to release audio effects: ${e.message}")
+            Log.e(tag, "Failed to release audio effects: ${e.message}")
         }
     }
 }

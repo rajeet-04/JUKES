@@ -1,38 +1,36 @@
 package com.example.juke.ui.screens
 
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import com.example.juke.ui.components.playerStage
+import com.example.juke.ui.icons.JukeIcons
 
+import android.annotation.SuppressLint
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,14 +38,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,42 +51,64 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.juke.R
+import com.example.juke.database.PlaylistEntity
 import com.example.juke.models.Track
+import com.example.juke.ui.components.AddToPlaylistDialog
+import com.example.juke.ui.components.CreatePlaylistDialog
+import com.example.juke.ui.components.GlassAlertDialog
+import com.example.juke.ui.components.GlassIconButton
+import com.example.juke.ui.components.GlassModalBottomSheet
+import com.example.juke.ui.components.PlayerSkeleton
 import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
+import com.example.juke.jam.toTrack
 import com.example.juke.ui.components.player.QueueBottomSheetContent
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.juke.database.PlaylistEntity
-import com.example.juke.ui.components.AddToPlaylistDialog
-import com.example.juke.ui.components.CreatePlaylistDialog
+import com.example.juke.ui.theme.GlassBackdrop
+import com.example.juke.ui.theme.GlassCard
+import com.example.juke.ui.theme.GlassShapes
+import com.example.juke.ui.theme.JUKETheme
+import com.example.juke.ui.theme.glassSheetColor
+import com.example.juke.ui.theme.isGlassDark
+import com.example.juke.utils.BlacklistManager
+import com.example.juke.utils.LyricsRomanizer
+import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
-import kotlinx.coroutines.launch
-import androidx.compose.material.icons.filled.AddCircle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
-// Re-export LyricLine for compatibility if needed elsewhere, 
+// Re-export LyricLine for compatibility if needed elsewhere,
 // though it should ideally be in a model file.
 data class LyricLine(
     val timeMs: Long,
     val text: String
 )
 
+// Global render lead applies to existing and new tracks, in addition to per-track sync adjustments.
+const val DEFAULT_LYRICS_RENDER_OFFSET_MS = -500L
+
+private val INLINE_TIMESTAMP = """[\[<]\d{1,2}:\d{2}(?:[.:]\d{1,3})?[\]>]""".toRegex()
+
 // Helper moved to top level or util file, keeping here for now to avoid breaking changes if used elsewhere
-fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
+fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine> {
     val lines = mutableListOf<LyricLine>()
     val regex = """\[(\d{2}):(\d{2})\.(\d{1,3})]\s*(.*)""".toRegex()
 
@@ -102,7 +120,8 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
             var text = match.groupValues[4]
 
             // Basic cleanup of lrc artifact chars
-            text = text.trim()
+            // Word-level sync files embed [mm:ss.xxx] / <mm:ss.xxx> stamps inside the line.
+            text = text.replace(INLINE_TIMESTAMP, "").trim()
 
             val millisFromFrac = when (frac.length) {
                 3 -> frac.toLongOrNull() ?: 0L
@@ -112,8 +131,9 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
             }
 
             val timeMs = (minutes * 60 * 1000) + (seconds * 1000) + millisFromFrac
+            val adjustedTimeMs = (timeMs + DEFAULT_LYRICS_RENDER_OFFSET_MS + offsetMs).coerceAtLeast(0L)
             if (text.isNotBlank()) {
-                lines.add(LyricLine(timeMs, text))
+                lines.add(LyricLine(adjustedTimeMs, text))
             }
         }
     }
@@ -121,6 +141,44 @@ fun parseSyncedLyrics(syncedLyrics: String): List<LyricLine> {
     return lines.sortedBy { it.timeMs }
 }
 
+/** The line being sung, in the slack under the artwork; tap opens the full lyrics. */
+@Composable
+private fun CurrentLyricLine(
+    syncedLyrics: String,
+    offsetMs: Long,
+    position: Long,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val lines = remember(syncedLyrics, offsetMs) { parseSyncedLyrics(syncedLyrics, offsetMs) }
+    val text = lines.lastOrNull { it.timeMs <= position }?.text.orEmpty()
+    androidx.compose.animation.Crossfade(
+        targetState = text,
+        animationSpec = androidx.compose.animation.core.tween(220),
+        label = "currentLyricLine",
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = "Open lyrics", onClick = onOpen)
+    ) { shown ->
+        // Left-aligned on the title's edge, bold and bright, as the line reads in Spotify.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+            Text(
+                text = shown,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    lineHeight = 22.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Start,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@SuppressLint("ConfigurationScreenWidthHeight")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
@@ -134,20 +192,25 @@ fun PlayerScreen(
     BackHandler(onBack = onDismiss)
 
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
-    val uiState by musicViewModel.uiState.collectAsState()
+    val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     val currentTrack = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
+    var showSaveQueue by remember { mutableStateOf(false) }
+    val playbackSpeed by musicViewModel.playbackSpeed.collectAsStateWithLifecycle()
     var showLyrics by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showArtistSelectionSheet by remember { mutableStateOf(false) }
-    val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsState()
+    var showBlacklistPicker by remember { mutableStateOf(false) }
+    val romanizeLyrics by musicViewModel.isRomanizedLyricsEnabled.collectAsStateWithLifecycle()
+    val sleepTimerRemaining by musicViewModel.sleepTimerRemaining.collectAsStateWithLifecycle()
+    val haptic = rememberJukeHaptics()
 
     var showAddToPlaylistDialog by remember { mutableStateOf<Track?>(null) }
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
     var trackPlaylists by remember {
         mutableStateOf<List<PlaylistEntity>>(emptyList())
     }
-    val libraryUiState by libraryViewModel.uiState.collectAsState()
+    val libraryUiState by libraryViewModel.uiState.collectAsStateWithLifecycle()
 
     // Fetch playlists for the selected track when dialog opens
     LaunchedEffect(showAddToPlaylistDialog) {
@@ -161,338 +224,424 @@ fun PlayerScreen(
     configuration.screenHeightDp.dp
     val isTablet = screenWidth >= 600.dp
 
-    LaunchedEffect(Unit) {
-        while (true) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // Poll the position only while playing; paused, one read is enough (no 300 ms wakeups).
+    LaunchedEffect(lifecycleOwner, uiState.isPlaying) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             musicViewModel.updateProgress()
-            delay(300)
+            while (uiState.isPlaying) {
+                delay(300.milliseconds)
+                musicViewModel.updateProgress()
+            }
         }
     }
 
     if (currentTrack == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No track playing")
+        if (uiState.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                PlayerSkeleton()
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No track playing")
+            }
         }
         return
     }
 
-    // Modal Sheet for Player
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color.Transparent, // Transparent to show immersive background
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.fillMaxSize(),
-        dragHandle = null
+    var romanizedTrack by remember(
+        currentTrack.uuid,
+        romanizeLyrics,
+        currentTrack.syncedLyrics,
+        currentTrack.plainLyrics,
+        currentTrack.romanizedSyncedLyrics,
+        currentTrack.romanizedPlainLyrics
+    ) { mutableStateOf<Track?>(null) }
+
+    LaunchedEffect(
+        currentTrack.uuid,
+        currentTrack.syncedLyrics,
+        currentTrack.plainLyrics,
+        currentTrack.romanizedSyncedLyrics,
+        currentTrack.romanizedPlainLyrics,
+        romanizeLyrics
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .pointerInput(Unit) {
-                    var totalDrag = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { totalDrag = 0f },
-                        onDragEnd = {
-                            if (totalDrag < -150f) {
-                                musicViewModel.skipToNext()
-                            } else if (totalDrag > 150f) {
-                                musicViewModel.skipToPrevious()
-                            }
-                            totalDrag = 0f
-                        }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        totalDrag += dragAmount
-                    }
-                }
-        ) {
-            // Immersive Background
-            if (currentTrack.thumbnailUri != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(currentTrack.thumbnailUri)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(50.dp),
-                    contentScale = ContentScale.Crop
-                )
-            }
-            // Gradient Overlay for readability
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.3f),
-                                Color.Black.copy(alpha = 0.7f),
-                                Color.Black.copy(alpha = 0.9f)
-                            )
-                        )
-                    )
+        if (!romanizeLyrics) {
+            romanizedTrack = null
+            return@LaunchedEffect
+        }
+
+        // A saved result that still has non-Latin lines came from a failed request: redo it.
+        val complete = LyricsRomanizer::isFullyRomanized
+        // Failed lines (offline, rate-limited, network blocked in background) are retried a few
+        // times; successful lines are cached in memory, so a retry only re-asks for the failures.
+        for (attempt in 0..3) {
+            if (attempt > 0) delay((5_000L * attempt).milliseconds)
+            val romanizedSynced = currentTrack.romanizedSyncedLyrics?.takeIf(complete)
+                ?: currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) }
+            val romanizedPlain = currentTrack.romanizedPlainLyrics?.takeIf(complete)
+                ?: currentTrack.plainLyrics?.let { LyricsRomanizer.romanizeText(it) }
+            romanizedTrack = currentTrack.copy(
+                syncedLyrics = romanizedSynced ?: currentTrack.syncedLyrics,
+                plainLyrics = romanizedPlain ?: currentTrack.plainLyrics,
+                romanizedSyncedLyrics = romanizedSynced,
+                romanizedPlainLyrics = romanizedPlain
             )
 
-            // Content
-            Column(
+            val allDone = romanizedSynced?.let(complete) != false && romanizedPlain?.let(complete) != false
+            if (!allDone) continue
+            // Only a complete result is saved, so one bad fetch can't stick to the track forever.
+            if (romanizedSynced != currentTrack.romanizedSyncedLyrics ||
+                romanizedPlain != currentTrack.romanizedPlainLyrics
+            ) {
+                musicViewModel.persistRomanizedLyrics(
+                    track = currentTrack,
+                    romanizedSyncedLyrics = romanizedSynced,
+                    romanizedPlainLyrics = romanizedPlain
+                )
+            }
+            break
+        }
+    }
+
+    val displayTrack = if (romanizeLyrics) romanizedTrack ?: currentTrack else currentTrack
+
+    // The host owns expansion so artwork and player share one coordinate space.
+    Box(Modifier.fillMaxSize()) {
+        JUKETheme(darkTheme = true, extractedColors = uiState.extractedColors) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Plain black backdrop; the artwork is the only color on the screen.
+            Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
+            // Content — fully responsive, adapts to screen height
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .padding(horizontal = 24.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .safeDrawingPadding()
             ) {
-                // Header
-                PlayerHeader(
-                    onDismiss = onDismiss,
-                    onShowSleepTimer = { showSleepTimerDialog = true },
-                    onNavigateToAlbum = {
-                        if (currentTrack.albumSpotifyId != null) onNavigateToAlbum(
-                            currentTrack.albumSpotifyId
-                        )
-                    },
-                    onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
-                    showMenuOption = true,
-                    isAlbumAvailable = currentTrack.albumSpotifyId != null
-                )
+                val screenH = maxHeight
+                // Scale breakpoints: tight (<640dp), normal (640-800dp), large (>800dp)
+                val isCompact = screenH < 640.dp
+                val spacerSm = if (isCompact) 8.dp else if (screenH < 800.dp) 16.dp else 24.dp
+                if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
+                val actionIconSize = if (isCompact) 18.dp else 24.dp
+                val actionBtnSize = 48.dp
+                // Fixed sizes for the bottom bar so they never shrink too small
+                val actionBarIconSize = if (isCompact) 26.dp else 32.dp
+                val ctrlPlaySize = if (isCompact) 60.dp else if (isTablet) 88.dp else 72.dp
+                val ctrlBtnSize = if (isCompact) 48.dp else if (isTablet) 72.dp else 56.dp
+                val ctrlIconSize = if (isCompact) 28.dp else if (isTablet) 56.dp else 40.dp
+                val ctrlSmallIconSize = if (isCompact) 18.dp else if (isTablet) 32.dp else 24.dp
+                val titleStyle =
+                    if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
+                val subtitleStyle =
+                    if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium
+                // Keep a safe bottom padding to avoid nav bar overlap
+                val bottomPadding = if (isCompact) 16.dp else 24.dp
 
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // Artwork
-                PlayerArtwork(
-                    currentTrack = currentTrack,
-                    currentPosition = uiState.position,
-                    showLyrics = showLyrics,
-                    musicViewModel = musicViewModel,
-                    isTablet = isTablet,
-                    onToggleLyrics = { showLyrics = !showLyrics },
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-
-                Spacer(modifier = Modifier.height(48.dp))
-
-                // Track Info & Favorite
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentTrack.title,
-                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            maxLines = 1,
-                            modifier = Modifier.basicMarquee()
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = currentTrack.artist,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            modifier = Modifier
-                                .basicMarquee()
-                                .clickable {
-                                    val ids = currentTrack.artistSpotifyIds
-                                    if (!ids.isNullOrEmpty()) {
-                                        if (ids.size == 1) onNavigateToArtist(ids[0])
-                                        else showArtistSelectionSheet = true
-                                    }
-                                }
-                        )
-                    }
+                    // Header
+                    PlayerHeader(
+                        modifier = Modifier.playerStage(0.55f, 0.8f, 12.dp),
+                        onDismiss = onDismiss,
+                        onShowSleepTimer = { showSleepTimerDialog = true },
+                        onNavigateToAlbum = {
+                            if (currentTrack.albumSpotifyId != null) onNavigateToAlbum(
+                                currentTrack.albumSpotifyId
+                            )
+                        },
+                        onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
+                        onRefetchSong = { musicViewModel.refetchTrack(currentTrack) },
+                        canRefetchSong = currentTrack.spotifyId != null,
+                        onToggleRomanizedLyrics = { musicViewModel.toggleRomanizedLyrics() },
+                        isRomanizedLyricsEnabled = romanizeLyrics,
+                        showMenuOption = true,
+                        isAlbumAvailable = currentTrack.albumSpotifyId != null,
+                        currentArtist = currentTrack.artist,
+                        onShowBlacklistPicker = { showBlacklistPicker = true },
+                        playbackSpeed = playbackSpeed,
+                        onCycleSpeed = { musicViewModel.cyclePlaybackSpeed() },
+                        onSaveQueue = { showSaveQueue = true }
+                    )
 
-                    // Favorite Button (Right side)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Spacer(modifier = Modifier.height(spacerSm))
+
+                    // Artwork — fills a portion of screen height. The art is square, so a tall slot
+                    // leaves slack. With synced lyrics the art moves up a little and the rest of the
+                    // slack, between art and title, carries the current line. Without them (or with
+                    // too little room) the art stays centred as before.
+                    BoxWithConstraints(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(vertical = if (showLyrics) 0.dp else 8.dp)
                     ) {
-                        // Download Button (Only for Streamed Tracks)
-                        if (currentTrack.isStream) {
-                            IconButton(
-                                onClick = { musicViewModel.promoteTrackToDownload(currentTrack) },
-                                modifier = Modifier.size(48.dp)
+                        val slack = maxHeight - maxWidth
+                        val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
+                        val lineStrip = !showLyrics && syncedLyrics != null && slack >= 56.dp
+                        Column(Modifier.fillMaxSize()) {
+                            Spacer(Modifier.height(if (lineStrip) slack * 0.25f else 0.dp))
+                            Box(
+                                modifier = if (lineStrip) Modifier.fillMaxWidth().aspectRatio(1f)
+                                else Modifier.fillMaxWidth().weight(1f),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Default.Download,
-                                    contentDescription = "Download Track",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                // In a Jam the artwork swipes through the room's queue, not this phone's one-song queue
+                                val jamNow by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+                                val roomQueue = remember(jamNow.queue) { jamNow.queue.map { it.toTrack() } }
+                                val roomIndex = jamNow.playback?.itemId?.let { id -> jamNow.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+                                val showRoom = jamNow.active && roomQueue.isNotEmpty() && roomIndex != null
+                                PlayerArtwork(
+                                    queue = if (showRoom) roomQueue else uiState.queue,
+                                    queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
+                                    currentTrack = displayTrack,
+                                    currentPosition = uiState.position,
+                                    showLyrics = showLyrics,
+                                    musicViewModel = musicViewModel,
+                                    isTablet = isTablet,
+                                    onToggleLyrics = { showLyrics = !showLyrics }
+                                )
+                            }
+                            if (lineStrip && syncedLyrics != null) {
+                                CurrentLyricLine(
+                                    syncedLyrics = syncedLyrics,
+                                    offsetMs = displayTrack.lyricsOffsetMs.toLong(),
+                                    position = uiState.position,
+                                    onOpen = { showLyrics = true },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
-                        IconButton(
-                            onClick = { showAddToPlaylistDialog = currentTrack },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AddCircle,
-                                contentDescription = "Add to Playlist",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { musicViewModel.toggleFavorite(currentTrack) },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (currentTrack.isFavourite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                contentDescription = if (currentTrack.isFavourite) "Remove from favorites" else "Add to favorites",
-                                tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(spacerSm))
 
-                // Progress
-                PlayerProgress(
-                    currentPosition = uiState.position,
-                    uiState = uiState,
-                    musicViewModel = musicViewModel
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Controls
-                PlayerControls(
-                    uiState = uiState,
-                    musicViewModel = musicViewModel,
-                    isLarge = isTablet
-                )
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // Bottom Action Row (Queue & Share)
-                // Wrap in Box to capture swipe gestures
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 48.dp)
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                if (dragAmount.y < -50) { // Swipe up
-                                    showQueue = true
-                                }
-                            }
-                        }
-                ) {
+                    // Track Info & Action icons
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier.fillMaxWidth().playerStage(0.5f, 0.78f),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .clickable {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    showQueue = true
-                                }
-                                .padding(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.List,
-                                contentDescription = "Queue",
-                                tint = Color.White
-                            )
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Queue",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White
+                                text = currentTrack.title,
+                                style = titleStyle.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                modifier = Modifier.basicMarquee()
                             )
-                        }
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .clickable {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    musicViewModel.startRadio()
-                                }
-                                .padding(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Radio,
-                                contentDescription = "Start Radio",
-                                tint = Color.White
-                            )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                "Radio",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White
-                            )
-                        }
-
-                        if (currentTrack.spotifyId != null) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
+                                text = currentTrack.artist,
+                                style = subtitleStyle,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                maxLines = 1,
                                 modifier = Modifier
-                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .basicMarquee()
                                     .clickable {
-                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                        onShareTrack(currentTrack.spotifyId)
+                                        val ids = currentTrack.artistSpotifyIds
+                                        if (!ids.isNullOrEmpty()) {
+                                            if (ids.size == 1) onNavigateToArtist(ids[0])
+                                            else showArtistSelectionSheet = true
+                                        }
                                     }
-                                    .padding(12.dp)
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (currentTrack.isStream) {
+                                IconButton(
+                                    onClick = { musicViewModel.promoteTrackToDownload(currentTrack) },
+                                    modifier = Modifier.size(actionBtnSize)
+                                ) {
+                                    Icon(
+                                        imageVector = JukeIcons.Download,
+                                        contentDescription = "Download",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(actionIconSize)
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { showAddToPlaylistDialog = currentTrack },
+                                modifier = Modifier.size(actionBtnSize)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Filled.Share,
-                                    contentDescription = "Share",
-                                    tint = Color.White
-                                )
-                                Text(
-                                    "Share",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
+                                    imageVector = JukeIcons.AddCircle,
+                                    contentDescription = "Add to Playlist",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(actionIconSize)
                                 )
                             }
+                            IconButton(
+                                onClick = {
+                                    haptic.confirm()
+                                    musicViewModel.toggleFavorite(currentTrack)
+                                },
+                                modifier = Modifier.size(actionBtnSize)
+                            ) {
+                                Icon(
+                                    imageVector = if (currentTrack.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
+                                    contentDescription = if (currentTrack.isFavourite) "Unfavorite" else "Favorite",
+                                    tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(actionIconSize)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(spacerSm))
+
+                    // Progress
+                    Box(Modifier.playerStage(0.58f, 0.86f)) {
+                        PlayerProgress(
+                            currentPosition = uiState.position,
+                            uiState = uiState,
+                            musicViewModel = musicViewModel
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(spacerSm))
+
+                    // Controls
+                    Box(Modifier.playerStage(0.64f, 0.92f)) {
+                        PlayerControls(
+                            uiState = uiState,
+                            musicViewModel = musicViewModel,
+                            isLarge = isTablet,
+                            playButtonSize = ctrlPlaySize,
+                            buttonSize = ctrlBtnSize,
+                            iconSize = ctrlIconSize,
+                            smallIconSize = ctrlSmallIconSize
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(spacerSm))
+
+                    // Bottom actions: bare icons, no container
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .playerStage(0.72f, 1f)
+                            .padding(bottom = bottomPadding)
+                            .pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    if (dragAmount.y < -50) showQueue = true
+                                }
+                            },
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        PlayerAction(
+                            icon = rememberVectorPainter(JukeIcons.Lyrics),
+                            label = "Lyrics",
+                            active = showLyrics,
+                            iconSize = actionBarIconSize
+                        ) { haptic.click(); showLyrics = !showLyrics }
+                        PlayerAction(
+                            icon = rememberVectorPainter(JukeIcons.List),
+                            label = "Queue",
+                            iconSize = actionBarIconSize
+                        ) { haptic.click(); showQueue = true }
+                        PlayerAction(
+                            icon = painterResource(id = R.drawable.baseline_mix),
+                            label = "Mix",
+                            iconSize = actionBarIconSize
+                        ) { haptic.click(); musicViewModel.startRadio() }
+                        if (currentTrack.spotifyId != null) {
+                            PlayerAction(
+                                icon = rememberVectorPainter(JukeIcons.Share),
+                                label = "Share",
+                                iconSize = actionBarIconSize
+                            ) { haptic.click(); onShareTrack(currentTrack.spotifyId) }
                         }
                     }
                 }
             }
         }
+        }
+    }
+
+    // Save the queue from the player's menu (same dialog as the Up Next header button).
+    if (showSaveQueue) {
+        val pendingToSave by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
+        com.example.juke.ui.components.player.SaveQueueDialog(
+            initialName = remember { musicViewModel.suggestedQueuePlaylistName() },
+            readyCount = uiState.queue.distinctBy { it.uuid }.size,
+            waitingCount = pendingToSave.size,
+            onDismiss = { showSaveQueue = false },
+            onSave = { name, includeWaiting ->
+                showSaveQueue = false
+                musicViewModel.saveQueueAsPlaylist(name, includeWaiting)
+            }
+        )
     }
 
     // Queue Sheet
     if (showQueue) {
-        ModalBottomSheet(
+        GlassModalBottomSheet(
             onDismissRequest = { showQueue = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.fillMaxSize(),
-            dragHandle = null
+            showHandle = false
         ) {
+            val rec by musicViewModel.recStatus.collectAsStateWithLifecycle()
+            val pending by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
+            val heldNext by musicViewModel.heldNextSongs.collectAsStateWithLifecycle()
+            // In a Jam the queue is the room's: shown from it, and every edit goes to it
+            val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+            val inJam = jam.active
+            val jamQueue = remember(jam.queue) { jam.queue.map { it.toTrack() } }
+            val jamIndex = jam.playback?.itemId?.let { id -> jam.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
             QueueBottomSheetContent(
+                statusText = when {
+                    inJam -> "Jam ${jam.code ?: ""} · everyone hears this queue"
+                    rec.resolving > 0 -> "Loading next songs… (${rec.resolving})"
+                    else -> null
+                },
+                pending = if (inJam) emptyList() else pending,
+                onPlayPending = { id -> musicViewModel.playPendingSong(id) },
+                onRemovePending = { id -> musicViewModel.removePendingSong(id) },
+                heldNext = if (inJam) emptyList() else heldNext,
+                onPlayNextCopy = { track -> musicViewModel.playNextCopy(track) },
+                onPlayNextPending = { id -> musicViewModel.playNextPending(id) },
                 currentTrack = currentTrack,
-                queue = uiState.queue,
-                queueIndex = uiState.queueIndex,
+                queue = if (inJam) jamQueue else uiState.queue,
+                queueIndex = if (inJam) jamIndex else uiState.queueIndex,
                 uiState = uiState,
                 onClose = { showQueue = false },
-                onMoveTrack = { from, to -> musicViewModel.moveInQueue(from, to) },
-                onRemoveTrack = { id -> musicViewModel.removeFromQueue(id) },
-                onPlayTrack = { track -> musicViewModel.playTrackFromQueue(track) }
+                onMoveTrack = { from, to ->
+                    if (inJam) com.example.juke.jam.JamControls.move(from, to) else musicViewModel.moveInQueue(from, to)
+                },
+                onRemoveTrack = { id, index ->
+                    if (inJam) com.example.juke.jam.JamSession.remove(id) else musicViewModel.removeFromQueue(id, index)
+                },
+                onPlayTrack = { track, index ->
+                    if (inJam) com.example.juke.jam.JamSession.play(track.uuid) else musicViewModel.playTrackFromQueue(track, index)
+                },
+                // These rewrite this phone's own queue, which in a Jam is the room's
+                onShuffleUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
+                onSortUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
+                onClearPlayed = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },
+                onSaveAsPlaylist = { name, includeWaiting -> if (!inJam) musicViewModel.saveQueueAsPlaylist(name, includeWaiting) },
+                suggestedPlaylistName = { musicViewModel.suggestedQueuePlaylistName() }
             )
         }
     }
 
     // Artist Selection Sheet
     if (showArtistSelectionSheet) {
-        ModalBottomSheet(
+        GlassModalBottomSheet(
             onDismissRequest = { showArtistSelectionSheet = false },
-            sheetState = rememberModalBottomSheetState(),
-            containerColor = MaterialTheme.colorScheme.surface
+            sheetState = rememberModalBottomSheetState()
         ) {
             ArtistSelectionContent(
                 currentTrack = currentTrack,
@@ -557,63 +706,104 @@ fun PlayerScreen(
             }
         )
     }
+
+    // Blacklist Artist Picker Dialog
+    if (showBlacklistPicker) {
+        BlacklistPickerDialog(
+            artistString = currentTrack.artist,
+            onDismiss = { showBlacklistPicker = false }
+        )
+    }
 }
 
 @Composable
 fun PlayerHeader(
+    modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
     onShowSleepTimer: () -> Unit,
     onNavigateToAlbum: () -> Unit,
     onRefreshLyrics: () -> Unit,
+    onRefetchSong: () -> Unit = {},
+    canRefetchSong: Boolean = false,
+    onToggleRomanizedLyrics: () -> Unit,
+    isRomanizedLyricsEnabled: Boolean,
     showMenuOption: Boolean,
-    isAlbumAvailable: Boolean
+    isAlbumAvailable: Boolean,
+    currentArtist: String = "",
+    onShowBlacklistPicker: () -> Unit = {},
+    playbackSpeed: Float = 1f,
+    onCycleSpeed: () -> Unit = {},
+    onSaveQueue: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(top = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onDismiss) {
+        GlassIconButton(onClick = onDismiss, contentDescription = "Close") {
             Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = "Close",
-                tint = Color.White,
-                modifier = Modifier.size(32.dp)
+                imageVector = JukeIcons.ChevronDown,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp)
             )
         }
 
         Text(
             "Now Playing",
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.9f)
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
         )
 
         if (showMenuOption) {
             var showMenu by remember { mutableStateOf(false) }
             Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        "Menu",
-                        tint = Color.White
-                    )
+                GlassIconButton(onClick = { showMenu = true }, contentDescription = "Menu") {
+                    Icon(JukeIcons.More, contentDescription = null)
                 }
                 DropdownMenu(
                     expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
+                    onDismissRequest = { showMenu = false },
+                    shape = GlassShapes.Control,
+                    containerColor = glassSheetColor(),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 12.dp
                 ) {
                     DropdownMenuItem(
+                        text = { Text("Speed ${if (playbackSpeed % 1f == 0f) playbackSpeed.toInt().toString() else playbackSpeed.toString()}×") },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Speed, contentDescription = null)
+                        },
+                        onClick = onCycleSpeed
+                    )
+                    DropdownMenuItem(
                         text = { Text("Sleep Timer") },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Timer, contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             onShowSleepTimer()
                         }
                     )
+                    DropdownMenuItem(
+                        text = { Text("Save queue as playlist") },
+                        leadingIcon = {
+                            Icon(JukeIcons.PlaylistAdd, contentDescription = null)
+                        },
+                        onClick = {
+                            showMenu = false
+                            onSaveQueue()
+                        }
+                    )
                     if (isAlbumAvailable) {
                         DropdownMenuItem(
                             text = { Text("Go to Album") },
+                            leadingIcon = {
+                                Icon(JukeIcons.Album, contentDescription = null)
+                            },
                             onClick = {
                                 showMenu = false
                                 onNavigateToAlbum()
@@ -622,11 +812,64 @@ fun PlayerHeader(
                     }
                     DropdownMenuItem(
                         text = { Text("Refresh Lyrics") },
+                        leadingIcon = {
+                            Icon(JukeIcons.Refresh, contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             onRefreshLyrics()
                         }
                     )
+                    if (canRefetchSong) {
+                        DropdownMenuItem(
+                            text = { Text("Wrong song? Refetch") },
+                            leadingIcon = {
+                                Icon(JukeIcons.Refresh, contentDescription = null)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onRefetchSong()
+                            }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (isRomanizedLyricsEnabled) {
+                                    "Romanized Lyrics: On"
+                                } else {
+                                    "Romanized Lyrics: Off"
+                                }
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Translate, contentDescription = null)
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleRomanizedLyrics()
+                        }
+                    )
+                    // Artist Blacklist option
+                    if (currentArtist.isNotBlank()) {
+                        val hasBlacklisted = remember(currentArtist, showMenu) {
+                            BlacklistManager.containsBlacklistedArtist(context, currentArtist)
+                        }
+                        DropdownMenuItem(
+                            text = { Text(if (hasBlacklisted) "Manage Blocked Artists" else "Block Artist") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Outlined.Block,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onShowBlacklistPicker()
+                            }
+                        )
+                    }
                 }
             }
         } else {
@@ -678,7 +921,7 @@ fun SleepTimerDialog(
         mutableFloatStateOf(currentTimerRemaining?.let { it / 60000f } ?: 0f)
     }
 
-    AlertDialog(
+    GlassAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Sleep Timer") },
         text = {
@@ -690,12 +933,9 @@ fun SleepTimerDialog(
                     val minutes = (currentTimerRemaining / 1000 / 60).toInt()
                     val seconds = ((currentTimerRemaining / 1000) % 60).toInt()
 
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
+        accent = MaterialTheme.colorScheme.primaryContainer) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -751,4 +991,113 @@ fun SleepTimerDialog(
             }
         }
     )
+}
+
+@Composable
+fun BlacklistPickerDialog(
+    artistString: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+
+    // Parse individual artist names
+    val artists = remember(artistString) {
+        artistString
+            .replace(" feat. ", ", ")
+            .replace(" ft. ", ", ")
+            .replace(" & ", ", ")
+            .replace(" and ", ", ")
+            .replace(";", ",")
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+
+    // Track blocked state per artist
+    var blockedMap by remember(artistString) {
+        mutableStateOf(
+            artists.associateWith { name ->
+                BlacklistManager.containsBlacklistedArtist(context, name)
+            }
+        )
+    }
+
+    GlassAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Block Artists") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Blocked artists won't appear in recommendations.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                artists.forEach { name ->
+                    val isBlocked = blockedMap[name] == true
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        androidx.compose.material3.Switch(
+                            checked = isBlocked,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    BlacklistManager.addArtist(context, name)
+                                    Toast.makeText(context, "$name blocked", Toast.LENGTH_SHORT)
+                                        .show()
+                                } else {
+                                    BlacklistManager.removeArtist(context, name)
+                                    Toast.makeText(context, "$name unblocked", Toast.LENGTH_SHORT)
+                                        .show()
+                                }
+                                blockedMap = blockedMap.toMutableMap().apply {
+                                    put(name, checked)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
+}
+
+@Composable
+private fun PlayerAction(
+    icon: androidx.compose.ui.graphics.painter.Painter,
+    label: String,
+    iconSize: androidx.compose.ui.unit.Dp,
+    active: Boolean = false,
+    onClick: () -> Unit
+) {
+    val tint = if (active) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .widthIn(min = 64.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp)
+    ) {
+        Icon(icon, label, tint = tint, modifier = Modifier.size(iconSize))
+        Spacer(Modifier.height(2.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint, maxLines = 1)
+    }
 }

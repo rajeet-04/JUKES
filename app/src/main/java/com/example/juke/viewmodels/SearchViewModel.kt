@@ -6,33 +6,47 @@ import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.sqlite.db.SimpleSQLiteQuery
+import coil.Coil
+import coil.request.ImageRequest
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PlaylistEntity
-import com.example.juke.database.PlaylistTrackEntity
 import com.example.juke.database.toTrack
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
+import com.example.juke.network.ApiClient
+import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
-import com.example.juke.services.QueueManager
+import com.example.juke.services.PlaylistImportManager
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONObject
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.milliseconds
 
 data class SearchUiState(
     val query: String = "",
+    val suggestions: List<String> = emptyList(),
+    val isShowingSuggestions: Boolean = false,
     val tracks: List<SpotifyTrack> = emptyList(),
     val localTracks: List<Track> = emptyList(),
     val artists: List<SpotifyArtist> = emptyList(),
@@ -59,10 +73,26 @@ data class ArtistDetailUiState(
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        /** youtube.com / music.youtube.com watch links (group 1) and youtu.be short links (group 2). */
+        private val YOUTUBE_LINK =
+            """https?://(?:(?:www\.|m\.|music\.)?youtube\.com/watch\?(?:\S*?&)?v=([\w-]{11})|youtu\.be/([\w-]{11}))""".toRegex()
+        private const val LIVE_SUGGESTION_DEBOUNCE_MS = 100L
+        private const val WARMUP_DEBOUNCE_MS = 400L
+        private const val SEARCH_WARMUP_COUNT = 5
+        private const val MIN_SUGGESTION_QUERY_LENGTH = 2
+        private const val SUGGESTION_CACHE_MAX_ENTRIES = 64
+        private const val YT_SUGGESTIONS_URL =
+            "https://music.youtube.com/youtubei/v1/music/get_search_suggestions?prettyPrint=false"
+        private const val YT_CLIENT_NAME = "WEB_REMIX"
+        private const val YT_CLIENT_VERSION = "1.20260421.03.01"
+        private const val YT_CLIENT_NAME_HEADER = "67"
+    }
+
     private val database = MusicDatabase.getDatabase(application)
     private val trackDao = database.trackDao()
-    private val playlistDao = database.playlistDao()
-    private val queueManager = QueueManager.getInstance(application)
+    private val importManager = PlaylistImportManager.get(application)
+
     private val searchPrefs =
         application.getSharedPreferences("search_history", android.content.Context.MODE_PRIVATE)
 
@@ -76,23 +106,65 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _artistDetailState = MutableStateFlow(ArtistDetailUiState())
     val artistDetailState: StateFlow<ArtistDetailUiState> = _artistDetailState.asStateFlow()
 
+    // Must stay below _uiState: viewModelScope runs immediately, so this reads it during construction.
+    init {
+        // Import progress comes from the persisted job, so it is still there after a restart.
+        viewModelScope.launch {
+            importManager.status.collect { map ->
+                val st = map[_uiState.value.playlistId] ?: map.values.firstOrNull()
+                _uiState.value = _uiState.value.copy(
+                    isImportingPlaylist = st != null,
+                    importProgress = st?.done ?: 0,
+                    importTotal = st?.total ?: 0
+                )
+            }
+        }
+    }
+
     private var searchJob: Job? = null
+    private var warmupJob: Job? = null
+    private val suggestionRequestNonce = AtomicLong(0L)
+    private val warmupRequestNonce = AtomicLong(0L)
+    private val suggestionPrefixCache =
+        LinkedHashMap<String, List<String>>(SUGGESTION_CACHE_MAX_ENTRIES)
 
     fun updateQuery(query: String) {
-        _uiState.value = _uiState.value.copy(query = query)
+        // Skip duplicate consecutive input values (distinctUntilChanged behavior).
+        if (query == _uiState.value.query) return
 
-        // Cancel previous search job
+        // Typing always puts us in suggestion mode
+        _uiState.value = _uiState.value.copy(
+            query = query,
+            isShowingSuggestions = true
+        )
+
         searchJob?.cancel()
+        warmupJob?.cancel()
+        val requestNonce = suggestionRequestNonce.incrementAndGet()
 
-        // Start new search job with debounce
-        if (query.isNotBlank()) {
-            searchJob = viewModelScope.launch {
-                delay(769) // 0.769 second debounce
-                search(query)
+        if (query.length >= MIN_SUGGESTION_QUERY_LENGTH) {
+            // Serve an immediate best-effort prefix hit while a fresh request is in-flight.
+            getCachedSuggestions(query)?.let { cached ->
+                _uiState.value = _uiState.value.copy(
+                    suggestions = cached
+                )
             }
-        } else {
-            // Clear results immediately when query is empty
+
+            searchJob = viewModelScope.launch {
+                delay(LIVE_SUGGESTION_DEBOUNCE_MS.milliseconds) // Fast debounce for near-immediate typing suggestions
+                if (requestNonce != suggestionRequestNonce.get()) return@launch
+                fetchSuggestions(query, requestNonce)
+            }
+        } else if (query.isNotBlank()) {
+            // For short inputs, keep typing mode active but avoid remote calls.
             _uiState.value = _uiState.value.copy(
+                suggestions = emptyList()
+            )
+        } else {
+            // Clear everything when the field is emptied
+            _uiState.value = _uiState.value.copy(
+                suggestions = emptyList(),
+                isShowingSuggestions = false,
                 tracks = emptyList(),
                 localTracks = emptyList(),
                 artists = emptyList(),
@@ -104,8 +176,159 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun warmSuggestionsConnection() {
+        // Run exactly once per process to warm DNS/TLS/HTTP connection for suggestion endpoint.
+        if (!warmupRequestNonce.compareAndSet(0L, 1L)) return
+
+        viewModelScope.launch {
+            try {
+                val warmupPayload = """
+                    {
+                        "input": "a",
+                        "context": {
+                            "client": {
+                                "clientName": "WEB_REMIX",
+                                "clientVersion": "1.20260414.05.00",
+                                "hl": "en-US",
+                                "gl": "US"
+                            }
+                        }
+                    }
+                """.trimIndent()
+
+                ApiClient.httpClient.post(YT_SUGGESTIONS_URL) {
+                    header("Referer", "https://music.youtube.com/")
+                    header("X-Origin", "https://music.youtube.com")
+                    contentType(ContentType.Application.Json)
+                    setBody(warmupPayload)
+                }.bodyAsText()
+
+                Log.d("SearchViewModel", "YT suggestions warm-up completed")
+            } catch (e: Exception) {
+                Log.w("SearchViewModel", "YT suggestions warm-up failed", e)
+            }
+        }
+    }
+
+    private fun normalizeSuggestionKey(query: String): String {
+        return query.trim().lowercase(Locale.ROOT)
+    }
+
+    private fun getCachedSuggestions(query: String): List<String>? {
+        val key = normalizeSuggestionKey(query)
+        var bestPrefix: String? = null
+
+        for (cachedKey in suggestionPrefixCache.keys) {
+            if (key.startsWith(cachedKey) && (bestPrefix == null || cachedKey.length > bestPrefix.length)) {
+                bestPrefix = cachedKey
+            }
+        }
+
+        val prefix = bestPrefix ?: return null
+        val source = suggestionPrefixCache[prefix] ?: return null
+        return source.filter { it.startsWith(query, ignoreCase = true) }
+    }
+
+    private fun putCachedSuggestions(query: String, suggestions: List<String>) {
+        val key = normalizeSuggestionKey(query)
+        suggestionPrefixCache.remove(key)
+        suggestionPrefixCache[key] = suggestions
+
+        while (suggestionPrefixCache.size > SUGGESTION_CACHE_MAX_ENTRIES) {
+            val oldestKey = suggestionPrefixCache.keys.firstOrNull() ?: break
+            suggestionPrefixCache.remove(oldestKey)
+        }
+    }
+
+    private suspend fun fetchSuggestions(query: String, requestNonce: Long) {
+        try {
+            val locale = Locale.getDefault()
+            val languageTag = locale.toLanguageTag().ifBlank { "en-US" }
+            val region = locale.country.ifBlank { "US" }
+            val payload = """
+                {
+                    "input": "${query.replace("\"", "\\\"")}",
+                    "context": {
+                        "client": {
+                            "clientName": "$YT_CLIENT_NAME",
+                            "clientVersion": "$YT_CLIENT_VERSION",
+                            "hl": "$languageTag",
+                            "gl": "$region",
+                            "platform": "DESKTOP"
+                        }
+                    }
+                }
+            """.trimIndent()
+
+            val response = ApiClient.httpClient.post(YT_SUGGESTIONS_URL) {
+                header("Accept", "*/*")
+                header("Accept-Language", "$languageTag,en;q=0.9")
+                header("Referer", "https://music.youtube.com/")
+                header("Origin", "https://music.youtube.com")
+                header("X-Origin", "https://music.youtube.com")
+                header("x-youtube-client-name", YT_CLIENT_NAME_HEADER)
+                header("x-youtube-client-version", YT_CLIENT_VERSION)
+                contentType(ContentType.Application.Json)
+                setBody(payload)
+            }
+            val responseBody = response.bodyAsText()
+
+            val json = JSONObject(responseBody)
+            val results = mutableListOf<String>()
+            val contents = json.optJSONArray("contents")
+
+            if (contents != null) {
+                for (i in 0 until contents.length()) {
+                    val sectionContents = contents.getJSONObject(i)
+                        .optJSONObject("searchSuggestionsSectionRenderer")
+                        ?.optJSONArray("contents") ?: continue
+
+                    for (j in 0 until sectionContents.length()) {
+                        val suggestionRenderer = sectionContents.getJSONObject(j)
+                            .optJSONObject("searchSuggestionRenderer")
+
+                        val runs = suggestionRenderer
+                            ?.optJSONObject("suggestion")
+                            ?.optJSONArray("runs")
+                        if (runs != null) {
+                            val textBuilder = StringBuilder()
+                            for (k in 0 until runs.length()) {
+                                textBuilder.append(runs.getJSONObject(k).optString("text", ""))
+                            }
+                            val text = textBuilder.toString().trim()
+                            if (text.isNotEmpty()) results.add(text)
+                        }
+                    }
+                }
+            }
+
+            // Drop stale responses if a newer query was typed while this request was in-flight.
+            if (requestNonce != suggestionRequestNonce.get()) return
+            if (_uiState.value.query != query || !_uiState.value.isShowingSuggestions) return
+
+            putCachedSuggestions(query, results)
+
+            _uiState.value = _uiState.value.copy(
+                suggestions = results
+            )
+        } catch (e: Exception) {
+            Log.e("SearchViewModel", "Failed to fetch suggestions", e)
+            _uiState.value = _uiState.value.copy(
+                suggestions = emptyList()
+            )
+        }
+    }
+
     fun search(query: String) {
         val trimmedQuery = query.trim()
+        searchJob?.cancel() // Cancel any pending suggestion fetch
+        warmupJob?.cancel()
+        // Flip out of suggestion mode immediately so results can render
+        _uiState.value = _uiState.value.copy(
+            isShowingSuggestions = false,
+            suggestions = emptyList(),
+            query = trimmedQuery
+        )
         if (trimmedQuery.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 tracks = emptyList(),
@@ -118,7 +341,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         // Track search query
-        AnalyticsManager.getInstance().trackSearchQuery(trimmedQuery)
+        AnalyticsManager.getInstance(getApplication()).trackSearchQuery(trimmedQuery)
         // Save to recent searches
         saveRecentSearch(trimmedQuery)
 
@@ -127,7 +350,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
             try {
                 // Check if query is a Spotify URL
-                val urlInfo = parseSpotifyUrl(trimmedQuery)
+                val urlInfo = parseSpotifyUrl(trimmedQuery) ?: resolveShortLink(trimmedQuery)?.let(::parseSpotifyUrl)
 
                 if (urlInfo != null) {
                     // Handle URL-based search
@@ -191,34 +414,18 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     // Search local DB immediately for instant results
                     // Dynamic query builder for partial matching (e.g. "Linkin Numb" -> matches "Linkin Park - Numb")
+                    // A YouTube / YouTube Music link searches for the song it points to
+                    val textQuery = youtubeTitle(trimmedQuery) ?: trimmedQuery
                     val queryTokens =
-                        trimmedQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
+                        textQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
 
-                    val localResults = if (queryTokens.isEmpty()) {
-                        emptyList()
-                    } else {
-                        val queryBuilder = StringBuilder("SELECT * FROM tracks WHERE ")
-                        val args = ArrayList<Any>()
-
-                        queryTokens.forEachIndexed { index, token ->
-                            if (index > 0) queryBuilder.append(" AND ")
-                            queryBuilder.append("(LOWER(title) LIKE '%' || LOWER(?) || '%' OR LOWER(artist) LIKE '%' || LOWER(?) || '%')")
-                            args.add(token)
-                            args.add(token)
-                        }
-
-                        queryBuilder.append(" ORDER BY last_played_at DESC")
-                        trackDao.searchTracksRaw(
-                            SimpleSQLiteQuery(
-                                queryBuilder.toString(),
-                                args.toArray()
-                            )
-                        ).map { it.toTrack() }
-                    }
+                    // Saved songs: typo-tolerant, matches artist + title words together and lyrics (incl. romanized)
+                    val localResults = if (queryTokens.isEmpty()) emptyList() else
+                        com.example.juke.utils.TrackSearch.rank((trackDao.getAllTracks() + trackDao.getStreamTracks()).map { it.toTrack() }, textQuery).take(50)
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results
-                    val response = SpotifyApi.search(trimmedQuery)
+                    val response = SpotifyApi.search(textQuery)
                     // Filter out Spotify tracks that are already in local results (by title+artist match)
                     val localTitles =
                         localResults.map { it.title.lowercase() to it.artist.lowercase() }.toSet()
@@ -230,6 +437,27 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                             key !in localTitles
                         }
 
+                    // Warm the likeliest results on the backend once the results have settled
+                    // (a newer search cancels it); the tap's prepare then finds it downloading.
+                    warmupJob?.cancel()
+                    // Two tiers: resolving (match + metadata) is cheap, so do it for the top results;
+                    // a full download only for the one the query clearly names.
+                    val likeliest = filteredSpotifyTracks.take(SEARCH_WARMUP_COUNT)
+                    if (likeliest.isNotEmpty()) {
+                        warmupJob = viewModelScope.launch {
+                            delay(WARMUP_DEBOUNCE_MS.milliseconds)
+                            likeliest.forEachIndexed { i, track ->
+                                JukesApi.warmup(
+                                    title = track.name,
+                                    artist = track.artists.joinToString(", ") { it.name },
+                                    durationMs = track.durationMs.toLong(),
+                                    source = "search",
+                                    resolveOnly = !(i == 0 && JukesApi.confidentMatch(textQuery, track.name))
+                                )
+                            }
+                        }
+                    }
+
                     _uiState.value = _uiState.value.copy(
                         tracks = filteredSpotifyTracks,
                         artists = response.artists?.items ?: emptyList(),
@@ -239,6 +467,27 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         isPlaylistUrl = false,
                         playlistId = null
                     )
+
+                    // Pre-warm thumbnail cache so images are in-flight when the list renders.
+                    // Use the same image-selection logic as SearchResultItemM3: smallest image
+                    // that is still ≥64px wide, with explicit cache keys so Coil can deduplicate.
+                    val ctx = getApplication<Application>()
+                    val imageLoader = Coil.imageLoader(ctx)
+                    filteredSpotifyTracks.forEach { track ->
+                        val url = track.album.images
+                            .filter { (it.width ?: 0) >= 64 }
+                            .minByOrNull { it.width ?: Int.MAX_VALUE }?.url
+                            ?: track.album.images.lastOrNull()?.url
+                        url?.let {
+                            imageLoader.enqueue(
+                                ImageRequest.Builder(ctx)
+                                    .data(it)
+                                    .memoryCacheKey(it)
+                                    .diskCacheKey(it)
+                                    .build()
+                            )
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -253,7 +502,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val json = searchPrefs.getString("recent_searches", null) ?: return emptyList()
         return try {
             json.split("|||")
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -264,7 +513,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val current = loadRecentSearches().toMutableList()
         current.remove(trimmed) // remove duplicate
         current.add(0, trimmed) // add to front
-        val updated = current.take(5) // keep only last 5
+        val updated = current.take(15) // keep only last 15
         searchPrefs.edit { putString("recent_searches", updated.joinToString("|||")) }
         _uiState.value = _uiState.value.copy(recentSearches = updated)
     }
@@ -274,6 +523,39 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         current.remove(query)
         searchPrefs.edit { putString("recent_searches", current.joinToString("|||")) }
         _uiState.value = _uiState.value.copy(recentSearches = current)
+    }
+
+    /** spotify.link / spotify.app.link redirect to open.spotify.com; follow them (or scan the landing page). */
+    private suspend fun resolveShortLink(query: String): String? {
+        val link = """https?://spotify(\.app)?\.link/\S+""".toRegex().find(query)?.value ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = URL(link).openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                val final = conn.url.toString()
+                if (parseSpotifyUrl(final) != null) final
+                else conn.inputStream.bufferedReader().use { it.readText().take(65536) }
+            }.getOrNull()
+        }
+    }
+
+    /** "Title Artist" for a youtube.com / music.youtube.com / youtu.be video link (via oEmbed), else null. */
+    private suspend fun youtubeTitle(query: String): String? {
+        val id = YOUTUBE_LINK.find(query)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } } ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = URL("https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=$id")
+                    .openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                val o = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                val title = o.getString("title").replace("""\s*[(\[][^)\]]*(official|video|audio|lyrics?)[^)\]]*[)\]]""".toRegex(RegexOption.IGNORE_CASE), "")
+                val author = o.optString("author_name").removeSuffix(" - Topic").removeSuffix("VEVO")
+                // titles that already read "Artist - Song" don't need the channel name
+                if (" - " in title) title else "$title $author"
+            }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        }
     }
 
     private data class SpotifyUrlInfo(val type: String, val id: String)
@@ -287,7 +569,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         // spotify:track:6rqhFgbbKwnb9MLmUQDhG6
 
         val httpRegex =
-            """https?://open\.spotify\.com/(track|artist|playlist|album)/([a-zA-Z0-9]+)""".toRegex()
+            """https?://open\.spotify\.com/(?:intl-[a-z]+/)?(track|artist|playlist|album)/([a-zA-Z0-9]+)""".toRegex()
         val uriRegex = """spotify:(track|artist|playlist|album):([a-zA-Z0-9]+)""".toRegex()
 
         httpRegex.find(query)?.let {
@@ -354,110 +636,33 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.value = _uiState.value.copy(downloadingId = songId)
     }
 
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
-    }
-
     fun clearArtistDetail() {
         _artistDetailState.value = ArtistDetailUiState()
     }
 
-    fun importPlaylist(playlistId: String, onTrackDownloaded: suspend (SpotifyTrack) -> Track) {
+    /**
+     * Fetch the playlist and hand it to [PlaylistImportManager], which downloads it in the background
+     * and keeps going across screens, app restarts and network drops.
+     */
+    fun importPlaylist(playlistId: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isImportingPlaylist = true,
-                importProgress = 0,
-                importTotal = 0,
-                error = null
-            )
-
+            _uiState.value = _uiState.value.copy(error = null)
             try {
-                // Fetch playlist info
                 val playlist = SpotifyApi.getPlaylist(playlistId)
-
-                // Save playlist to database
-                val playlistEntity = PlaylistEntity(
-                    id = playlist.id,
-                    name = playlist.name,
-                    description = playlist.description,
-                    thumbnailUri = playlist.images.firstOrNull()?.url,
-                    spotifyId = playlist.id,
-                    trackCount = playlist.tracks?.total ?: 0
+                val tracks = SpotifyApi.getPlaylistTracks(playlistId).items.mapNotNull { it.track }
+                importManager.enqueue(
+                    PlaylistEntity(
+                        id = playlist.id,
+                        name = playlist.name,
+                        description = playlist.description,
+                        thumbnailUri = playlist.images.firstOrNull()?.url,
+                        spotifyId = playlist.id,
+                        trackCount = tracks.size
+                    ),
+                    tracks
                 )
-                playlistDao.insertPlaylist(playlistEntity)
-
-                // Fetch all playlist tracks
-                val response = SpotifyApi.getPlaylistTracks(playlistId)
-                val tracks = response.items.mapNotNull { it.track }
-
-                _uiState.value = _uiState.value.copy(importTotal = tracks.size)
-
-                // Download tracks in parallel — max 6 concurrent (3 per API)
-                // Each track is inserted into the playlist DB immediately on download,
-                // so the playlist updates in real-time and survives app closure.
-                val semaphore = Semaphore(6)
-                val progressCounter = AtomicInteger(0)
-                val successCount = AtomicInteger(0)
-                tracks.mapIndexed { index, track ->
-                    async {
-                        semaphore.withPermit {
-                            try {
-                                queueManager.addDownloadTracking(
-                                    track.name,
-                                    track.artists.joinToString(", ") { it.name },
-                                    "playlist"
-                                )
-
-                                val downloadedTrack = onTrackDownloaded(track)
-
-                                queueManager.removeDownloadTracking(
-                                    track.name,
-                                    track.artists.joinToString(", ") { it.name }
-                                )
-
-                                // Insert immediately so the playlist reflects this track right away
-                                val playlistTrack = PlaylistTrackEntity(
-                                    playlistId = playlist.id,
-                                    trackUuid = downloadedTrack.uuid,
-                                    position = index
-                                )
-                                playlistDao.insertPlaylistTrack(playlistTrack)
-                                successCount.incrementAndGet()
-
-                                val progress = progressCounter.incrementAndGet()
-                                _uiState.value = _uiState.value.copy(importProgress = progress)
-                            } catch (e: Exception) {
-                                queueManager.removeDownloadTracking(
-                                    track.name,
-                                    track.artists.joinToString(", ") { it.name }
-                                )
-                                Log.e(
-                                    "SearchViewModel",
-                                    "Failed to download track: ${track.name}",
-                                    e
-                                )
-                                progressCounter.incrementAndGet()
-                                _uiState.value =
-                                    _uiState.value.copy(importProgress = progressCounter.get())
-                            }
-                        }
-                    }
-                }.awaitAll()
-
-                // Update playlist track count with however many succeeded
-                playlistDao.updatePlaylistTrackCount(playlist.id, successCount.get())
-
-                _uiState.value = _uiState.value.copy(
-                    isImportingPlaylist = false,
-                    importProgress = 0,
-                    importTotal = 0
-                )
-
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isImportingPlaylist = false,
-                    error = "Failed to import playlist: ${e.message}"
-                )
+                _uiState.value = _uiState.value.copy(error = "Failed to import playlist: ${e.message}")
             }
         }
     }

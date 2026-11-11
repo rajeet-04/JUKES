@@ -9,39 +9,26 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android Auto support -->
-    <uses-feature
-        android:name="android.hardware.type.automotive"
-        android:required="false" />
+    <uses-feature android:name="android.hardware.type.automotive" android:required="false" />
 
-    <application
-        android:name=".JukeApplication"
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.JUKE"
-        android:enableOnBackInvokedCallback="true"
-        android:usesCleartextTraffic="true"
-        android:attributionTags="juke_app|posthog|media|audio"
-        tools:targetApi="33">
-        
+    <application android:name=".JukeApplication" android:allowBackup="true" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="@xml/backup_rules" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/Theme.JUKE" android:enableOnBackInvokedCallback="true" android:usesCleartextTraffic="true" android:attributionTags="juke_app|posthog|media|audio" tools:targetApi="33">
+
         <!-- Android Auto metadata -->
-        <meta-data
-            android:name="com.google.android.gms.car.application"
-            android:resource="@xml/automotive_app_desc" />
-        
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTask"
-            android:theme="@style/Theme.JUKE">
+        <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
+
+        <!-- Cover art for Android Auto (read-only) -->
+        <provider android:name=".services.ArtworkProvider" android:authorities="${applicationId}.artwork" android:exported="true" />
+
+        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:theme="@style/Theme.JUKE">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -55,25 +42,87 @@
 
                 <data android:scheme="juke" />
             </intent-filter>
-        </activity>
-        
-        <!-- Playback Service -->
-            <service
-                android:name=".services.PlaybackService"
-                android:exported="true"
-                android:foregroundServiceType="mediaPlayback">
-                <intent-filter>
-                    <action android:name="androidx.media3.session.MediaLibraryService" />
-                    <action android:name="android.media.browse.MediaBrowserService" />
-                </intent-filter>
-                <intent-filter>
-                    <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
-                </intent-filter>
-            </service>
 
-        <receiver
-            android:name="androidx.media3.session.MediaButtonReceiver"
-            android:exported="true">
+            <!-- A music app: what headsets, car kits, "open music" shortcuts and the default-app chooser look for.
+                 Launching JUKE this way also resumes what was playing, like other music apps. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MUSIC_PLAYER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!-- Shared-playlist links (snapshot served by the share Worker) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="j.rajeet.in" android:pathPrefix="/p/" />
+                <data android:pathPrefix="/j/" />
+            </intent-filter>
+
+            <!-- Spotify links: share sheet and tapped links -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="open.spotify.com" />
+                <data android:pathPattern="/track/.*" />
+                <data android:pathPattern="/album/.*" />
+                <data android:pathPattern="/artist/.*" />
+                <data android:pathPattern="/playlist/.*" />
+                <data android:pathPattern="/intl-.*/.*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="spotify.link" android:pathPattern="/..*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="spotify" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="youtu.be" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/watch" />
+            </intent-filter>
+        </activity>
+
+        <!-- Playback Service -->
+        <!-- push announcements (FCM, see push/Push.kt) -->
+        <service android:name=".push.JukeMessagingService" android:exported="false">
+            <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
+        </service>
+        <service android:name=".services.PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+            </intent-filter>
+        </service>
+
+        <receiver android:name="androidx.media3.session.MediaButtonReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>

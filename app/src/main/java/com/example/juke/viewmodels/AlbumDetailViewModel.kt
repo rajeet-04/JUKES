@@ -1,10 +1,16 @@
 package com.example.juke.viewmodels
 
 import android.util.Log
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import com.example.juke.repositories.OfflineAlbumStore
+import com.example.juke.models.collectAlbumTracks
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import androidx.lifecycle.viewModelScope
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifySimplifiedTrack
+import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,30 +25,43 @@ data class AlbumDetailUiState(
     val error: String? = null
 )
 
-class AlbumDetailViewModel : ViewModel() {
+class AlbumDetailViewModel(application: Application) : AndroidViewModel(application) {
+    private val offlineAlbums = OfflineAlbumStore.get(application)
+    private var loadJob: Job? = null
     private val _uiState = MutableStateFlow(AlbumDetailUiState())
     val uiState: StateFlow<AlbumDetailUiState> = _uiState.asStateFlow()
 
     fun loadAlbumDetails(album: SpotifyAlbum) {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        offlineAlbums.find(album.id.orEmpty())?.let {
+            _uiState.value = AlbumDetailUiState(album = it.album, tracks = it.tracks)
+            return
+        }
+        loadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 album = album,
+                tracks = emptyList(),
                 isLoading = true,
                 error = null
             )
 
             try {
                 if (album.id != null) {
-                    val tracksResponse = SpotifyApi.getAlbumTracks(album.id)
+                    val tracks = collectAlbumTracks { offset -> SpotifyApi.getAlbumTracks(album.id, offset = offset) }
 
                     _uiState.value = _uiState.value.copy(
-                        tracks = tracksResponse.items,
+                        tracks = tracks,
                         isLoading = false
                     )
+                    // Opening an album usually means playing it from the top: warm its first songs.
+                    tracks.take(5).forEachIndexed { i, track ->  // first two download, the next three only resolve
+                        JukesApi.warmup(track.name, track.artists.joinToString(", ") { it.name }, track.durationMs.toLong(),
+                            source = "album", resolveOnly = i >= 2)
+                    }
 
                     Log.d(
                         "AlbumDetailViewModel",
-                        "Loaded ${tracksResponse.items.size} tracks for album ${album.name}"
+                        "Loaded ${tracks.size} tracks for album ${album.name}"
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
@@ -50,6 +69,8 @@ class AlbumDetailViewModel : ViewModel() {
                         error = "Invalid album ID"
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("AlbumDetailViewModel", "Error loading album details: ${e.message}", e)
                 _uiState.update {
@@ -60,13 +81,17 @@ class AlbumDetailViewModel : ViewModel() {
     }
 
     fun loadAlbumDetailsById(albumId: String) {
-        viewModelScope.launch {
+        offlineAlbums.find(albumId)?.let { loadAlbumDetails(it.album); return }
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
 
             try {
                 // Fetch album details first
                 val album = SpotifyApi.getAlbum(albumId)
                 loadAlbumDetails(album)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(isLoading = false, error = e.message)
@@ -76,6 +101,7 @@ class AlbumDetailViewModel : ViewModel() {
     }
 
     fun clearAlbumDetail() {
+        loadJob?.cancel()
         _uiState.value = AlbumDetailUiState()
     }
 }
