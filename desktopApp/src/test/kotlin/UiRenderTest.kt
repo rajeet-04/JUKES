@@ -25,7 +25,7 @@ class UiRenderTest {
     private fun shoot(scene: ImageComposeScene, name: String, ms: Int) {
         var t = System.nanoTime()
         repeat(ms / 100) { Thread.sleep(100); t += 100_000_000; edt { scene.render(t) } }
-        edt { File("/private/tmp/claude-501/$name.png").writeBytes(scene.render(t).encodeToData(EncodedImageFormat.PNG)!!.bytes) }
+        edt { File(File(System.getProperty("user.dir"), "build/test-shots").apply { mkdirs() }, "$name.png").writeBytes(scene.render(t).encodeToData(EncodedImageFormat.PNG)!!.bytes) }
     }
 
     @Test fun screens() {
