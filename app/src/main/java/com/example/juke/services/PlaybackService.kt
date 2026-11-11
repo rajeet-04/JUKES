@@ -414,26 +414,29 @@ class PlaybackService : MediaLibraryService() {
         try { androidx.core.app.NotificationManagerCompat.from(this).notify(2, n) } catch (_: SecurityException) {}
     }
 
-    /** Keeps the startForegroundService promise when Media3 didn't, then steps back down if nothing is playing. */
-    private val foregroundGuard = Runnable {
-        val nm = getSystemService(NotificationManager::class.java)
-        val posted = nm.activeNotifications.firstOrNull { it.id == 1 }
-        if (posted != null && posted.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0) return@Runnable
-        val notification = posted?.notification
+    /** Fulfil startForegroundService immediately, before asynchronous queue restoration. */
+    private fun promoteForMediaButton(): Boolean {
+        val notification = getSystemService(NotificationManager::class.java).activeNotifications
+            .firstOrNull { it.id == 1 }?.notification
             ?: NotificationCompat.Builder(this, "media_playback")
                 .setSmallIcon(androidx.media3.session.R.drawable.media3_notification_small_icon)
                 .setContentTitle(getString(R.string.app_name))
                 .setSilent(true)
                 .build()
-        try {
+        return try {
             ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            true
         } catch (e: Exception) {
-            Log.w(tag, "Foreground guard couldn't start foreground: ${e.message}")
-            return@Runnable
+            Log.w(tag, "Media button foreground promotion refused: ${e.message}")
+            false
         }
+    }
+
+    /** Drop the temporary foreground notification if the media command never starts playback. */
+    private val foregroundGuard = Runnable {
         val starting = ::player.isInitialized && player.playWhenReady &&
             (player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY)
-        if (starting) return@Runnable // Media3 takes over the notification once it plays
+        if (starting) return@Runnable
         val empty = !::player.isInitialized || player.mediaItemCount == 0
         Log.w(tag, "Media button didn't start playback; leaving the foreground (empty=$empty)")
         ServiceCompat.stopForeground(this, if (empty) ServiceCompat.STOP_FOREGROUND_REMOVE else ServiceCompat.STOP_FOREGROUND_DETACH)
@@ -469,8 +472,11 @@ class PlaybackService : MediaLibraryService() {
         // foreground once the player really plays; if it doesn't (resumption found nothing, a Jam
         // took the command, the stream failed), the system killed the app a few seconds later.
         if (intent?.action == Intent.ACTION_MEDIA_BUTTON) {
-            mainHandler.removeCallbacks(foregroundGuard)
-            mainHandler.postDelayed(foregroundGuard, 2_000)
+            if (promoteForMediaButton()) {
+                mainHandler.removeCallbacks(foregroundGuard)
+                // Resumption loads the saved queue asynchronously; do not stop it mid-restore.
+                mainHandler.postDelayed(foregroundGuard, 20_000)
+            }
         }
 
         return try {
@@ -1366,11 +1372,31 @@ class PlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = serviceScope.async {
-            val track = database.trackDao().getRecentlyPlayedLight(1).firstOrNull()?.toTrack()
-                ?: error("No song to resume")
-            val item = AutoLibrary.playbackItem(packageName, filesDir, track) ?: error("Can't resume ${track.title}")
-            startRadioFor(listOf(track))
-            MediaSession.MediaItemsWithStartPosition(listOf(item), 0, 0L)
+            val prefs = getSharedPreferences("playback_state_prefs", MODE_PRIVATE)
+            val ids = prefs.getString("queue_track_ids", "").orEmpty()
+                .split(',').filter { it.isNotBlank() }
+            val savedIndex = prefs.getInt("queue_start_index", 0).coerceIn(0, (ids.size - 1).coerceAtLeast(0))
+            val savedPosition = prefs.getLong("playback_position", 0L).coerceAtLeast(0L)
+            val saved = withContext(Dispatchers.IO) {
+                ids.mapIndexedNotNull { index, id ->
+                    val track = database.trackDao().getTrackByUuid(id)?.toTrack() ?: return@mapIndexedNotNull null
+                    val item = AutoLibrary.playbackItem(packageName, filesDir, track) ?: return@mapIndexedNotNull null
+                    Triple(index, track, item)
+                }
+            }
+            val current = saved.indexOfFirst { it.first == savedIndex }
+            if (current >= 0) {
+                val tracks = saved.map { it.second }
+                queueManager.updateHistory(tracks.take(current))
+                queueManager.initializeQueue(tracks.drop(current), preserveHistory = true)
+                MediaSession.MediaItemsWithStartPosition(saved.map { it.third }, current, savedPosition)
+            } else {
+                val track = withContext(Dispatchers.IO) { database.trackDao().getRecentlyPlayedLight(1).firstOrNull()?.toTrack() }
+                    ?: error("No song to resume")
+                val item = AutoLibrary.playbackItem(packageName, filesDir, track) ?: error("Can't resume ${track.title}")
+                queueManager.initializeQueue(listOf(track))
+                MediaSession.MediaItemsWithStartPosition(listOf(item), 0, 0L)
+            }
         }.asListenableFuture()
 
         private suspend fun resolveRequested(item: MediaItem): List<Track> {
