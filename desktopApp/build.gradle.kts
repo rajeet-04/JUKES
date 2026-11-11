@@ -120,7 +120,13 @@ dependencies {
     for (m in listOf("base", "graphics", "media", "swing")) implementation("org.openjfx:javafx-$m:21.0.5:$fx")
 }
 
-tasks.test { useJUnit(); System.getProperty("ghostUri")?.let { systemProperty("ghostUri", it) }; System.getProperty("qsize")?.let { systemProperty("qsize", it) }; testLogging { showStandardStreams = true } }
+tasks.test {
+    useJUnit(); System.getProperty("ghostUri")?.let { systemProperty("ghostUri", it) }; System.getProperty("qsize")?.let { systemProperty("qsize", it) }; testLogging { showStandardStreams = true }
+    // CI has no audio device, no display and no Spotify/backend access; these probes need all three, so they run on a dev Mac only
+    if (System.getenv("CI") != null) filter {
+        listOf("DeleteTest", "HttpStreamTest", "PlaybackSmokeTest", "SeekAccuracyTest", "RestoreTest", "MaximizeTest").forEach { excludeTestsMatching(it) }
+    }
+}
 ksp { arg("room.schemaLocation", layout.buildDirectory.dir("schemas").get().asFile.path) }
 
 // Skiko's and SQLite's jars carry native libraries for every platform (skiko's macos-arm64 jar even holds the
