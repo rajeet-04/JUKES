@@ -108,6 +108,8 @@ dependencies {
     implementation("org.json:json:20240303")
     // Now Playing / media keys on macOS go through the Objective-C runtime; other OSes never load it.
     if (os.isMacOsX) implementation("net.java.dev.jna:jna:5.17.0") else compileOnly("net.java.dev.jna:jna:5.17.0")
+    // tests import JNA on every OS (the Now Playing test runs on Linux CI too)
+    testImplementation("net.java.dev.jna:jna:5.17.0")
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.sqlite.bundled)
