@@ -42,9 +42,10 @@ object ApiClient {
             })
         }
 
-        install(Logging) {
+        // debug builds only: BuildConfig.DEBUG is a constant, so release builds drop the whole plugin
+        if (BuildConfig.DEBUG) install(Logging) {
             logger = Logger.DEFAULT
-            level = if (BuildConfig.DEBUG) LogLevel.HEADERS else LogLevel.NONE
+            level = LogLevel.HEADERS
             // Never log credentials (installation tokens, session cookies).
             sanitizeHeader { name ->
                 name.equals(HttpHeaders.Authorization, ignoreCase = true) ||
