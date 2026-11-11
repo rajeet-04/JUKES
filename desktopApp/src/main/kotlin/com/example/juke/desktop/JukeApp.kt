@@ -300,7 +300,12 @@ fun JukeApp() {
         var panelOpen by remember { mutableStateOf(true) }
         val uiPrefs = remember { context.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE) }
         var libraryCollapsed by remember { mutableStateOf(uiPrefs.getBoolean("library_collapsed", false)) }
-        val libraryWidth by androidx.compose.animation.core.animateDpAsState(if (libraryCollapsed) 76.dp else 300.dp, androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "libraryWidth")
+        var savedLibraryWidth by remember { mutableStateOf(uiPrefs.getFloat("desktop_library_width", 300f).takeIf { it.isFinite() }?.coerceIn(180f, 600f) ?: 300f) }
+        var savedPanelWidth by remember { mutableStateOf(uiPrefs.getFloat("desktop_panel_width", 340f).takeIf { it.isFinite() }?.coerceIn(240f, 700f) ?: 340f) }
+        // Keep the centre usable as the window shrinks without overwriting the preferred widths.
+        val availableWidth = (windowWidth.value - 32f).coerceAtLeast(0f)
+        val libraryWidth = if (libraryCollapsed) 76f else savedLibraryWidth.coerceAtMost((availableWidth - 320f - if (panelOpen) 240f else 0f).coerceAtLeast(180f))
+        val panelWidth = savedPanelWidth.coerceAtMost((availableWidth - 320f - libraryWidth).coerceAtLeast(240f))
         val playerState by musicViewModel.uiState.collectAsStateWithLifecycle()
         val libraryViewModel = activityViewModelProvider[com.example.juke.viewmodels.LibraryViewModel::class]
         com.example.juke.ui.components.PlaylistAdder.PlaylistAdderHost(libraryViewModel) // "Add to playlist" from song menus
@@ -518,7 +523,7 @@ fun JukeApp() {
             Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
             Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
             Row(modifier = Modifier.fillMaxSize().then(if (desktop) Modifier.padding(top = innerPadding.calculateTopPadding(), bottom = innerPadding.calculateBottomPadding(), start = 8.dp, end = 8.dp) else Modifier),
-                horizontalArrangement = if (desktop) Arrangement.spacedBy(8.dp) else Arrangement.Start) {
+                horizontalArrangement = Arrangement.Start) {
                 if (desktop) com.example.juke.desktop.LibrarySidebar(
                     libraryViewModel = libraryViewModel,
                     collapsed = libraryCollapsed,
@@ -531,7 +536,12 @@ fun JukeApp() {
                         libraryViewModel.loadPlaylistTracks(p.id)
                         onNavigate(Screen.Library)
                     },
-                    modifier = Modifier.width(libraryWidth).fillMaxHeight()
+                    modifier = Modifier.width(libraryWidth.dp).fillMaxHeight()
+                )
+                if (desktop) DesktopPaneDivider(
+                    enabled = !libraryCollapsed,
+                    onDelta = { delta -> savedLibraryWidth = (libraryWidth + delta).coerceIn(180f, (availableWidth - 320f - if (panelOpen) panelWidth else 0f).coerceAtLeast(180f)).coerceAtMost(600f) },
+                    onFinished = { uiPrefs.edit().putFloat("desktop_library_width", savedLibraryWidth).apply() }
                 )
                 if (isExpanded && !desktop && currentRoute != "settings") {
                     GlassNavRail(items = navItems, modifier = Modifier.statusBarsPadding())
@@ -687,6 +697,10 @@ fun JukeApp() {
                         )
                     }
                 }
+                if (desktop && panelOpen) DesktopPaneDivider(
+                    onDelta = { delta -> savedPanelWidth = (panelWidth - delta).coerceIn(240f, (availableWidth - 320f - libraryWidth).coerceAtLeast(240f)).coerceAtMost(700f) },
+                    onFinished = { uiPrefs.edit().putFloat("desktop_panel_width", savedPanelWidth).apply() }
+                )
                 if (desktop && panelOpen) com.example.juke.desktop.NowPlayingPanel(
                     state = playerState, musicViewModel = musicViewModel,
                     onClose = { panelOpen = false }, onOpenFullscreen = { showPlayerModal = true },
@@ -698,7 +712,7 @@ fun JukeApp() {
                         activityViewModelProvider[SearchViewModel::class].loadArtistDetailsById(id)
                         navController.navigate("artist/$id")
                     },
-                    modifier = Modifier.width(340.dp).fillMaxHeight()
+                    modifier = Modifier.width(panelWidth.dp).fillMaxHeight()
                 )
             }
             }

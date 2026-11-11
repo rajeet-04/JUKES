@@ -4,6 +4,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
@@ -124,6 +126,25 @@ fun DesktopTopBar(titleInset: Dp, query: String, focusTrigger: Int, onQueryChang
             Tip(JukeIcons.Share, "Jam", onJam, size = 40.dp)
             Tip(JukeIcons.Equalizer, "Settings", onSettings, size = 40.dp)
         }
+    }
+}
+
+/** Drag the gutter to resize a side pane; the centre takes the remaining width. */
+@Composable
+fun DesktopPaneDivider(enabled: Boolean = true, onDelta: (Float) -> Unit, onFinished: () -> Unit) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val dragState = androidx.compose.foundation.gestures.rememberDraggableState { pixels ->
+        onDelta(pixels / density.density)
+    }
+    Box(Modifier.width(8.dp).fillMaxHeight()
+        .then(if (enabled) Modifier
+            .hoverable(interaction)
+            .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR)))
+            .draggable(dragState, androidx.compose.foundation.gestures.Orientation.Horizontal, onDragStopped = { onFinished() })
+        else Modifier), contentAlignment = Alignment.Center) {
+        if (enabled && hovered) Box(Modifier.width(2.dp).fillMaxHeight(0.12f).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)))
     }
 }
 
