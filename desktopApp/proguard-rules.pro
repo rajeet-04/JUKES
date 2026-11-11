@@ -1,0 +1,32 @@
+-dontwarn **
+-dontnote **
+-keep class com.example.juke.desktop.MainKt { *; }
+# The app's own code and its shims are reflective in places (Room, Gson, serialization), keep them whole.
+-keep class com.example.juke.** { *; }
+-keep class android.** { *; }
+-keep class coil.** { *; }
+-keep class shim.** { *; }
+# Native / reflective libraries: JavaFX loads classes by name, JNA binds natives, SQLite bundles JNI.
+-keep class javafx.** { *; }
+-keep class com.sun.javafx.** { *; }
+-keep class com.sun.media.** { *; }
+-keep class com.sun.jna.** { *; }
+-keep class androidx.sqlite.** { *; }
+-keep class androidx.room.** { *; }
+-keep class org.jetbrains.skiko.** { *; }
+-keep class org.jetbrains.skia.** { *; }
+-keep class kotlinx.coroutines.swing.** { *; }
+-keep class io.ktor.** { *; }
+-keep class org.slf4j.** { *; }
+-keep class com.google.gson.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keepclassmembers class * { @androidx.compose.runtime.Composable *; }
+-keepclassmembers class **$$serializer { *; }
+-keepclasseswithmembers class * { kotlinx.serialization.KSerializer serializer(...); }
+-keep class com.sun.prism.** { *; }
+-keep class com.sun.glass.** { *; }
+-keep class com.sun.scenario.** { *; }
+-keep class com.sun.openpisces.** { *; }
+-keep class com.sun.pisces.** { *; }
+-keep class com.sun.marlin.** { *; }
+-keep class com.sun.webkit.** { *; }

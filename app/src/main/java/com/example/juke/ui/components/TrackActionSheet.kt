@@ -54,9 +54,11 @@ fun TrackActionSheet(
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
-            actions.forEach { a ->
+            actions.forEachIndexed { i, a ->
                 val color = if (a.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .then(if (i == 0) Modifier.initialFocus() else Modifier)
+                    .focusRing()
                     .clickable(enabled = enabled, role = Role.Button) { a.run() }
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {

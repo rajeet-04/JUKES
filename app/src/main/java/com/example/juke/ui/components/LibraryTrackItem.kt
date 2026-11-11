@@ -71,8 +71,11 @@ fun LibraryTrackItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRing()
+                .onMenuKey(onTrailingIconClick)
                 .pressScale(rowSource)
                 .clip(RoundedCornerShape(10.dp))
+                .onRightClick(onTrailingIconClick) // same as the 3 dots
                 .combinedClickable(
                     interactionSource = rowSource,
                     indication = androidx.compose.foundation.LocalIndication.current,

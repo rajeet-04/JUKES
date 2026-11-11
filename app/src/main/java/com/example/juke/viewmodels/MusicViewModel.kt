@@ -396,8 +396,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     if (track != null && track.syncedLyrics.isNullOrBlank() && track.plainLyrics.isNullOrBlank()) {
                         refreshLyrics(track)
                     }
+                    if (track != null) refreshArtwork(track)
                 }
         }
+
+        backfillArtwork()
 
         // Observe current track changes to extract colors
         viewModelScope.launch {
@@ -1697,6 +1700,47 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
 
     private val lyricsRefreshJobs = mutableMapOf<String, Job>()
+
+    private val artworkTried = HashSet<String>()
+
+    /** Saved songs that never got a cover: look them all up on Spotify (50 per request) so the library shows them too. */
+    private fun backfillArtwork() = viewModelScope.launch(Dispatchers.IO) {
+        try {
+            val missing = (trackDao.getAllTracks() + trackDao.getStreamTracks()).filter { it.thumbnailUri.isNullOrBlank() && !it.spotifyId.isNullOrBlank() }
+            missing.chunked(50).forEach { chunk ->
+                val byId = SpotifyApi.getTracks(chunk.map { it.spotifyId!! }).associateBy { it.id }
+                chunk.forEach { t -> byId[t.spotifyId]?.album?.images?.firstOrNull()?.url?.let { trackDao.updateThumbnail(t.uuid, it) } }
+            }
+            if (missing.isNotEmpty()) Log.d("MusicViewModel", "Backfilled artwork for up to ${missing.size} songs")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("MusicViewModel", "Artwork backfill failed: ${e.message}")
+        }
+    }
+
+    /** A song saved without a cover (or whose cover file is gone) gets it from Spotify by id, once per session. */
+    private fun refreshArtwork(track: Track) {
+        val art = track.thumbnailUri
+        val missing = art.isNullOrBlank() || (!art.startsWith("http") && !java.io.File(art.removePrefix("file://")).exists())
+        val spotifyId = track.spotifyId
+        if (!missing || spotifyId.isNullOrBlank() || !artworkTried.add(track.uuid)) return
+        viewModelScope.launch {
+            try {
+                val url = withContext(Dispatchers.IO) { SpotifyApi.getTrack(spotifyId).album.images.firstOrNull()?.url } ?: return@launch
+                val updated = withContext(Dispatchers.IO) {
+                    val latest = trackDao.getTrackByUuid(track.uuid)?.toTrack() ?: track
+                    latest.copy(thumbnailUri = url).also { trackDao.insertTrack(it.toEntity()) }
+                }
+                queueManager.replaceTrackInQueue(track.uuid, updated)
+                updateTrackInUiState(updated)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("MusicViewModel", "Couldn't refetch artwork for ${track.title}: ${e.message}")
+            }
+        }
+    }
 
     fun refreshLyrics(track: Track) {
         if (lyricsRefreshJobs[track.uuid]?.isActive == true) return

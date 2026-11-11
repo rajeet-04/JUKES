@@ -374,9 +374,16 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+                val share = remember(context) {
+                    com.example.juke.ui.components.Share { url ->
+                        val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url) }
+                        context.startActivity(Intent.createChooser(send, null))
+                    }
+                }
                 CompositionLocalProvider(
                     LocalHazeState provides hazeState,
-                    com.example.juke.ui.components.LocalOpenMedia provides openMedia
+                    com.example.juke.ui.components.LocalOpenMedia provides openMedia,
+                    com.example.juke.ui.components.LocalShare provides share
                 ) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),

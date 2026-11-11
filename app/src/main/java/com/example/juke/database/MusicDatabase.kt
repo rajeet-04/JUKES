@@ -460,6 +460,9 @@ interface TrackDao {
     @Query("UPDATE tracks SET is_favourite = :isFavourite WHERE uuid = :uuid")
     suspend fun updateTrackFavourite(uuid: String, isFavourite: Boolean)
 
+    @Query("UPDATE tracks SET thumbnail_uri = :thumbnail WHERE uuid = :uuid")
+    suspend fun updateThumbnail(uuid: String, thumbnail: String)
+
     /** Account sync: the fields that travel between devices (see LibrarySync). */
     @Query("UPDATE tracks SET is_favourite = :fav, yt_video_id = :yt, spotify_id = :sp, album_spotify_id = :al, artist_spotify_ids = :ar, thumbnail_uri = :th WHERE uuid = :uuid")
     suspend fun updateSyncedFields(uuid: String, fav: Boolean, yt: String?, sp: String?, al: String?, ar: List<String>?, th: String?)

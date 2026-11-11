@@ -141,7 +141,8 @@ private fun DeviceCard(d: Connect.Device, s: Connect.State?, canSendHere: Boolea
         }
 
         // bring it here: Join keeps that device playing, Move here stops it
-        val upNext = s.queue.drop(1)
+        val nowAt = s.index.coerceIn(0, maxOf(s.queue.lastIndex, 0))
+        val upNext = s.queue.drop(nowAt + 1)
         var open by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton({ Connect.playHere(d.deviceId, move = false) }, Modifier.weight(1f).height(40.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Join") }
@@ -159,7 +160,7 @@ private fun DeviceCard(d: Connect.Device, s: Connect.State?, canSendHere: Boolea
             Text("Up next · ${upNext.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
                 itemsIndexed(upNext) { i, q ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { Connect.command(d.deviceId, "index", index = i + 1) }.padding(vertical = 5.dp),
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { Connect.command(d.deviceId, "index", index = nowAt + 1 + i) }.padding(vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(q.thumb ?: q.spotifyId?.let { art[it] } ?: q.yt?.let { "https://i.ytimg.com/vi/$it/mqdefault.jpg" }, null,
                             Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)

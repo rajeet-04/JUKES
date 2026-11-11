@@ -3,6 +3,7 @@
 <div align="center">
 
 [![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://www.android.com/)
+[![Desktop](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#-desktop-app)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-blue.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](https://developer.android.com/about/versions/oreo)
@@ -10,9 +11,9 @@
 [![Version](https://img.shields.io/badge/Version-3.0.0--beta-blue.svg)](https://github.com/rajeet-04/JUKES/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 
-**A modern Android music app with smart recommendations, Spotify integration, offline playback, synced lyrics, and your library on every device**
+**A modern Android and desktop music app with smart recommendations, Spotify integration, offline playback, synced lyrics, and your library on every device**
 
-[Features](#features) • [Installation](#installation) • [Architecture](#architecture) • [Contributing](#contributing)
+[Features](#features) • [Desktop app](#-desktop-app) • [Installation](#installation) • [Architecture](#architecture) • [Contributing](#contributing)
 
 </div>
 
@@ -31,6 +32,7 @@ JUKE is a feature-rich music player that combines Spotify's search API, YouTube 
 - **Lyrics in Search**: find saved songs by a line of their lyrics, typos and romanization included
 - **Add to playlist** straight from Search and Home
 - **Announcements**: occasional notifications about new versions (Firebase Cloud Messaging, sent by hand)
+- **Desktop app** (macOS, Windows, Linux) built from the same code, see [Desktop app](#-desktop-app)
 
 [📥 Releases](https://github.com/rajeet-04/JUKES/releases)
 
@@ -144,27 +146,52 @@ JUKE is a feature-rich music player that combines Spotify's search API, YouTube 
 - **Error Resilience**: Retry with exponential backoff, offline fallback, download source fallback (Spotmate → Gamepvz), offline recommendations
 - **Image Loading**: Coil with thumbnail pre-warming, 25% memory cache, 2% disk cache
 
+## 🖥️ Desktop App
+
+A Compose Desktop port in [`desktopApp/`](desktopApp) reuses the Android sources (the Gradle `stageAndroid` task copies them, minus a list of Android-only files) and adds desktop chrome: library sidebar, now-playing panel, full-screen player with lyrics and Up next, media keys and the Now Playing widget on macOS.
+
+| Platform | Status |
+|---|---|
+| macOS (Apple silicon) | built and tried; ad-hoc signed, so the first launch needs System Settings → Privacy & Security → **Open Anyway** |
+| Windows (x64) | builds on CI, untested; unsigned, SmartScreen will warn |
+| Linux (x86-64) | builds on CI, untested; `.deb` |
+
+Open items per platform (media keys, `juke://` links, signing) are in [`desktopApp/TODO.md`](desktopApp/TODO.md).
+
+**Build** (the installer for an OS has to be built on that OS; needs JDK 21 and a `local.properties` as below):
+
+```bash
+sh ./gradlew :desktopApp:packageReleaseDmg --no-configuration-cache   # macOS
+./gradlew.bat :desktopApp:packageReleaseMsi --no-configuration-cache  # Windows (needs WiX 3)
+sh ./gradlew :desktopApp:packageReleaseDeb --no-configuration-cache   # Linux (needs fakeroot)
+sh ./gradlew :desktopApp:run                                          # run without installing
+```
+
+Or use the **Desktop build** workflow (Actions tab): it builds the Windows `.msi` and Linux `.deb` on GitHub's runners with the app keys from repository secrets (`SPOTIFY_TOKEN_KEY`, `JUKE_BACKEND_URL`, `JUKE_BACKEND_KEY`) and keeps them as artifacts for 3 days. Crashes on desktop, including native ones that kill the JVM, are reported like on Android.
+
 ## 📸 Screenshots
 
-<!-- Add screenshots here when available -->
+### Desktop (macOS and Windows)
 
-```
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│    Home Screen      │  │   Search Results    │  │   Library View      │
-│                     │  │                     │  │                     │
-│  Recently Played    │  │  🎵 Tracks          │  │  All Tracks  ⭐    │
-│  Most Played        │  │  👤 Artists         │  │                     │
-│  Favorites          │  │  📀 Playlists       │  │  🎵 Playlists      │
-└─────────────────────┘  └─────────────────────┘  └─────────────────────┘
+<p align="center">
+  <img src="SCREENSHOTS/pc_home.png" alt="JUKE desktop: home with library sidebar, now playing panel and lyrics" width="900">
+</p>
 
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│   Now Playing       │  │   Artist Detail     │  │  Playlist Import    │
-│                     │  │                     │  │                     │
-│   🎵 Track Info     │  │  Top Tracks         │  │  Importing...       │
-│   🎚️ Progress Bar   │  │  Albums (Grid)      │  │  Progress: 45/100   │
-│   📝 Synced Lyrics  │  │                     │  │  ▓▓▓▓▓▓▓▓░░         │
-└─────────────────────┘  └─────────────────────┘  └─────────────────────┘
-```
+<p align="center">
+  <img src="SCREENSHOTS/pc_playerscreen.png" alt="JUKE desktop: full-screen player with lyrics, Up next, Mix and Share" width="445">
+  <img src="SCREENSHOTS/pc_home_with_jamscreen.png" alt="JUKE desktop: Jam sheet with Your devices" width="445">
+</p>
+
+### Android
+
+<p align="center">
+  <img src="SCREENSHOTS/mob_home.png" alt="JUKE Android: home" width="190">
+  <img src="SCREENSHOTS/mob_player.png" alt="JUKE Android: player" width="190">
+  <img src="SCREENSHOTS/mob_queue.png" alt="JUKE Android: Up next queue" width="190">
+  <img src="SCREENSHOTS/mob_library.png" alt="JUKE Android: library" width="190">
+  <img src="SCREENSHOTS/mob_search.png" alt="JUKE Android: search by lyric line" width="190">
+</p>
+
 
 ## 🚀 Installation
 
@@ -309,7 +336,7 @@ app/src/main/java/com/example/juke/
     └── AnalyticsManager.kt     # App event tracking
 ```
 
-Outside `app/`: `spotdown-kv-worker/` (the backend), `tools/notify.ts` (push announcements).
+Outside `app/`: `spotdown-kv-worker/` (the backend), `tools/notify.ts` (push announcements), `desktopApp/` (the desktop app).
 
 ### Data Flow
 
@@ -533,6 +560,7 @@ For issues, questions, or feature requests, please [open an issue](https://githu
 - [x] ~~Purge stale tracks~~
 - [x] ~~User accounts and cloud sync~~
 - [x] ~~Control other devices (Connect)~~
+- [x] ~~Desktop app~~ (macOS tried; Windows and Linux builds untested)
 - [ ] Social features (share playlists, collaborative queues)
 - [ ] Chromecast support
 - [ ] Podcast support

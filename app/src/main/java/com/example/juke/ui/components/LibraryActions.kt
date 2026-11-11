@@ -92,14 +92,17 @@ fun LibraryTrackActionsSheet(
     onAlbum: (() -> Unit)? = null,
     onArtist: (() -> Unit)? = null,
     artUrl: String? = null,
+    /** Single song with a Spotify id only. */
+    onShare: (() -> Unit)? = null,
 ) {
     GlassModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             LibrarySheetHeader(title, subtitle, onDismiss, enabled = enabled, artUrl = artUrl)
-            LibraryActionRow("Play next", "Immediately after the current song", JukeIcons.Play, enabled, onPlayNext)
+            LibraryActionRow("Play next", "Immediately after the current song", JukeIcons.Play, enabled, onPlayNext, modifier = Modifier.initialFocus())
             LibraryActionRow("Add to queue end", "After the songs already queued", JukeIcons.Queue, enabled, onQueueEnd)
             LibraryActionRow("Add to playlist", "Choose an existing playlist or create one", JukeIcons.PlaylistAdd, enabled, onPlaylist)
+            onShare?.let { LibraryActionRow("Share", "Send a Spotify link to this song", JukeIcons.Share, enabled, it) }
             onAlbum?.let { LibraryActionRow("Go to album", "Open this song's album", JukeIcons.Album, enabled, it) }
             onArtist?.let { LibraryActionRow("Go to artist", "Open $subtitle", JukeIcons.MusicNote, enabled, it) }
             HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -137,10 +140,12 @@ private fun LibraryActionRow(
     enabled: Boolean,
     onClick: () -> Unit,
     destructive: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp)
+        modifier.fillMaxWidth().heightIn(min = 64.dp)
+            .focusRing()
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),

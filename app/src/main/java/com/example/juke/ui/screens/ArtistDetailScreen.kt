@@ -80,6 +80,7 @@ fun ArtistDetailScreen(
                 },
                 actions = {
                     if (artist != null) {
+                        com.example.juke.ui.components.ShareButton("artist", artist.id)
                         val isBlacklisted = remember(artist.name) {
                             BlacklistManager.containsBlacklistedArtist(context, artist.name)
                         }
@@ -176,9 +177,11 @@ fun ArtistDetailScreen(
                 // Top Tracks Section
                 if (uiState.topTracks.isNotEmpty()) {
                     item {
-                        Text(
-                            text = "Top Tracks",
-                            style = MaterialTheme.typography.titleLarge
+                        val top = uiState.topTracks.take(10)
+                        com.example.juke.ui.components.PlayShuffleRow(
+                            title = "Top Tracks",
+                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(top.shuffled(), 0) },
+                            onPlay = { musicViewModel.setQueueFromSpotifyTracks(top, 0) }
                         )
                     }
 
@@ -193,6 +196,7 @@ fun ArtistDetailScreen(
                         ) {
                             TrackItem(
                                 track = track,
+                                musicViewModel = musicViewModel,
                                 onClick = {
                                     scope.launch {
                                         // Queue this track and all tracks below it
@@ -248,9 +252,11 @@ fun ArtistDetailScreen(
 @Composable
 private fun TrackItem(
     track: SpotifyTrack,
+    musicViewModel: MusicViewModel,
     onClick: () -> Unit
 ) {
     FlatTrackRow(
+        actions = com.example.juke.ui.components.spotifyTrackActions(track, musicViewModel, play = onClick),
         imageUrl = bestImageUrl(track.album.images) ?: track.album.images.lastOrNull()?.url,
         title = track.name,
         subtitle = "${track.artists.joinToString(", ") { it.name }} · ${track.album.name}",

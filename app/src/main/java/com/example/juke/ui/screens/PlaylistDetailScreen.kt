@@ -68,7 +68,8 @@ fun PlaylistDetailScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(JukeIcons.Back, "Back")
                     }
-                }
+                },
+                actions = { com.example.juke.ui.components.ShareButton("playlist", playlist?.id) }
             )
         },
         containerColor = androidx.compose.ui.graphics.Color.Transparent
@@ -195,9 +196,10 @@ fun PlaylistDetailScreen(
                 // Tracks Section
                 if (uiState.tracks.isNotEmpty()) {
                     item {
-                        Text(
-                            text = "Tracks",
-                            style = MaterialTheme.typography.titleLarge
+                        com.example.juke.ui.components.PlayShuffleRow(
+                            title = "Tracks",
+                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(uiState.tracks.shuffled(), 0) },
+                            onPlay = { musicViewModel.setQueueFromSpotifyTracks(uiState.tracks, 0) }
                         )
                     }
 
@@ -211,6 +213,7 @@ fun PlaylistDetailScreen(
                         ) {
                             TrackItem(
                                 track = track,
+                                musicViewModel = musicViewModel,
                                 onClick = {
                                     scope.launch {
                                         // Queue this track and all tracks below it from the playlist
@@ -232,9 +235,11 @@ fun PlaylistDetailScreen(
 @Composable
 private fun TrackItem(
     track: SpotifyTrack,
+    musicViewModel: MusicViewModel,
     onClick: () -> Unit
 ) {
     FlatTrackRow(
+        actions = com.example.juke.ui.components.spotifyTrackActions(track, musicViewModel, play = onClick),
         imageUrl = track.album.images.lastOrNull()?.url,
         title = track.name,
         subtitle = "${track.artists.joinToString(", ") { it.name }} · ${track.album.name}",
