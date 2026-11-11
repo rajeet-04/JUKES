@@ -125,12 +125,13 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (player !== mp) return@setOnReady
                 durMs = mp.totalDuration.toMillis().takeIf { it > 0 && !it.isNaN() }?.toLong() ?: durMs
                 if (startMs > 0) mp.seek(Duration.millis(startMs.toDouble()))
-                if (wantPlay) { mp.play(); mp.rate = speed.toDouble() }
+                if (wantPlay) mp.play()
             }
             mp.setOnPlaying { _isPlaying.value = true }
             mp.setOnPaused { _isPlaying.value = false }
             mp.setOnStopped { _isPlaying.value = false }
-            mp.currentTimeProperty().addListener { _, _, t -> if (player === mp) { val ms = t.toMillis().toLong(); if (hold > 0 && ms < hold) posMs = hold else { hold = 0; posMs = ms } } }
+            // the stored speed goes on once the clock is really moving: setting it right after play() can stall the clock on macOS
+            mp.currentTimeProperty().addListener { _, _, t -> if (player === mp) { if (_isPlaying.value && mp.rate != speed.toDouble()) mp.rate = speed.toDouble(); val ms = t.toMillis().toLong(); if (hold > 0 && ms < hold) posMs = hold else { hold = 0; posMs = ms } } }
             mp.setOnEndOfMedia { if (player === mp) scope.launch { onEnded(myIndex) } }
             mp.setOnError { Log.e(tag, "Player error for ${track.title}: ${mp.error?.message}"); if (player === mp) scope.launch { onFailed(track) } }
         }
@@ -258,7 +259,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     // On macOS a rate change starts a paused player natively (no status event), so a paused player is
-    // never touched: the speed is stored and applied right after play().
+    // never touched: the speed is stored and applied once the clock is moving.
     fun setPlaybackSpeed(s: Float) { speed = s; if (_isPlaying.value) Fx.run { player?.rate = s.toDouble() } }
 
     fun togglePlayPause() {
@@ -266,7 +267,7 @@ class PlaybackManager private constructor(private val context: Context) {
         val playing = _isPlaying.value
         wantPlay = !playing
         if (player == null && !playing) { if (synchronized(lock) { queue.isNotEmpty() }) load(posMs, true); return }
-        Fx.run { player?.let { if (playing) it.pause() else { it.play(); it.rate = speed.toDouble() } } }
+        Fx.run { player?.let { if (playing) it.pause() else it.play() } }
     }
 
     fun shouldResumeAfterTrackChange(): Boolean = wantPlay || _isPlaying.value
