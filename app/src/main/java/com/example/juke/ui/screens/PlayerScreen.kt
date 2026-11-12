@@ -11,6 +11,8 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -181,13 +183,14 @@ private fun CurrentLyricLine(
     syncedLyrics: String,
     offsetMs: Long,
     position: Long,
+    playing: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val lines = remember(syncedLyrics, offsetMs) { parseSyncedLyrics(syncedLyrics, offsetMs) }
-    val text = lines.lastOrNull { it.timeMs <= position }?.text.orEmpty()
+    val line = lines.lastOrNull { it.timeMs <= position }
     androidx.compose.animation.Crossfade(
-        targetState = text,
+        targetState = line,
         animationSpec = androidx.compose.animation.core.tween(220),
         label = "currentLyricLine",
         modifier = modifier
@@ -196,8 +199,12 @@ private fun CurrentLyricLine(
     ) { shown ->
         // Left-aligned on the title's edge, bold and bright, as the line reads in Spotify.
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+            val ink = MaterialTheme.colorScheme.onSurface
+            // With word timings the line is sung word by word, as in the full lyrics.
+            val sung = if (shown == null || shown.words.isEmpty()) null else com.example.juke.ui.components.player.rememberFrameClock(position, playing)
             Text(
-                text = shown,
+                text = if (shown == null || sung == null) androidx.compose.ui.text.AnnotatedString(shown?.text.orEmpty())
+                else com.example.juke.ui.components.player.karaokeText(shown, sung(), ink, dimAlpha = 0.42f),
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -410,20 +417,33 @@ fun PlayerScreen(
                     // leaves slack. With synced lyrics the art moves up a little and the rest of the
                     // slack, between art and title, carries the current line. Without them (or with
                     // too little room) the art stays centred as before.
+                    // 0 = artwork, 1 = lyrics. The card grows into the lyrics and shrinks back to
+                    // the artwork over this, so the switch is one motion and nothing jumps.
+                    val lyricsShown by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (showLyrics) 1f else 0f,
+                        animationSpec = androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        label = "lyricsShown"
+                    )
                     BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(vertical = if (showLyrics) 0.dp else 8.dp)
+                            .padding(vertical = 8.dp * (1f - lyricsShown))
                     ) {
                         val slack = maxHeight - maxWidth
                         val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
                         val lineStrip = !showLyrics && syncedLyrics != null && slack >= 56.dp
+                        // The artwork is a square: full width with the line strip under it, else centred.
+                        val side = if (lineStrip) maxWidth else minOf(maxWidth, maxHeight)
+                        val top = if (lineStrip) slack * 0.25f else (maxHeight - side) / 2
+                        val cardWidth = side + (maxWidth - side) * lyricsShown
+                        val cardHeight = side + (maxHeight - side) * lyricsShown
                         Column(Modifier.fillMaxSize()) {
-                            Spacer(Modifier.height(if (lineStrip) slack * 0.25f else 0.dp))
+                            Spacer(Modifier.height(top * (1f - lyricsShown)))
                             Box(
-                                modifier = if (lineStrip) Modifier.fillMaxWidth().aspectRatio(1f)
-                                else Modifier.fillMaxWidth().weight(1f),
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .size(cardWidth, cardHeight),
                                 contentAlignment = Alignment.Center
                             ) {
                                 // In a Jam the artwork swipes through the room's queue, not this phone's one-song queue
@@ -447,8 +467,10 @@ fun PlayerScreen(
                                     syncedLyrics = syncedLyrics,
                                     offsetMs = displayTrack.lyricsOffsetMs.toLong(),
                                     position = uiState.position,
+                                    playing = uiState.isPlaying,
                                     onOpen = { showLyrics = true },
-                                    modifier = Modifier.weight(1f)
+                                    // comes in as the card shrinks back to the artwork
+                                    modifier = Modifier.weight(1f).clipToBounds().graphicsLayer { alpha = 1f - lyricsShown }
                                 )
                             }
                         }

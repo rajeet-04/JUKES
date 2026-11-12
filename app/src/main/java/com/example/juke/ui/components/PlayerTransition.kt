@@ -64,11 +64,21 @@ private fun PlayerTransitionState.morph(size: androidx.compose.ui.geometry.Size,
 
 private val LocalPlayerTransition = staticCompositionLocalOf<PlayerTransitionState?> { null }
 
-/** Measure real endpoints rather than guessing artwork positions from screen dimensions. */
+/**
+ * Measure real endpoints rather than guessing artwork positions from screen dimensions.
+ *
+ * With [fly] false (the card is showing lyrics, not the artwork) nothing flies to or from the mini
+ * player: the card fades with the rest of the sheet, so a drag to close takes the lyrics with it.
+ */
 @Composable
-fun Modifier.playerArtworkEndpoint(expanded: Boolean, enabled: Boolean = true): Modifier {
+fun Modifier.playerArtworkEndpoint(expanded: Boolean, enabled: Boolean = true, fly: Boolean = true): Modifier {
     val state = LocalPlayerTransition.current
-    return if (state == null || !enabled) this else this
+    if (state == null || !enabled) return this
+    if (expanded && !fly) {
+        SideEffect { state.playerBounds = null }
+        return graphicsLayer { alpha = ((state.progress - 0.45f) / 0.4f).coerceIn(0f, 1f) }
+    }
+    return this
         .onGloballyPositioned {
             if (expanded) state.playerBounds = it.boundsInRoot()
             else state.miniBounds = it.boundsInRoot()

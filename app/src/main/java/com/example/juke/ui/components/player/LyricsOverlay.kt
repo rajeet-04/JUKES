@@ -67,6 +67,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -84,20 +85,27 @@ private object PlainLyricsScroll {
     val positions = HashMap<String, Pair<Int, Int>>()
 }
 
+/** Resting opacity of lines already sung, and of lines still to come (the active line is 1). */
+private const val SUNG_ALPHA = 0.30f
+private const val AHEAD_ALPHA = 0.52f
+
 /**
- * Fading edge modifier that masks content with a vertical gradient,
- * creating a smooth fade-out at the top and bottom edges.
+ * Masks the lyrics so they dissolve at both ends. Nothing shows in the top [clear] band, where the
+ * sync and close buttons sit, so a line never runs under them; it fades in over the next [fade].
  */
 private fun Modifier.fadingEdges(
-    topFraction: Float = 0.12f,
-    bottomFraction: Float = 0.12f
+    clear: Dp = 52.dp,
+    fade: Dp = 56.dp,
+    bottomFraction: Float = 0.22f
 ): Modifier = this
     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
     .drawWithContent {
         drawContent()
+        val top = (clear.toPx() / size.height).coerceIn(0f, 0.3f)
         val gradient = Brush.verticalGradient(
             0f to Color.Transparent,
-            topFraction to Color.Black,
+            top to Color.Transparent,
+            (top + fade.toPx() / size.height).coerceIn(top, 0.5f) to Color.Black,
             (1f - bottomFraction) to Color.Black,
             1f to Color.Transparent
         )
@@ -134,9 +142,9 @@ fun LyricsOverlay(
 
     // Measure the actual overlay height to compute center padding dynamically
     var overlayHeightPx by remember { mutableIntStateOf(0) }
-    // Active line rests ~30% from the top (reading position), leaving room for upcoming lines
-    val topPadding = with(density) { (overlayHeightPx * 0.30f).toDp() }
-    val bottomPadding = with(density) { (overlayHeightPx * 0.70f).toDp() }
+    // Active line rests ~34% from the top: clear of the buttons, with room for the lines to come
+    val topPadding = with(density) { (overlayHeightPx * 0.34f).toDp() }
+    val bottomPadding = with(density) { (overlayHeightPx * 0.66f).toDp() }
 
     // Premium full-bleed frosted background
     Box(
@@ -157,16 +165,17 @@ fun LyricsOverlay(
             )
         }
 
-        // Lighter scrim for readability while preserving premium glass look
+        // The artwork gives the card its colour only: under this scrim its light and dark patches
+        // even out, so every line has the same contrast wherever it sits.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.18f),
-                            Color.Black.copy(alpha = 0.28f),
-                            Color.Black.copy(alpha = 0.40f)
+                            Color.Black.copy(alpha = 0.50f),
+                            Color.Black.copy(alpha = 0.56f),
+                            Color.Black.copy(alpha = 0.68f)
                         )
                     )
                 )
@@ -203,42 +212,48 @@ fun LyricsOverlay(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 24.dp)
-                    .fadingEdges(topFraction = 0.14f, bottomFraction = 0.22f),
+                    .fadingEdges(),
                 contentPadding = PaddingValues(top = topPadding, bottom = bottomPadding),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 items(lyricLines.size) { index ->
                     val line = lyricLines[index]
                     val isCurrentLine = index == currentLineIndex
 
-                    // The active line is full size and opaque, the others sit back. Only layer
+                    // The active line is full size and opaque. Lines already sung fall further
+                    // back than the ones still to come, so the eye is led down the page. Only layer
                     // properties animate, so the text never re-wraps or recomposes per frame.
                     val emphasis = animateFloatAsState(
                         targetValue = if (isCurrentLine) 1f else 0f,
                         animationSpec = spring(dampingRatio = 1f, stiffness = 260f),
                         label = "lyricEmphasis"
                     )
+                    val rest = animateFloatAsState(
+                        targetValue = if (index < currentLineIndex) SUNG_ALPHA else AHEAD_ALPHA,
+                        animationSpec = spring(dampingRatio = 1f, stiffness = 120f),
+                        label = "lyricRest"
+                    )
 
-                    // Word-synced lyrics are sung word by word on the active line; upcoming
-                    // words stay as dim as the other lines (0.42).
+                    // Word-synced lyrics are sung word by word on the active line; its upcoming
+                    // words are as dim as the lines still to come.
                     val text = if (isCurrentLine && line.words.isNotEmpty()) {
                         val now = rememberFrameClock(currentPosition, playing)
-                        karaokeText(line, now(), Color.White, dimAlpha = 0.42f)
+                        karaokeText(line, now(), Color.White, dimAlpha = AHEAD_ALPHA)
                     } else androidx.compose.ui.text.AnnotatedString(line.text)
                     Text(
                         text = text,
                         style = MaterialTheme.typography.headlineSmall.copy(
-                            fontSize = 28.sp,
-                            lineHeight = 35.sp,
-                            letterSpacing = (-0.3).sp
+                            fontSize = 25.sp,
+                            lineHeight = 32.sp,
+                            letterSpacing = (-0.4).sp
                         ),
                         color = Color.White,
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer {
                                 val e = emphasis.value
-                                alpha = 0.42f + 0.58f * e
-                                val scale = 0.92f + 0.08f * e
+                                alpha = rest.value + (1f - rest.value) * e
+                                val scale = 0.94f + 0.06f * e
                                 scaleX = scale
                                 scaleY = scale
                                 transformOrigin = TransformOrigin(0f, 0.5f)
@@ -299,9 +314,9 @@ fun LyricsOverlay(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 24.dp)
-                        .fadingEdges(topFraction = 0.10f, bottomFraction = 0.14f),
+                        .fadingEdges(bottomFraction = 0.14f),
                     // Top clears the sync/close buttons; bottom lets the last line scroll to mid-card.
-                    contentPadding = PaddingValues(top = 72.dp, bottom = 120.dp),
+                    contentPadding = PaddingValues(top = 84.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(rows.size) { i ->
@@ -312,11 +327,11 @@ fun LyricsOverlay(
                             Text(
                                 text = line,
                                 style = MaterialTheme.typography.titleLarge.copy(
-                                    fontSize = 22.sp,
+                                    fontSize = 21.sp,
                                     lineHeight = 30.sp,
                                     letterSpacing = (-0.2).sp
                                 ),
-                                color = Color.White.copy(alpha = 0.92f),
+                                color = Color.White.copy(alpha = 0.86f),
                                 textAlign = TextAlign.Start,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.fillMaxWidth()
@@ -364,7 +379,7 @@ fun LyricsOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(10.dp),
+                .padding(12.dp),
             contentAlignment = Alignment.TopCenter
         ) {
             Row(
@@ -379,15 +394,15 @@ fun LyricsOverlay(
                             modifier = Modifier
                                 .size(40.dp)
                                 .background(
-                                    Color.White.copy(alpha = 0.08f),
+                                    Color.White.copy(alpha = if (showSyncControls) 0.18f else 0.10f),
                                     CircleShape
                                 )
-                                .border(1.dp, Color.White.copy(alpha = 0.04f), CircleShape)
                         ) {
                             Icon(
                                 imageVector = JukeIcons.Equalizer,
-                                contentDescription = "Toggle Sync Controls",
-                                tint = Color.White.copy(alpha = 0.9f)
+                                contentDescription = "Adjust lyrics timing",
+                                modifier = Modifier.size(20.dp),
+                                tint = Color.White.copy(alpha = 0.86f)
                             )
                         }
                     }
@@ -397,16 +412,13 @@ fun LyricsOverlay(
                     onClick = onDismiss,
                     modifier = Modifier
                         .size(40.dp)
-                        .background(
-                            Color.White.copy(alpha = 0.08f),
-                            CircleShape
-                        )
-                        .border(1.dp, Color.White.copy(alpha = 0.04f), CircleShape)
+                        .background(Color.White.copy(alpha = 0.10f), CircleShape)
                 ) {
                     Icon(
                         imageVector = JukeIcons.Close,
-                        contentDescription = "Close Lyrics",
-                        tint = Color.White.copy(alpha = 0.9f)
+                        contentDescription = "Close lyrics",
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.White.copy(alpha = 0.86f)
                     )
                 }
             }
