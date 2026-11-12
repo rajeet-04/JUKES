@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [3.1.0-stable] - 2026-11-12
+
 ### Added
 
 - **Word-by-word lyrics.** Songs with word timings on LRCLIB are sung word by word: the current line fills in as each word is sung. Works in the full lyrics view (phone and desktop), the phone mini player, and the line under the artwork.
@@ -23,6 +25,8 @@
 - Dragging the phone player closed with lyrics open no longer leaves the artwork floating over the lyrics.
 - Changing songs while paused (swiping the artwork, next/previous, picking from the queue) shows 0:00 right away instead of the last song's time.
 - macOS Now Playing shows the JUKE icon instead of a generic one.
+
+See full release notes: [v3.1.0-stable-RELEASE_NOTES.md](docs/v3.1.0-stable-RELEASE_NOTES.md)
 
 ## [2.7.0-beta] - 2026-10-21
 
