@@ -23,7 +23,7 @@ internal object LyricsTrust {
 
     /** Words only from text in LRC form. */
     fun lrcText(lrc: String): String = lrc.lineSequence()
-        .map { it.replace(Regex("""^\s*(\[[^]]*])+"""), "").trim() }
+        .map { it.replace(Regex("""^\s*(\[[^]]*])+"""), "").replace(Regex("""<\d+:\d+(?:[.:]\d+)?>"""), "").trim() }
         .filter { it.isNotEmpty() }
         .joinToString("\n")
 }

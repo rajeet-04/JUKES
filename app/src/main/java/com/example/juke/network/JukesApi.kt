@@ -1,5 +1,6 @@
 package com.example.juke.network
 
+import com.example.juke.models.withWordSync
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
@@ -435,6 +436,8 @@ object JukesApi {
         val sync: String = "none",
         @SerialName("plain_lyrics") val plainLyrics: String? = null,
         @SerialName("synced_lyrics") val syncedLyrics: String? = null,
+        /** LRCLIB's YAML for LRCLIB results; carries word timings when the record has them. */
+        val lyricsfile: String? = null,
         val lines: List<Line> = emptyList(),
         val upgrading: Boolean = false,
     ) {
@@ -483,7 +486,8 @@ object JukesApi {
                 lines.isNotEmpty() -> lines.joinToString("\n") { "[%02d:%05.2f] %s".format(java.util.Locale.US, it.startMs / 60_000, it.startMs % 60_000 / 1000.0, it.text) }
                 else -> null
             },
-        )
+            lyricsfile = lyricsfile.takeIf { sync != "none" },
+        ).withWordSync()
 
     /** Honor Retry-After (1–30 s), never past the deadline. */
     private suspend fun waitBefore(retryAfterSec: Int?, deadline: Long) {

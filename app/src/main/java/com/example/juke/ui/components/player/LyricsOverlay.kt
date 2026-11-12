@@ -179,6 +179,7 @@ fun LyricsOverlay(
                 parseSyncedLyrics(syncedLyrics, localOffsetMs.toLong())
             }
             val listState = rememberLazyListState()
+            val playing = musicViewModel.uiState.collectAsState().value.isPlaying
             // Before the first timestamp the first line is the active one.
             val currentLineIndex = remember(lyricLines, currentPosition) {
                 lyricLines.indexOfLast { it.timeMs <= currentPosition }.coerceAtLeast(0)
@@ -218,8 +219,14 @@ fun LyricsOverlay(
                         label = "lyricEmphasis"
                     )
 
+                    // Word-synced lyrics are sung word by word on the active line; upcoming
+                    // words stay as dim as the other lines (0.42).
+                    val text = if (isCurrentLine && line.words.isNotEmpty()) {
+                        val now = rememberFrameClock(currentPosition, playing)
+                        karaokeText(line, now(), Color.White, dimAlpha = 0.42f)
+                    } else androidx.compose.ui.text.AnnotatedString(line.text)
                     Text(
-                        text = line.text,
+                        text = text,
                         style = MaterialTheme.typography.headlineSmall.copy(
                             fontSize = 28.sp,
                             lineHeight = 35.sp,

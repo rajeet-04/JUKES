@@ -223,6 +223,7 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
         synced != null -> {
             val lines = remember(synced, track.lyricsOffsetMs) { parseSyncedLyrics(synced, track.lyricsOffsetMs) }
             val active = remember(lines, position) { lines.indexOfLast { it.timeMs <= position }.coerceAtLeast(0) }
+            val playing = musicViewModel.uiState.collectAsState().value.isPlaying
             val state = rememberLazyListState()
             var viewport by remember { mutableStateOf(0) }
             LaunchedEffect(active, viewport) { if (viewport > 0) state.animateScrollToItem(active, scrollOffset = -(viewport * if (big) 0.30f else 0.12f).toInt()) }
@@ -232,7 +233,12 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
                     val dist = kotlin.math.abs(i - active)
                     val target = when { i == active -> 1f; dist == 1 -> 0.5f; else -> 0.3f }
                     val a by androidx.compose.animation.core.animateFloatAsState(target, androidx.compose.animation.core.tween(280), label = "lyric")
-                    Text(l.text, Modifier.fillMaxWidth().alpha(a).clip(RoundedCornerShape(8.dp)).clickable { onSeek(l.timeMs) }.padding(vertical = 2.dp),
+                    // Word-synced lyrics are sung word by word on the active line; upcoming words stay dim.
+                    val text = if (i == active && l.words.isNotEmpty()) {
+                        val now = com.example.juke.ui.components.player.rememberFrameClock(position, playing)
+                        com.example.juke.ui.components.player.karaokeText(l, now(), MaterialTheme.colorScheme.onSurface, dimAlpha = 0.35f)
+                    } else androidx.compose.ui.text.AnnotatedString(l.text)
+                    Text(text, Modifier.fillMaxWidth().alpha(a).clip(RoundedCornerShape(8.dp)).clickable { onSeek(l.timeMs) }.padding(vertical = 2.dp),
                         style = MaterialTheme.typography.headlineMedium.copy(fontSize = activeSize, lineHeight = activeSize * 1.22f, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.5).sp),
                         color = MaterialTheme.colorScheme.onSurface)
                 }

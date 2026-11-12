@@ -179,20 +179,38 @@ object LyricsRomanizer {
         return processMixedLyrics(text, sourceLanguage)
     }
 
+    private val wordStamp = Regex("""<\d{1,2}:\d{2}(?:[.:]\d{1,3})?>""")
+
+    /**
+     * [romanized] with the word stamps of [body] put back, word for word. When romanizing changed
+     * the number of words, the line keeps only its line timing.
+     */
+    internal fun restampWords(body: String, romanized: String): String {
+        val stamps = wordStamp.findAll(body).map { it.value }.toList()
+        if (stamps.isEmpty()) return romanized
+        val words = romanized.trim().split(Regex("\\s+"))
+        val original = wordStamp.split(body).drop(1).filter { it.isNotBlank() }
+        if (words.size != stamps.size || original.size != stamps.size) return romanized
+        return stamps.zip(words).joinToString(" ") { (stamp, word) -> stamp + word }
+    }
+
     suspend fun romanizeSyncedLyrics(
         syncedLyrics: String,
         sourceLanguage: String = DEFAULT_SOURCE_LANGUAGE
     ): String {
         val lines = syncedLyrics.split("\n")
-        val texts = lines.map { line -> lrcTimestampRegex.find(line)?.groupValues?.get(2) ?: line }
+        // Word stamps (<mm:ss.xx>) are taken off before romanizing and put back after.
+        val texts = lines.map { line -> wordStamp.replace(lrcTimestampRegex.find(line)?.groupValues?.get(2) ?: line, "") }
         val romanized = romanizeAll(texts, sourceLanguage)
         return lines.joinToString("\n") { line ->
             val match = lrcTimestampRegex.find(line)
             if (match != null) {
                 val prefix = match.groupValues[1]
-                val lyricText = match.groupValues[2].trim()
-                // Latin lyrics keep their casing and punctuation.
-                if (lyricText.isEmpty()) prefix else prefix + (romanized[lyricText] ?: lyricText)
+                val body = match.groupValues[2].trim()
+                val lyricText = wordStamp.replace(body, "").trim()
+                val latin = romanized[lyricText]
+                // Latin lyrics keep their casing, punctuation and word timings.
+                if (lyricText.isEmpty()) prefix else if (latin == null) prefix + body else prefix + restampWords(body, latin)
             } else {
                 val trimmed = line.trim()
                 if (trimmed.isEmpty()) "" else romanized[trimmed] ?: trimmed

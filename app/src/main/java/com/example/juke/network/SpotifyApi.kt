@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.juke.BuildConfig
 import com.example.juke.models.LRCLibResult
 import com.example.juke.models.trusted
+import com.example.juke.models.withWordSync
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyAlbumTracksResponse
@@ -953,7 +954,7 @@ object SpotifyApi {
 
             val results: List<LRCLibResult> = try {
                 // Untrustworthy timing (whole seconds, past the end, backwards) keeps only its words.
-                if (raw == null) emptyList() else json.decodeFromString<List<LRCLibResult>>(raw).map { it.trusted(duration) }
+                if (raw == null) emptyList() else json.decodeFromString<List<LRCLibResult>>(raw).map { it.withWordSync().trusted(duration) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to decode LRCLib response: ${e.message}")
                 emptyList()
@@ -973,7 +974,9 @@ object SpotifyApi {
                     .sortedWith(
                         compareByDescending<Triple<LRCLibResult, Int, Double>> { it.second } // 1. Highest Score
                             .thenByDescending { it.first.syncedLyrics?.isNotBlank() == true }    // 2. Has Synced Lyrics
-                            .thenBy { it.third } // 3. Lowest Duration Difference
+                            // 3. Word timings, when the copy's length is close enough for them to land
+                            .thenByDescending { it.first.syncedLyrics?.contains('<') == true && it.third <= 2.0 }
+                            .thenBy { it.third } // 4. Lowest Duration Difference
                     )
                     .firstOrNull()
                     ?.first
@@ -1003,7 +1006,7 @@ object SpotifyApi {
                                 parameter("artist_name", singleArtist)
                             } ?: break // LRCLib went busy: stop the per-artist fan-out
 
-                            val fallbackResults: List<LRCLibResult> = json.decodeFromString<List<LRCLibResult>>(fallbackRaw).map { it.trusted(duration) }
+                            val fallbackResults: List<LRCLibResult> = json.decodeFromString<List<LRCLibResult>>(fallbackRaw).map { it.withWordSync().trusted(duration) }
 
                             // Strict Validation for Fallback
                             // Duration must be within 5% tolerance

@@ -99,8 +99,39 @@ import kotlin.time.Duration.Companion.milliseconds
 // though it should ideally be in a model file.
 data class LyricLine(
     val timeMs: Long,
-    val text: String
+    val text: String,
+    /** Word timings from enhanced LRC (`<mm:ss.xx>word`); empty for line-synced lyrics. */
+    val words: List<LyricWord> = emptyList()
 )
+
+/** A word (with its trailing space) and when it is sung, on the same clock as [LyricLine.timeMs]. */
+data class LyricWord(val timeMs: Long, val text: String)
+
+/**
+ * Word stamps are sung where they say: the line's early lead would light words before they are
+ * heard. Only the user's per-track offset and a small lead for the fill animation apply.
+ */
+const val WORD_RENDER_LEAD_MS = -120L
+
+private val WORD_STAMP = """<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>""".toRegex()
+
+/** Words of an enhanced-LRC line body, or empty when it has no word stamps. */
+internal fun parseLyricWords(body: String, lineTimeMs: Long, offsetMs: Long): List<LyricWord> {
+    val stamps = WORD_STAMP.findAll(body).toList()
+    if (stamps.isEmpty()) return emptyList()
+    val words = ArrayList<LyricWord>()
+    val lead = body.substring(0, stamps.first().range.first).replace(INLINE_TIMESTAMP, "")
+    if (lead.isNotBlank()) words += LyricWord(lineTimeMs, lead)
+    stamps.forEachIndexed { i, m ->
+        val end = stamps.getOrNull(i + 1)?.range?.first ?: body.length
+        val text = body.substring(m.range.last + 1, end).replace(INLINE_TIMESTAMP, "")
+        if (text.isEmpty()) return@forEachIndexed
+        val frac = m.groupValues[3].padEnd(3, '0').take(3).toLongOrNull() ?: 0L
+        val ms = m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + frac
+        words += LyricWord((ms + WORD_RENDER_LEAD_MS + offsetMs).coerceAtLeast(0L), text)
+    }
+    return words
+}
 
 // Global render lead applies to existing and new tracks, in addition to per-track sync adjustments.
 const val DEFAULT_LYRICS_RENDER_OFFSET_MS = -500L
@@ -118,6 +149,7 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
             val seconds = match.groupValues[2].toLongOrNull() ?: 0L
             val frac = match.groupValues[3]
             var text = match.groupValues[4]
+            val body = text
 
             // Basic cleanup of lrc artifact chars
             // Word-level sync files embed [mm:ss.xxx] / <mm:ss.xxx> stamps inside the line.
@@ -133,7 +165,9 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
             val timeMs = (minutes * 60 * 1000) + (seconds * 1000) + millisFromFrac
             val adjustedTimeMs = (timeMs + DEFAULT_LYRICS_RENDER_OFFSET_MS + offsetMs).coerceAtLeast(0L)
             if (text.isNotBlank()) {
-                lines.add(LyricLine(adjustedTimeMs, text))
+                val words = parseLyricWords(body, timeMs + offsetMs, offsetMs)
+                // The line's text is its words, so a word highlight never disagrees with it.
+                lines.add(LyricLine(adjustedTimeMs, if (words.isEmpty()) text else words.joinToString("") { it.text }.trim(), words))
             }
         }
     }
