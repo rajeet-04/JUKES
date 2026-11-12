@@ -280,6 +280,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Declared before init: its collectors can call refreshLyrics() at once.
+    /** Songs whose lyrics lookup is running (including a wait for the server's upgrade): the UI shows "looking" only for these. */
+    private val _lyricsSearching = MutableStateFlow<Set<String>>(emptySet())
+    val lyricsSearching: StateFlow<Set<String>> = _lyricsSearching.asStateFlow()
+    private val lyricsRefreshJobs = mutableMapOf<String, Job>()
+    /** Tracks whose plain-only lyrics were re-checked this session. */
+    private val plainRechecked: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     init {
         playbackManager.initialize()
 
@@ -394,7 +402,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 .distinctUntilChanged { old, new -> old?.uuid == new?.uuid }
                 .collect { track ->
                     val badTiming = track?.syncedLyrics?.takeIf { it.isNotBlank() }?.let { hasUntrustedTiming(it, track.durationSec) } == true
-                    if (track != null && (badTiming || (track.syncedLyrics.isNullOrBlank() && track.plainLyrics.isNullOrBlank()))) {
+                    // Plain-only lyrics: the server may have aligned timed ones since (its background
+                    // upgrade can outlast the one retry), so ask again once per session.
+                    val plainOnly = track != null && track.syncedLyrics.isNullOrBlank() && !track.plainLyrics.isNullOrBlank() &&
+                        plainRechecked.add(track.uuid)
+                    if (track != null && (badTiming || plainOnly || (track.syncedLyrics.isNullOrBlank() && track.plainLyrics.isNullOrBlank()))) {
                         refreshLyrics(track)
                     }
                     if (track != null) refreshArtwork(track)
@@ -1700,11 +1712,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
-    private val lyricsRefreshJobs = mutableMapOf<String, Job>()
-
-    /** Songs whose lyrics lookup is running (including a wait for the server's upgrade): the UI shows "looking" only for these. */
-    private val _lyricsSearching = MutableStateFlow<Set<String>>(emptySet())
-    val lyricsSearching: StateFlow<Set<String>> = _lyricsSearching.asStateFlow()
 
     private val artworkTried = HashSet<String>()
 
