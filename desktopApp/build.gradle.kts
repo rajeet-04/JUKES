@@ -163,6 +163,15 @@ tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
             if (!tmp.renameTo(dmg.also { it.delete() })) error("couldn't replace ${dmg.name}")
             logger.lifecycle("${dmg.name}: ${dmg.length() / 1_048_576} MB (LZMA)")
         }
+        // Each package step leaves Launch Services registrations under JUKE's bundle id (jpackage's temp
+        // images, this build folder). The Now Playing widget picks its app icon by bundle id and showed a
+        // default Kotlin icon from one of them, so keep only real installs registered.
+        val lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        if (File(lsregister).canExecute()) {
+            layout.buildDirectory.dir("compose/binaries/main-release/app/JUKE.app").get().asFile.takeIf { it.exists() }
+                ?.let { providers.exec { commandLine(lsregister, "-u", it.path); isIgnoreExitValue = true }.result.get() }
+            providers.exec { commandLine(lsregister, "-gc"); isIgnoreExitValue = true }.result.get()
+        }
     }
 }
 
