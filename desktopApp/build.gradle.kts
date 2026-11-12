@@ -168,9 +168,13 @@ tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
         // default Kotlin icon from one of them, so keep only real installs registered.
         val lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
         if (File(lsregister).canExecute()) {
-            layout.buildDirectory.dir("compose/binaries/main-release/app/JUKE.app").get().asFile.takeIf { it.exists() }
-                ?.let { providers.exec { commandLine(lsregister, "-u", it.path); isIgnoreExitValue = true }.result.get() }
-            providers.exec { commandLine(lsregister, "-gc"); isIgnoreExitValue = true }.result.get()
+            val dump = providers.exec { commandLine(lsregister, "-dump"); isIgnoreExitValue = true }.standardOutput.asText.get()
+            dump.split(Regex("\n-{20,}\n"))
+                .filter { Regex("""identifier: +com\.example\.juke\.desktop\b""").containsMatchIn(it) }
+                .mapNotNull { Regex("""(?m)^path: +(.+?\.app)(?: \(0x[0-9a-f]+\))?$""").find(it)?.groupValues?.get(1) }
+                .filter { !it.startsWith("/Applications/") }
+                .distinct()
+                .forEach { path -> providers.exec { commandLine(lsregister, "-u", path); isIgnoreExitValue = true }.result.get() }
         }
     }
 }
