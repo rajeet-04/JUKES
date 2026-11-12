@@ -493,10 +493,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         currentState.currentTrack?.uuid != track.uuid ||
                         currentState.currentTrack != track
                     ) {
+                        // Another song: show where the player is in it (its start). While paused
+                        // nothing polls the position, so the last song's time would stay on screen.
+                        val moved = currentState.queueIndex != index
+                        val position = if (moved) playbackManager.getCurrentPosition() else null
                         _uiState.update {
                             it.copy(
                                 currentTrack = track,
-                                queueIndex = index
+                                queueIndex = index,
+                                position = position ?: it.position
                             )
                         }
                         Log.d(
@@ -775,6 +780,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     currentTrack = track,
                     queueIndex = trackIndex,
                     isPlaying = shouldResumePlayback,
+                    // a different song starts from its beginning, also while paused
+                    position = if (trackIndex != currentState.queueIndex) 0L else it.position,
                     duration = track.durationSec.toLong() * 1000
                 )
             }
