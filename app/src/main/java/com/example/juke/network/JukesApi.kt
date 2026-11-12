@@ -1,5 +1,6 @@
 package com.example.juke.network
 
+import com.example.juke.models.withWordSync
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
@@ -426,6 +427,67 @@ object JukesApi {
 
     /** True for this backend's progressive HLS playlist URLs. */
     fun isStreamPlaylist(url: String?): Boolean = url != null && "/v1/streams/" in url && ".m3u8" in url
+
+    // -- lyrics (GET /v1/lyrics; backend docs/LYRICS_API.md) ------------------------------------
+
+    @Serializable
+    internal data class ServerLyrics(
+        val source: String = "",
+        val sync: String = "none",
+        @SerialName("plain_lyrics") val plainLyrics: String? = null,
+        @SerialName("synced_lyrics") val syncedLyrics: String? = null,
+        /** LRCLIB's YAML for LRCLIB results; carries word timings when the record has them. */
+        val lyricsfile: String? = null,
+        val lines: List<Line> = emptyList(),
+        val upgrading: Boolean = false,
+    ) {
+        @Serializable
+        data class Line(val text: String = "", @SerialName("start_ms") val startMs: Long = 0)
+    }
+
+    /** The server's answer: [result] null means it has none; [retryAfterMs] set means ask again then. */
+    data class LyricsAnswer(val result: com.example.juke.models.LRCLibResult?, val retryAfterMs: Long? = null)
+
+    /**
+     * Lyrics from the server, which applies the trust rules and can align official subtitles.
+     * Throws when the server can't answer (offline, 5xx, busy, old deployment): the caller then
+     * uses its own sources.
+     */
+    suspend fun lyrics(
+        title: String, artist: String, album: String, durationSec: Int?, videoId: String?,
+        client: HttpClient = ApiClient.httpClient,
+    ): LyricsAnswer {
+        fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
+        val query = buildList {
+            add("title=${enc(title)}"); add("artist=${enc(artist)}")
+            if (album.isNotBlank()) add("album=${enc(album)}")
+            if (durationSec != null && durationSec > 0) add("duration_ms=${durationSec * 1000L}")
+            if (!videoId.isNullOrBlank()) add("video_id=${enc(videoId)}")
+        }.joinToString("&")
+        val found = try {
+            call<ServerLyrics>(client, HttpMethod.Get, "/v1/lyrics?$query")
+        } catch (e: JukesException) {
+            if (e.http == 404 && e.code == "lyrics_not_found") {
+                return LyricsAnswer(null, if (e.retryable) (e.retryAfterSec ?: 60) * 1000L else null)
+            }
+            throw e
+        }
+        return LyricsAnswer(found.toResult(title, artist, album, durationSec), if (found.upgrading) 60_000L else null)
+    }
+
+    internal fun ServerLyrics.toResult(title: String, artist: String, album: String, durationSec: Int?) =
+        com.example.juke.models.LRCLibResult(
+            id = -1, name = title, trackName = title, artistName = artist, albumName = album,
+            duration = durationSec?.toDouble(), instrumental = sync == "instrumental",
+            plainLyrics = plainLyrics?.takeIf { it.isNotBlank() } ?: lines.joinToString("\n") { it.text }.takeIf { it.isNotBlank() },
+            syncedLyrics = when {
+                sync == "none" || sync == "instrumental" -> null
+                !syncedLyrics.isNullOrBlank() -> syncedLyrics
+                lines.isNotEmpty() -> lines.joinToString("\n") { "[%02d:%05.2f] %s".format(java.util.Locale.US, it.startMs / 60_000, it.startMs % 60_000 / 1000.0, it.text) }
+                else -> null
+            },
+            lyricsfile = lyricsfile.takeIf { sync != "none" },
+        ).withWordSync()
 
     /** Honor Retry-After (1–30 s), never past the deadline. */
     private suspend fun waitBefore(retryAfterSec: Int?, deadline: Long) {

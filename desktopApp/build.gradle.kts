@@ -63,8 +63,8 @@ val genBuildConfig by tasks.registering {
             package com.example.juke
             object BuildConfig {
                 const val DEBUG = false
-                const val VERSION_NAME = "3.0.2-beta"
-                const val VERSION_CODE = 30
+                const val VERSION_NAME = "3.1.0-stable"
+                const val VERSION_CODE = 31
                 const val SPOTIFY_TOKEN_URL = "${p("SPOTIFY_TOKEN_URL", "https://spotdown-kv-worker.meek.workers.dev/spotify-token")}"
                 const val SHARE_BASE_URL = "${p("SHARE_BASE_URL", "https://j.rajeet.in")}"
                 const val SPOTIFY_TOKEN_KEY = "${p("SPOTIFY_TOKEN_KEY", "")}"
@@ -163,6 +163,19 @@ tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
             if (!tmp.renameTo(dmg.also { it.delete() })) error("couldn't replace ${dmg.name}")
             logger.lifecycle("${dmg.name}: ${dmg.length() / 1_048_576} MB (LZMA)")
         }
+        // Each package step leaves Launch Services registrations under JUKE's bundle id (jpackage's temp
+        // images, this build folder). The Now Playing widget picks its app icon by bundle id and showed a
+        // default Kotlin icon from one of them, so keep only real installs registered.
+        val lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        if (File(lsregister).canExecute()) {
+            val dump = providers.exec { commandLine(lsregister, "-dump"); isIgnoreExitValue = true }.standardOutput.asText.get()
+            dump.split(Regex("\n-{20,}\n"))
+                .filter { Regex("""identifier: +com\.example\.juke\.desktop\b""").containsMatchIn(it) }
+                .mapNotNull { Regex("""(?m)^path: +(.+?\.app)(?: \(0x[0-9a-f]+\))?$""").find(it)?.groupValues?.get(1) }
+                .filter { !it.startsWith("/Applications/") }
+                .distinct()
+                .forEach { path -> providers.exec { commandLine(lsregister, "-u", path); isIgnoreExitValue = true }.result.get() }
+        }
     }
 }
 
@@ -207,7 +220,7 @@ compose.desktop.application {
             iconFile.set(project.file("icons/JUKE.png"))
             shortcut = true // application-menu entry (found by the launcher search)
         }
-        packageVersion = "3.0.2"
+        packageVersion = "3.1.0"
         modules("java.base", "java.desktop", "java.logging", "java.sql", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http", "java.xml", "java.management")
     }
 }

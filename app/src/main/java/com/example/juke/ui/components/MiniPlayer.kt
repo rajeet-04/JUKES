@@ -65,6 +65,8 @@ import com.example.juke.models.Track
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.screens.LyricLine
 import com.example.juke.ui.screens.parseSyncedLyrics
+import com.example.juke.ui.components.player.karaokeText
+import com.example.juke.ui.components.player.rememberFrameClock
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.glassFloat
@@ -173,8 +175,7 @@ fun MiniPlayer(
             // failed lines are retried, and only a complete result is saved.
             for (attempt in 0..3) {
                 if (attempt > 0) delay((5_000L * attempt).milliseconds)
-                val result = currentTrack.romanizedSyncedLyrics?.takeIf(LyricsRomanizer::isFullyRomanized)
-                    ?: currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) }
+                val result = LyricsRomanizer.current(currentTrack.syncedLyrics, currentTrack.romanizedSyncedLyrics) { LyricsRomanizer.romanizeSyncedLyrics(it) }
                 romanizedSyncedLyrics = result
                 if (result == null) break
                 if (!LyricsRomanizer.isFullyRomanized(result)) continue
@@ -244,7 +245,7 @@ fun MiniPlayer(
                         (currentPosition - currentLine.timeMs) <= 4500L
                     }
 
-                    if (shouldShowLine) currentLine.text.takeIf { it.isNotBlank() } else null
+                    if (shouldShowLine) currentLine.takeIf { it.text.isNotBlank() } else null
                 }
             }
         }
@@ -391,8 +392,12 @@ fun MiniPlayer(
                         label = "MiniPlayer_Lyrics_Transition"
                     ) { currentLyric ->
                         if (currentLyric != null) {
+                            val ink = MaterialTheme.colorScheme.onSurface
+                            // With word timings the line is sung word by word, as in the full lyrics.
+                            val sung = if (currentLyric.words.isEmpty()) null else rememberFrameClock(currentPosition, isPlaying)
                             Text(
-                                text = currentLyric,
+                                text = if (sung == null) androidx.compose.ui.text.AnnotatedString(currentLyric.text)
+                                else karaokeText(currentLyric, sung(), ink, dimAlpha = 0.42f),
                                 style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,

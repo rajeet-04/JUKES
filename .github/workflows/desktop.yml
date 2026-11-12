@@ -1,10 +1,10 @@
 name: Desktop build
 
-# Runs on desktop changes pushed to kotlin-multiplatform, or by hand. No pull_request trigger: forks never get the secrets. Builds unsigned installers for testing.
+# Runs on desktop changes pushed to beta, or by hand. No pull_request trigger: forks never get the secrets. Builds unsigned installers for testing.
 on:
   workflow_dispatch:
   push:
-    branches: [kotlin-multiplatform]
+    branches: [beta]
     paths: ['.github/workflows/desktop.yml', 'desktopApp/**', 'app/src/main/java/**']
 
 permissions:

@@ -54,8 +54,30 @@ object LyricsRomanizer {
      */
     fun isFullyRomanized(lyrics: String): Boolean = lyrics.lineSequence().none { line ->
         val text = lrcTimestampRegex.find(line)?.groupValues?.get(2) ?: line
-        needsRomanization(text.trim())
+        needsRomanization(text.trim()) || text.any { it in ISO_MARKS }
     }
+
+    /**
+     * The romanization to show for [original]: [saved] when it is complete, else a new one from
+     * [romanize]. A saved Urdu romanization is redone once per run of the app, since it may be
+     * from before the vowels came from Hindi; it stays if redoing fails (offline, rate-limited).
+     */
+    suspend fun current(original: String?, saved: String?, romanize: suspend (String) -> String): String? {
+        val usable = saved?.takeIf(::isFullyRomanized)
+        if (usable != null && !mayPredateVowels(original)) return usable
+        val fresh = original?.let { romanize(it) }
+        return if (usable != null && fresh?.let(::isFullyRomanized) != true) usable else fresh
+    }
+
+    /** True when [original] has an Arabic-script line this run of the app has not romanized yet. */
+    private fun mayPredateVowels(original: String?): Boolean = original.orEmpty().lineSequence()
+        .map { line -> wordStamp.replace(lrcTimestampRegex.find(line)?.groupValues?.get(2) ?: line, "").trim() }
+        .firstOrNull { scriptOf(it) == Character.UnicodeScript.ARABIC }
+        ?.let { lineCache["$DEFAULT_SOURCE_LANGUAGE::$it"] == null } ?: false
+
+    /** Google's ISO 15919 Punjabi ("Sōcāṁ"); a stored romanization with these is redone by [Gurmukhi]. */
+    private const val ISO_MARKS = "āīūēōṁṇṭḍḻṛśṣẖḵ"
+
 
     /** The romanized text of a `translate_a/single` response, or null. */
     internal fun parseRomanization(body: String): String? {
@@ -76,13 +98,56 @@ object LyricsRomanizer {
         return out.toString().ifBlank { null }
     }
 
+    /** Google's answer to a Hindi translation request: both romanizations and the language it read. */
+    internal class Vowelled(val language: String, val source: String, val hindi: String)
+
+    internal fun parseVowelled(body: String): Vowelled? {
+        val root = JSONArray(body)
+        val segments = root.optJSONArray(0) ?: return null
+        val source = StringBuilder()
+        val hindi = StringBuilder()
+        for (i in 0 until segments.length()) {
+            val segment = segments.optJSONArray(i) ?: continue
+            if (segment.length() > 2 && !segment.isNull(2)) hindi.append(segment.getString(2))
+            if (segment.length() > 3 && !segment.isNull(3)) source.append(segment.getString(3))
+        }
+        return if (source.isBlank()) null else Vowelled(root.optString(2), source.toString(), hindi.toString())
+    }
+
+    private val SPACES = Regex("\\s+")
+    private val NOT_LETTERS = Regex("[^\\p{L}]+")
+
+    /**
+     * Arabic-script lines romanized with one request that also asks for Hindi: the lines, then
+     * each of their words on its own line. When Google reads the text as Urdu, the Hindi supplies
+     * the short vowels Urdu leaves out ([Colloquial.revowel]): a word's own translation, the
+     * words of its line's translation, then every word of the song. Null when the request fails.
+     */
+    private fun romanizeArabicScript(chunk: List<String>, sourceLanguage: String): Map<String, String>? {
+        val words = chunk.flatMap { it.split(SPACES) }.map(Colloquial::bare).filter { it.isNotEmpty() && needsRomanization(it) }.distinct()
+        val answer = fetch((chunk + words).joinToString("\n"), sourceLanguage, "tl=hi&dt=t&dt=rm", ::parseVowelled) ?: return null
+        val source = answer.source.split("\n")
+        if (source.size != chunk.size + words.size) return null
+        val hindi = answer.hindi.split("\n").takeIf { answer.language == "ur" && it.size == source.size }
+            ?.map { line -> line.lowercase().split(NOT_LETTERS).filter { it.isNotEmpty() } }
+            ?: return chunk.indices.associate { chunk[it] to tidy(Colloquial.polish(chunk[it], source[it])) }
+        val own = words.indices.associate { words[it] to hindi[chunk.size + it] }
+        val song = hindi.take(chunk.size).flatten().distinct()
+        return chunk.indices.associate { i ->
+            chunk[i] to tidy(Colloquial.polish(chunk[i], source[i]) { word -> hindi[i] + own[word].orEmpty() + song })
+        }
+    }
+
+    private fun request(text: String, sourceLanguage: String): String? =
+        fetch(text, sourceLanguage, "tl=$TARGET_LANGUAGE&dt=rm", ::parseRomanization)
+
     /** One POST (no URL length limit) trying each client; null on failure or while rate-limited. */
-    private fun request(text: String, sourceLanguage: String): String? {
+    private fun <T> fetch(text: String, sourceLanguage: String, query: String, parse: (String) -> T?): T? {
         if (System.currentTimeMillis() < pausedUntil) return null
         var rateLimited = 0
         for (name in CLIENTS) {
             val request = Request.Builder()
-                .url("$BASE_URL?client=$name&sl=$sourceLanguage&tl=$TARGET_LANGUAGE&dt=rm")
+                .url("$BASE_URL?client=$name&sl=$sourceLanguage&$query")
                 .post(FormBody.Builder().add("q", text).build())
                 .header("User-Agent", "Mozilla/5.0")
                 .build()
@@ -90,7 +155,7 @@ object LyricsRomanizer {
                 client.newCall(request).execute().use { response ->
                     when {
                         response.code == 429 -> rateLimited++
-                        response.isSuccessful -> response.body?.string()?.let(::parseRomanization)?.let { return it }
+                        response.isSuccessful -> response.body?.string()?.let(parse)?.let { return it }
                     }
                 }
             } catch (_: Exception) {
@@ -111,7 +176,7 @@ object LyricsRomanizer {
         if (trimmed.isEmpty()) return@withContext ""
         val cacheKey = "$sourceLanguage::$trimmed"
         lineCache[cacheKey]?.let { return@withContext it }
-        request(trimmed, sourceLanguage)?.let(::tidy)?.takeIf { it.isNotBlank() }
+        request(trimmed, sourceLanguage)?.let { tidy(Colloquial.polish(trimmed, it)) }?.takeIf { it.isNotBlank() }
             ?.also { lineCache[cacheKey] = it }
     }
 
@@ -128,12 +193,23 @@ object LyricsRomanizer {
                 if (cached != null) result[line] = cached
                 cached == null
             }
-            for (group in missing.groupBy(::scriptOf).values) {
+            val groups = missing.groupBy(::scriptOf)
+            // Punjabi is transliterated on the device: Google's answer is ISO 15919 and drops the addak and tippi.
+            groups[Character.UnicodeScript.GURMUKHI]?.forEach { line ->
+                Gurmukhi.toLatin(line).let(::tidy).takeIf { it.isNotBlank() }?.let { result[line] = it; lineCache["$sourceLanguage::$line"] = it }
+            }
+            for ((script, group) in groups) {
+                if (script == Character.UnicodeScript.GURMUKHI) continue
                 for (chunk in group.chunked(BATCH_LINES)) {
+                    val vowelled = if (script == Character.UnicodeScript.ARABIC) romanizeArabicScript(chunk, sourceLanguage) else null
+                    if (vowelled != null) {
+                        vowelled.forEach { (line, value) -> if (value.isNotBlank()) { result[line] = value; lineCache["$sourceLanguage::$line"] = value } }
+                        continue
+                    }
                     val parts = request(chunk.joinToString("\n"), sourceLanguage)?.split("\n")
                     if (parts != null && parts.size == chunk.size) {
                         chunk.zip(parts).forEach { (line, romanized) ->
-                            val value = tidy(romanized)
+                            val value = tidy(Colloquial.polish(line, romanized))
                             if (value.isNotBlank()) {
                                 result[line] = value
                                 lineCache["$sourceLanguage::$line"] = value
@@ -169,20 +245,38 @@ object LyricsRomanizer {
         return processMixedLyrics(text, sourceLanguage)
     }
 
+    private val wordStamp = Regex("""<\d{1,2}:\d{2}(?:[.:]\d{1,3})?>""")
+
+    /**
+     * [romanized] with the word stamps of [body] put back, word for word. When romanizing changed
+     * the number of words, the line keeps only its line timing.
+     */
+    internal fun restampWords(body: String, romanized: String): String {
+        val stamps = wordStamp.findAll(body).map { it.value }.toList()
+        if (stamps.isEmpty()) return romanized
+        val words = romanized.trim().split(Regex("\\s+"))
+        val original = wordStamp.split(body).drop(1).filter { it.isNotBlank() }
+        if (words.size != stamps.size || original.size != stamps.size) return romanized
+        return stamps.zip(words).joinToString(" ") { (stamp, word) -> stamp + word }
+    }
+
     suspend fun romanizeSyncedLyrics(
         syncedLyrics: String,
         sourceLanguage: String = DEFAULT_SOURCE_LANGUAGE
     ): String {
         val lines = syncedLyrics.split("\n")
-        val texts = lines.map { line -> lrcTimestampRegex.find(line)?.groupValues?.get(2) ?: line }
+        // Word stamps (<mm:ss.xx>) are taken off before romanizing and put back after.
+        val texts = lines.map { line -> wordStamp.replace(lrcTimestampRegex.find(line)?.groupValues?.get(2) ?: line, "") }
         val romanized = romanizeAll(texts, sourceLanguage)
         return lines.joinToString("\n") { line ->
             val match = lrcTimestampRegex.find(line)
             if (match != null) {
                 val prefix = match.groupValues[1]
-                val lyricText = match.groupValues[2].trim()
-                // Latin lyrics keep their casing and punctuation.
-                if (lyricText.isEmpty()) prefix else prefix + (romanized[lyricText] ?: lyricText)
+                val body = match.groupValues[2].trim()
+                val lyricText = wordStamp.replace(body, "").trim()
+                val latin = romanized[lyricText]
+                // Latin lyrics keep their casing, punctuation and word timings.
+                if (lyricText.isEmpty()) prefix else if (latin == null) prefix + body else prefix + restampWords(body, latin)
             } else {
                 val trimmed = line.trim()
                 if (trimmed.isEmpty()) "" else romanized[trimmed] ?: trimmed
