@@ -39,6 +39,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -75,10 +76,8 @@ import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
-import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.roundToInt
-import kotlin.time.Duration.Companion.milliseconds
 
 /** Last scroll position of plain lyrics per song (first visible item, offset), kept across overlay closes. */
 private object PlainLyricsScroll {
@@ -128,19 +127,10 @@ fun LyricsOverlay(
         mutableIntStateOf((currentTrack.lyricsOffsetMs / 100L).toInt())
     }
     var showSyncControls by remember(currentTrack.uuid) { mutableStateOf(false) }
-    var lyricsPending by remember(currentTrack.uuid) { mutableStateOf(false) }
-
-    LaunchedEffect(currentTrack.uuid, syncedLyrics, plainLyrics) {
-        if (syncedLyrics != null || plainLyrics != null) {
-            lyricsPending = false
-        } else {
-            lyricsPending = true
-            delay(2500.milliseconds)
-            if (currentTrack.syncedLyrics.isNullOrBlank() && currentTrack.plainLyrics.isNullOrBlank()) {
-                lyricsPending = false
-            }
-        }
-    }
+    // Loading only while a lookup really runs (the server may take a while to align lyrics);
+    // once it finishes empty, say so.
+    val searching by musicViewModel.lyricsSearching.collectAsState()
+    val lyricsPending = syncedLyrics == null && plainLyrics == null && currentTrack.uuid in searching
 
     // Measure the actual overlay height to compute center padding dynamically
     var overlayHeightPx by remember { mutableIntStateOf(0) }

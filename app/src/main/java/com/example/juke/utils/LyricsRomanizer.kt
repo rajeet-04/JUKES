@@ -54,8 +54,12 @@ object LyricsRomanizer {
      */
     fun isFullyRomanized(lyrics: String): Boolean = lyrics.lineSequence().none { line ->
         val text = lrcTimestampRegex.find(line)?.groupValues?.get(2) ?: line
-        needsRomanization(text.trim())
+        needsRomanization(text.trim()) || text.any { it in ISO_MARKS }
     }
+
+    /** Google's ISO 15919 Punjabi ("Sōcāṁ"); a stored romanization with these is redone by [Gurmukhi]. */
+    private const val ISO_MARKS = "āīūēōṁṇṭḍḻṛśṣẖḵ"
+
 
     /** The romanized text of a `translate_a/single` response, or null. */
     internal fun parseRomanization(body: String): String? {
@@ -111,7 +115,7 @@ object LyricsRomanizer {
         if (trimmed.isEmpty()) return@withContext ""
         val cacheKey = "$sourceLanguage::$trimmed"
         lineCache[cacheKey]?.let { return@withContext it }
-        request(trimmed, sourceLanguage)?.let(::tidy)?.takeIf { it.isNotBlank() }
+        request(trimmed, sourceLanguage)?.let { tidy(Colloquial.polish(trimmed, it)) }?.takeIf { it.isNotBlank() }
             ?.also { lineCache[cacheKey] = it }
     }
 
@@ -128,12 +132,18 @@ object LyricsRomanizer {
                 if (cached != null) result[line] = cached
                 cached == null
             }
-            for (group in missing.groupBy(::scriptOf).values) {
+            val groups = missing.groupBy(::scriptOf)
+            // Punjabi is transliterated on the device: Google's answer is ISO 15919 and drops the addak and tippi.
+            groups[Character.UnicodeScript.GURMUKHI]?.forEach { line ->
+                Gurmukhi.toLatin(line).let(::tidy).takeIf { it.isNotBlank() }?.let { result[line] = it; lineCache["$sourceLanguage::$line"] = it }
+            }
+            for ((script, group) in groups) {
+                if (script == Character.UnicodeScript.GURMUKHI) continue
                 for (chunk in group.chunked(BATCH_LINES)) {
                     val parts = request(chunk.joinToString("\n"), sourceLanguage)?.split("\n")
                     if (parts != null && parts.size == chunk.size) {
                         chunk.zip(parts).forEach { (line, romanized) ->
-                            val value = tidy(romanized)
+                            val value = tidy(Colloquial.polish(line, romanized))
                             if (value.isNotBlank()) {
                                 result[line] = value
                                 lineCache["$sourceLanguage::$line"] = value

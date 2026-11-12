@@ -212,8 +212,12 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
     val shown = rememberLyricsTrack(track, musicViewModel)
     val synced = shown.syncedLyrics?.takeIf { it.isNotBlank() }
     val plain = shown.plainLyrics?.takeIf { it.isNotBlank() }
-    var triedFetch by remember(track.uuid) { mutableStateOf(false) }
-    LaunchedEffect(track.uuid, synced, plain) { if (synced == null && plain == null && !triedFetch) { triedFetch = true; musicViewModel.refreshLyrics(track) } }
+    // "Looking" only while a lookup really runs (or before the first one starts); afterwards an empty
+    // result says so instead of spinning forever.
+    val searching by musicViewModel.lyricsSearching.collectAsState()
+    var started by remember(track.uuid) { mutableStateOf(false) }
+    LaunchedEffect(track.uuid) { if (synced == null && plain == null) musicViewModel.refreshLyrics(track); started = true }
+    val looking = track.uuid in searching || !started
 
     when {
         synced != null -> {
@@ -238,7 +242,7 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
             item { Text(plain, style = MaterialTheme.typography.bodyLarge.copy(fontSize = if (big) 22.sp else 15.sp, lineHeight = if (big) 34.sp else 22.sp, fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface.copy(0.85f)) }
         }
         else -> Box(modifier, contentAlignment = Alignment.Center) {
-            Text(if (triedFetch) "Looking for lyrics…" else "No lyrics for this song", color = Dim, style = MaterialTheme.typography.bodyLarge)
+            Text(if (looking) "Looking for lyrics…" else "No lyrics for this song", color = Dim, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

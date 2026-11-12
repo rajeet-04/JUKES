@@ -4,6 +4,7 @@ import android.util.Base64
 import android.util.Log
 import com.example.juke.BuildConfig
 import com.example.juke.models.LRCLibResult
+import com.example.juke.models.trusted
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyAlbumTracksResponse
@@ -924,7 +925,9 @@ object SpotifyApi {
         artist: String,
         album: String = "",
         duration: Int? = null,
-        ytVideoId: String? = null
+        ytVideoId: String? = null,
+        /** Called when the server says a better answer may come later (it is aligning subtitles). */
+        onRetryAfter: ((Long) -> Unit)? = null
     ): LRCLibResult? {
         return try {
             // 1. Clean Title to remove (From ...) or (feat ...) metadata
@@ -949,7 +952,8 @@ object SpotifyApi {
             Log.d(TAG, "LRCLib Response: ${raw?.take(1000) ?: "skipped (busy)"}")
 
             val results: List<LRCLibResult> = try {
-                if (raw == null) emptyList() else json.decodeFromString(raw)
+                // Untrustworthy timing (whole seconds, past the end, backwards) keeps only its words.
+                if (raw == null) emptyList() else json.decodeFromString<List<LRCLibResult>>(raw).map { it.trusted(duration) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to decode LRCLib response: ${e.message}")
                 emptyList()
@@ -999,7 +1003,7 @@ object SpotifyApi {
                                 parameter("artist_name", singleArtist)
                             } ?: break // LRCLib went busy: stop the per-artist fan-out
 
-                            val fallbackResults: List<LRCLibResult> = json.decodeFromString(fallbackRaw)
+                            val fallbackResults: List<LRCLibResult> = json.decodeFromString<List<LRCLibResult>>(fallbackRaw).map { it.trusted(duration) }
 
                             // Strict Validation for Fallback
                             // Duration must be within 5% tolerance
@@ -1056,6 +1060,23 @@ object SpotifyApi {
             // Resolve video ID for YT-based sources (use stored or fetch on-the-fly)
             val resolvedVideoId = ytVideoId
                 ?: RecommenderApi.getBestVideoMatch("$title $artist", duration, artist)
+
+            // Tier 1b: the JUKES server (same trust rules, YouTube Music timed lyrics, official
+            // subtitles aligned by audio). Its answer is final; the device's own YouTube tiers below
+            // run only when the server can't answer.
+            val server = try {
+                JukesApi.lyrics(title, artist, album, duration, resolvedVideoId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Server lyrics unavailable (${e.message}); using device sources")
+                null
+            }
+            if (server != null) {
+                server.retryAfterMs?.let { onRetryAfter?.invoke(it) }
+                Log.d(TAG, "Server lyrics for $title: ${server.result?.let { if (it.syncedLyrics != null) "timed" else "plain" } ?: "none"}")
+                return server.result ?: bestMatch
+            }
 
             if (resolvedVideoId != null) {
                 Log.d(TAG, "Checking YT sources (videoId=$resolvedVideoId) for: $title")

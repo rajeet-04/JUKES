@@ -393,7 +393,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.map { it.currentTrack }
                 .distinctUntilChanged { old, new -> old?.uuid == new?.uuid }
                 .collect { track ->
-                    if (track != null && track.syncedLyrics.isNullOrBlank() && track.plainLyrics.isNullOrBlank()) {
+                    val badTiming = track?.syncedLyrics?.takeIf { it.isNotBlank() }?.let { hasUntrustedTiming(it, track.durationSec) } == true
+                    if (track != null && (badTiming || (track.syncedLyrics.isNullOrBlank() && track.plainLyrics.isNullOrBlank()))) {
                         refreshLyrics(track)
                     }
                     if (track != null) refreshArtwork(track)
@@ -1701,6 +1702,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val lyricsRefreshJobs = mutableMapOf<String, Job>()
 
+    /** Songs whose lyrics lookup is running (including a wait for the server's upgrade): the UI shows "looking" only for these. */
+    private val _lyricsSearching = MutableStateFlow<Set<String>>(emptySet())
+    val lyricsSearching: StateFlow<Set<String>> = _lyricsSearching.asStateFlow()
+
     private val artworkTried = HashSet<String>()
 
     /** Saved songs that never got a cover: look them all up on Spotify (50 per request) so the library shows them too. */
@@ -1742,47 +1747,37 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Finds lyrics (device LRCLib with the trust rules, then the JUKES server, then device YouTube
+     * sources) and stores them. Also what the player menu's "Refresh lyrics" runs. When the server
+     * says it is still aligning better lyrics, it is asked once more after the delay it gives.
+     */
     fun refreshLyrics(track: Track) {
         if (lyricsRefreshJobs[track.uuid]?.isActive == true) return
+        _lyricsSearching.update { it + track.uuid }
         lyricsRefreshJobs[track.uuid] = viewModelScope.launch {
             Log.d("MusicViewModel", "Refreshing lyrics for: ${track.title}")
             try {
-                // Fetch lyrics from LRCLib
-                val result = withContext(Dispatchers.IO) {
-                    fetchLyricsWithRetry {
-                        val latest = trackDao.getTrackByUuid(track.uuid)?.toTrack() ?: track
-                        SpotifyApi.searchLyrics(
-                            title = latest.title,
-                            artist = latest.artist,
-                            duration = latest.durationSec,
-                            ytVideoId = latest.ytVideoId
-                        )
-                    }
-                }
-
-                if (result != null) {
-                    Log.d("MusicViewModel", "New lyrics found for: ${track.title}")
-
-                    val updatedTrack = withContext(Dispatchers.IO) {
-                        database.withTransaction {
+                for (round in 0..1) {
+                    var retryAfterMs: Long? = null
+                    val result = withContext(Dispatchers.IO) {
+                        fetchLyricsWithRetry {
                             val latest = trackDao.getTrackByUuid(track.uuid)?.toTrack() ?: track
-                            val refreshedTrack = latest.withUpdatedLyrics(
-                                syncedLyrics = result.syncedLyrics?.takeIf { it.isNotBlank() } ?: latest.syncedLyrics,
-                                plainLyrics = result.plainLyrics?.takeIf { it.isNotBlank() } ?: latest.plainLyrics
+                            SpotifyApi.searchLyrics(
+                                title = latest.title,
+                                artist = latest.artist,
+                                duration = latest.durationSec,
+                                ytVideoId = latest.ytVideoId,
+                                onRetryAfter = { retryAfterMs = it }
                             )
-                            trackDao.insertTrack(refreshedTrack.toEntity())
-                            refreshedTrack
                         }
                     }
-
-                    queueManager.replaceTrackInQueue(track.uuid, updatedTrack)
-                    updateTrackInUiState(updatedTrack)
-
-                    // No need to explicitly update PlaybackManager queue as it's primarily used for playback context
-                    // and doesn't display lyrics. The UI observes currentTrackId and pulls from UI queue.
-
-                } else {
-                    Log.d("MusicViewModel", "No lyrics found for: ${track.title}")
+                    if (result != null) storeLyrics(track, result) else Log.d("MusicViewModel", "No lyrics found for: ${track.title}")
+                    val wait = retryAfterMs ?: break
+                    // Only worth waiting while the song is still the one playing.
+                    if (round == 1 || _uiState.value.currentTrack?.uuid != track.uuid) break
+                    delay(wait.coerceIn(5_000L, 120_000L).milliseconds)
+                    if (_uiState.value.currentTrack?.uuid != track.uuid) break
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1790,9 +1785,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("MusicViewModel", "Failed to refresh lyrics: ${e.message}", e)
             } finally {
                 lyricsRefreshJobs.remove(track.uuid)
+                _lyricsSearching.update { it - track.uuid }
             }
         }
     }
+
+    private suspend fun storeLyrics(track: Track, result: com.example.juke.models.LRCLibResult) {
+        Log.d("MusicViewModel", "New lyrics found for: ${track.title}")
+        val updatedTrack = withContext(Dispatchers.IO) {
+            database.withTransaction {
+                val latest = trackDao.getTrackByUuid(track.uuid)?.toTrack() ?: track
+                // Stored timing that fails the trust rules (saved before they existed) is replaced too.
+                val keptSynced = latest.syncedLyrics?.takeIf { !hasUntrustedTiming(it, latest.durationSec) }
+                val refreshedTrack = latest.withUpdatedLyrics(
+                    syncedLyrics = result.syncedLyrics?.takeIf { it.isNotBlank() } ?: keptSynced,
+                    plainLyrics = result.plainLyrics?.takeIf { it.isNotBlank() } ?: latest.plainLyrics
+                )
+                trackDao.insertTrack(refreshedTrack.toEntity())
+                refreshedTrack
+            }
+        }
+        queueManager.replaceTrackInQueue(track.uuid, updatedTrack)
+        updateTrackInUiState(updatedTrack)
+    }
+
+    private fun hasUntrustedTiming(synced: String, durationSec: Int?): Boolean =
+        com.example.juke.models.LyricsTrust.timingProblem(
+            com.example.juke.models.LyricsTrust.stampsMs(synced), durationSec?.let { it * 1000L }) != null
 
     fun refreshYtVideoId(track: Track) {
         if (!track.ytVideoId.isNullOrBlank()) return
