@@ -5,7 +5,7 @@ package com.example.juke.utils
  *
  * - Urdu (and Punjabi in Shahmukhi) leaves out short vowels, so Google guesses them: تم "tam",
  *   دل "dal", زندگی "zandgi", تینوں "tinon". Common lyric words are looked up by their written
- *   form instead. No spelling rule can recover the vowels; the dictionary is the fix.
+ *   form, and every other word takes its vowels from Hindi ([revowel]), which writes them.
  * - A few Hindi words come back wrong (मोहब्बत "mohabet", ज़िंदगी "zindgi").
  * - Some answers are ISO 15919 ("Nānu prītisuttēne" for Kannada); the marks are folded to plain
  *   letters (ā "aa", final ā "a", ī "ee"/"i", ṇ "n", ś "sh", c "ch").
@@ -16,7 +16,7 @@ internal object Colloquial {
     private val WORDS: Map<String, String> = buildMap {
         // Urdu / Shahmukhi
         """
-        تم tum|تو tu|تُو tu|میں main|میرا mera|میری meri|میرے mere|تیرا tera|تیری teri|تیرے tere|ہم hum|ہمارا hamara|ہماری hamari
+        تم tum|تُو tu|تجھ tujh|مجھ mujh|ہوئے hue|نوں nu|میں main|میرا mera|میری meri|میرے mere|تیرا tera|تیری teri|تیرے tere|ہم hum|ہمارا hamara|ہماری hamari
         دل dil|دلوں dilon|زندگی zindagi|پیار pyaar|محبت mohabbat|عشق ishq|یار yaar|ہے hai|ہیں hain|ہو ho|ہوں hoon|تھا tha|تھی thi
         کی ki|کا ka|کے ke|کو ko|سے se|نے ne|بھی bhi|نہیں nahin|نہ na|جب jab|تب tab|اب ab|کب kab|کیوں kyun|کیا kya|کیسے kaise
         جان jaan|جاناں jaanan|صنم sanam|دنیا duniya|رات raat|دن din|خواب khwaab|یاد yaad|یادیں yaadein|آنکھیں aankhein|آنکھوں aankhon
@@ -38,21 +38,90 @@ internal object Colloquial {
     private val PUNCT = Regex("""^([\p{P}\p{S}]*)(.*?)([\p{P}\p{S}]*)$""")
     private val ISO = Regex("[āīūēōṁṃṅñṇṭḍḷḻṛṟśṣḥẖḵĀĪŪĒŌŚṢ]")
 
-    /** [romanized] (Google's answer for [source]) with known words replaced and ISO marks folded. */
-    fun polish(source: String, romanized: String): String {
+    /** [word] without the punctuation around it, as the dictionary and the hints are keyed. */
+    fun bare(word: String): String = nfc(word.trim { it.category.code[0] == 'P' || it.category.code[0] == 'S' })
+
+    /**
+     * [romanized] (Google's answer for [source]) with known words replaced and ISO marks folded.
+     * [hints] gives, for a source word, Latin words that may be the same word with its vowels
+     * (see [revowel]), best first.
+     */
+    fun polish(source: String, romanized: String, hints: (String) -> List<String> = { emptyList() }): String {
         val src = source.trim().split(Regex("\\s+"))
         val out = romanized.trim().split(Regex("\\s+"))
         // Only a word-for-word answer can be corrected word by word.
-        val fixed = if (src.size == out.size) src.zip(out).joinToString(" ") { (s, o) -> word(s, o) } else romanized.trim()
+        val fixed = if (src.size == out.size) src.zip(out).joinToString(" ") { (s, o) -> word(s, o, hints) } else romanized.trim()
         return if (ISO.containsMatchIn(fixed)) foldIso(fixed) else fixed
     }
 
-    private fun word(source: String, romanized: String): String {
-        val bare = nfc(source.trim { it.category.code[0] == 'P' || it.category.code[0] == 'S' })
-        val latin = WORDS[bare] ?: return romanized
+    private fun word(source: String, romanized: String, hints: (String) -> List<String>): String {
+        val bare = bare(source)
         val (lead, body, trail) = PUNCT.find(romanized)!!.destructured
+        val latin = WORDS[bare] ?: revowel(body.lowercase(), hints(bare)) ?: return romanized
         val cased = if (body.firstOrNull()?.isUpperCase() == true) latin.replaceFirstChar { it.uppercase() } else latin
         return lead + cased + trail
+    }
+
+    /** A word as its consonants (doubles as one, v as w) and the vowels before, between and after them. */
+    private class Shape(word: String) {
+        val consonants = StringBuilder()
+        val vowels = arrayListOf(StringBuilder())
+        init {
+            for (ch in word) when {
+                ch in "aeiou" -> vowels.last().append(ch)
+                !ch.isLetter() -> Unit
+                else -> {
+                    val c = if (ch == 'v') 'w' else ch
+                    if (vowels.last().isEmpty() && consonants.lastOrNull() == c) continue
+                    consonants.append(c)
+                    vowels += StringBuilder()
+                }
+            }
+        }
+    }
+
+    private fun family(vowel: String) = when {
+        vowel.startsWith("ai") || vowel[0] in "ei" -> 'i'
+        vowel.startsWith("au") || vowel[0] in "ou" -> 'u'
+        else -> 'a'
+    }
+
+    /**
+     * Urdu script writes consonants and long vowels but not short ones, so Google's romanization
+     * of it ([guess]) has the right consonants and guessed vowels: "dakan", "mamkan", "majhe".
+     * Hindi writes every vowel, and Google's Hindi for the same lyrics has many of the same words:
+     * "dukan", "mumkin", "mujhe". The first of [candidates] that is the same word (same
+     * consonants, and no vowel that contradicts one Urdu does write) gives its vowels to [guess].
+     * The ending stays as Urdu wrote it, so a candidate in another form still helps: "line" (لینے)
+     * with "lena" is "lene". Null when no candidate fits.
+     */
+    internal fun revowel(guess: String, candidates: List<String>): String? {
+        val g = Shape(guess)
+        if (g.consonants.isEmpty()) return null
+        val last = g.vowels.lastIndex
+        candidates@ for (candidate in candidates) {
+            val h = Shape(candidate)
+            if (!h.consonants.contentEquals(g.consonants)) continue
+            if (g.vowels[last].isEmpty() != h.vowels[last].isEmpty()) continue // another form: "kam" / "kami"
+            var voiced = false
+            for (i in 0 until last) {
+                val gv = g.vowels[i].toString()
+                val hv = h.vowels[i].toString()
+                val fits = when {
+                    // nothing written here: a short vowel, or none ("nikala" is "nikla")
+                    gv.isEmpty() -> hv.length <= 1
+                    hv.isEmpty() -> gv == "a" && voiced // never a word starting "thk"
+                    gv == "a" -> hv.length == 1 || hv == "aa"
+                    gv == "i" || gv == "u" -> hv.length == 1 || family(hv) == family(gv) // may be a guess too
+                    else -> family(hv) == family(gv) // a written long vowel
+                }
+                if (!fits) continue@candidates
+                if (hv.isNotEmpty()) voiced = true
+            }
+            val ending = g.vowels[last].toString().let { if (it == "aa") "a" else it }
+            return candidate.lowercase().filter { it.isLetter() }.trimEnd { it in "aeiou" } + ending
+        }
+        return null
     }
 
     /** ISO 15919 to plain letters: long vowels doubled inside a word, short at its end. */

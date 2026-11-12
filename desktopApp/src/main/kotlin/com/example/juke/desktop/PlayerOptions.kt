@@ -51,8 +51,8 @@ fun rememberLyricsTrack(track: Track, vm: MusicViewModel): Track {
         val complete = LyricsRomanizer::isFullyRomanized
         for (attempt in 0..3) {
             if (attempt > 0) delay((5_000L * attempt).milliseconds)
-            val synced = track.romanizedSyncedLyrics?.takeIf(complete) ?: track.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) }
-            val plain = track.romanizedPlainLyrics?.takeIf(complete) ?: track.plainLyrics?.let { LyricsRomanizer.romanizeText(it) }
+            val synced = LyricsRomanizer.current(track.syncedLyrics, track.romanizedSyncedLyrics) { LyricsRomanizer.romanizeSyncedLyrics(it) }
+            val plain = LyricsRomanizer.current(track.plainLyrics, track.romanizedPlainLyrics) { LyricsRomanizer.romanizeText(it) }
             romanized = track.copy(syncedLyrics = synced ?: track.syncedLyrics, plainLyrics = plain ?: track.plainLyrics, romanizedSyncedLyrics = synced, romanizedPlainLyrics = plain)
             if (synced?.let(complete) == false || plain?.let(complete) == false) continue
             if (synced != track.romanizedSyncedLyrics || plain != track.romanizedPlainLyrics) vm.persistRomanizedLyrics(track, synced, plain)

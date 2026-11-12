@@ -173,8 +173,7 @@ fun MiniPlayer(
             // failed lines are retried, and only a complete result is saved.
             for (attempt in 0..3) {
                 if (attempt > 0) delay((5_000L * attempt).milliseconds)
-                val result = currentTrack.romanizedSyncedLyrics?.takeIf(LyricsRomanizer::isFullyRomanized)
-                    ?: currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) }
+                val result = LyricsRomanizer.current(currentTrack.syncedLyrics, currentTrack.romanizedSyncedLyrics) { LyricsRomanizer.romanizeSyncedLyrics(it) }
                 romanizedSyncedLyrics = result
                 if (result == null) break
                 if (!LyricsRomanizer.isFullyRomanized(result)) continue
