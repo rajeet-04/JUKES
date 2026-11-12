@@ -11,6 +11,8 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -99,8 +101,39 @@ import kotlin.time.Duration.Companion.milliseconds
 // though it should ideally be in a model file.
 data class LyricLine(
     val timeMs: Long,
-    val text: String
+    val text: String,
+    /** Word timings from enhanced LRC (`<mm:ss.xx>word`); empty for line-synced lyrics. */
+    val words: List<LyricWord> = emptyList()
 )
+
+/** A word (with its trailing space) and when it is sung, on the same clock as [LyricLine.timeMs]. */
+data class LyricWord(val timeMs: Long, val text: String)
+
+/**
+ * Word stamps are sung where they say: the line's early lead would light words before they are
+ * heard. Only the user's per-track offset and a small lead for the fill animation apply.
+ */
+const val WORD_RENDER_LEAD_MS = -120L
+
+private val WORD_STAMP = """<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>""".toRegex()
+
+/** Words of an enhanced-LRC line body, or empty when it has no word stamps. */
+internal fun parseLyricWords(body: String, lineTimeMs: Long, offsetMs: Long): List<LyricWord> {
+    val stamps = WORD_STAMP.findAll(body).toList()
+    if (stamps.isEmpty()) return emptyList()
+    val words = ArrayList<LyricWord>()
+    val lead = body.substring(0, stamps.first().range.first).replace(INLINE_TIMESTAMP, "")
+    if (lead.isNotBlank()) words += LyricWord(lineTimeMs, lead)
+    stamps.forEachIndexed { i, m ->
+        val end = stamps.getOrNull(i + 1)?.range?.first ?: body.length
+        val text = body.substring(m.range.last + 1, end).replace(INLINE_TIMESTAMP, "")
+        if (text.isEmpty()) return@forEachIndexed
+        val frac = m.groupValues[3].padEnd(3, '0').take(3).toLongOrNull() ?: 0L
+        val ms = m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + frac
+        words += LyricWord((ms + WORD_RENDER_LEAD_MS + offsetMs).coerceAtLeast(0L), text)
+    }
+    return words
+}
 
 // Global render lead applies to existing and new tracks, in addition to per-track sync adjustments.
 const val DEFAULT_LYRICS_RENDER_OFFSET_MS = -500L
@@ -118,6 +151,7 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
             val seconds = match.groupValues[2].toLongOrNull() ?: 0L
             val frac = match.groupValues[3]
             var text = match.groupValues[4]
+            val body = text
 
             // Basic cleanup of lrc artifact chars
             // Word-level sync files embed [mm:ss.xxx] / <mm:ss.xxx> stamps inside the line.
@@ -133,7 +167,9 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
             val timeMs = (minutes * 60 * 1000) + (seconds * 1000) + millisFromFrac
             val adjustedTimeMs = (timeMs + DEFAULT_LYRICS_RENDER_OFFSET_MS + offsetMs).coerceAtLeast(0L)
             if (text.isNotBlank()) {
-                lines.add(LyricLine(adjustedTimeMs, text))
+                val words = parseLyricWords(body, timeMs + offsetMs, offsetMs)
+                // The line's text is its words, so a word highlight never disagrees with it.
+                lines.add(LyricLine(adjustedTimeMs, if (words.isEmpty()) text else words.joinToString("") { it.text }.trim(), words))
             }
         }
     }
@@ -147,13 +183,14 @@ private fun CurrentLyricLine(
     syncedLyrics: String,
     offsetMs: Long,
     position: Long,
+    playing: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val lines = remember(syncedLyrics, offsetMs) { parseSyncedLyrics(syncedLyrics, offsetMs) }
-    val text = lines.lastOrNull { it.timeMs <= position }?.text.orEmpty()
+    val line = lines.lastOrNull { it.timeMs <= position }
     androidx.compose.animation.Crossfade(
-        targetState = text,
+        targetState = line,
         animationSpec = androidx.compose.animation.core.tween(220),
         label = "currentLyricLine",
         modifier = modifier
@@ -162,8 +199,12 @@ private fun CurrentLyricLine(
     ) { shown ->
         // Left-aligned on the title's edge, bold and bright, as the line reads in Spotify.
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+            val ink = MaterialTheme.colorScheme.onSurface
+            // With word timings the line is sung word by word, as in the full lyrics.
+            val sung = if (shown == null || shown.words.isEmpty()) null else com.example.juke.ui.components.player.rememberFrameClock(position, playing)
             Text(
-                text = shown,
+                text = if (shown == null || sung == null) androidx.compose.ui.text.AnnotatedString(shown?.text.orEmpty())
+                else com.example.juke.ui.components.player.karaokeText(shown, sung(), ink, dimAlpha = 0.42f),
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -281,10 +322,8 @@ fun PlayerScreen(
         // times; successful lines are cached in memory, so a retry only re-asks for the failures.
         for (attempt in 0..3) {
             if (attempt > 0) delay((5_000L * attempt).milliseconds)
-            val romanizedSynced = currentTrack.romanizedSyncedLyrics?.takeIf(complete)
-                ?: currentTrack.syncedLyrics?.let { LyricsRomanizer.romanizeSyncedLyrics(it) }
-            val romanizedPlain = currentTrack.romanizedPlainLyrics?.takeIf(complete)
-                ?: currentTrack.plainLyrics?.let { LyricsRomanizer.romanizeText(it) }
+            val romanizedSynced = LyricsRomanizer.current(currentTrack.syncedLyrics, currentTrack.romanizedSyncedLyrics) { LyricsRomanizer.romanizeSyncedLyrics(it) }
+            val romanizedPlain = LyricsRomanizer.current(currentTrack.plainLyrics, currentTrack.romanizedPlainLyrics) { LyricsRomanizer.romanizeText(it) }
             romanizedTrack = currentTrack.copy(
                 syncedLyrics = romanizedSynced ?: currentTrack.syncedLyrics,
                 plainLyrics = romanizedPlain ?: currentTrack.plainLyrics,
@@ -378,20 +417,33 @@ fun PlayerScreen(
                     // leaves slack. With synced lyrics the art moves up a little and the rest of the
                     // slack, between art and title, carries the current line. Without them (or with
                     // too little room) the art stays centred as before.
+                    // 0 = artwork, 1 = lyrics. The card grows into the lyrics and shrinks back to
+                    // the artwork over this, so the switch is one motion and nothing jumps.
+                    val lyricsShown by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (showLyrics) 1f else 0f,
+                        animationSpec = androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        label = "lyricsShown"
+                    )
                     BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(vertical = if (showLyrics) 0.dp else 8.dp)
+                            .padding(vertical = 8.dp * (1f - lyricsShown))
                     ) {
                         val slack = maxHeight - maxWidth
                         val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
                         val lineStrip = !showLyrics && syncedLyrics != null && slack >= 56.dp
+                        // The artwork is a square: full width with the line strip under it, else centred.
+                        val side = if (lineStrip) maxWidth else minOf(maxWidth, maxHeight)
+                        val top = if (lineStrip) slack * 0.25f else (maxHeight - side) / 2
+                        val cardWidth = side + (maxWidth - side) * lyricsShown
+                        val cardHeight = side + (maxHeight - side) * lyricsShown
                         Column(Modifier.fillMaxSize()) {
-                            Spacer(Modifier.height(if (lineStrip) slack * 0.25f else 0.dp))
+                            Spacer(Modifier.height(top * (1f - lyricsShown)))
                             Box(
-                                modifier = if (lineStrip) Modifier.fillMaxWidth().aspectRatio(1f)
-                                else Modifier.fillMaxWidth().weight(1f),
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .size(cardWidth, cardHeight),
                                 contentAlignment = Alignment.Center
                             ) {
                                 // In a Jam the artwork swipes through the room's queue, not this phone's one-song queue
@@ -415,8 +467,10 @@ fun PlayerScreen(
                                     syncedLyrics = syncedLyrics,
                                     offsetMs = displayTrack.lyricsOffsetMs.toLong(),
                                     position = uiState.position,
+                                    playing = uiState.isPlaying,
                                     onOpen = { showLyrics = true },
-                                    modifier = Modifier.weight(1f)
+                                    // comes in as the card shrinks back to the artwork
+                                    modifier = Modifier.weight(1f).clipToBounds().graphicsLayer { alpha = 1f - lyricsShown }
                                 )
                             }
                         }

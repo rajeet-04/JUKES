@@ -72,12 +72,8 @@ fun PlayerArtwork(
         }
     }
 
-    // Use fillMaxHeight so the artwork is bounded by the parent Box's height constraint,
-    // then use aspectRatio(1f) to ensure it stays square. This prevents overflow on small screens.
-    // While lyrics are open the card fills the whole slot so lines have room to breathe.
-    val artworkModifier = if (showLyrics) modifier.fillMaxSize() else modifier
-        .fillMaxHeight()
-        .aspectRatio(1f)
+    // The caller sizes the slot: a square for the artwork, the whole area while lyrics are open.
+    val artworkModifier = modifier.fillMaxSize()
 
     if (queue.isEmpty()) {
         // Fallback if queue is empty for some reason
@@ -142,7 +138,7 @@ private fun ArtworkCard(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .playerArtworkEndpoint(expanded = true, enabled = !showLyrics && isCurrentTrack)
+            .playerArtworkEndpoint(expanded = true, enabled = isCurrentTrack, fly = !showLyrics)
             .glassPane(RoundedCornerShape(32.dp), GlassLevel.Thick)
             .clickable {
                 haptic.click()
@@ -185,7 +181,7 @@ private fun ArtworkCard(
         AnimatedVisibility(
             visible = showLyrics,
             enter = fadeIn(tween(260, easing = CubicBezierEasing(0f, 0f, 0f, 1f))),
-            exit = fadeOut(tween(160))
+            exit = fadeOut(tween(240))
         ) {
             LyricsOverlay(
                 currentTrack = track,

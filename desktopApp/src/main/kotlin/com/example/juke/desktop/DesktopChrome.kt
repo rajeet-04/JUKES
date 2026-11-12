@@ -212,13 +212,18 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
     val shown = rememberLyricsTrack(track, musicViewModel)
     val synced = shown.syncedLyrics?.takeIf { it.isNotBlank() }
     val plain = shown.plainLyrics?.takeIf { it.isNotBlank() }
-    var triedFetch by remember(track.uuid) { mutableStateOf(false) }
-    LaunchedEffect(track.uuid, synced, plain) { if (synced == null && plain == null && !triedFetch) { triedFetch = true; musicViewModel.refreshLyrics(track) } }
+    // "Looking" only while a lookup really runs (or before the first one starts); afterwards an empty
+    // result says so instead of spinning forever.
+    val searching by musicViewModel.lyricsSearching.collectAsState()
+    var started by remember(track.uuid) { mutableStateOf(false) }
+    LaunchedEffect(track.uuid) { if (synced == null && plain == null) musicViewModel.refreshLyrics(track); started = true }
+    val looking = track.uuid in searching || !started
 
     when {
         synced != null -> {
             val lines = remember(synced, track.lyricsOffsetMs) { parseSyncedLyrics(synced, track.lyricsOffsetMs) }
             val active = remember(lines, position) { lines.indexOfLast { it.timeMs <= position }.coerceAtLeast(0) }
+            val playing = musicViewModel.uiState.collectAsState().value.isPlaying
             val state = rememberLazyListState()
             var viewport by remember { mutableStateOf(0) }
             LaunchedEffect(active, viewport) { if (viewport > 0) state.animateScrollToItem(active, scrollOffset = -(viewport * if (big) 0.30f else 0.12f).toInt()) }
@@ -228,7 +233,12 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
                     val dist = kotlin.math.abs(i - active)
                     val target = when { i == active -> 1f; dist == 1 -> 0.5f; else -> 0.3f }
                     val a by androidx.compose.animation.core.animateFloatAsState(target, androidx.compose.animation.core.tween(280), label = "lyric")
-                    Text(l.text, Modifier.fillMaxWidth().alpha(a).clip(RoundedCornerShape(8.dp)).clickable { onSeek(l.timeMs) }.padding(vertical = 2.dp),
+                    // Word-synced lyrics are sung word by word on the active line; upcoming words stay dim.
+                    val text = if (i == active && l.words.isNotEmpty()) {
+                        val now = com.example.juke.ui.components.player.rememberFrameClock(position, playing)
+                        com.example.juke.ui.components.player.karaokeText(l, now(), MaterialTheme.colorScheme.onSurface, dimAlpha = 0.35f)
+                    } else androidx.compose.ui.text.AnnotatedString(l.text)
+                    Text(text, Modifier.fillMaxWidth().alpha(a).clip(RoundedCornerShape(8.dp)).clickable { onSeek(l.timeMs) }.padding(vertical = 2.dp),
                         style = MaterialTheme.typography.headlineMedium.copy(fontSize = activeSize, lineHeight = activeSize * 1.22f, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.5).sp),
                         color = MaterialTheme.colorScheme.onSurface)
                 }
@@ -238,7 +248,7 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
             item { Text(plain, style = MaterialTheme.typography.bodyLarge.copy(fontSize = if (big) 22.sp else 15.sp, lineHeight = if (big) 34.sp else 22.sp, fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface.copy(0.85f)) }
         }
         else -> Box(modifier, contentAlignment = Alignment.Center) {
-            Text(if (triedFetch) "Looking for lyrics…" else "No lyrics for this song", color = Dim, style = MaterialTheme.typography.bodyLarge)
+            Text(if (looking) "Looking for lyrics…" else "No lyrics for this song", color = Dim, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

@@ -83,6 +83,8 @@ data class LRCLibResult(
     val duration: Double? = null, // LRCLib sends null for some entries
     val instrumental: Boolean,
     val plainLyrics: String?,
-    val syncedLyrics: String?
+    val syncedLyrics: String?,
+    /** LRCLIB's YAML lyrics; can carry word timings (see Lyricsfile). */
+    val lyricsfile: String? = null
 )
 

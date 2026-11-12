@@ -108,6 +108,8 @@ dependencies {
     implementation("org.json:json:20240303")
     // Now Playing / media keys on macOS go through the Objective-C runtime; other OSes never load it.
     if (os.isMacOsX) implementation("net.java.dev.jna:jna:5.17.0") else compileOnly("net.java.dev.jna:jna:5.17.0")
+    // tests import JNA on every OS (the Now Playing test runs on Linux CI too)
+    testImplementation("net.java.dev.jna:jna:5.17.0")
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.sqlite.bundled)
@@ -118,7 +120,13 @@ dependencies {
     for (m in listOf("base", "graphics", "media", "swing")) implementation("org.openjfx:javafx-$m:21.0.5:$fx")
 }
 
-tasks.test { useJUnit(); System.getProperty("ghostUri")?.let { systemProperty("ghostUri", it) }; System.getProperty("qsize")?.let { systemProperty("qsize", it) }; testLogging { showStandardStreams = true } }
+tasks.test {
+    useJUnit(); System.getProperty("ghostUri")?.let { systemProperty("ghostUri", it) }; System.getProperty("qsize")?.let { systemProperty("qsize", it) }; testLogging { showStandardStreams = true }
+    // CI has no audio device, no display and no Spotify/backend access; these probes need all three, so they run on a dev Mac only
+    if (System.getenv("CI") != null) filter {
+        listOf("DeleteTest", "HttpStreamTest", "PlaybackSmokeTest", "SeekAccuracyTest", "RestoreTest", "MaximizeTest").forEach { excludeTestsMatching(it) }
+    }
+}
 ksp { arg("room.schemaLocation", layout.buildDirectory.dir("schemas").get().asFile.path) }
 
 // Skiko's and SQLite's jars carry native libraries for every platform (skiko's macos-arm64 jar even holds the
@@ -154,6 +162,19 @@ tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
             providers.exec { commandLine("hdiutil", "convert", dmg.path, "-format", "ULMO", "-o", tmp.path, "-quiet") }.result.get()
             if (!tmp.renameTo(dmg.also { it.delete() })) error("couldn't replace ${dmg.name}")
             logger.lifecycle("${dmg.name}: ${dmg.length() / 1_048_576} MB (LZMA)")
+        }
+        // Each package step leaves Launch Services registrations under JUKE's bundle id (jpackage's temp
+        // images, this build folder). The Now Playing widget picks its app icon by bundle id and showed a
+        // default Kotlin icon from one of them, so keep only real installs registered.
+        val lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        if (File(lsregister).canExecute()) {
+            val dump = providers.exec { commandLine(lsregister, "-dump"); isIgnoreExitValue = true }.standardOutput.asText.get()
+            dump.split(Regex("\n-{20,}\n"))
+                .filter { Regex("""identifier: +com\.example\.juke\.desktop\b""").containsMatchIn(it) }
+                .mapNotNull { Regex("""(?m)^path: +(.+?\.app)(?: \(0x[0-9a-f]+\))?$""").find(it)?.groupValues?.get(1) }
+                .filter { !it.startsWith("/Applications/") }
+                .distinct()
+                .forEach { path -> providers.exec { commandLine(lsregister, "-u", path); isIgnoreExitValue = true }.result.get() }
         }
     }
 }
