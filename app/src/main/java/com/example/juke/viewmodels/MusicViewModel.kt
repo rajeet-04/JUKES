@@ -1824,7 +1824,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun hasUntrustedTiming(synced: String, durationSec: Int?): Boolean =
-        com.example.juke.models.LyricsTrust.timingProblem(
+        !com.example.juke.models.LyricsTrust.hasRenderableLine(synced) || com.example.juke.models.LyricsTrust.timingProblem(
             com.example.juke.models.LyricsTrust.stampsMs(synced), durationSec?.let { it * 1000L }) != null
 
     fun refreshYtVideoId(track: Track) {

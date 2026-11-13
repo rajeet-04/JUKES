@@ -210,8 +210,9 @@ private fun SideRow(title: String, subtitle: String, playlist: PlaylistEntity?, 
 @Composable
 fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Unit, musicViewModel: MusicViewModel, modifier: Modifier = Modifier) {
     val shown = rememberLyricsTrack(track, musicViewModel)
-    val synced = shown.syncedLyrics?.takeIf { it.isNotBlank() }
+    val synced = shown.syncedLyrics?.takeIf { com.example.juke.models.LyricsTrust.hasRenderableLine(it) }
     val plain = shown.plainLyrics?.takeIf { it.isNotBlank() }
+        ?: shown.syncedLyrics?.takeIf { synced == null }?.let { com.example.juke.models.LyricsTrust.lrcText(it) }?.takeIf { it.isNotBlank() }
     // "Looking" only while a lookup really runs (or before the first one starts); afterwards an empty
     // result says so instead of spinning forever.
     val searching by musicViewModel.lyricsSearching.collectAsState()

@@ -126,8 +126,9 @@ fun LyricsOverlay(
 ) {
     val density = LocalDensity.current
     val haptic = rememberJukeHaptics()
-    val syncedLyrics = currentTrack.syncedLyrics?.takeIf { it.isNotBlank() }
+    val syncedLyrics = currentTrack.syncedLyrics?.takeIf { com.example.juke.models.LyricsTrust.hasRenderableLine(it) }
     val plainLyrics = currentTrack.plainLyrics?.takeIf { it.isNotBlank() }
+        ?: currentTrack.syncedLyrics?.takeIf { syncedLyrics == null }?.let { com.example.juke.models.LyricsTrust.lrcText(it) }?.takeIf { it.isNotBlank() }
     var localOffsetMs by remember(currentTrack.uuid) {
         mutableFloatStateOf(currentTrack.lyricsOffsetMs.toFloat())
     }

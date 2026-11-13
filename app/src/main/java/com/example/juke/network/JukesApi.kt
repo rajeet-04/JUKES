@@ -1,6 +1,7 @@
 package com.example.juke.network
 
 import com.example.juke.models.withWordSync
+import com.example.juke.models.trusted
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
@@ -487,7 +488,7 @@ object JukesApi {
                 else -> null
             },
             lyricsfile = lyricsfile.takeIf { sync != "none" },
-        ).withWordSync()
+        ).withWordSync().trusted(durationSec)
 
     /** Honor Retry-After (1–30 s), never past the deadline. */
     private suspend fun waitBefore(retryAfterSec: Int?, deadline: Long) {
