@@ -21,8 +21,8 @@ android {
         applicationId = "com.example.juke"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "3.1.0-stable"
+        versionCode = 31
+        versionName = "3.1.1-stable"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

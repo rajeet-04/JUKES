@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+## [3.1.1-stable] - 2026-11-16
+
+Android only; the desktop apps stay on 3.1.0.
+
+### Fixed
+
+- Resuming from the notification after a pause in the background no longer crashes the app. Playback also stays resumable for 10 minutes after a pause.
+- No sound with Battery Saver Playback on phones that report audio offload but don't play it (seen on iQOO/vivo): JUKE now checks before offloading and switches back to normal output by itself if an offloaded song doesn't progress.
+- The current lyric line under the artwork was missing on some screen sizes.
+- The notification / lock screen media card showed a blank artwork on vivo and iQOO phones.
+- The notification's favourite and download icons are the same size as previous/play/next.
+- Lyrics that arrive without timings in the synced field are shown as plain lyrics instead of nothing.
+- Romanized Urdu: میں is written "main" or "mein" according to the line's Hindi.
+
+### Changed
+
+- Media3 (the playback library) updated from 1.5.0 to 1.11.1.
+
+See full release notes: [v3.1.1-stable-RELEASE_NOTES.md](docs/v3.1.1-stable-RELEASE_NOTES.md)
+
 ## [3.1.0-stable] - 2026-11-12
 
 ### Added
