@@ -7,6 +7,11 @@ package com.example.juke.models
  */
 internal object LyricsTrust {
     private val STAMP = Regex("""^\s*\[(\d+):(\d{1,2}(?:\.\d{1,3})?)]""")
+    private val RENDERABLE_LINE = Regex("""\[\d{2}:\d{2}\.\d{1,3}]\s*(.+)""")
+
+    fun hasRenderableLine(lrc: String): Boolean = lrc.lineSequence().any { line ->
+        RENDERABLE_LINE.find(line)?.groupValues?.get(1)?.replace(Regex("""[\[<]\d{1,2}:\d{2}(?:[.:]\d{1,3})?[\]>]"""), "")?.isNotBlank() == true
+    }
 
     fun stampsMs(lrc: String): List<Long> = lrc.lineSequence().mapNotNull { line ->
         STAMP.find(line)?.let { m -> Math.round((m.groupValues[1].toLong() * 60 + m.groupValues[2].toDouble()) * 1000) }
@@ -32,7 +37,7 @@ internal object LyricsTrust {
 internal fun LRCLibResult.trusted(durationSec: Int?): LRCLibResult {
     val synced = syncedLyrics?.takeIf { it.isNotBlank() } ?: return this
     val stamps = LyricsTrust.stampsMs(synced)
-    val problem = LyricsTrust.timingProblem(stamps, duration?.let { (it * 1000).toLong() })
+    val problem = if (!LyricsTrust.hasRenderableLine(synced)) "no_timed_lines" else LyricsTrust.timingProblem(stamps, duration?.let { (it * 1000).toLong() })
         ?: LyricsTrust.timingProblem(stamps, durationSec?.let { it * 1000L })
         ?: return this
     return copy(syncedLyrics = null, plainLyrics = plainLyrics?.takeIf { it.isNotBlank() } ?: LyricsTrust.lrcText(synced))

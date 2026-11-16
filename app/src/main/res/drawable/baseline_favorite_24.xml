@@ -4,8 +4,16 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
 
-    <path
-        android:fillColor="@android:color/white"
-        android:pathData="
+    <!-- Same outer size and centre as baseline_favorite_border_24, so the heart doesn't jump when toggled. -->
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:scaleX="0.86"
+        android:scaleY="0.86"
+        android:translateY="-0.65">
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="
             m12 21-1.5-1.2C6 16 3 13.2 3 9.5c0-3 2.2-5 4.8-5 1.6 0 3.1.8 4.2 2.2 1.1-1.4 2.6-2.2 4.2-2.2 2.6 0 4.8 2 4.8 5 0 3.7-3 6.5-7.5 10.3z"/>
+    </group>
 </vector>

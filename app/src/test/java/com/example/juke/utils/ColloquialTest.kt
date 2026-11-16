@@ -30,11 +30,20 @@ class ColloquialTest {
         // Google's Urdu and Hindi answers for Ajnabi (Atif Aslam), 2026-11-12
         val hindi = listOf("main", "dukan", "se", "ghar", "chala", "gaya")
         assertEquals("main ghar se jo nikla dukan se",
-            Colloquial.polish("میں گھر سے جو نکلا دکان سے", "min ghar se jo nikala dakan se") { hindi + "nikla" })
+            Colloquial.polish("میں گھر سے جو نکلا دکان سے", "min ghar se jo nikala dakan se") { _, _ -> hindi + "nikla" })
         assertEquals("mumkin", Colloquial.revowel("mamkan", listOf("sambhav", "mumkin")))
         assertEquals("ummidon", Colloquial.revowel("umidon", listOf("ummidon")))
         assertEquals("sataya", Colloquial.revowel("staya", listOf("sataya", "gaya")))
         assertEquals("nahin", Colloquial.revowel("nihen", listOf("nahin")))
+    }
+
+    @Test fun meinIsTakenFromTheHindiOfItsLine() {
+        // postposition: the Hindi word in its place is "mein"
+        assertEquals("ghar mein", Colloquial.polish("گھر میں", "ghar min") { i, _ -> listOf(listOf("ghar", "mein")[i]) })
+        // pronoun: the Hindi word in its place is "main"
+        assertEquals("main ghar", Colloquial.polish("میں گھر", "min ghar") { i, _ -> listOf(listOf("main", "ghar")[i]) })
+        // no Hindi to go by: the pronoun
+        assertEquals("main", Colloquial.polish("میں", "min"))
     }
 
     @Test fun theEndingStaysAsUrduWroteIt() {

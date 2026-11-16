@@ -432,10 +432,13 @@ fun PlayerScreen(
                     ) {
                         val slack = maxHeight - maxWidth
                         val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
-                        val lineStrip = !showLyrics && syncedLyrics != null && slack >= 56.dp
+                        // 40dp fits one line. The old 56dp cut-off hid the strip on phones that landed
+                        // just under it (54.6dp of slack at 1080x2400, 378dpi).
+                        val lineStrip = !showLyrics && syncedLyrics != null && slack >= 40.dp
                         // The artwork is a square: full width with the line strip under it, else centred.
                         val side = if (lineStrip) maxWidth else minOf(maxWidth, maxHeight)
-                        val top = if (lineStrip) slack * 0.25f else (maxHeight - side) / 2
+                        // The strip keeps 48dp (two lines) before the artwork takes any slack above it.
+                        val top = if (lineStrip) (slack - 48.dp).coerceIn(0.dp, slack * 0.25f) else (maxHeight - side) / 2
                         val cardWidth = side + (maxWidth - side) * lyricsShown
                         val cardHeight = side + (maxHeight - side) * lyricsShown
                         Column(Modifier.fillMaxSize()) {

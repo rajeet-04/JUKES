@@ -134,7 +134,11 @@ object LyricsRomanizer {
         val own = words.indices.associate { words[it] to hindi[chunk.size + it] }
         val song = hindi.take(chunk.size).flatten().distinct()
         return chunk.indices.associate { i ->
-            chunk[i] to tidy(Colloquial.polish(chunk[i], source[i]) { word -> hindi[i] + own[word].orEmpty() + song })
+            // The Hindi word at the same place in the line, when the two lines have as many words.
+            val aligned = hindi[i].takeIf { it.size == chunk[i].trim().split(SPACES).size }.orEmpty()
+            chunk[i] to tidy(Colloquial.polish(chunk[i], source[i]) { index, word ->
+                listOfNotNull(aligned.getOrNull(index)) + hindi[i] + own[word].orEmpty() + song
+            })
         }
     }
 

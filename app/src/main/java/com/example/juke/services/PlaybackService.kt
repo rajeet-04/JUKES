@@ -310,7 +310,9 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private fun applyOffloadPreference(prefs: android.content.SharedPreferences) {
         if (!::player.isInitialized) return
-        val allowed = prefs.getBoolean("battery_saver_playback", false) &&
+        // "offload_unusable" is set by abandonOffload() once offloaded playback failed on this device.
+        val allowed = !prefs.getBoolean("offload_unusable", false) &&
+            prefs.getBoolean("battery_saver_playback", false) &&
             !prefs.getBoolean("skip_silence_enabled", false) &&
             !prefs.getBoolean("booster_enabled", false) &&
             !prefs.getBoolean("normalization_enabled", false)
@@ -326,6 +328,70 @@ class PlaybackService : MediaLibraryService() {
             .setAudioOffloadPreferences(offload)
             .build()
         Log.d(tag, "Audio offload ${if (allowed) "enabled" else "disabled"}")
+    }
+
+    /**
+     * Offload support as Media3 reports it, minus devices whose own answers disagree. Media3 1.11 asks
+     * AudioManager.getDirectPlaybackSupport on Android 13+; an iQOO I2220 (Android 16) says "supported"
+     * there while isOffloadedPlaybackSupported says no (vivo keeps offload off for third-party apps),
+     * and the offloaded track then plays nothing. Offload only when both agree.
+     */
+    @OptIn(UnstableApi::class)
+    private val offloadSupportProvider = object : DefaultAudioSink.AudioOffloadSupportProvider {
+        private val default by lazy {
+            androidx.media3.exoplayer.audio.DefaultAudioOffloadSupportProvider(this@PlaybackService)
+        }
+
+        override fun getAudioOffloadSupport(
+            format: androidx.media3.common.Format,
+            audioAttributes: AudioAttributes
+        ): androidx.media3.exoplayer.audio.AudioOffloadSupport {
+            val support = default.getAudioOffloadSupport(format, audioAttributes)
+            if (!support.isFormatSupported || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return support
+            val platformAgrees = runCatching {
+                val encoding = androidx.media3.common.MimeTypes.getEncoding(format.sampleMimeType!!, format.codecs)
+                AudioManager.isOffloadedPlaybackSupported(
+                    androidx.media3.common.util.Util.getAudioFormat(
+                        format.sampleRate,
+                        androidx.media3.common.util.Util.getAudioTrackChannelConfig(format),
+                        encoding
+                    ),
+                    audioAttributes.platformAudioAttributes
+                )
+            }.getOrDefault(false)
+            return if (platformAgrees) support
+            else androidx.media3.exoplayer.audio.AudioOffloadSupport.DEFAULT_UNSUPPORTED
+        }
+    }
+
+    // Offload safety net for any device that passes the check above and still doesn't play: an offloaded
+    // track that is "playing" without the position moving (or that ends in a player error) switches this
+    // device back to the normal PCM sink for good. It cannot catch a DSP that consumes audio silently.
+    private var offloadedTrack = false
+    private var offloadCheckFromMs = 0L
+    private val offloadWatchdog = Runnable {
+        if (offloadedTrack && player.isPlaying && player.currentPosition - offloadCheckFromMs < 500) {
+            abandonOffload("no progress in 4 s")
+        }
+    }
+
+    private fun armOffloadWatchdog() {
+        mainHandler.removeCallbacks(offloadWatchdog)
+        if (offloadedTrack && player.isPlaying) {
+            offloadCheckFromMs = player.currentPosition
+            mainHandler.postDelayed(offloadWatchdog, 4_000)
+        }
+    }
+
+    private fun abandonOffload(why: String) {
+        Log.w(tag, "Offloaded playback failed ($why); switching to the normal audio sink")
+        com.example.juke.report.Breadcrumbs.add("offload_abandoned")
+        offloadedTrack = false
+        mainHandler.removeCallbacks(offloadWatchdog)
+        val prefs = getSharedPreferences("audio_effects_prefs", MODE_PRIVATE)
+        prefs.edit { putBoolean("offload_unusable", true) }
+        applyOffloadPreference(prefs)
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
     }
 
     private lateinit var audioManager: AudioManager
@@ -532,7 +598,59 @@ class PlaybackService : MediaLibraryService() {
         .setUsage(C.USAGE_MEDIA)
         .build()
 
+    /**
+     * Media3 publishes a track's metadata twice when its artwork is still loading: first without the
+     * image, then again with it. vivo/iQOO's media card only reads the first one and stays on its
+     * placeholder for the whole song, so the image has to be ready before the track becomes current.
+     * Downloaded tracks keep their artwork as a small local JPEG, decoded right in loadBitmap (about
+     * 640x640, a few ms). Remote artwork (stream tracks) is fetched ahead for the neighbouring queue
+     * items by [preloadArtwork] and served from memory; only a jump to a far-away stream track still
+     * loads late.
+     */
+    @OptIn(UnstableApi::class)
+    private val artworkLoader by lazy {
+        object : androidx.media3.common.util.BitmapLoader {
+            private val delegate = DataSourceBitmapLoader(this@PlaybackService)
+            // Current, next and previous in both directions of a skip; about 1.6 MB each at 640x640.
+            private val remote = android.util.LruCache<String, android.graphics.Bitmap>(6)
+            private val inFlight = java.util.concurrent.ConcurrentHashMap<String, ListenableFuture<android.graphics.Bitmap>>()
+
+            override fun supportsMimeType(mimeType: String) = delegate.supportsMimeType(mimeType)
+            override fun decodeBitmap(data: ByteArray) = delegate.decodeBitmap(data)
+            override fun loadBitmap(uri: android.net.Uri): ListenableFuture<android.graphics.Bitmap> {
+                if (uri.scheme == "file") {
+                    android.graphics.BitmapFactory.decodeFile(uri.path)?.let { return Futures.immediateFuture(it) }
+                    return delegate.loadBitmap(uri)
+                }
+                val key = uri.toString()
+                remote.get(key)?.let { return Futures.immediateFuture(it) }
+                // One fetch per image: the timeline changes often while a stream plays.
+                inFlight[key]?.let { return it }
+                Log.d(tag, "Fetching remote artwork ${uri.lastPathSegment}")
+                val loading = delegate.loadBitmap(uri)
+                inFlight[key] = loading
+                Futures.addCallback(loading, object : com.google.common.util.concurrent.FutureCallback<android.graphics.Bitmap> {
+                    override fun onSuccess(result: android.graphics.Bitmap) { remote.put(key, result); inFlight.remove(key) }
+                    override fun onFailure(t: Throwable) { inFlight.remove(key) }
+                }, MoreExecutors.directExecutor())
+                return loading
+            }
+        }
+    }
+
+    /** Fetch the remote artwork of the songs a skip can land on, so it is in memory when they start. */
+    private fun preloadArtwork() {
+        if (!::player.isInitialized) return
+        for (index in listOf(player.nextMediaItemIndex, player.previousMediaItemIndex)) {
+            if (index == C.INDEX_UNSET) continue
+            val uri = player.getMediaItemAt(index).mediaMetadata.artworkUri ?: continue
+            if (uri.scheme?.startsWith("http", ignoreCase = true) == true) artworkLoader.loadBitmap(uri)
+        }
+    }
+
     private val playerListener = object : Player.Listener {
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = preloadArtwork()
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_ENDED -> Log.d(tag, "Playback ended")
@@ -544,9 +662,11 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             Log.e(tag, "Player error: ${error.message}", error)
+            if (offloadedTrack) abandonOffload("player error ${error.errorCodeName}")
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            preloadArtwork()
             // Prevent infinite loops from metadata updates
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                 // Clear the set of counted tracks when queue changes to ensure fresh counting
@@ -681,6 +801,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             Log.d(tag, "Is playing: $isPlaying")
+            armOffloadWatchdog()
             if (isPlaying) {
                 progressHandler.post(progressRunnable)
             } else {
@@ -693,6 +814,7 @@ class PlaybackService : MediaLibraryService() {
             newPosition: Player.PositionInfo,
             reason: Int
         ) {
+            armOffloadWatchdog() // a seek moves the position; measure progress from the new one
             // Early skip (user jumped forward to another song in the first 30s, before it counted
             // as a play): a "don't want this now" signal that lowers its chance of coming back.
             if (reason == Player.DISCONTINUITY_REASON_SEEK &&
@@ -736,8 +858,8 @@ class PlaybackService : MediaLibraryService() {
             .setChannelId("media_playback")
             .build()
         setMediaNotificationProvider(notificationProvider)
-        // Media3 reports a refused foreground start here, but then still calls startForeground() itself and crashes
-        // (see onUpdateNotification below); this just tells the user how to get playback going again.
+        // Media3 (1.11) catches a refused foreground start and reports it here; tell the user how to get
+        // playback going again. Up to 1.5 its artwork callback still called startForeground() and crashed.
         setListener(object : Listener {
             override fun onForegroundServiceStartNotAllowedException() = showResumeHint()
         })
@@ -753,6 +875,7 @@ class PlaybackService : MediaLibraryService() {
             ) = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(false) // boost processor works on 16-bit PCM
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioOffloadSupportProvider(offloadSupportProvider)
                 .setAudioProcessorChain(
                     JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor)
                 )
@@ -858,6 +981,14 @@ class PlaybackService : MediaLibraryService() {
                 Log.d(tag, "Audio session ID changed: $audioSessionId")
                 audioEffectController.attachToAudioSession(audioSessionId)
             }
+
+            override fun onAudioTrackInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig
+            ) {
+                offloadedTrack = audioTrackConfig.offload
+                armOffloadWatchdog()
+            }
         })
         // The session id event can fire before this listener exists (or never again), which left
         // every effect unattached; attach to the current session right away.
@@ -882,7 +1013,7 @@ class PlaybackService : MediaLibraryService() {
                 )
             }
 
-        val bitmapLoader = DataSourceBitmapLoader(this)
+        val bitmapLoader = artworkLoader
 
         mediaSession = MediaLibrarySession.Builder(this, jamAwarePlayer, MediaLibrarySessionCallback())
             .apply {

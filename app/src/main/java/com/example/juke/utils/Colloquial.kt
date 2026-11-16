@@ -16,7 +16,7 @@ internal object Colloquial {
     private val WORDS: Map<String, String> = buildMap {
         // Urdu / Shahmukhi
         """
-        تم tum|تُو tu|تجھ tujh|مجھ mujh|ہوئے hue|نوں nu|میں main|میرا mera|میری meri|میرے mere|تیرا tera|تیری teri|تیرے tere|ہم hum|ہمارا hamara|ہماری hamari
+        تم tum|تُو tu|تجھ tujh|مجھ mujh|ہوئے hue|نوں nu|میرا mera|میری meri|میرے mere|تیرا tera|تیری teri|تیرے tere|ہم hum|ہمارا hamara|ہماری hamari
         دل dil|دلوں dilon|زندگی zindagi|پیار pyaar|محبت mohabbat|عشق ishq|یار yaar|ہے hai|ہیں hain|ہو ho|ہوں hoon|تھا tha|تھی thi
         کی ki|کا ka|کے ke|کو ko|سے se|نے ne|بھی bhi|نہیں nahin|نہ na|جب jab|تب tab|اب ab|کب kab|کیوں kyun|کیا kya|کیسے kaise
         جان jaan|جاناں jaanan|صنم sanam|دنیا duniya|رات raat|دن din|خواب khwaab|یاد yaad|یادیں yaadein|آنکھیں aankhein|آنکھوں aankhon
@@ -33,6 +33,12 @@ internal object Colloquial {
         listOf("मोहब्बत" to "mohabbat", "ज़िंदगी" to "zindagi", "जिंदगी" to "zindagi", "ज़िन्दगी" to "zindagi", "जिन्दगी" to "zindagi")
             .forEach { (word, latin) -> put(nfc(word), latin) }
     }
+    /**
+     * Used only when no Hindi word fits: میں is the pronoun "main" ("I") or the postposition
+     * "mein" ("in"), and the Hindi of its line says which.
+     */
+    private val FALLBACK: Map<String, String> = mapOf(nfc("میں") to "main")
+
     /** ज़ arrives as one code point or as ज + nukta; NFC makes them the same key. */
     private fun nfc(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFC)
     private val PUNCT = Regex("""^([\p{P}\p{S}]*)(.*?)([\p{P}\p{S}]*)$""")
@@ -43,21 +49,23 @@ internal object Colloquial {
 
     /**
      * [romanized] (Google's answer for [source]) with known words replaced and ISO marks folded.
-     * [hints] gives, for a source word, Latin words that may be the same word with its vowels
-     * (see [revowel]), best first.
+     * [hints] gives, for the word at an index of [source], Latin words that may be the same word
+     * with its vowels (see [revowel]), best first.
      */
-    fun polish(source: String, romanized: String, hints: (String) -> List<String> = { emptyList() }): String {
+    fun polish(source: String, romanized: String, hints: (index: Int, word: String) -> List<String> = { _, _ -> emptyList() }): String {
         val src = source.trim().split(Regex("\\s+"))
         val out = romanized.trim().split(Regex("\\s+"))
         // Only a word-for-word answer can be corrected word by word.
-        val fixed = if (src.size == out.size) src.zip(out).joinToString(" ") { (s, o) -> word(s, o, hints) } else romanized.trim()
+        val fixed = if (src.size == out.size) {
+            src.zip(out).mapIndexed { i, (s, o) -> word(s, o) { w -> hints(i, w) } }.joinToString(" ")
+        } else romanized.trim()
         return if (ISO.containsMatchIn(fixed)) foldIso(fixed) else fixed
     }
 
     private fun word(source: String, romanized: String, hints: (String) -> List<String>): String {
         val bare = bare(source)
         val (lead, body, trail) = PUNCT.find(romanized)!!.destructured
-        val latin = WORDS[bare] ?: revowel(body.lowercase(), hints(bare)) ?: return romanized
+        val latin = WORDS[bare] ?: revowel(body.lowercase(), hints(bare)) ?: FALLBACK[bare] ?: return romanized
         val cased = if (body.firstOrNull()?.isUpperCase() == true) latin.replaceFirstChar { it.uppercase() } else latin
         return lead + cased + trail
     }

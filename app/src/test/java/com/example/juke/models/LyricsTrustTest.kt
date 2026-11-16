@@ -9,6 +9,17 @@ class LyricsTrustTest {
     private fun result(synced: String?, plain: String? = null, duration: Double? = 222.0) =
         LRCLibResult(1, "Rangeen", "Rangeen", "Hasan Raheem", "", duration, false, plain, synced)
 
+    @Test fun untimedTextInSyncedFieldBecomesPlain() {
+        val trusted = result("First line\nSecond line").trusted(180)
+        assertNull(trusted.syncedLyrics)
+        assertEquals("First line\nSecond line", trusted.plainLyrics)
+    }
+
+    @Test fun emptyTimedLinesAreNotRenderable() {
+        assertEquals(false, LyricsTrust.hasRenderableLine("[00:01.00]\n[00:02.00]"))
+        assertEquals(true, LyricsTrust.hasRenderableLine("[00:01.00] words"))
+    }
+
     @Test fun wholeSecondTimingKeepsOnlyTheWords() {
         // Rangeen's LRCLib copies: every stamp .00, up to 57 s off.
         val synced = listOf(0, 6, 26, 32, 42, 52).joinToString("\n") { "[00:%02d.00] line $it".format(it) }
