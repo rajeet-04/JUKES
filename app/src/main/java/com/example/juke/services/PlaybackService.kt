@@ -310,7 +310,12 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private fun applyOffloadPreference(prefs: android.content.SharedPreferences) {
         if (!::player.isInitialized) return
-        val allowed = prefs.getBoolean("battery_saver_playback", false) &&
+        // vivo/iQOO report AAC offload as supported but keep it off for third-party apps
+        // (persist.vivo.audio.feature.3rdapk.offload.available=false): the offloaded track opens and
+        // the position advances, but nothing is heard. Seen on an iQOO I2220 (Android 16) once
+        // Media3 1.11 actually engaged offload there.
+        val offloadIsSilent = Build.MANUFACTURER.equals("vivo", ignoreCase = true)
+        val allowed = !offloadIsSilent && prefs.getBoolean("battery_saver_playback", false) &&
             !prefs.getBoolean("skip_silence_enabled", false) &&
             !prefs.getBoolean("booster_enabled", false) &&
             !prefs.getBoolean("normalization_enabled", false)
