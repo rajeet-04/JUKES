@@ -960,7 +960,22 @@ class PlaybackService : MediaLibraryService() {
                 )
             }
 
-        val bitmapLoader = DataSourceBitmapLoader(this)
+        // Media3 publishes a track's metadata twice when its artwork is still loading: first without the
+        // image, then again with it. vivo/iQOO's media card only reads the first one and stays on its
+        // placeholder for the whole song. Downloaded tracks keep their artwork as a small local JPEG, so
+        // decode it right here (about 640x640, a few ms) and the first publish already carries the image.
+        // Remote artwork (stream tracks) still loads asynchronously.
+        val bitmapLoader = object : androidx.media3.common.util.BitmapLoader {
+            private val delegate = DataSourceBitmapLoader(this@PlaybackService)
+            override fun supportsMimeType(mimeType: String) = delegate.supportsMimeType(mimeType)
+            override fun decodeBitmap(data: ByteArray) = delegate.decodeBitmap(data)
+            override fun loadBitmap(uri: android.net.Uri): ListenableFuture<android.graphics.Bitmap> {
+                if (uri.scheme == "file") {
+                    android.graphics.BitmapFactory.decodeFile(uri.path)?.let { return Futures.immediateFuture(it) }
+                }
+                return delegate.loadBitmap(uri)
+            }
+        }
 
         mediaSession = MediaLibrarySession.Builder(this, jamAwarePlayer, MediaLibrarySessionCallback())
             .apply {
