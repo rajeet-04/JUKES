@@ -735,7 +735,34 @@ class PlaybackService : MediaLibraryService() {
             .setNotificationId(1) // IMPORTANT: Must match the ID in onStartCommand
             .setChannelId("media_playback")
             .build()
-        setMediaNotificationProvider(notificationProvider)
+        // When the artwork finishes loading, Media3 (MediaNotificationManager.onNotificationUpdated) decides by
+        // itself whether to call startForeground, without going through onUpdateNotification, so the guard
+        // there never sees it. A refusal on that path crashed the app on resume from the notification.
+        // Decide here instead: hand the update to Media3 only when the service is, or can become, foreground;
+        // otherwise post the refreshed notification directly.
+        setMediaNotificationProvider(object : androidx.media3.session.MediaNotification.Provider {
+            override fun createNotification(
+                session: MediaSession,
+                mediaButtonPreferences: com.google.common.collect.ImmutableList<CommandButton>,
+                actionFactory: androidx.media3.session.MediaNotification.ActionFactory,
+                onNotificationChangedCallback: androidx.media3.session.MediaNotification.Provider.Callback
+            ) = notificationProvider.createNotification(session, mediaButtonPreferences, actionFactory) { updated ->
+                val p = session.player
+                val wantsForeground = p.playWhenReady &&
+                    (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING)
+                if (!wantsForeground || canGoForeground()) {
+                    onNotificationChangedCallback.onNotificationChanged(updated)
+                } else {
+                    try {
+                        androidx.core.app.NotificationManagerCompat.from(this@PlaybackService)
+                            .notify(updated.notificationId, updated.notification)
+                    } catch (_: SecurityException) {}
+                }
+            }
+
+            override fun handleCustomCommand(session: MediaSession, action: String, extras: Bundle) =
+                notificationProvider.handleCustomCommand(session, action, extras)
+        })
         // Media3 reports a refused foreground start here, but then still calls startForeground() itself and crashes
         // (see onUpdateNotification below); this just tells the user how to get playback going again.
         setListener(object : Listener {
