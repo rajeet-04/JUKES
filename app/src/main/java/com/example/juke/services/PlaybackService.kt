@@ -598,7 +598,59 @@ class PlaybackService : MediaLibraryService() {
         .setUsage(C.USAGE_MEDIA)
         .build()
 
+    /**
+     * Media3 publishes a track's metadata twice when its artwork is still loading: first without the
+     * image, then again with it. vivo/iQOO's media card only reads the first one and stays on its
+     * placeholder for the whole song, so the image has to be ready before the track becomes current.
+     * Downloaded tracks keep their artwork as a small local JPEG, decoded right in loadBitmap (about
+     * 640x640, a few ms). Remote artwork (stream tracks) is fetched ahead for the neighbouring queue
+     * items by [preloadArtwork] and served from memory; only a jump to a far-away stream track still
+     * loads late.
+     */
+    @OptIn(UnstableApi::class)
+    private val artworkLoader by lazy {
+        object : androidx.media3.common.util.BitmapLoader {
+            private val delegate = DataSourceBitmapLoader(this@PlaybackService)
+            // Current, next and previous in both directions of a skip; about 1.6 MB each at 640x640.
+            private val remote = android.util.LruCache<String, android.graphics.Bitmap>(6)
+            private val inFlight = java.util.concurrent.ConcurrentHashMap<String, ListenableFuture<android.graphics.Bitmap>>()
+
+            override fun supportsMimeType(mimeType: String) = delegate.supportsMimeType(mimeType)
+            override fun decodeBitmap(data: ByteArray) = delegate.decodeBitmap(data)
+            override fun loadBitmap(uri: android.net.Uri): ListenableFuture<android.graphics.Bitmap> {
+                if (uri.scheme == "file") {
+                    android.graphics.BitmapFactory.decodeFile(uri.path)?.let { return Futures.immediateFuture(it) }
+                    return delegate.loadBitmap(uri)
+                }
+                val key = uri.toString()
+                remote.get(key)?.let { return Futures.immediateFuture(it) }
+                // One fetch per image: the timeline changes often while a stream plays.
+                inFlight[key]?.let { return it }
+                Log.d(tag, "Fetching remote artwork ${uri.lastPathSegment}")
+                val loading = delegate.loadBitmap(uri)
+                inFlight[key] = loading
+                Futures.addCallback(loading, object : com.google.common.util.concurrent.FutureCallback<android.graphics.Bitmap> {
+                    override fun onSuccess(result: android.graphics.Bitmap) { remote.put(key, result); inFlight.remove(key) }
+                    override fun onFailure(t: Throwable) { inFlight.remove(key) }
+                }, MoreExecutors.directExecutor())
+                return loading
+            }
+        }
+    }
+
+    /** Fetch the remote artwork of the songs a skip can land on, so it is in memory when they start. */
+    private fun preloadArtwork() {
+        if (!::player.isInitialized) return
+        for (index in listOf(player.nextMediaItemIndex, player.previousMediaItemIndex)) {
+            if (index == C.INDEX_UNSET) continue
+            val uri = player.getMediaItemAt(index).mediaMetadata.artworkUri ?: continue
+            if (uri.scheme?.startsWith("http", ignoreCase = true) == true) artworkLoader.loadBitmap(uri)
+        }
+    }
+
     private val playerListener = object : Player.Listener {
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = preloadArtwork()
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_ENDED -> Log.d(tag, "Playback ended")
@@ -614,6 +666,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            preloadArtwork()
             // Prevent infinite loops from metadata updates
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                 // Clear the set of counted tracks when queue changes to ensure fresh counting
@@ -960,22 +1013,7 @@ class PlaybackService : MediaLibraryService() {
                 )
             }
 
-        // Media3 publishes a track's metadata twice when its artwork is still loading: first without the
-        // image, then again with it. vivo/iQOO's media card only reads the first one and stays on its
-        // placeholder for the whole song. Downloaded tracks keep their artwork as a small local JPEG, so
-        // decode it right here (about 640x640, a few ms) and the first publish already carries the image.
-        // Remote artwork (stream tracks) still loads asynchronously.
-        val bitmapLoader = object : androidx.media3.common.util.BitmapLoader {
-            private val delegate = DataSourceBitmapLoader(this@PlaybackService)
-            override fun supportsMimeType(mimeType: String) = delegate.supportsMimeType(mimeType)
-            override fun decodeBitmap(data: ByteArray) = delegate.decodeBitmap(data)
-            override fun loadBitmap(uri: android.net.Uri): ListenableFuture<android.graphics.Bitmap> {
-                if (uri.scheme == "file") {
-                    android.graphics.BitmapFactory.decodeFile(uri.path)?.let { return Futures.immediateFuture(it) }
-                }
-                return delegate.loadBitmap(uri)
-            }
-        }
+        val bitmapLoader = artworkLoader
 
         mediaSession = MediaLibrarySession.Builder(this, jamAwarePlayer, MediaLibrarySessionCallback())
             .apply {
