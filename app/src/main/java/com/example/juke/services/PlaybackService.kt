@@ -310,12 +310,9 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private fun applyOffloadPreference(prefs: android.content.SharedPreferences) {
         if (!::player.isInitialized) return
-        // vivo/iQOO report AAC offload as supported but keep it off for third-party apps
-        // (persist.vivo.audio.feature.3rdapk.offload.available=false): the offloaded track opens and
-        // the position advances, but nothing is heard. Seen on an iQOO I2220 (Android 16) once
-        // Media3 1.11 actually engaged offload there.
-        val offloadIsSilent = Build.MANUFACTURER.equals("vivo", ignoreCase = true)
-        val allowed = !offloadIsSilent && prefs.getBoolean("battery_saver_playback", false) &&
+        // "offload_unusable" is set by abandonOffload() once offloaded playback failed on this device.
+        val allowed = !prefs.getBoolean("offload_unusable", false) &&
+            prefs.getBoolean("battery_saver_playback", false) &&
             !prefs.getBoolean("skip_silence_enabled", false) &&
             !prefs.getBoolean("booster_enabled", false) &&
             !prefs.getBoolean("normalization_enabled", false)
@@ -331,6 +328,70 @@ class PlaybackService : MediaLibraryService() {
             .setAudioOffloadPreferences(offload)
             .build()
         Log.d(tag, "Audio offload ${if (allowed) "enabled" else "disabled"}")
+    }
+
+    /**
+     * Offload support as Media3 reports it, minus devices whose own answers disagree. Media3 1.11 asks
+     * AudioManager.getDirectPlaybackSupport on Android 13+; an iQOO I2220 (Android 16) says "supported"
+     * there while isOffloadedPlaybackSupported says no (vivo keeps offload off for third-party apps),
+     * and the offloaded track then plays nothing. Offload only when both agree.
+     */
+    @OptIn(UnstableApi::class)
+    private val offloadSupportProvider = object : DefaultAudioSink.AudioOffloadSupportProvider {
+        private val default by lazy {
+            androidx.media3.exoplayer.audio.DefaultAudioOffloadSupportProvider(this@PlaybackService)
+        }
+
+        override fun getAudioOffloadSupport(
+            format: androidx.media3.common.Format,
+            audioAttributes: AudioAttributes
+        ): androidx.media3.exoplayer.audio.AudioOffloadSupport {
+            val support = default.getAudioOffloadSupport(format, audioAttributes)
+            if (!support.isFormatSupported || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return support
+            val platformAgrees = runCatching {
+                val encoding = androidx.media3.common.MimeTypes.getEncoding(format.sampleMimeType!!, format.codecs)
+                AudioManager.isOffloadedPlaybackSupported(
+                    androidx.media3.common.util.Util.getAudioFormat(
+                        format.sampleRate,
+                        androidx.media3.common.util.Util.getAudioTrackChannelConfig(format),
+                        encoding
+                    ),
+                    audioAttributes.platformAudioAttributes
+                )
+            }.getOrDefault(false)
+            return if (platformAgrees) support
+            else androidx.media3.exoplayer.audio.AudioOffloadSupport.DEFAULT_UNSUPPORTED
+        }
+    }
+
+    // Offload safety net for any device that passes the check above and still doesn't play: an offloaded
+    // track that is "playing" without the position moving (or that ends in a player error) switches this
+    // device back to the normal PCM sink for good. It cannot catch a DSP that consumes audio silently.
+    private var offloadedTrack = false
+    private var offloadCheckFromMs = 0L
+    private val offloadWatchdog = Runnable {
+        if (offloadedTrack && player.isPlaying && player.currentPosition - offloadCheckFromMs < 500) {
+            abandonOffload("no progress in 4 s")
+        }
+    }
+
+    private fun armOffloadWatchdog() {
+        mainHandler.removeCallbacks(offloadWatchdog)
+        if (offloadedTrack && player.isPlaying) {
+            offloadCheckFromMs = player.currentPosition
+            mainHandler.postDelayed(offloadWatchdog, 4_000)
+        }
+    }
+
+    private fun abandonOffload(why: String) {
+        Log.w(tag, "Offloaded playback failed ($why); switching to the normal audio sink")
+        com.example.juke.report.Breadcrumbs.add("offload_abandoned")
+        offloadedTrack = false
+        mainHandler.removeCallbacks(offloadWatchdog)
+        val prefs = getSharedPreferences("audio_effects_prefs", MODE_PRIVATE)
+        prefs.edit { putBoolean("offload_unusable", true) }
+        applyOffloadPreference(prefs)
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
     }
 
     private lateinit var audioManager: AudioManager
@@ -549,6 +610,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             Log.e(tag, "Player error: ${error.message}", error)
+            if (offloadedTrack) abandonOffload("player error ${error.errorCodeName}")
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -686,6 +748,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             Log.d(tag, "Is playing: $isPlaying")
+            armOffloadWatchdog()
             if (isPlaying) {
                 progressHandler.post(progressRunnable)
             } else {
@@ -698,6 +761,7 @@ class PlaybackService : MediaLibraryService() {
             newPosition: Player.PositionInfo,
             reason: Int
         ) {
+            armOffloadWatchdog() // a seek moves the position; measure progress from the new one
             // Early skip (user jumped forward to another song in the first 30s, before it counted
             // as a play): a "don't want this now" signal that lowers its chance of coming back.
             if (reason == Player.DISCONTINUITY_REASON_SEEK &&
@@ -758,6 +822,7 @@ class PlaybackService : MediaLibraryService() {
             ) = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(false) // boost processor works on 16-bit PCM
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioOffloadSupportProvider(offloadSupportProvider)
                 .setAudioProcessorChain(
                     JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor)
                 )
@@ -862,6 +927,14 @@ class PlaybackService : MediaLibraryService() {
             ) {
                 Log.d(tag, "Audio session ID changed: $audioSessionId")
                 audioEffectController.attachToAudioSession(audioSessionId)
+            }
+
+            override fun onAudioTrackInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig
+            ) {
+                offloadedTrack = audioTrackConfig.offload
+                armOffloadWatchdog()
             }
         })
         // The session id event can fire before this listener exists (or never again), which left
