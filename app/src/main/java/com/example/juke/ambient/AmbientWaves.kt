@@ -1,5 +1,9 @@
 package com.example.juke.ambient
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import androidx.compose.animation.animateColorAsState
@@ -7,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -22,6 +27,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
@@ -43,14 +49,27 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val resumed = lifecycle.currentStateAsState().value.isAtLeast(Lifecycle.State.RESUMED)
-    // Read on each resume: battery saver and "remove animations" turn the waves off.
-    val quiet = remember(resumed) {
-        val power = context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
-        val noAnim = android.provider.Settings.Global.getFloat(
+    // Battery saver turns the waves off, and back on the moment it ends (e.g. on plugging in),
+    // without waiting for the app to be reopened.
+    var powerSave by remember { mutableStateOf(isPowerSave(context)) }
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) { powerSave = isPowerSave(context) }
+        }
+        ContextCompat.registerReceiver(
+            context, receiver, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    // A change while the app was in the background (no receiver then) is caught on resume.
+    LaunchedEffect(resumed) { if (resumed) powerSave = isPowerSave(context) }
+    // "Remove animations" has no broadcast: read it on each resume.
+    val noAnim = remember(resumed) {
+        android.provider.Settings.Global.getFloat(
             context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f
         ) == 0f
-        power || noAnim
     }
+    val quiet = powerSave || noAnim
     val on = AmbientPrefs.enabled && !quiet && colors.isNotEmpty()
 
     val c0 by animateColorAsState(colors.getOrElse(0) { Color.Transparent }, tween(1200), label = "wave0")
@@ -94,11 +113,13 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
         val bass = wave.bass.value
         val treble = wave.treble.value
         val energy = wave.energy.value
+        val kick = wave.kick
         val phase = wave.phase
         val steps = 48
         listOf(c0, c1, c2).forEachIndexed { i, color ->
             val base = h * (0.62f + 0.08f * i)
-            val amp = h * (0.022f + 0.075f * bass * (1f - 0.25f * i))
+            // Bass sets the swell; each kick drum punches the crest up on the beat.
+            val amp = h * (0.022f + 0.06f * bass * (1f - 0.25f * i) + 0.06f * kick * (1f - 0.3f * i))
             val path = Path().apply {
                 moveTo(0f, h)
                 for (s in 0..steps) {
@@ -113,7 +134,7 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
                 lineTo(w, h)
                 close()
             }
-            val alpha = visible * (if (dark) 0.24f else 0.16f) * (0.7f + 0.4f * energy) * (1f - 0.15f * i)
+            val alpha = visible * (if (dark) 0.24f else 0.16f) * (0.7f + 0.4f * energy + 0.35f * kick) * (1f - 0.15f * i)
             drawPath(
                 path,
                 Brush.verticalGradient(
@@ -129,7 +150,10 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
 /** What the waves are doing, smoothed so beats swell rather than flicker. */
 private class WaveState {
     val visible = Envelope(attackMs = 500f, releaseMs = 700f)
-    val bass = Envelope(attackMs = 70f, releaseMs = 450f)
+    val bass = Envelope(attackMs = 35f, releaseMs = 300f)
+    private val beat = BeatPulse()
+    var kick = 0f
+        private set
     val energy = Envelope(attackMs = 120f, releaseMs = 700f)
     val treble = Envelope(attackMs = 40f, releaseMs = 250f)
     var phase = 0f
@@ -139,12 +163,16 @@ private class WaveState {
         val l = if (playing) AudioLevels.now() ?: IDLE else Levels.Silent
         visible.step(if (playing) 1f else 0f, dt)
         bass.step(l.bass, dt)
+        kick = beat.step(l.bass, dt)
         energy.step(l.energy, dt)
         treble.step(l.treble, dt)
         // Slow drift on its own; the music speeds it up a little.
         phase += dt / 1000f * (0.35f + 0.9f * energy.value)
     }
 }
+
+private fun isPowerSave(context: Context) =
+    context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
 
 private val IDLE = Levels(energy = 0.35f, bass = 0.3f, treble = 0.15f)
 private const val FADED = 0.003f

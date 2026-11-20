@@ -99,6 +99,28 @@ class Envelope(private val attackMs: Float, private val releaseMs: Float) {
     fun snap(v: Float) { value = v }
 }
 
+/**
+ * A kick: how far the bass jumps above its own recent level, 0..1. Steady bass (a held note, a
+ * loud mix) reads as nothing; each drum hit snaps up within a frame and dies away in ~0.1 s, so
+ * the waves punch on the beat instead of just swelling with loudness.
+ */
+class BeatPulse {
+    private val average = Envelope(attackMs = 350f, releaseMs = 350f)
+    private val pulse = Envelope(attackMs = 10f, releaseMs = 120f)
+
+    fun step(bass: Float, dtMs: Float): Float {
+        val rise = ((bass - average.value - THRESHOLD) * GAIN).coerceIn(0f, 1f)
+        average.step(bass, dtMs)
+        return pulse.step(rise, dtMs)
+    }
+
+    private companion object {
+        /** Ignore wobble this small above the running level. */
+        const val THRESHOLD = 0.03f
+        const val GAIN = 4f
+    }
+}
+
 /** The app-wide feed the player writes and the background reads (same process). */
 object AudioLevels {
     val timeline = LevelTimeline()
