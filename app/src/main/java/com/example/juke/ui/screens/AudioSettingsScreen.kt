@@ -485,6 +485,34 @@ fun AudioSettingsScreen(
                 }
 
                 item {
+                    val ctx = LocalContext.current
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        CompactItem(
+                            headlineContent = {
+                                Text(
+                                    "Background waves",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            supportingContent = { Text("Soft waves in the artwork's colours that move with the music") },
+                            leadingContent = { Icon(JukeIcons.Equalizer, contentDescription = null) },
+                            trailingContent = {
+                                Switch(
+                                    checked = com.example.juke.ambient.AmbientPrefs.enabled,
+                                    onCheckedChange = {
+                                        haptic.toggle()
+                                        com.example.juke.ambient.AmbientPrefs.enabled = it
+                                        ctx.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE)
+                                            .edit { putBoolean("ambient_waves", it) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                item {
                     GlassCard(
                         modifier = Modifier.fillMaxWidth()) {
                         Column {

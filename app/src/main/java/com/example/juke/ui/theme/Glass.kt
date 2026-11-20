@@ -466,13 +466,13 @@ object GlassBackdrop {
  * The layer behind every page, today just the app backdrop. Give it
  * `hazeSource(state, zIndex = -1f)` under the page's own source: glass inside the page samples
  * only sources below its ancestor, so cards refract this layer while floating glass (outside both)
- * refracts everything. A richer, immersive background goes here.
+ * refracts everything. [content] draws on top of the backdrop (the music waves).
  */
 @Composable
-fun GlassAmbient(modifier: Modifier = Modifier) {
+fun GlassAmbient(modifier: Modifier = Modifier, content: @Composable () -> Unit = {}) {
     androidx.compose.foundation.layout.Box(
         modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark()))
-    )
+    ) { content() }
 }
 
 /**

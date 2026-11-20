@@ -137,6 +137,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         com.example.juke.ui.theme.GlassPrefs.solid =
             getSharedPreferences("ui_prefs", MODE_PRIVATE).getBoolean("solid_surfaces", false)
+        com.example.juke.ambient.AmbientPrefs.enabled =
+            getSharedPreferences("ui_prefs", MODE_PRIVATE).getBoolean("ambient_waves", true)
 
         // Check intent immediately
         handlePlayerIntent(intent)
@@ -498,7 +500,16 @@ class MainActivity : ComponentActivity() {
                     // Backdrop source: the ambient light field and every screen scroll inside it,
                     // so the floating glass (tab bar, mini player) blurs what is really behind it.
                     // Ambient layer below the page source: cards inside the page refract it.
-                    com.example.juke.ui.theme.GlassAmbient(Modifier.hazeSource(hazeState, zIndex = -1f))
+                    com.example.juke.ui.theme.GlassAmbient(Modifier.hazeSource(hazeState, zIndex = -1f)) {
+                        // Waves that move with the music, in the artwork's colours. The player has its
+                        // own backdrop, so they settle while it's open.
+                        val art = uiState.extractedColors
+                        com.example.juke.ambient.AmbientWaves(
+                            playing = uiState.isPlaying && !showPlayerModal,
+                            colors = art?.let { listOf(it.primary, it.secondary, it.tertiary) }.orEmpty(),
+                            dark = com.example.juke.ui.theme.isGlassDark()
+                        )
+                    }
                     Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (isExpanded && currentRoute != "settings") {
