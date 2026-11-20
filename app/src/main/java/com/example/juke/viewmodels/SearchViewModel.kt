@@ -412,12 +412,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         textQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
 
                     // Saved songs: typo-tolerant, matches artist + title words together and lyrics (incl. romanized)
-                    val localResults = if (queryTokens.isEmpty()) emptyList() else
+                    // Ranking the whole library is CPU work; off the main thread so the UI keeps drawing.
+                    val localResults = if (queryTokens.isEmpty()) emptyList() else withContext(Dispatchers.Default) {
                         com.example.juke.utils.TrackSearch.rank((trackDao.getAllTracks() + trackDao.getStreamTracks()).map { it.toTrack() }, textQuery).take(50)
+                    }
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results
-                    val response = SpotifyApi.search(textQuery)
+                    // Decoding the response is sizeable too; keep it off the main thread.
+                    val response = withContext(Dispatchers.IO) { SpotifyApi.search(textQuery) }
                     // Filter out Spotify tracks that are already in local results (by title+artist match)
                     val localTitles =
                         localResults.map { it.title.lowercase() to it.artist.lowercase() }.toSet()
