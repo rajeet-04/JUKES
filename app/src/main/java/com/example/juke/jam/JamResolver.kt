@@ -87,6 +87,9 @@ object JamResolver {
      * title, one artist string and the artwork, so a phone that plays it from the room fills in the rest
      * here (#39). Null when Spotify can't be reached; the caller then uses what the room sent.
      */
+    /** [fullTrack] without a network call: only what an earlier lookup already brought in. */
+    fun cachedFullTrack(id: String): SpotifyTrack? = fullTracks[id]
+
     suspend fun fullTrack(id: String): SpotifyTrack? {
         fullTracks[id]?.let { return it }
         return try {

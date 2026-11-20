@@ -42,6 +42,9 @@ import com.example.juke.utils.DatabaseMigrationHelper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,6 +96,9 @@ data class MusicUiState(
     val repeatMode: Int = androidx.media3.common.Player.REPEAT_MODE_OFF,
     val extractedColors: ExtractedColors? = null
 )
+
+private const val LIST_QUEUE_BATCH = 3
+private const val FIRST_SONG_WAIT_MS = 30_000L
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -2008,49 +2014,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Set queue from Spotify tracks (for Artist, Playlist screens)
-     * Downloads the first track and queues the remaining tracks sequentially
+     * Set queue from Spotify tracks (Artist and Playlist screens, a handoff from another device)
+     * Plays the first track, then queues the remaining tracks in parallel batches
      */
     fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0) {
         if (JamControls.playNow(spotifyTracks.drop(startIndex).map { it.toJamPick() })) return
-        viewModelScope.launch {
-            try {
-                if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return@launch
-
-                // Download and play the first track
-                downloadAndPlay(
-                    SpotifyApi.spotifyTrackToSong(spotifyTracks[startIndex])
-                )
-
-                // Wait for the first track to start playing before queuing others
-                // This ensures proper queue order and avoids parallel download crashes
-                delay(800.milliseconds)
-
-                // Queue the remaining tracks sequentially - one at a time with proper delays
-                // This prevents download parallelization and maintains queue order
-                for (i in (startIndex + 1) until spotifyTracks.size) {
-                    // Add delay to prevent overwhelming the download system
-                    delay(200.milliseconds)
-
-                    // Queue each track individually to the QueueManager's normal flow
-                    // The queueSpotifyTrackNext will add them to queue one by one
-                    queueSpotifyTrackNext(spotifyTracks[i])
-
-                    // Wait for the queue operation to complete before adding next
-                    // The isQueueOperationInProgress flag ensures sequential queueing
-                    while (_uiState.value.isQueueOperationInProgress) {
-                        delay(50.milliseconds)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("MusicViewModel", "Error setting queue from Spotify tracks: ${e.message}", e)
-            }
-        }
+        if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return
+        loadListQueue(spotifyTracks.drop(startIndex).map { SpotifyApi.spotifyTrackToSong(it) })
     }
 
     /**
      * Set queue from Simplified tracks (for Album screen)
-     * Downloads the first track and queues the remaining tracks sequentially
+     * Downloads the first track and queues the remaining tracks in parallel batches
      */
     fun setQueueFromSimplifiedTracks(
         simplifiedTracks: List<SpotifySimplifiedTrack>,
@@ -2058,42 +2033,90 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         startIndex: Int = 0
     ) {
         if (JamControls.playNow(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album).toJamPick() })) return
-        viewModelScope.launch {
+        if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return
+        loadListQueue(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album) })
+    }
+
+    private var listQueueJob: Job? = null
+
+    /**
+     * Plays [songs] as the queue (a playlist, album, or a handoff from another device): the first song
+     * alone first, so on a slow network nothing competes with it, then the rest [LIST_QUEUE_BATCH] at a
+     * time in parallel, each batch placed in order after the songs already queued. A newer list (or a Jam)
+     * stops an older one still loading.
+     */
+    private fun loadListQueue(songs: List<SpotdownSong>) {
+        listQueueJob?.cancel()
+        listQueueJob = viewModelScope.launch {
             try {
-                if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return@launch
-
-                // Download and play the first track
-                downloadAndPlay(
-                    SpotifyApi.simplifiedTrackToSong(simplifiedTracks[startIndex], album)
-                )
-
-                // Wait for the first track to start playing before queuing others
-                // This ensures proper queue order and avoids parallel download crashes
-                delay(800.milliseconds)
-
-                // Queue the remaining tracks sequentially - one at a time with proper delays
-                // This prevents download parallelization and maintains queue order
-                for (i in (startIndex + 1) until simplifiedTracks.size) {
-                    // Add delay to prevent overwhelming the download system
-                    delay(200.milliseconds)
-
-                    // Queue each track individually to the QueueManager's normal flow
-                    // The queueSimplifiedTrackNext will add them to queue one by one
-                    queueSimplifiedTrackNext(simplifiedTracks[i], album)
-
-                    // Wait for the queue operation to complete before adding next
-                    // The isQueueOperationInProgress flag ensures sequential queueing
-                    while (_uiState.value.isQueueOperationInProgress) {
-                        delay(50.milliseconds)
-                    }
+                val first = songs.first()
+                playInstant(first)
+                // Wait until the first song really plays (it may need a while on a slow network), not a fixed delay
+                withTimeoutOrNull(FIRST_SONG_WAIT_MS) {
+                    uiState.first { st -> st.isPlaying && st.currentTrack?.let { isSameSong(it, first) } == true }
                 }
+                val placed = mutableListOf<Track>()
+                for (batch in songs.drop(1).chunked(LIST_QUEUE_BATCH)) {
+                    if (com.example.juke.jam.JamSession.state.value.active) return@launch
+                    val tracks = coroutineScope {
+                        batch.map { song ->
+                            async(Dispatchers.IO) {
+                                try { resolveQueueTrack(song, queueManager.isStreamMode) }
+                                catch (e: CancellationException) { throw e }
+                                catch (e: Exception) { Log.w("MusicViewModel", "Skipped '${song.title}': ${e.message}"); null }
+                            }
+                        }.awaitAll().filterNotNull()
+                    }
+                    if (tracks.isEmpty()) continue
+                    placed += tracks
+                    // Re-place every queued song of this list that hasn't played yet plus the new batch, right
+                    // after the current song: one "play next" per song would reverse their order.
+                    val state = _uiState.value
+                    val ahead = state.queue.drop(state.queueIndex + 1).mapTo(HashSet()) { it.uuid }
+                    val upcoming = placed.filter { it.uuid in ahead } + tracks
+                    while (_uiState.value.isQueueOperationInProgress) delay(50.milliseconds)
+                    val done = kotlinx.coroutines.CompletableDeferred<Unit>()
+                    placeLibraryTracks(upcoming.distinctBy { it.uuid }, next = true) { done.complete(Unit) }
+                    done.await()
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e(
-                    "MusicViewModel",
-                    "Error setting queue from simplified tracks: ${e.message}",
-                    e
-                )
+                Log.e("MusicViewModel", "Error loading list queue: ${e.message}", e)
             }
+        }
+    }
+
+    private fun isSameSong(track: Track, song: SpotdownSong): Boolean =
+        (song.spotifyId != null && track.spotifyId == song.spotifyId) ||
+            (track.title.equals(song.title, true) && ArtistUtils.areArtistsEqual(track.artist, song.artist))
+
+    /**
+     * Fetch a song to this phone's stream cache without playing it or saving it to the library, so it
+     * plays from disk when its turn comes (a Jam's upcoming songs). Null if it couldn't be fetched.
+     */
+    suspend fun prefetchStream(song: SpotdownSong, pinned: Set<String> = emptySet()): Track? = withContext(Dispatchers.IO) {
+        try {
+            musicService.streamTrack(
+                song = song,
+                pinnedUuids = _uiState.value.queue.mapTo(HashSet()) { it.uuid } + pinned,
+                fetchLyricsSynchronously = false,
+                fetchYtVideoIdSynchronously = false
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("MusicViewModel", "Prefetch failed for '${song.title}': ${e.message}")
+            null
+        }
+    }
+
+    /** Play a song [prefetchStream] fetched earlier: saved now that it plays, like any streamed song. */
+    fun playPrefetchedLocal(track: Track) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { trackDao.insertTrack(track.toEntity()) }
+            playTrackLocal(track)
+            if (track.ytVideoId.isNullOrBlank()) refreshYtVideoId(track)
         }
     }
 
