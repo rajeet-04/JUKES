@@ -148,7 +148,7 @@ internal fun ImportPlaylistCard(
 }
 
 @Composable
-internal fun ImportProgressCard(progress: Int, total: Int) {
+internal fun ImportProgressCard(progress: Int, total: Int, playlists: Int = 1) {
     val fraction = if (total > 0) progress.toFloat() / total else 0f
     GlassCard(
         modifier = Modifier
@@ -171,7 +171,7 @@ internal fun ImportProgressCard(progress: Int, total: Int) {
                 )
             }
             Text(
-                "Importing playlist…",
+                if (playlists > 1) "Importing $playlists playlists…" else "Importing playlist…",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

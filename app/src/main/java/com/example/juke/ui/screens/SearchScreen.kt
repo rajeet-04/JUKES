@@ -187,9 +187,12 @@ fun SearchScreen(
                             }
                         }
 
+                        // A pasted link shows its own import only; another one running mustn't hide its Import button (#36)
+                        val pastedImport = uiState.playlistId?.let { uiState.imports[it] }
+                        val anyImports = uiState.imports.isNotEmpty()
                         Box(modifier = Modifier.weight(1f)) {
-                            if (uiState.isImportingPlaylist && uiState.isPlaylistUrl) {
-                                ImportProgressCard(progress = uiState.importProgress, total = uiState.importTotal)
+                            if (uiState.isPlaylistUrl && pastedImport != null) {
+                                ImportProgressCard(progress = pastedImport.done, total = pastedImport.total)
                             } else if (hasResults(uiState) && !uiState.isPlaylistUrl && uiState.query.isNotBlank()) {
                                 SearchResultsList(
                                     uiState = uiState,
@@ -213,12 +216,13 @@ fun SearchScreen(
                                         searchViewModel.importPlaylist(uiState.playlistId!!)
                                     }
                                 )
-                            } else if (uiState.isImportingPlaylist && uiState.query.isBlank()) {
+                            } else if (anyImports && uiState.query.isBlank()) {
                                 ImportProgressCard(
-                                    progress = uiState.importProgress,
-                                    total = uiState.importTotal
+                                    progress = uiState.imports.values.sumOf { it.done },
+                                    total = uiState.imports.values.sumOf { it.total },
+                                    playlists = uiState.imports.size
                                 )
-                            } else if ((uiState.query.isBlank() || !hasResults(uiState)) && !uiState.isImportingPlaylist) {
+                            } else if ((uiState.query.isBlank() || !hasResults(uiState)) && !anyImports) {
                                 if (uiState.query.isBlank() && uiState.recentSearches.isNotEmpty()) {
                                     RecentSearches(
                                         searches = uiState.recentSearches,
