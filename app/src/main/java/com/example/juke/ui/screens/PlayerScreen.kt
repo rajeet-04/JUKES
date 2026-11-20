@@ -562,18 +562,24 @@ fun PlayerScreen(
                                             )
                                             PlayerStage.Queue -> QueueContent(currentTrack, uiState, musicViewModel, embedded = true, onClose = { stage = PlayerStage.Art })
                                             PlayerStage.Mix -> {
-                                                val rec by musicViewModel.recStatus.collectAsStateWithLifecycle()
-                                                val picked by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
+                                                val preview by musicViewModel.mixPreview.collectAsStateWithLifecycle()
+                                                // Build the mix while the tab is open (and again when the song changes).
+                                                LaunchedEffect(currentTrack.uuid, jamNow.active) {
+                                                    if (!jamNow.active) musicViewModel.loadMixPreview()
+                                                }
                                                 MixStage(
                                                     track = currentTrack,
-                                                    picked = if (jamNow.active) emptyList() else picked,
-                                                    resolving = rec.resolving,
+                                                    preview = if (jamNow.active) MusicViewModel.MixPreviewState.Idle else preview,
                                                     onStartMix = {
                                                         haptic.confirm()
-                                                        musicViewModel.startRadio()
+                                                        musicViewModel.startMix()
                                                         stage = PlayerStage.Queue
                                                     },
-                                                    onPlayPicked = { id -> musicViewModel.playPendingSong(id) }
+                                                    onPlayPicked = { id ->
+                                                        haptic.confirm()
+                                                        musicViewModel.startMix(playId = id)
+                                                        stage = PlayerStage.Queue
+                                                    }
                                                 )
                                             }
                                             PlayerStage.Art -> Unit

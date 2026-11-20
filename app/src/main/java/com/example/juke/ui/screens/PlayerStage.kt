@@ -7,6 +7,11 @@ import com.example.juke.ui.theme.liquidGlass
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import com.example.juke.viewmodels.MusicViewModel
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -56,7 +61,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
-import com.example.juke.services.QueueManager
 import com.example.juke.ui.components.player.karaokeText
 import com.example.juke.ui.components.player.rememberFrameClock
 import com.example.juke.ui.components.playerArtworkEndpoint
@@ -281,16 +285,23 @@ internal fun StageDock(
     }
 }
 
-/** Start a mix from the current song, and see what it has picked so far. */
+/**
+ * Start a mix from the current song. The mix is built while this view is open (skeleton rows
+ * until it lands) so Start mix swaps Up Next in at once; tapping a song starts the mix there.
+ */
 @Composable
 internal fun MixStage(
     track: Track,
-    picked: List<QueueManager.PendingSong>,
-    resolving: Int,
+    preview: MusicViewModel.MixPreviewState,
     onStartMix: () -> Unit,
     onPlayPicked: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // A preview for an earlier song counts as loading: the new one is on its way. Idle (in a Jam) is not.
+    val loading = preview !is MusicViewModel.MixPreviewState.Idle &&
+        (preview is MusicViewModel.MixPreviewState.Loading || preview.trackUuid != track.uuid)
+    val songs = (preview as? MusicViewModel.MixPreviewState.Ready)?.takeIf { it.trackUuid == track.uuid }?.songs.orEmpty()
+    val failed = preview is MusicViewModel.MixPreviewState.Failed && preview.trackUuid == track.uuid
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item(key = "start") {
             Column(
@@ -308,38 +319,46 @@ internal fun MixStage(
                     color = Color.White.copy(alpha = 0.68f),
                     modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
                 )
+                val enabled = !loading
                 Box(
                     Modifier
+                        .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
                         .clip(RoundedCornerShape(50))
                         .background(MaterialTheme.colorScheme.primary)
-                        .clickable(onClick = onStartMix)
+                        .clickable(enabled = enabled, onClick = onStartMix)
                         .padding(horizontal = 20.dp, vertical = 11.dp)
                 ) {
-                    Text("Start mix", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                    Text(
+                        if (loading) "Building mix…" else "Start mix",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
         }
-        if (picked.isNotEmpty() || resolving > 0) {
-            item(key = "pickedHeader") {
-                Text(
-                    if (resolving > 0) "Picked for your mix · loading $resolving" else "Picked for your mix",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(top = 10.dp)
-                )
-            }
+        if (loading || failed || songs.isNotEmpty()) item(key = "pickedHeader") {
+            Text(
+                if (failed) "Couldn't preview this mix. Start mix still builds one." else "Picked for your mix",
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 10.dp)
+            )
         }
-        items(picked, key = { it.id }) { song ->
+        if (loading) {
+            items(6, key = { "skel$it" }) { MixSkeletonRow(it) }
+        }
+        items(songs, key = { it.videoId }) { song ->
             Row(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClickLabel = "Play ${song.title}") { onPlayPicked(song.id) }
+                    .clickable(onClickLabel = "Start the mix with ${song.title}") { onPlayPicked(song.videoId) }
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AsyncImage(
-                    model = song.thumbnailUrl,
+                    model = song.art,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.08f))
@@ -350,6 +369,27 @@ internal fun MixStage(
                     Text(song.artist, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+        }
+    }
+}
+
+/** A placeholder song row that breathes while the mix loads; rows are staggered so it reads as loading, not frozen. */
+@Composable
+private fun MixSkeletonRow(index: Int) {
+    val pulse = rememberInfiniteTransition(label = "mixSkeleton")
+    val a by pulse.animateFloat(
+        initialValue = 0.05f,
+        targetValue = 0.13f,
+        animationSpec = infiniteRepeatable(tween(700, delayMillis = index * 90), RepeatMode.Reverse),
+        label = "mixSkeletonAlpha"
+    )
+    val block = Color.White.copy(alpha = a)
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(block))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Box(Modifier.fillMaxWidth(0.62f - (index % 3) * 0.1f).height(12.dp).clip(RoundedCornerShape(6.dp)).background(block))
+            Box(Modifier.fillMaxWidth(0.36f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(block))
         }
     }
 }
