@@ -6,6 +6,8 @@ import com.example.juke.ui.icons.JukeIcons
 import android.annotation.SuppressLint
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -230,6 +232,7 @@ fun PlayerScreen(
     onNavigateToAlbum: (String) -> Unit,
     onShareTrack: (String) -> Unit
 ) {
+    val scrollPlayer = !com.example.juke.account.Account.isDesktop
     BackHandler(onBack = onDismiss)
 
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -411,6 +414,12 @@ fun PlayerScreen(
                         onSaveQueue = { showSaveQueue = true }
                     )
 
+                    Column(
+                        modifier = Modifier.fillMaxWidth().then(
+                            if (scrollPlayer) Modifier.verticalScroll(rememberScrollState()) else Modifier.fillMaxSize()
+                        ),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                     Spacer(modifier = Modifier.height(spacerSm))
 
                     // Artwork — fills a portion of screen height. The art is square, so a tall slot
@@ -420,21 +429,22 @@ fun PlayerScreen(
                     // 0 = artwork, 1 = lyrics. The card grows into the lyrics and shrinks back to
                     // the artwork over this, so the switch is one motion and nothing jumps.
                     val lyricsShown by androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = if (showLyrics) 1f else 0f,
+                        targetValue = if (!scrollPlayer && showLyrics) 1f else 0f,
                         animationSpec = androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing),
                         label = "lyricsShown"
                     )
                     BoxWithConstraints(
                         modifier = Modifier
+                            .then(if (scrollPlayer) Modifier.widthIn(max = 480.dp) else Modifier)
                             .fillMaxWidth()
-                            .weight(1f)
-                            .padding(vertical = 8.dp * (1f - lyricsShown))
+                            .then(if (scrollPlayer) Modifier.aspectRatio(1f) else Modifier.weight(1f))
+                            .padding(vertical = if (scrollPlayer) 0.dp else 8.dp * (1f - lyricsShown))
                     ) {
                         val slack = maxHeight - maxWidth
                         val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
                         // 40dp fits one line. The old 56dp cut-off hid the strip on phones that landed
                         // just under it (54.6dp of slack at 1080x2400, 378dpi).
-                        val lineStrip = !showLyrics && syncedLyrics != null && slack >= 40.dp
+                        val lineStrip = !scrollPlayer && !showLyrics && syncedLyrics != null && slack >= 40.dp
                         // The artwork is a square: full width with the line strip under it, else centred.
                         val side = if (lineStrip) maxWidth else minOf(maxWidth, maxHeight)
                         // The strip keeps 48dp (two lines) before the artwork takes any slack above it.
@@ -459,10 +469,10 @@ fun PlayerScreen(
                                     queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
                                     currentTrack = displayTrack,
                                     currentPosition = uiState.position,
-                                    showLyrics = showLyrics,
+                                    showLyrics = !scrollPlayer && showLyrics,
                                     musicViewModel = musicViewModel,
                                     isTablet = isTablet,
-                                    onToggleLyrics = { showLyrics = !showLyrics }
+                                    onToggleLyrics = if (scrollPlayer) null else { { showLyrics = !showLyrics } }
                                 )
                             }
                             if (lineStrip && syncedLyrics != null) {
@@ -492,8 +502,9 @@ fun PlayerScreen(
                                 text = currentTrack.title,
                                 style = titleStyle.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                modifier = Modifier.basicMarquee()
+                                maxLines = if (scrollPlayer) 3 else 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = if (scrollPlayer) Modifier else Modifier.basicMarquee()
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
@@ -589,7 +600,8 @@ fun PlayerScreen(
                             .fillMaxWidth()
                             .playerStage(0.72f, 1f)
                             .padding(bottom = bottomPadding)
-                            .pointerInput(Unit) {
+                            .pointerInput(scrollPlayer) {
+                                if (scrollPlayer) return@pointerInput
                                 detectDragGestures { change, dragAmount ->
                                     change.consume()
                                     if (dragAmount.y < -50) showQueue = true
@@ -620,6 +632,44 @@ fun PlayerScreen(
                                 iconSize = actionBarIconSize
                             ) { haptic.click(); onShareTrack(currentTrack.spotifyId) }
                         }
+                    }
+                    if (scrollPlayer) {
+                        val lines = remember(displayTrack.syncedLyrics, displayTrack.lyricsOffsetMs) {
+                            displayTrack.syncedLyrics?.let { parseSyncedLyrics(it, displayTrack.lyricsOffsetMs) }.orEmpty()
+                        }
+                        val active = lines.indexOfLast { it.timeMs <= uiState.position }.coerceAtLeast(0)
+                        val preview = if (lines.isEmpty()) {
+                            displayTrack.plainLyrics.orEmpty().lineSequence().filter { it.isNotBlank() }.take(3).toList()
+                        } else lines.subList(active, minOf(active + 3, lines.size)).map { it.text }
+                        GlassCard(modifier = Modifier.fillMaxWidth(), onClick = { showLyrics = true }) {
+                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Lyrics", style = MaterialTheme.typography.titleMedium)
+                                    Icon(JukeIcons.ChevronUp, contentDescription = "Open full lyrics")
+                                }
+                                preview.forEachIndexed { index, line ->
+                                    Text(line, style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (index == 0) 1f else 0.72f))
+                                }
+                                if (preview.isEmpty()) Text("Open lyrics", style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                        Spacer(Modifier.height(bottomPadding))
+                    }
+                    }
+                }
+            }
+            if (scrollPlayer && showLyrics) {
+                androidx.compose.ui.window.Dialog(
+                    onDismissRequest = { showLyrics = false },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding()) {
+                        com.example.juke.ui.components.player.LyricsOverlay(
+                            displayTrack, uiState.position, musicViewModel, isTablet,
+                            onDismiss = { showLyrics = false }
+                        )
                     }
                 }
             }

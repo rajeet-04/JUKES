@@ -16,6 +16,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.graphics.ColorUtils
@@ -31,6 +33,28 @@ import org.junit.Test
 
 class BetaUiRegressionTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun largeTextPlayerScrollsToLyricsAndOpensFullView() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as android.app.Application
+        lateinit var vm: com.example.juke.viewmodels.MusicViewModel
+        compose.runOnUiThread { vm = com.example.juke.viewmodels.MusicViewModel(app) }
+        compose.setContent {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(density.density, 2f)
+            ) {
+                com.example.juke.ui.screens.PlayerScreen(vm, onDismiss = {}, onNavigateToArtist = {},
+                    onNavigateToAlbum = {}, onShareTrack = {})
+            }
+        }
+        compose.runOnIdle {
+            vm.playTrackLocal(Track(uuid = "layout-fixture", title = "Layout test", artist = "Artist",
+                durationSec = 120, syncedLyrics = "[00:00.00]First line\n[00:30.00]Second line"))
+        }
+        compose.onNodeWithText("First line").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Close lyrics").assertIsDisplayed().performClick()
+        compose.onNodeWithText("First line").assertIsDisplayed()
+    }
 
     @Test fun seekCanBeAdjustedThroughAccessibility() {
         val position = mutableLongStateOf(0L)

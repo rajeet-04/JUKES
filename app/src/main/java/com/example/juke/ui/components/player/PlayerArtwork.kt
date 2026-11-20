@@ -46,7 +46,7 @@ fun PlayerArtwork(
     showLyrics: Boolean,
     musicViewModel: MusicViewModel,
     isTablet: Boolean,
-    onToggleLyrics: () -> Unit,
+    onToggleLyrics: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     val haptic = rememberJukeHaptics()
@@ -129,7 +129,7 @@ private fun ArtworkCard(
     currentPosition: Long,
     musicViewModel: MusicViewModel,
     isTablet: Boolean,
-    onToggleLyrics: () -> Unit,
+    onToggleLyrics: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     val haptic = rememberJukeHaptics()
@@ -140,10 +140,10 @@ private fun ArtworkCard(
             .fillMaxSize()
             .playerArtworkEndpoint(expanded = true, enabled = isCurrentTrack, fly = !showLyrics)
             .glassPane(RoundedCornerShape(32.dp), GlassLevel.Thick)
-            .clickable {
+            .then(if (onToggleLyrics == null) Modifier else Modifier.clickable {
                 haptic.click()
                 onToggleLyrics()
-            },
+            }),
         contentAlignment = Alignment.Center
     ) {
         if (track.thumbnailUri != null) {
@@ -188,7 +188,7 @@ private fun ArtworkCard(
                 currentPosition = currentPosition,
                 musicViewModel = musicViewModel,
                 isTablet = isTablet,
-                onDismiss = onToggleLyrics
+                onDismiss = { onToggleLyrics?.invoke() }
             )
         }
     }
