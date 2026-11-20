@@ -24,6 +24,7 @@ object JamFollower {
     private const val MAX_SEEK_BIAS_MS = 3000L // a stream seek re-buffers; it can land a second or more late
     private const val MAX_MISSED_SEEKS = 4 // per song: past this, drift is better than chopping the audio
     private const val LOAD_TIMEOUT_MS = 60_000L
+    private const val FULL_TRACK_TIMEOUT_MS = 2_000L
 
     data class Debug(
         val line: String = "",
@@ -79,7 +80,12 @@ object JamFollower {
                 // Head start for what plays next, as soon as the queue is built and whenever it or the current song changes
                 val upNext = JamWarmup.nextUp(st.queue, pb?.itemId)
                 val warmKey = upNext.joinToString { it.id }
-                if (warmKey != lastWarmKey) { lastWarmKey = warmKey; JamWarmup.warm(upNext) }
+                if (warmKey != lastWarmKey) {
+                    lastWarmKey = warmKey
+                    JamWarmup.warm(upNext)
+                    // One Spotify request for the upcoming songs' full details, so starting one doesn't wait on it
+                    withTimeoutOrNull(FULL_TRACK_TIMEOUT_MS) { JamResolver.artworkFor(upNext.map { it.spotifyId }) }
+                }
 
                 if (pb == null || item == null) continue
 
@@ -92,9 +98,14 @@ object JamFollower {
                     if (startedFor != pb.itemId) {
                         startedFor = pb.itemId
                         startedAt = System.currentTimeMillis()
-                        // Items added without artwork (or by an older build) get theirs from Spotify here, so this phone shows it too
-                        val withArt = if (item.thumb.isNullOrBlank()) JamResolver.artworkFor(listOf(item.spotifyId))[item.spotifyId] else item.thumb
-                        val track: SpotifyTrack? = SharedTrack(item.title, item.artist, item.durationSec, item.spotifyId, null, withArt).toSpotifyTrack()
+                        // The room sends only title/artist/artwork: take the full track (all artists, album) from
+                        // Spotify, briefly, so a slow network doesn't hold the song up; else build it from the room's.
+                        val full = withTimeoutOrNull(FULL_TRACK_TIMEOUT_MS) { JamResolver.fullTrack(item.spotifyId) }
+                        val track: SpotifyTrack? = full ?: run {
+                            // Items added without artwork (or by an older build) get theirs from Spotify here, so this phone shows it too
+                            val withArt = if (item.thumb.isNullOrBlank()) JamResolver.artworkFor(listOf(item.spotifyId))[item.spotifyId] else item.thumb
+                            SharedTrack(item.title, item.artist, item.durationSec, item.spotifyId, null, withArt).toSpotifyTrack()
+                        }
                         if (track != null) vm.playInstantLocal(SpotifyApi.spotifyTrackToSong(track))
                         Log.d(TAG, "Starting '${item.title}' for the Jam")
                     }
