@@ -67,9 +67,9 @@ import com.example.juke.ui.screens.LyricLine
 import com.example.juke.ui.screens.parseSyncedLyrics
 import com.example.juke.ui.components.player.karaokeText
 import com.example.juke.ui.components.player.rememberFrameClock
-import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
-import com.example.juke.ui.theme.glassFloat
+import com.example.juke.ui.theme.liquidGlass
+import androidx.compose.ui.graphics.Color
 import com.example.juke.utils.LyricsRomanizer
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
@@ -269,7 +269,14 @@ fun MiniPlayer(
             modifier = modifier
                 .fillMaxWidth()
                 .playerBarEndpoint()
-                .glassFloat(GlassShapes.Bar, GlassLevel.Regular)
+                .liquidGlass(
+                    shape = GlassShapes.Bar,
+                    // Pure liquid: refraction and rim only, a faint smoke for legibility, no frost.
+                    fill = if (com.example.juke.ui.theme.isGlassDark()) Color(0xFF0E0E12).copy(alpha = 0.34f)
+                    else Color.White.copy(alpha = 0.4f),
+                    blur = 2.dp,
+                    shadow = 8.dp,
+                )
                 .combinedClickable(
                     onClickLabel = "Open player",
                     role = Role.Button,
