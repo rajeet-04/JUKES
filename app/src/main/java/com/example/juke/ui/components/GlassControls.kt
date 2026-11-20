@@ -118,19 +118,20 @@ fun GlassAlertDialog(
     shape: Shape = GlassShapes.Card,
     properties: DialogProperties = DialogProperties(),
 ) {
+    val liquid = com.example.juke.ui.theme.glassSheetModifier(shape)
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
             GlassWindowBlur()
             confirmButton()
         },
-        modifier = modifier,
+        modifier = if (liquid != null) modifier.then(liquid) else modifier,
         dismissButton = dismissButton,
         icon = icon,
         title = title,
         text = text,
         shape = shape,
-        containerColor = glassSheetColor(),
+        containerColor = if (liquid != null) Color.Transparent else glassSheetColor(),
         tonalElevation = 0.dp,
         iconContentColor = MaterialTheme.colorScheme.primary,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
@@ -149,12 +150,15 @@ fun GlassModalBottomSheet(
     showHandle: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // The sheet surface is liquid glass over the app behind it; glass inside the sheet falls back
+    // to tinted panes, since it would otherwise sample the app through the sheet.
+    val liquid = com.example.juke.ui.theme.glassSheetModifier(GlassShapes.Sheet)
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        modifier = modifier.arrowKeyFocus(),
+        modifier = modifier.arrowKeyFocus().then(liquid ?: Modifier),
         sheetState = sheetState,
         shape = GlassShapes.Sheet,
-        containerColor = glassSheetColor(),
+        containerColor = if (liquid != null) Color.Transparent else glassSheetColor(),
         // The glass colour isn't a scheme colour, so Material can't derive text on it and would
         // inherit the caller's (on the player that is a dim tint): headers came out near-invisible.
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -174,7 +178,9 @@ fun GlassModalBottomSheet(
         }
     ) {
         GlassWindowBlur()
-        content()
+        CompositionLocalProvider(com.example.juke.ui.theme.LocalHazeState provides null) {
+            content()
+        }
     }
 }
 

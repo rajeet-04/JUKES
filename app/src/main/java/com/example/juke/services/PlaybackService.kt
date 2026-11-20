@@ -877,7 +877,7 @@ class PlaybackService : MediaLibraryService() {
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .setAudioOffloadSupportProvider(offloadSupportProvider)
                 .setAudioProcessorChain(
-                    JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor)
+                    JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor, com.example.juke.ambient.LevelMeterProcessor())
                 )
                 .build()
         }

@@ -270,6 +270,8 @@ fun Modifier.glassLens(
 
 /** User opt-out of translucency (blur and see-through fills): surfaces become near-opaque. */
 object GlassPrefs {
+    /** Desktop always renders glass; Android locks solid surfaces below Android 13. */
+    val supported: Boolean = true
     var solid by androidx.compose.runtime.mutableStateOf(false)
 }
 

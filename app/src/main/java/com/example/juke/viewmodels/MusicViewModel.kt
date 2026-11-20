@@ -760,6 +760,68 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** The Mix tab's preview of the mix the playing song would start. */
+    sealed interface MixPreviewState {
+        val trackUuid: String?
+        data object Idle : MixPreviewState { override val trackUuid: String? = null }
+        data class Loading(override val trackUuid: String) : MixPreviewState
+        data class Ready(override val trackUuid: String, val preview: QueueManager.MixPreview, val songs: List<com.example.juke.home.FeedSong>) : MixPreviewState
+        data class Failed(override val trackUuid: String) : MixPreviewState
+    }
+
+    private val _mixPreview = MutableStateFlow<MixPreviewState>(MixPreviewState.Idle)
+    val mixPreview: StateFlow<MixPreviewState> = _mixPreview.asStateFlow()
+    private var mixPreviewJob: Job? = null
+
+    /**
+     * Build the mix for the playing song in the background while the Mix tab is open, and warm
+     * its first two songs on the server so they're ready the moment the mix starts.
+     */
+    fun loadMixPreview() {
+        val current = _uiState.value.currentTrack ?: return
+        val state = _mixPreview.value
+        if (state.trackUuid == current.uuid && state !is MixPreviewState.Failed) return
+        mixPreviewJob?.cancel()
+        _mixPreview.value = MixPreviewState.Loading(current.uuid)
+        mixPreviewJob = viewModelScope.launch(Dispatchers.IO) {
+            val preview = try {
+                queueManager.previewMix(current)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("MusicViewModel", "Mix preview failed: ${e.message}")
+                null
+            }
+            if (preview == null || preview.songs.isEmpty()) {
+                _mixPreview.value = MixPreviewState.Failed(current.uuid)
+                return@launch
+            }
+            preview.songs.take(QueueManager.MIX_FIRST).forEach { com.example.juke.network.JukesApi.warmupVideo(it.id, source = "mix") }
+            _mixPreview.value = MixPreviewState.Ready(current.uuid, preview, preview.songs.map(com.example.juke.home.FeedSong::from))
+        }
+    }
+
+    /**
+     * Start mix: replace Up Next with the previewed mix, or a fresh radio when there's no preview.
+     * [playId]: a previewed song the listener tapped, played as soon as the mix is in.
+     */
+    fun startMix(playId: String? = null) {
+        if (JamControls.mix()) return // in a Jam the room gets a fresh radio, built by the host
+        val current = _uiState.value.currentTrack ?: return
+        val ready = (_mixPreview.value as? MixPreviewState.Ready)?.takeIf { it.trackUuid == current.uuid }
+        if (ready == null) {
+            startRadio()
+            return
+        }
+        _mixPreview.value = MixPreviewState.Idle // used up: opening Mix again builds the next one
+        viewModelScope.launch {
+            playbackManager.keepOnlyCurrentTrack()
+            queueManager.startMix(current, ready.preview)
+            _uiState.update { it.copy(queue = listOf(current), queueIndex = 0) }
+            playId?.let(::playPendingSong)
+        }
+    }
+
     /** Play a queued song; [index] picks the entry when the song is queued twice. */
     fun playTrackFromQueue(track: Track, index: Int? = null) {
         if (JamControls.playItem(track.uuid)) return // an entry of the room's queue (its uuid is the room's item id)
@@ -1035,6 +1097,32 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Instant playback for SpotdownSong (used by Search/Artist/Album screens via downloadAndPlay)
      */
+    /** The feed song being matched for playback (its video id), for a spinner on its row. */
+    private val _recLoading = MutableStateFlow<String?>(null)
+    val recLoading: StateFlow<String?> = _recLoading.asStateFlow()
+
+    /**
+     * Plays a Home feed song: matched on Spotify only now, at tap time, then played like any search
+     * result (radio carries on after it as usual). A second tap while one is matching is ignored.
+     */
+    fun playRec(song: com.example.juke.home.FeedSong) {
+        if (_recLoading.value != null) return
+        _recLoading.value = song.videoId
+        viewModelScope.launch {
+            try {
+                val track = com.example.juke.home.resolveFeedSong(song) { rec ->
+                    RecommenderApi.matchOnSpotify(rec)?.let {
+                        SpotifyApi.getTrack(it.spotifyUrl.substringAfterLast("/").substringBefore("?"))
+                    }
+                }
+                if (track != null) playInstant(SpotifyApi.spotifyTrackToSong(track))
+                else Toast.makeText(getApplication(), "Couldn't find that song", Toast.LENGTH_SHORT).show()
+            } finally {
+                _recLoading.value = null
+            }
+        }
+    }
+
     fun playInstant(song: SpotdownSong) {
         if (JamControls.playNow(listOf(song.toJamPick()))) return
         playInstantLocal(song)

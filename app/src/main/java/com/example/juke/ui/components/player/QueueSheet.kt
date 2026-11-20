@@ -97,7 +97,9 @@ fun QueueBottomSheetContent(
     onSortUpcoming: () -> Unit = {},
     onClearPlayed: () -> Unit = {},
     onSaveAsPlaylist: (name: String, includeWaiting: Boolean) -> Unit = { _, _ -> },
-    suggestedPlaylistName: () -> String = { "Queue" }
+    suggestedPlaylistName: () -> String = { "Queue" },
+    /** Shown inside the player's stage: no back button, insets or now-playing card. */
+    embedded: Boolean = false
 ) {
     val haptic = rememberJukeHaptics()
     // Songs already loaded when the sheet opened don't replay the colour-up.
@@ -107,8 +109,7 @@ fun QueueBottomSheetContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 16.dp)
+            .then(if (embedded) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp))
     ) {
         // Header with close button and title
         Row(
@@ -118,10 +119,11 @@ fun QueueBottomSheetContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onClose) {
+            if (!embedded) IconButton(onClick = onClose) {
                 Icon(JukeIcons.Back, "Close")
             }
-            Text(
+            // In the player's stage the top bar already says "Up next".
+            if (embedded) Spacer(Modifier.weight(1f)) else Text(
                 "Up Next",
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
@@ -195,7 +197,7 @@ fun QueueBottomSheetContent(
         // Queue list with swipe-to-remove
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Current track indicator
-            item(key = "now_playing_card") {
+            if (!embedded) item(key = "now_playing_card") {
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
         accent = MaterialTheme.colorScheme.primaryContainer) {

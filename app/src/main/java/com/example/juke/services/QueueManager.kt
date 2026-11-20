@@ -73,6 +73,12 @@ class QueueManager private constructor(private val context: Context) {
          * instead of keeping its radio position. Favourites and songs on repeat today are exempt.
          */
         private const val STALE_FRESHNESS = 0.5
+        /** A mix preview keeps pulling radios until it has at least this many new songs. */
+        private const val MIX_MIN = 15
+        /** Songs at the top of a mix whose Spotify match is checked during the preview. */
+        private const val MIX_CHECKED = 6
+        /** Songs that start a mix: warmed during the preview and queued first, in order. */
+        const val MIX_FIRST = 2
 
         fun getInstance(context: Context): QueueManager {
             return instance ?: synchronized(this) {
@@ -590,6 +596,101 @@ class QueueManager private constructor(private val context: Context) {
     /** Drops the current radio so the next [takeRadio] starts a fresh one from the playing song (Mix). */
     fun restartRadio() = resetRecommendationSession()
 
+    /** A mix built from a song without touching the queue; [seedId] is the radio it came from. */
+    data class MixPreview(val seedId: String, val songs: List<RecommenderApi.YouTubeRecommendation>)
+
+    /**
+     * The mix [current] would start, for showing before the listener commits to it. Leaves out
+     * everything already queued or waiting in Up Next, so the preview only shows new songs.
+     */
+    suspend fun previewMix(current: Track, limit: Int = 25): MixPreview? {
+        val seedId = RecommenderApi.audioSeedFor(current.title, current.artist, current.durationSec)
+            ?: current.ytVideoId
+            ?: RecommenderApi.getBestVideoMatch("${current.title} ${current.artist}", current.durationSec, current.artist)
+            ?: return null
+        val blacklist = BlacklistManager.getBlacklistedArtists(context)
+        val blocked = queuedKeys(current).also { it.addAll(pendingKeys()) }
+        val skip = mutableSetOf(seedId).also { s -> current.ytVideoId?.let { s += it } }
+        val songs = ArrayList<RecommenderApi.YouTubeRecommendation>()
+        // When Up Next already is this song's radio, most of it is filtered out: carry on with
+        // the radio of the first new song, like the queue itself does, until the mix is full.
+        var seed: String? = seedId
+        var radios = 0
+        while (seed != null && songs.size < MIX_MIN && radios++ < 3) {
+            skip += seed
+            songs += mixPicks(
+                com.example.juke.network.JukesApi.fullRadio(seed), blocked, skip, limit - songs.size,
+                isBlocked = { rec ->
+                    blacklist.isNotEmpty() && (BlacklistManager.containsBlacklistedArtist(context, rec.artist, blacklist) ||
+                        BlacklistManager.titleContainsBlacklistedArtist(context, rec.title, blacklist))
+                }
+            )
+            seed = songs.firstOrNull { it.id !in skip }?.id
+        }
+        return MixPreview(seedId, confirmHead(songs))
+    }
+
+    /** Spotify matches checked while previewing a mix, by video id, so starting it doesn't search again. */
+    private val previewMatches = java.util.concurrent.ConcurrentHashMap<String, RecommenderApi.ValidatedRecommendation>()
+
+    /**
+     * Check the Spotify match of the mix's first songs now, so the ones that start it are songs that
+     * will really play (a song without a match is skipped when it's fetched). Drops the misses.
+     */
+    private suspend fun confirmHead(songs: List<RecommenderApi.YouTubeRecommendation>): List<RecommenderApi.YouTubeRecommendation> {
+        previewMatches.clear()
+        val head = songs.take(MIX_CHECKED)
+        val misses = coroutineScope {
+            head.map { rec ->
+                async {
+                    val match = try {
+                        RecommenderApi.matchOnSpotify(rec)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        return@async null // offline or failed: unknown, keep it
+                    }
+                    if (match == null) rec.id else { previewMatches[rec.id] = match; null }
+                }
+            }.awaitAll().filterNotNull().toSet()
+        }
+        return songs.filterNot { it.id in misses }
+    }
+
+    /**
+     * Replace Up Next with a previewed mix: the playing song stays, the mix's songs wait in its
+     * order and the first [lookahead] of them are fetched right away. The radio continues from
+     * the last song it queued, as usual.
+     */
+    fun startMix(current: Track, mix: MixPreview) {
+        resetRecommendationSession()
+        _currentQueue.value = listOf(current)
+        playedTracksHistory.clear()
+        recentArtists.clear()
+        usedSeeds.add(mix.seedId)
+        seen.add("yt:${mix.seedId}")
+        current.ytVideoId?.let { seen.add("yt:$it") }
+        mix.songs.forEach {
+            seen.add("yt:${it.id}")
+            seenSongs.add(RecommenderApi.songKey(it.title, it.artist), recLength(it))
+        }
+        pendingRecs.addAll(mix.songs)
+        publishPending()
+        Log.d(tag, "Mix started from ${current.title}: ${mix.songs.size} songs waiting")
+        // The first songs (warmed while the preview was open) go in first and in order; the rest
+        // of the lookahead fills in after them as each is ready.
+        val gen = sessionGen.get()
+        val head = mix.songs.take(MIX_FIRST)
+        sessionScope.launch {
+            fillMutex.withLock {
+                val tracks = coroutineScope { head.map { async { fetchPending(it, current, priority = true) } }.awaitAll() }
+                if (gen != sessionGen.get()) return@withLock
+                head.zip(tracks).forEach { (rec, track) -> if (track != null) deliver(rec, track) }
+            }
+            requestFill(current, remaining = 0)
+        }
+    }
+
     /** How many songs the listener wants queued ahead (the "recommendation count" setting). */
     fun radioLookahead(): Int = lookahead()
 
@@ -882,7 +983,7 @@ class QueueManager private constructor(private val context: Context) {
         allowQueued: Boolean = false
     ): Track? {
         val validated = try {
-            RecommenderApi.matchOnSpotify(rec)
+            previewMatches.remove(rec.id) ?: RecommenderApi.matchOnSpotify(rec)
         } catch (_: OfflineException) {
             return null
         } ?: return null

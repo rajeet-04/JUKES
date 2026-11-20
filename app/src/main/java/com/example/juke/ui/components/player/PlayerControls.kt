@@ -109,7 +109,9 @@ fun PlayerControls(
                 .size(resolvedPlayButtonSize)
                 .scale(playButtonScale.value)
                 .glassPane(CircleShape, GlassLevel.Thick, accent)
-                .background(accent.copy(alpha = 0.9f))
+                // Over live glass the accent is a coloured liquid lens: thin enough that the
+                // rim's refraction and rainbow show through; solid where glass is off.
+                .background(accent.copy(alpha = if (com.example.juke.ui.theme.glassIsLive()) 0.62f else 0.9f))
                 .clickable(role = Role.Button) {
                     haptic.heavyClick()
                     musicViewModel.togglePlayPause()
