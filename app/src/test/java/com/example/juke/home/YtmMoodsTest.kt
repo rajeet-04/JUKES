@@ -9,18 +9,23 @@ import org.junit.Test
 class YtmMoodsTest {
     private fun fixture(name: String) = javaClass.classLoader!!.getResource(name)!!.readText()
 
-    @Test fun `moods come from the moods and moments grid only`() {
-        val moods = YtmMoods.parseMoods(fixture("ytm_moods.json"))
-        assertEquals(listOf("Chill", "Commute", "Energize", "Feel good"), moods.take(4).map { it.title })
-        assertEquals("ggMPOg1uX1JOQWZFeDByc2Jm", moods.first().params)
-        assertFalse(moods.any { it.title == "Hindi" }) // genres grid is not a mood
+    @Test fun `moods are the home feed chips minus podcasts`() {
+        val moods = YtmMoods.parseMoods(fixture("ytm_home.json"))
+        assertEquals(listOf("Workout", "Relax", "Commute", "Energize", "Feel good", "Romance", "Party", "Sad", "Focus", "Sleep"), moods.map { it.title })
+        assertTrue(moods.all { it.params.isNotBlank() })
     }
 
-    @Test fun `a mood page splits into named shelves of playlists`() {
-        val shelves = YtmMoods.parseCategory(fixture("ytm_mood_chill.json"))
-        assertEquals("Coffee shop blends", shelves.first().title)
-        assertEquals("RDCLAK5uy_nBE4bLuBHUXWZrF59ZrkPEToKt8M_I3Vc", shelves.first().playlists.first()) // VL prefix stripped for the playlist, re-added on browse
-        assertTrue(shelves.size >= 10)
+    @Test fun `a mood feed gives its song shelf then one section per playlist`() {
+        val shelves = YtmMoods.parseMoodFeed(fixture("ytm_home_romance.json"))
+        val picks = shelves.first()
+        assertEquals("Quick picks", picks.title)
+        assertEquals(20, picks.songs.size)
+        assertEquals("i1o1p_DD6TU", picks.songs.first().videoId)
+        assertTrue(picks.songs.first().artist.startsWith("Shashwat Sachdev"))
+        assertFalse(picks.songs.any { "•" in it.artist })
+        assertEquals("Bollywood Romantic Moments", shelves[1].title)
+        assertEquals(1, shelves[1].playlists.size)
+        assertEquals(21, shelves.size)
     }
 }
 
@@ -60,6 +65,16 @@ class MoodPagerTest {
         assertTrue(p.nextPage().failed)
         offline = false
         assertEquals("Shelf 1", p.nextPage().sections.first().title)
+    }
+
+    @Test fun `a shelf with its own songs needs no playlist fetch`() = runTest {
+        var fetches = 0
+        val own = YtmMoods.Shelf("Quick picks", emptyList(), songs("own"))
+        val p = MoodPager({ fetches++; songs(it) }); p.reset(listOf(own) + shelves.take(2))
+        val first = p.nextPage().sections.first() as HomeSection.QuickPicks
+        assertEquals("Quick picks", first.title)
+        assertTrue(first.songs.all { it.videoId.startsWith("own") })
+        assertEquals(2, fetches)
     }
 
     @Test fun `mood ends when shelves run out`() = runTest {

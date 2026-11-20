@@ -48,6 +48,7 @@ class MoodPager(private val playlist: suspend (playlistId: String) -> List<FeedS
 
     /** Songs of the shelf's first playlist with enough of them; null when every fetch failed. */
     private suspend fun fill(shelf: YtmMoods.Shelf): List<FeedSong>? {
+        if (shelf.songs.isNotEmpty()) return shelf.songs
         var failed = 0
         val tried = shelf.playlists.take(2)
         for (id in tried) {
@@ -60,7 +61,7 @@ class MoodPager(private val playlist: suspend (playlistId: String) -> List<FeedS
             }
             if (songs.count { it.key !in seen } >= MIN_SONGS) return songs
         }
-        return if (failed == tried.size) null else emptyList()
+        return if (tried.isNotEmpty() && failed == tried.size) null else emptyList()
     }
 
     private fun build(shelf: YtmMoods.Shelf, songs: List<FeedSong>): HomeSection? {
@@ -70,7 +71,7 @@ class MoodPager(private val playlist: suspend (playlistId: String) -> List<FeedS
         if (picked.size < MIN_SONGS) return null
         seen += picked.map { it.key }
         produced++
-        val id = "m$n-${shelf.playlists.first()}"
+        val id = "m$n-${shelf.playlists.firstOrNull() ?: shelf.title}"
         return when {
             n == 0 -> HomeSection.QuickPicks(id, shelf.title, picked, seed = null)
             n % 3 == 2 -> HomeSection.Ranked(id, shelf.title, picked)

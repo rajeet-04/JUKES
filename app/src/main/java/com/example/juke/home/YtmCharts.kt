@@ -70,7 +70,7 @@ object YtmCharts {
                 runsText((it as JsonObject).path("musicResponsiveListItemFlexColumnRenderer", "text"))
             }
             val title = cols.getOrNull(0)?.let(::displayTitle).orEmpty()
-            val artist = cols.getOrNull(1).orEmpty()
+            val artist = cols.getOrNull(1).orEmpty().substringBefore(" • ").trim()
             if (title.isBlank() || artist.isBlank()) return@walk
             val length = (r["fixedColumns"] as? JsonArray)?.firstOrNull()?.let {
                 runsText((it as JsonObject).path("musicResponsiveListItemFixedColumnRenderer", "text"))
