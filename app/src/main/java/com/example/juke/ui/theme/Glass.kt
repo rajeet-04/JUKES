@@ -25,22 +25,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
+import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.glass.GlassStyle
+import dev.chrisbanes.haze.glass.OpticalSizeValue
+import dev.chrisbanes.haze.glass.hazeGlass
 
 /**
  * Liquid glass design system for JUKE.
@@ -178,45 +177,22 @@ fun Modifier.glassPane(
 }
 
 /**
- * AGSL lens refraction (Android 13+). Content near the lens edge is pulled in from further toward
- * the center (magnifying rim), split slightly per color channel, and the effect swells with
- * the `strength` uniform while the lens is moving.
+ * Haze 2 liquid glass over [source]: refraction at the rim, a specular highlight and a faint
+ * rainbow (chromatic aberration) edge. The node draws the material behind its own content, and
+ * the content is clipped to [shape] after it so the refraction can sample beyond the edge.
  */
-private const val LENS_AGSL = """
-uniform shader content;
-uniform float2 size;
-uniform float radius;
-uniform float strength;
+private fun Modifier.hazeLiquid(source: HazeState, shape: Shape, style: GlassStyle): Modifier =
+    hazeGlass(HazeInput.Sources(source), style).clip(shape)
 
-float sdRoundBox(float2 p, float2 b, float r) {
-    float2 q = abs(p) - b + r;
-    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
-}
-
-half4 main(float2 fc) {
-    float2 c = size * 0.5;
-    float2 p = fc - c;
-    float d = sdRoundBox(p, c, radius);
-    float depth = clamp(-d / (min(size.x, size.y) * 0.5), 0.0, 1.0);
-    float edge = 1.0 - smoothstep(0.0, 0.6, depth);
-    float bend = edge * edge * (0.45 + 0.55 * strength);
-    float2 dir = p / max(length(p), 1.0);
-    float2 base = c + p * (1.0 - 0.06 * (0.4 + strength));
-    float2 pull = -dir * bend * 16.0;
-    // Color fringing only while the glass moves; at rest it is clear.
-    half4 g = content.eval(base + pull);
-    half r = content.eval(base + pull * (1.0 - 0.15 * strength)).r;
-    half b = content.eval(base + pull * (1.0 + 0.2 * strength)).b;
-    half spec = half(edge * edge * 0.10 * (0.5 + strength));
-    return half4(clamp(half3(r, g.g, b) + spec, 0.0, 1.0) * g.a, g.a);
-}
-"""
+/** Applies [shape] to a glass style when it is a rounded rectangle (the only shape Haze glass takes). */
+private fun GlassStyle.shaped(shape: Shape): GlassStyle =
+    (shape as? RoundedCornerShape)?.let { rounded -> then { shape(rounded) } } ?: this
 
 /**
- * Liquid glass (after Apple's design): a clear pane that only lightly blurs what is behind it and
- * bends it at the rim through an AGSL refraction shader (Android 13+), with a specular rim. Below
- * Android 13, without a haze source, or in solid mode it falls back to a tinted pane.
- * [strength] (0..1) is read every frame and swells the refraction, e.g. while the pane moves.
+ * Liquid glass (after Apple's design): a clear pane that bends what is behind it at the rim, with a
+ * specular highlight and a rainbow edge that grows with [strength] (0..1, read every frame, e.g.
+ * while the pane moves). Without a haze source, or in solid mode (always on below Android 13), it
+ * falls back to a tinted pane.
  */
 @Composable
 fun Modifier.liquidGlass(
@@ -234,29 +210,16 @@ fun Modifier.liquidGlass(
         val solid = fill.copy(alpha = (fill.alpha + if (GlassPrefs.solid) 0.6f else 0.3f).coerceAtMost(0.96f))
         return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
-    val style = remember(fill, blur) {
-        HazeStyle(
-            backgroundColor = Color.Transparent,
-            tint = HazeTint(fill),
-            blurRadius = blur,
-            noiseFactor = 0.02f,
-            fallbackTint = HazeTint(fill.copy(alpha = (fill.alpha + 0.3f).coerceAtMost(0.96f)))
-        )
-    }
-    val shader = remember { android.graphics.RuntimeShader(LENS_AGSL) }
-    return lifted
-        .graphicsLayer {
-            val corner = (shape as? RoundedCornerShape)?.topStart?.toPx(size, this) ?: 0f
-            shader.setFloatUniform("size", size.width, size.height)
-            shader.setFloatUniform("radius", corner)
-            shader.setFloatUniform("strength", strength())
-            renderEffect = android.graphics.RenderEffect
-                .createRuntimeShaderEffect(shader, "content")
-                .asComposeRenderEffect()
+    val style = remember(fill, shape, blur) {
+        GlassStyle.clear.shaped(shape).then {
+            optics { copy(blurRadius = OpticalSizeValue.Fixed(blur)) }
+            tint(fill)
+            // Snapshot reads here are observed by the glass node: the rainbow swells while moving.
+            specularIntensity(0.66f)
+            chromaticAberrationStrength((0.25f + 0.6f * strength()).coerceIn(0f, 1f))
         }
-        .clip(shape)
-        .hazeEffect(source, style)
-        .glassRim(shape, rimAlpha, dark)
+    }
+    return lifted.hazeLiquid(source, shape, style)
 }
 
 /**
@@ -282,9 +245,23 @@ fun Modifier.glassLens(
     )
 }
 
-/** User opt-out of translucency (blur and see-through fills): surfaces become near-opaque. */
+/**
+ * Translucency switch (blur and see-through fills); when solid, surfaces become near-opaque.
+ *
+ * Glass needs Android 13+: on Android 12 and older, RenderEffect blur on some GPUs paints full-height
+ * grey bands through the screen, so those devices are always solid and the setting is locked.
+ */
 object GlassPrefs {
-    var solid by androidx.compose.runtime.mutableStateOf(false)
+    /** Whether this device renders glass correctly. The desktop app always does. */
+    val supported: Boolean = com.example.juke.account.Account.isDesktop ||
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+    private var chosen by androidx.compose.runtime.mutableStateOf(false)
+
+    /** The user's choice, forced on where glass is unsupported. */
+    var solid: Boolean
+        get() = chosen || !supported
+        set(value) { chosen = value }
 }
 
 /** Floating glass: real backdrop blur of whatever scrolls beneath, plus tint, rim and sheen. */
@@ -298,26 +275,30 @@ fun Modifier.glassFloat(
     val dark = isGlassDark()
     val spec = level.spec(dark)
     val base = glassBase(tint ?: LocalGlassAccent.current, dark)
-    val style = remember(base, spec) {
-        HazeStyle(
-            backgroundColor = Color.Transparent,
-            tint = HazeTint(base.copy(alpha = spec.fill)),
-            blurRadius = spec.blur,
-            noiseFactor = 0.04f,
-            fallbackTint = HazeTint(base.copy(alpha = (spec.fill + 0.30f).coerceAtMost(0.9f)))
-        )
-    }
-    return this
-        .glassShadow(shape, spec.elevation, 0.36f)
-        .clip(shape)
-        .then(
-            if (source != null && !GlassPrefs.solid) Modifier.hazeEffect(source, style)
-            else Modifier.background(
+    val lifted = this.glassShadow(shape, spec.elevation, 0.36f)
+    if (source == null || GlassPrefs.solid) {
+        return lifted
+            .clip(shape)
+            .background(
                 if (GlassPrefs.solid) solidBase(base, tint ?: LocalGlassAccent.current, dark).copy(alpha = 0.96f)
                 else base.copy(alpha = (spec.fill + 0.30f).coerceAtMost(0.9f))
             )
-        )
-        .glassRim(shape, spec.rimAlpha, dark)
+            .glassRim(shape, spec.rimAlpha, dark)
+    }
+    val style = remember(base, spec, shape, dark) {
+        GlassStyle.regular.shaped(shape).then {
+            // Clearer than Haze's dark Regular (which pulls the white point down to -0.22): less
+            // blur so the backdrop reads through, a brighter body, and a visible rainbow rim.
+            optics { copy(blurRadius = OpticalSizeValue.Fixed(spec.blur * 0.75f)) }
+            tint(base.copy(alpha = spec.fill * 0.9f))
+            whitePoint(if (dark) 0.06f else 0.5f)
+            contrast(0f)
+            specularIntensity(0.62f)
+            ambientResponse(0.22f)
+            chromaticAberrationStrength(0.35f)
+        }
+    }
+    return lifted.hazeLiquid(source, shape, style)
 }
 
 /** The one app backdrop: true black in dark, a soft off-white in light. No gradients, no motion. */

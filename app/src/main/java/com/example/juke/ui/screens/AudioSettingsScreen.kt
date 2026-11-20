@@ -461,11 +461,17 @@ fun AudioSettingsScreen(
                                     fontWeight = FontWeight.SemiBold
                                 )
                             },
-                            supportingContent = { Text("Turn off blur and transparency") },
+                            supportingContent = {
+                                Text(
+                                    if (com.example.juke.ui.theme.GlassPrefs.supported) "Turn off blur and transparency"
+                                    else "Always on: glass needs Android 13 or newer"
+                                )
+                            },
                             leadingContent = { Icon(JukeIcons.Equalizer, contentDescription = null) },
                             trailingContent = {
                                 Switch(
                                     checked = com.example.juke.ui.theme.GlassPrefs.solid,
+                                    enabled = com.example.juke.ui.theme.GlassPrefs.supported,
                                     onCheckedChange = {
                                         haptic.toggle()
                                         com.example.juke.ui.theme.GlassPrefs.solid = it

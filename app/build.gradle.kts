@@ -15,7 +15,7 @@ if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google
 
 android {
     namespace = "com.example.juke"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.juke"
@@ -174,7 +174,9 @@ dependencies {
 
     // Coil
     implementation(libs.coil.compose)
-    implementation(libs.haze)
+    implementation(libs.haze2)
+    implementation(libs.haze2.blur)
+    implementation(libs.haze2.glass)
 
     // Gson
     implementation(libs.gson)
