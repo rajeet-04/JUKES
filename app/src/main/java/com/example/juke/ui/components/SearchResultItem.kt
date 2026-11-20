@@ -39,7 +39,8 @@ fun SearchResultItemM3(
     track: SpotifyTrack,
     isDownloading: Boolean,
     onPlayNext: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDownload: (() -> Unit)? = null
 ) {
     val haptic = rememberJukeHaptics()
     val context = LocalContext.current
@@ -61,6 +62,7 @@ fun SearchResultItemM3(
             SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
             SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
             SheetAction("Add to playlist", JukeIcons.PlaylistAdd) { menuOpen = false; PlaylistAdder.open(track) },
+            onDownload?.let { d -> SheetAction("Download", JukeIcons.Download) { menuOpen = false; d() } },
             track.id?.let { id -> SheetAction("Share", JukeIcons.Share) { menuOpen = false; share.link(spotifyLink("track", id)) } },
             track.album.id?.let { id -> SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
         ) + track.artists.take(3).mapNotNull { a -> // ponytail: first 3 credited artists

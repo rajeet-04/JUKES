@@ -313,6 +313,7 @@ fun AlbumDetailScreen(
                                 album = album,
                                 onPlayNext = addNext,
                                 isOffline = track.findOfflineTrack(offlineTracks) != null,
+                                onDownload = { musicViewModel.addToDownloadQueue(com.example.juke.network.SpotifyApi.simplifiedTrackToSong(track, album)) },
                                 onClick = {
                                     scope.launch {
                                         // Queue this track and all tracks below it from the album
@@ -340,10 +341,12 @@ private fun TrackItem(
     album: SpotifyAlbum,
     isOffline: Boolean,
     onPlayNext: () -> Unit,
+    onDownload: () -> Unit,
     onClick: () -> Unit
 ) {
     FlatTrackRow(
         actions = listOf(MenuAction("Play", onClick), MenuAction("Play next", onPlayNext)) +
+            listOfNotNull(if (!isOffline) MenuAction("Download", onDownload) else null) +
             com.example.juke.ui.components.shareAction("track", track.id) +
             com.example.juke.ui.components.mediaActions(album.id, track.artists.take(3).mapNotNull { a -> a.id?.let { a.name to it } }),
         imageUrl = album.images.lastOrNull()?.url,

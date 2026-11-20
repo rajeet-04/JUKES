@@ -831,6 +831,7 @@ Box(
             onDismiss = { if (!queueActionBusy) tracksForActions = null },
             artUrl = tracks.singleOrNull()?.thumbnailUri,
             onShare = tracks.singleOrNull()?.spotifyId?.let { id -> { tracksForActions = null; share.link(com.example.juke.ui.components.spotifyLink("track", id)) } },
+            onDownload = tracks.filter { it.isStream }.takeIf { it.isNotEmpty() }?.let { streams -> { tracksForActions = null; streams.forEach { musicViewModel.promoteTrackToDownload(it) } } },
             onAlbum = tracks.singleOrNull()?.albumSpotifyId?.let { id -> { tracksForActions = null; openMedia.album(id) } },
             onArtist = tracks.singleOrNull()?.artistSpotifyIds?.firstOrNull()?.let { id -> { tracksForActions = null; openMedia.artist(id) } }
         )
