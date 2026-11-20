@@ -54,7 +54,7 @@ class PlaybackManager private constructor(private val context: Context) {
     @Volatile private var bufferedUntilMs = 0L
     @Volatile private var posMs = 0L
     @Volatile private var durMs = 0L
-    private val recovering = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val recovering = java.util.concurrent.ConcurrentHashMap<String, Deferred<Track?>>()
     private val retried = HashSet<String>()
 
     private val _isPlaying = MutableStateFlow(false); val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -123,8 +123,19 @@ class PlaybackManager private constructor(private val context: Context) {
             player = mp
             audioEffectController.attach(mp)
             mp.volume = _volume.value.toDouble()
+            var prefetched = false
+            fun prepareUpcoming() {
+                if (prefetched || player !== mp || mp.status != MediaPlayer.Status.PLAYING) return
+                if (!uri.startsWith("file:") && bufferedAheadMs() < 20_000L) return
+                prefetched = true
+                validateUpcoming()
+                prefetchNext()
+            }
             mp.bufferProgressTimeProperty().addListener { _, _, time ->
-                if (player === mp) bufferedUntilMs = time.toMillis().toLong()
+                if (player === mp) {
+                    bufferedUntilMs = time.toMillis().toLong()
+                    prepareUpcoming()
+                }
             }
             mp.setOnReady {
                 if (player !== mp) return@setOnReady
@@ -132,17 +143,15 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (startMs > 0) mp.seek(Duration.millis(startMs.toDouble()))
                 if (wantPlay) mp.play()
             }
-            mp.setOnPlaying { _isPlaying.value = true }
-            mp.setOnPaused { _isPlaying.value = false }
-            mp.setOnStopped { _isPlaying.value = false }
+            mp.setOnPlaying { if (player === mp) { _isPlaying.value = true; prepareUpcoming() } }
+            mp.setOnPaused { if (player === mp) _isPlaying.value = false }
+            mp.setOnStopped { if (player === mp) _isPlaying.value = false }
             // the stored speed goes on once the clock is really moving: setting it right after play() can stall the clock on macOS
             mp.currentTimeProperty().addListener { _, _, t -> if (player === mp) { if (_isPlaying.value && mp.rate != speed.toDouble()) mp.rate = speed.toDouble(); val ms = t.toMillis().toLong(); if (hold > 0 && ms < hold) posMs = hold else { hold = 0; posMs = ms } } }
             mp.setOnEndOfMedia { if (player === mp) scope.launch { onEnded(myIndex) } }
             mp.setOnError { Log.e(tag, "Player error for ${track.title}: ${mp.error?.message}"); if (player === mp) scope.launch { onFailed(track) } }
         }
         saveQueueStructure()
-        validateUpcoming()
-        prefetchNext()
     }
 
     private fun disposePlayer() { player?.let { runCatching { it.stop(); it.dispose() } }; player = null; _isPlaying.value = false }
@@ -191,15 +200,25 @@ class PlaybackManager private constructor(private val context: Context) {
 
     private suspend fun recoverAudio(track: Track): Track? {
         val spotifyId = track.spotifyId ?: return null
-        if (!recovering.add(track.uuid)) return null
+        val task = scope.async(start = CoroutineStart.LAZY) { fetchMissingAudio(track, spotifyId) }
+        val existing = recovering.putIfAbsent(track.uuid, task)
+        if (existing != null) {
+            task.cancel()
+            return existing.await()
+        }
+        task.invokeOnCompletion { recovering.remove(track.uuid, task) }
+        return task.await()
+    }
+
+    private suspend fun fetchMissingAudio(track: Track, spotifyId: String): Track? {
         return try {
-            withTimeout(if (track.isStream) 45_000L else 150_000L) {
+            withTimeoutOrNull(if (track.isStream) 45_000L else 150_000L) {
                 val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(spotifyId))
                 val pinned = synchronized(lock) { queue.map { it.uuid }.toSet() }
-                if (track.isStream) musicService.streamTrack(song, preferredUuid = track.uuid, pinnedUuids = pinned + track.uuid).also { database.trackDao().insertTrack(it.toEntity()) }
+                if (track.isStream) musicService.streamTrack(song, preferredUuid = track.uuid, pinnedUuids = pinned + track.uuid, fetchLyricsSynchronously = false, fetchYtVideoIdSynchronously = false).also { database.trackDao().insertTrack(it.toEntity()) }
                 else musicService.smartDownloadAndIndex(song)
             }
-        } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.e(tag, "Recovery failed for ${track.title}: ${e.message}"); null } finally { recovering.remove(track.uuid) }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.e(tag, "Recovery failed for ${track.title}: ${e.message}"); null }
     }
 
     /** The next song's stream is pulled into the cache while this one plays, so the change is instant. */
@@ -329,6 +348,8 @@ class PlaybackManager private constructor(private val context: Context) {
     private fun seekToLocal(ms: Long) { val t = ms.coerceAtLeast(0); posMs = t; Fx.run { player?.seek(Duration.millis(t.toDouble())) } }
 
     fun seekToIndex(i: Int) { val ok = synchronized(lock) { if (i in queue.indices) { index = i; true } else false }; if (ok) load(0, shouldResumeAfterTrackChange()) }
+    fun cachedAudioFile(url: String): java.io.File? = StreamCache.cached(url)
+
     fun bufferedAheadMs(): Long = (bufferedUntilMs - posMs).coerceAtLeast(0)
 
     fun getCurrentPosition(): Long = posMs

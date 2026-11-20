@@ -2691,6 +2691,8 @@ class PlaybackManager private constructor(private val context: Context) {
         Log.d(tag, "Seeked to index $index")
     }
 
+    fun cachedAudioFile(url: String): java.io.File? = null // Media3 caches spans, not complete files
+
     fun bufferedAheadMs(): Long = controller?.totalBufferedDuration ?: 0L
 
     fun getCurrentPosition(): Long {

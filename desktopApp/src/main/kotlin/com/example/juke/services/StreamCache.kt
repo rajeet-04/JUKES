@@ -23,14 +23,40 @@ object StreamCache {
     /** Playlists (HLS) are left to the player itself. */
     fun needsFetch(url: String) = url.startsWith("http", true) && !url.substringBefore('?').endsWith(".m3u8", true) && cached(url) == null
 
+    private val downloads = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<File>>()
+
     /** Blocking; call off the UI thread. Returns the cached file or throws. */
     fun fetch(url: String): File {
-        val out = fileFor(url); val part = File(out.path + ".part")
-        val req = HttpRequest.newBuilder(URI(url)).timeout(Duration.ofSeconds(120)).GET().build()
-        val rsp = http.send(req, HttpResponse.BodyHandlers.ofFile(part.toPath()))
-        if (rsp.statusCode() !in 200..299 || part.length() == 0L) { part.delete(); throw java.io.IOException("stream HTTP ${rsp.statusCode()}") }
-        part.renameTo(out)
-        dir.listFiles { f -> f.name.endsWith(".m4a") }?.sortedByDescending { it.lastModified() }?.drop(MAX_FILES)?.forEach { it.delete() }
-        return out
+        cached(url)?.let { return it }
+        val result = java.util.concurrent.CompletableFuture<File>()
+        downloads.putIfAbsent(url, result)?.let { return it.get() }
+        try {
+            val file = cached(url) ?: download(url)
+            result.complete(file)
+            return file
+        } catch (error: Throwable) {
+            result.completeExceptionally(error)
+            throw error
+        } finally {
+            downloads.remove(url, result)
+        }
+    }
+
+    private fun download(url: String): File {
+        val out = fileFor(url)
+        val part = java.nio.file.Files.createTempFile(out.parentFile.toPath(), out.name, ".part")
+        try {
+            val request = HttpRequest.newBuilder(URI(url)).timeout(Duration.ofSeconds(120)).GET().build()
+            val response = http.send(request, HttpResponse.BodyHandlers.ofFile(part))
+            if (response.statusCode() !in 200..299 || java.nio.file.Files.size(part) == 0L) {
+                throw java.io.IOException("stream HTTP ${response.statusCode()}")
+            }
+            java.nio.file.Files.move(part, out.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            dir.listFiles { f -> f.name.endsWith(".m4a") }?.sortedByDescending { it.lastModified() }
+                ?.drop(MAX_FILES)?.forEach { it.delete() }
+            return out
+        } finally {
+            java.nio.file.Files.deleteIfExists(part)
+        }
     }
 }

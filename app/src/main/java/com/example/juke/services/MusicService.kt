@@ -561,6 +561,7 @@ class MusicService(private val context: Context) {
         forceSpotmateFirst: Boolean = true,
         pinnedUuids: Set<String> = emptySet(),
         awaitPlaybackStarted: suspend (String) -> Unit,
+        cachedAudioFile: (String) -> File? = { null },
         onLocalFileReady: suspend (Track) -> Unit
     ): Track {
         if (!song.url.startsWith("https://open.spotify.com/track/")) {
@@ -742,14 +743,26 @@ class MusicService(private val context: Context) {
                 ) {
                     resolvedRequest.copy(url = resolvedRequest.url + "&wait=1", probeRanges = true)
                 } else resolvedRequest
-                withTimeout(120_000L.milliseconds) {
-                    FastDownloader.downloadSegmented(
-                        url = bgRequest.url,
-                        outputFile = tempFile,
-                        headers = bgRequest.headers,
-                        threads = 4,
-                        probeRanges = bgRequest.probeRanges
-                    )
+                // Desktop may already hold the entire response it is playing. Copy those bytes
+                // into the persistent stream directory and use the same validation as a download.
+                val copied = cachedAudioFile(bgRequest.url)?.let { cached ->
+                    try {
+                        cached.copyTo(tempFile, overwrite = true)
+                        true
+                    } catch (_: java.io.IOException) {
+                        false // evicted between lookup and copy
+                    }
+                } == true
+                if (!copied) {
+                    withTimeout(120_000L.milliseconds) {
+                        FastDownloader.downloadSegmented(
+                            url = bgRequest.url,
+                            outputFile = tempFile,
+                            headers = bgRequest.headers,
+                            threads = 4,
+                            probeRanges = bgRequest.probeRanges
+                        )
+                    }
                 }
 
                 if (!tempFile.exists() || tempFile.length() < 100_000L || !isValidAudioHeader(tempFile)) {

@@ -1106,6 +1106,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             song = song,
                             forceSpotmateFirst = true,
                             pinnedUuids = pinnedUuids,
+                            cachedAudioFile = playbackManager::cachedAudioFile,
                             awaitPlaybackStarted = { trackId ->
                                 combine(
                                     playbackManager.currentTrackIdFlow,
