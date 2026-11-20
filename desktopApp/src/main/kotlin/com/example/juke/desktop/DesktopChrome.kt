@@ -29,6 +29,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
@@ -221,15 +222,18 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
     val looking = track.uuid in searching || !started
 
     when {
-        synced != null -> {
-            val lines = remember(synced, track.lyricsOffsetMs) { parseSyncedLyrics(synced, track.lyricsOffsetMs) }
+        synced != null -> Box(modifier) {
+            // Lyrics timing, as on the phone (#32): the slider previews live, each change is saved for this song.
+            var offsetMs by remember(track.uuid, track.lyricsOffsetMs) { mutableStateOf(track.lyricsOffsetMs.toFloat()) }
+            var syncOpen by remember(track.uuid) { mutableStateOf(false) }
+            val lines = remember(synced, offsetMs) { parseSyncedLyrics(synced, offsetMs.toLong()) }
             val active = remember(lines, position) { lines.indexOfLast { it.timeMs <= position }.coerceAtLeast(0) }
             val playing = musicViewModel.uiState.collectAsState().value.isPlaying
             val state = rememberLazyListState()
             var viewport by remember { mutableStateOf(0) }
             LaunchedEffect(active, viewport) { if (viewport > 0) state.animateScrollToItem(active, scrollOffset = -(viewport * if (big) 0.30f else 0.12f).toInt()) }
             val activeSize = if (big) 38.sp else 19.sp
-            LazyColumn(modifier.onSizeChanged { viewport = it.height }, state = state, contentPadding = PaddingValues(top = 4.dp, bottom = with(androidx.compose.ui.platform.LocalDensity.current) { (viewport * 0.6f).toDp() }), verticalArrangement = Arrangement.spacedBy(if (big) 20.dp else 10.dp)) {
+            LazyColumn(Modifier.fillMaxSize().onSizeChanged { viewport = it.height }, state = state, contentPadding = PaddingValues(top = 4.dp, bottom = with(androidx.compose.ui.platform.LocalDensity.current) { (viewport * 0.6f).toDp() }), verticalArrangement = Arrangement.spacedBy(if (big) 20.dp else 10.dp)) {
                 itemsIndexed(lines, key = { i, l -> "$i-${l.timeMs}" }) { i, l ->
                     val dist = kotlin.math.abs(i - active)
                     val target = when { i == active -> 1f; dist == 1 -> 0.5f; else -> 0.3f }
@@ -242,6 +246,23 @@ fun LyricsView(track: Track, position: Long, big: Boolean, onSeek: (Long) -> Uni
                     Text(text, Modifier.fillMaxWidth().alpha(a).clip(RoundedCornerShape(8.dp)).clickable { onSeek(l.timeMs) }.padding(vertical = 2.dp),
                         style = MaterialTheme.typography.headlineMedium.copy(fontSize = activeSize, lineHeight = activeSize * 1.22f, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.5).sp),
                         color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            if (big) {
+                if (syncOpen) {
+                    Box(Modifier.align(Alignment.BottomCenter).widthIn(max = 460.dp).padding(16.dp)) {
+                        com.example.juke.ui.components.player.LyricsSyncPanel(
+                            offsetMs = offsetMs,
+                            onOffsetChange = { v -> offsetMs = ((v / 100f).roundToInt() * 100f).coerceIn(-60000f, 60000f) },
+                            onSave = { musicViewModel.saveLyricsOffset(track, offsetMs.toLong()) },
+                            onReset = { offsetMs = 0f; musicViewModel.saveLyricsOffset(track, 0L) },
+                            onDone = { musicViewModel.saveLyricsOffset(track, offsetMs.toLong()); syncOpen = false }
+                        )
+                    }
+                } else {
+                    TextButton(onClick = { syncOpen = true }, modifier = Modifier.align(Alignment.TopEnd)) {
+                        Text("Sync", color = Dim)
+                    }
                 }
             }
         }

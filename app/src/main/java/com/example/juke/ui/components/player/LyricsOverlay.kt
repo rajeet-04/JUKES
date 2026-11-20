@@ -427,9 +427,9 @@ fun LyricsOverlay(
     }
 }
 
-/** User adjustment is relative to the fixed internal render lead; zero remains the default. */
+/** User adjustment is relative to the fixed internal render lead; zero remains the default. Shared with desktop. */
 @Composable
-private fun LyricsSyncPanel(
+internal fun LyricsSyncPanel(
     offsetMs: Float,
     onOffsetChange: (Float) -> Unit,
     onSave: () -> Unit,
