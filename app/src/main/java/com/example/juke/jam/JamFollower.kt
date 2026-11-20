@@ -29,8 +29,8 @@ object JamFollower {
     private const val LOAD_TIMEOUT_MS = 60_000L
     /** Upcoming room songs fetched to disk ahead, in parallel, once the playing song is safe. */
     private const val PREFETCH_COUNT = 3
-    /** The playing song is safe once it plays from a file, or has this much playing time buffered behind it. */
-    private const val PREFETCH_AFTER_PLAYING_MS = 20_000L
+    /** The playing song is safe once it plays from a file, or has this much audio buffered ahead. */
+    private const val PREFETCH_BUFFER_MS = 20_000L
     /** A song whose head-start fetch is still running when it comes up: let that finish rather than race it. */
     private const val PREFETCH_FINISH_WAIT_MS = 8_000L
 
@@ -93,7 +93,7 @@ object JamFollower {
                 // Head start for what plays next, as soon as the queue is built and whenever it or the current song changes
                 val upNext = JamWarmup.nextUp(st.queue, pb?.itemId)
                 val warmKey = upNext.joinToString { it.id }
-                if (warmKey != lastWarmKey) { lastWarmKey = warmKey; JamWarmup.warm(upNext) }
+
                 // Songs that left the room's queue don't need their head start any more
                 prefetched.keys.retainAll(st.queue.mapTo(HashSet()) { it.id })
 
@@ -132,8 +132,14 @@ object JamFollower {
                 // Already on this song but it has no artwork here: take the room's (or Spotify's)
                 if (cur != null && cur.thumbnailUri.isNullOrBlank() && artFixedFor != pb.itemId) {
                     artFixedFor = pb.itemId
-                    val url = item.thumb?.takeIf { it.isNotBlank() } ?: JamResolver.artworkFor(listOf(item.spotifyId))[item.spotifyId]
-                    if (url != null) vm.adoptArtwork(cur, url)
+                    launch {
+                        val url = item.thumb?.takeIf { it.isNotBlank() }
+                            ?: JamResolver.artworkFor(listOf(item.spotifyId))[item.spotifyId]
+                        val current = vm.uiState.value.currentTrack
+                        if (url != null && current?.uuid == cur.uuid && current.thumbnailUri.isNullOrBlank()) {
+                            vm.adoptArtwork(current, url)
+                        }
+                    }
                 }
 
                 val now = System.currentTimeMillis()
@@ -158,9 +164,12 @@ object JamFollower {
 
                 // The playing song comes first. Once it is safe (playing from a file, or well buffered), fetch the
                 // next few room songs to disk in parallel so each change plays locally, with nothing to re-buffer.
-                val safe = cur?.localUri?.startsWith("http") == false || position > PREFETCH_AFTER_PLAYING_MS
+                val safe = cur?.localUri?.startsWith("http") == false || pm.bufferedAheadMs() >= PREFETCH_BUFFER_MS
                 if (safe) {
-                    val wanted = upNext.take(PREFETCH_COUNT).filter { !prefetched.containsKey(it.id) && fetching.add(it.id) }
+                    if (warmKey != lastWarmKey) { lastWarmKey = warmKey; JamWarmup.warm(upNext) }
+                    val wanted = upNext.take(PREFETCH_COUNT).filter { !prefetched.containsKey(it.id) && it.id !in fetching }
+                        .take((PREFETCH_COUNT - fetching.size).coerceAtLeast(0))
+                    fetching.addAll(wanted.map { it.id })
                     if (wanted.isNotEmpty()) launch {
                         try {
                             JamResolver.artworkFor(wanted.map { it.spotifyId }) // one request: full details for all of them
@@ -187,7 +196,12 @@ object JamFollower {
                 }
                 val drift = position - target
                 val stream = JukesApi.isStreamPlaylist(cur?.localUri)
-                if (seekingFor != pb.itemId) { seekingFor = pb.itemId; missedSeeks = 0 }
+                if (seekingFor != pb.itemId) {
+                    seekingFor = pb.itemId
+                    missedSeeks = 0
+                    justSeeked = false
+                    lastSeekAt = 0
+                }
                 if (justSeeked) {
                     lastLanded = drift; justSeeked = false
                     // drift is what is left after aiming off by seekBias, so add it on. Halving the sum (as

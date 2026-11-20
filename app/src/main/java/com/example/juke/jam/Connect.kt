@@ -9,7 +9,7 @@ import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toTrack
 import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
-import com.example.juke.utils.playFromLine
+import kotlinx.coroutines.flow.collectLatest
 import com.example.juke.viewmodels.MusicViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -19,6 +19,7 @@ import io.ktor.client.request.header
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
@@ -143,9 +144,19 @@ object Connect {
         Account.load(c)
         me = c.getSharedPreferences("account", android.content.Context.MODE_PRIVATE).getString("device_id", null)
             ?: UUID.randomUUID().toString().replace("-", "").also { c.getSharedPreferences("account", android.content.Context.MODE_PRIVATE).edit().putString("device_id", it).apply() }
+        Account.email.collectLatest { email ->
+            _devices.value = emptyList()
+            _states.value = emptyMap()
+            _message.value = ""
+            handingTo = null
+            joinRequest = null
+            if (email != null) runSignedIn(vm, c)
+        }
+    }
+
+    private suspend fun runSignedIn(vm: MusicViewModel, c: Application): Unit = coroutineScope {
         launch { // library sync
             while (true) {
-                Account.email.first { it != null }
                 LibrarySync.sync(c)
                 kotlinx.coroutines.withTimeoutOrNull(SYNC_EVERY_MS.milliseconds) { syncNow.receive() }
             }
@@ -159,25 +170,31 @@ object Connect {
         }
         var attempt = 0
         while (true) {
-            Account.email.first { it != null }
             try {
                 client.webSocket("$WS/connect/ws", request = {
                     header("X-App-Secret", BuildConfig.SPOTIFY_TOKEN_KEY); header("Authorization", "Bearer ${Account.token}")
                 }) {
+                    val socketScope = this
                     val box = Channel<String>(Channel.UNLIMITED)
                     outbox = box
                     val writer = launch { for (text in box) send(Frame.Text(text)) }
                     // the player (Media3's controller on Android) only works on the main thread; the socket runs on OkHttp's
                     val publisher = launch(Dispatchers.Main) { publishLoop(vm) }
+                    var transfer: Job? = null
                     try {
                         send(Frame.Text(json.encodeToString(Out("hello", deviceId = me, name = Account.deviceName(), kind = if (Account.isDesktop) "desktop" else "phone"))))
                         _connected.value = true; attempt = 0
-                        for (frame in incoming) if (frame is Frame.Text) { val text = frame.readText(); withContext(Dispatchers.Main) { handle(vm, text) } }
+                        for (frame in incoming) if (frame is Frame.Text) { val text = frame.readText(); withContext(Dispatchers.Main) {
+                            handle(vm, text) { state, from ->
+                                transfer?.cancel()
+                                transfer = socketScope.launch(Dispatchers.Main) { take(vm, state, from) }
+                            }
+                        } }
                     } catch (e: Throwable) {
                         Log.w(TAG, "socket failed", e); throw e
                     } finally {
                         outbox = null; _connected.value = false
-                        box.close(); writer.cancel(); publisher.cancel()
+                        box.close(); writer.cancel(); publisher.cancel(); transfer?.cancel()
                     }
                 }
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
@@ -210,14 +227,14 @@ object Connect {
             val index = if (exact) at - start else 0
             queueBase = start
             // a reordered, removed or added song counts too, not only a new song
-            val changed = last == null || last.track != song || last.playing != playing || last.index != index || last.queue != queue || (playing && abs(pos - expected) > DRIFT_MS)
+            val changed = last == null || last.track != song || last.playing != playing || last.index != index || last.queue != queue || (abs(pos - expected) > if (playing) DRIFT_MS else 0L)
             if (!changed) continue
             val out = Out("state", track = song, queue = queue, index = index, posMs = pos, playing = playing)
             send(out); last = out; lastAt = System.currentTimeMillis()
         }
     }
 
-    private suspend fun handle(vm: MusicViewModel, text: String) {
+    private fun handle(vm: MusicViewModel, text: String, onTransfer: (State, String) -> Unit) {
         val m = runCatching { json.decodeFromString<In>(text) }.onFailure { Log.w(TAG, "unreadable message (${text.take(200)}): ${it.message}") }.getOrNull() ?: return
         if (m.now > 0) serverOffset = m.now - System.currentTimeMillis()
         val pm = vm.playbackManager
@@ -227,7 +244,7 @@ object Connect {
             "state" -> m.state?.let { s ->
                 _states.value = _states.value + (s.activeId to s)
                 // "Play there" took (that device now plays our song, not what it had before): stop here
-                if (s.activeId == handingTo && s.playing && s.track?.title == _states.value[me]?.track?.title) {
+                if (s.activeId == handingTo && s.playing && s.track != null && vm.uiState.value.currentTrack?.let { same(it.toSong(), s.track) } == true) {
                     handingTo = null
                     if (System.currentTimeMillis() - handingSince < HANDOFF_WAIT_MS && pm.isPlayingFlow.value) pm.togglePlayPause()
                 }
@@ -245,7 +262,7 @@ object Connect {
                 "seek" -> m.posMs?.let { vm.seekTo(it) }
                 "index" -> m.index?.let { i -> val q = vm.uiState.value.queue; q.getOrNull(queueBase + i)?.let { vm.playTrackFromQueue(it, queueBase + i) } }
             }
-            "take" -> { take(vm, m.state ?: return, m.from.orEmpty()) }
+            "take" -> { onTransfer(m.state ?: return, m.from.orEmpty()) }
         }
     }
 
@@ -263,11 +280,14 @@ object Connect {
         val tracks = resolved.filterNotNull()
         val startIndex = resolved.take(cur).count { it != null }
         _message.value = "Playing here from ${from.ifBlank { s.activeName }}…"
-        val startAt = livePos(s)
-        val sentAt = System.currentTimeMillis()
-        vm.playFromLine(first, startAt) { pos -> vm.setQueue(tracks, startIndex, startPositionMs = pos + (System.currentTimeMillis() - sentAt)) }
-        _message.value = ""
-        return true
+        vm.setQueue(tracks, startIndex, startPositionMs = livePos(s).coerceAtLeast(0))
+        val started = kotlinx.coroutines.withTimeoutOrNull(HANDOFF_WAIT_MS) {
+            kotlinx.coroutines.flow.combine(vm.playbackManager.currentTrackIdFlow, vm.playbackManager.isPlayingFlow) { id, playing ->
+                playing && id == first.uuid
+            }.first { it }
+        } == true
+        _message.value = if (started) "" else "Playback did not start here"
+        return started
     }
 
     /**

@@ -51,6 +51,7 @@ class PlaybackManager private constructor(private val context: Context) {
     private var player: MediaPlayer? = null
     private var wantPlay = false
     private var speed = 1f
+    @Volatile private var bufferedUntilMs = 0L
     @Volatile private var posMs = 0L
     @Volatile private var durMs = 0L
     private val recovering = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -107,6 +108,7 @@ class PlaybackManager private constructor(private val context: Context) {
         val track: Track
         synchronized(lock) { track = queue.getOrNull(index) ?: run { stopPlayer(); return } }
         wantPlay = play
+        bufferedUntilMs = 0L
         posMs = startMs; durMs = track.durationSec * 1000L
         Fx.run { disposePlayer() } // old song stops now, even if the new one still has to be fetched
         publish()
@@ -121,6 +123,9 @@ class PlaybackManager private constructor(private val context: Context) {
             player = mp
             audioEffectController.attach(mp)
             mp.volume = _volume.value.toDouble()
+            mp.bufferProgressTimeProperty().addListener { _, _, time ->
+                if (player === mp) bufferedUntilMs = time.toMillis().toLong()
+            }
             mp.setOnReady {
                 if (player !== mp) return@setOnReady
                 durMs = mp.totalDuration.toMillis().takeIf { it > 0 && !it.isNaN() }?.toLong() ?: durMs
@@ -324,6 +329,8 @@ class PlaybackManager private constructor(private val context: Context) {
     private fun seekToLocal(ms: Long) { val t = ms.coerceAtLeast(0); posMs = t; Fx.run { player?.seek(Duration.millis(t.toDouble())) } }
 
     fun seekToIndex(i: Int) { val ok = synchronized(lock) { if (i in queue.indices) { index = i; true } else false }; if (ok) load(0, shouldResumeAfterTrackChange()) }
+    fun bufferedAheadMs(): Long = (bufferedUntilMs - posMs).coerceAtLeast(0)
+
     fun getCurrentPosition(): Long = posMs
     fun getDuration(): Long = durMs
 

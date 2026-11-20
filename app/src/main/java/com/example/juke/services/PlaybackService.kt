@@ -2691,6 +2691,8 @@ class PlaybackManager private constructor(private val context: Context) {
         Log.d(tag, "Seeked to index $index")
     }
 
+    fun bufferedAheadMs(): Long = controller?.totalBufferedDuration ?: 0L
+
     fun getCurrentPosition(): Long {
         return controller?.currentPosition ?: 0L
     }
