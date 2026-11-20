@@ -351,6 +351,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val hazeState = remember { HazeState() }
+                com.example.juke.ui.theme.GlassTiltLight()
                 val haptic = rememberJukeHaptics()
                 val navItems = items.map { screen ->
                     GlassNavItem(

@@ -38,7 +38,9 @@ import androidx.compose.ui.window.DialogWindowProvider
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.glass.GlassStyle
+import dev.chrisbanes.haze.glass.ChromaticAberrationMode
 import dev.chrisbanes.haze.glass.OpticalSizeValue
+import dev.chrisbanes.haze.glass.RefractionProfile
 import dev.chrisbanes.haze.glass.hazeGlass
 
 /**
@@ -212,11 +214,20 @@ fun Modifier.liquidGlass(
     }
     val style = remember(fill, shape, blur) {
         GlassStyle.clear.shaped(shape).then {
-            optics { copy(blurRadius = OpticalSizeValue.Fixed(blur)) }
+            optics {
+                copy(
+                    blurRadius = OpticalSizeValue.Fixed(blur),
+                    refractionStrength = 1f,
+                    refractionDisplacement = 64.dp,
+                    refractionFoldStrength = 0.4f,
+                )
+            }
+            chromaticAberrationMode(ChromaticAberrationMode.Full)
             tint(fill)
+            lightPosition(GlassLight.position)
             // Snapshot reads here are observed by the glass node: the rainbow swells while moving.
             specularIntensity(0.66f)
-            chromaticAberrationStrength((0.25f + 0.6f * strength()).coerceIn(0f, 1f))
+            chromaticAberrationStrength((0.45f + 0.5f * strength()).coerceIn(0f, 1f))
         }
     }
     return lifted.hazeLiquid(source, shape, style)
@@ -243,6 +254,76 @@ fun Modifier.glassLens(
         source = source,
         strength = strength,
     )
+}
+
+/**
+ * Where the light sits for glass highlights, driven by the gravity sensor so the specular rim
+ * stays "up" in the real world as the phone tilts (an idea from QWEA0's Liquid-Glass-Android).
+ * Biases are in the material's frame; beyond -1..1 the light sits outside the pane, which reads
+ * as a distant light. Upright portrait puts it above the top edge, the static look before.
+ */
+object GlassLight {
+    private const val REACH = 1.6f
+    val Rest = androidx.compose.ui.BiasAlignment(0f, -REACH)
+    var position: androidx.compose.ui.Alignment by androidx.compose.runtime.mutableStateOf(Rest)
+        private set
+
+    private var x = 0f
+    private var y = -REACH
+
+    /** Feeds one gravity reading (device axes, m/s²) for the given display rotation. */
+    internal fun onGravity(gx: Float, gy: Float, rotation: Int) {
+        // Remap device axes to the screen's axes (y up), then flip y for layout space (y down).
+        val (sx, sy) = when (rotation) {
+            android.view.Surface.ROTATION_90 -> -gy to gx
+            android.view.Surface.ROTATION_180 -> -gx to -gy
+            android.view.Surface.ROTATION_270 -> gy to -gx
+            else -> gx to gy
+        }
+        val g = android.hardware.SensorManager.GRAVITY_EARTH
+        val tx = (sx / g).coerceIn(-1f, 1f) * REACH
+        val ty = (-sy / g).coerceIn(-1f, 1f) * REACH
+        // Low-pass filter: hand tremor stays out of the highlight.
+        x += (tx - x) * 0.12f
+        y += (ty - y) * 0.12f
+        val current = position as? androidx.compose.ui.BiasAlignment
+        // Only publish visible moves; each publish re-resolves every glass style.
+        if (current == null || kotlin.math.abs(current.horizontalBias - x) > 0.015f ||
+            kotlin.math.abs(current.verticalBias - y) > 0.015f
+        ) position = androidx.compose.ui.BiasAlignment(x, y)
+    }
+
+    internal fun reset() {
+        x = 0f; y = -REACH; position = Rest
+    }
+}
+
+/**
+ * Listens to the gravity sensor while the app is resumed and steers [GlassLight]. Place once at
+ * the app root. Off when animations are disabled (reduced motion) or glass is not drawn.
+ */
+@Composable
+fun GlassTiltLight() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val view = LocalView.current
+    androidx.lifecycle.compose.LifecycleResumeEffect(context, GlassPrefs.solid) {
+        val sensors = context.getSystemService(android.content.Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+        val sensor = sensors?.getDefaultSensor(android.hardware.Sensor.TYPE_GRAVITY)
+            ?: sensors?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+        val reducedMotion = android.provider.Settings.Global.getFloat(
+            context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f
+        ) == 0f
+        val listener = object : android.hardware.SensorEventListener {
+            override fun onSensorChanged(event: android.hardware.SensorEvent) {
+                GlassLight.onGravity(event.values[0], event.values[1], view.display?.rotation ?: 0)
+            }
+            override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
+        }
+        val listening = sensor != null && !reducedMotion && !GlassPrefs.solid &&
+            sensors?.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME) == true
+        if (!listening) GlassLight.reset()
+        onPauseOrDispose { if (listening) sensors?.unregisterListener(listener) }
+    }
 }
 
 /**
@@ -289,13 +370,27 @@ fun Modifier.glassFloat(
         GlassStyle.regular.shaped(shape).then {
             // Clearer than Haze's dark Regular (which pulls the white point down to -0.22): less
             // blur so the backdrop reads through, a brighter body, and a visible rainbow rim.
-            optics { copy(blurRadius = OpticalSizeValue.Fixed(spec.blur * 0.75f)) }
+            // Dense-liquid optics: a wide, strongly bending rim with an inverted fold (the
+            // meniscus of a thick fluid) and seven-sample spectral dispersion for the rainbow.
+            optics {
+                copy(
+                    blurRadius = OpticalSizeValue.Fixed(spec.blur * 0.75f),
+                    refractionStrength = 0.95f,
+                    refractionDisplacement = 64.dp,
+                    refractionProfile = RefractionProfile.Edge(30.dp),
+                    refractionFoldStrength = 0.35f,
+                    refractionDetailIntensity = 0.45f,
+                )
+            }
+            chromaticAberrationMode(ChromaticAberrationMode.Full)
+            fresnelExponent(2f)
             tint(base.copy(alpha = spec.fill * 0.9f))
             whitePoint(if (dark) 0.06f else 0.5f)
             contrast(0f)
-            specularIntensity(0.62f)
+            specularIntensity(0.7f)
+            lightPosition(GlassLight.position)
             ambientResponse(0.22f)
-            chromaticAberrationStrength(0.35f)
+            chromaticAberrationStrength(0.85f)
         }
     }
     return lifted.hazeLiquid(source, shape, style)
