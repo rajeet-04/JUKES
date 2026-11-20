@@ -520,7 +520,13 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     musicViewModel = musicViewModel,
                                     onSettingsClick = { navController.navigate("settings") },
-                                    onSearchClick = { onNavigate(Screen.Search) },
+                                    onSearchClick = { query ->
+                                        if (query != null) activityViewModelProvider[SearchViewModel::class.java].apply {
+                                            updateQuery(query)
+                                            search(query)
+                                        }
+                                        onNavigate(Screen.Search)
+                                    },
                                     onSeeAllClick = {
                                         navController.navigate(Screen.Library.route) {
                                             popUpTo(navController.graph.findStartDestination().id) {

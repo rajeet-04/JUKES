@@ -36,3 +36,11 @@ class LocalSectionsTest {
         assertEquals(12, LocalSections.forgottenFavourites(many, now).size)
     }
 }
+
+class FeedSongTest {
+    @Test fun `feed songs from radio drop official video clutter`() {
+        val s = FeedSong.from(com.example.juke.network.RecommenderApi.YouTubeRecommendation("abcdefghijk", "OutStation - Dilhaara (Official Music Video)", "OutStation", "3:05"))
+        assertEquals("OutStation - Dilhaara", s.title)
+        assertEquals(185, s.durationSec)
+    }
+}

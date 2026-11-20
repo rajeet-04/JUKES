@@ -26,7 +26,7 @@ data class FeedSong(
 
         fun from(rec: RecommenderApi.YouTubeRecommendation) = FeedSong(
             videoId = rec.id,
-            title = rec.title,
+            title = YtmCharts.displayTitle(rec.title),
             artist = rec.artist,
             art = art(rec.id),
             durationSec = SongTitle.clockSeconds(rec.duration),
