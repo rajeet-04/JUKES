@@ -2954,7 +2954,8 @@ class PlaybackManager private constructor(private val context: Context) {
 
             // Timer finished - pause playback
             _sleepTimerRemaining.value = null
-            controller?.pause()
+            // MediaController must be called on its application (main) thread; scope runs on IO.
+            withContext(Dispatchers.Main) { controller?.pause() }
             Log.d(tag, "Sleep timer finished - paused playback")
         }
 
