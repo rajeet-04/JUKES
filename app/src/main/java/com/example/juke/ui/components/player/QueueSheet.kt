@@ -362,6 +362,7 @@ fun QueueBottomSheetContent(
 
                     // The swipe callback can fire repeatedly while past the threshold: one copy per swipe.
                     val copyQueued = remember { mutableStateOf(false) }
+                    val removed = remember { mutableStateOf(false) }
                     val dismissState = rememberSwipeToDismissBoxState(
                         positionalThreshold = { distance -> distance * 0.5f },
                         confirmValueChange = { dismissValue ->
@@ -373,8 +374,14 @@ fun QueueBottomSheetContent(
                                     false
                                 }
                                 dismissValue == SwipeToDismissBoxValue.EndToStart -> {
-                                    haptic.reject()
-                                    onRemoveTrack(track.uuid, actualQueueIndex)
+                                    // The state keeps this lambda from the first composition: read the live
+                                    // row, and remove once per swipe (the callback can repeat past threshold).
+                                    val liveTrack = upcomingNow.getOrNull(indexNow)
+                                    if (!removed.value && liveTrack != null) {
+                                        removed.value = true
+                                        haptic.reject()
+                                        onRemoveTrack(liveTrack.uuid, queueIndexNow + 1 + indexNow)
+                                    }
                                     true
                                 }
                                 // Swipe right: a copy plays next; this one keeps its place.
@@ -622,10 +629,13 @@ fun QueueBottomSheetContent(
 
 /** One unique key per upcoming row: the same song can be queued twice. */
 private fun upcomingRowKeys(tracks: List<com.example.juke.models.Track>): List<String> {
+    // The copy count is part of the key: removing either copy of a duplicate gives the survivor a new
+    // key, so it never inherits the dismissed swipe state of the row that just went away (#33).
+    val total = tracks.groupingBy { it.uuid }.eachCount()
     val seen = HashMap<String, Int>()
     return tracks.map { t ->
         val n = seen.merge(t.uuid, 1, Int::plus)!! - 1
-        "queue_item_${t.uuid}#$n"
+        "queue_item_${t.uuid}#$n/${total[t.uuid]}"
     }
 }
 
