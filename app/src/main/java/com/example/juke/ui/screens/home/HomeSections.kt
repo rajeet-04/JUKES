@@ -38,7 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -303,10 +302,7 @@ private fun DialTile(track: Track, modifier: Modifier, onClick: () -> Unit) {
     }
 }
 
-/**
- * One mix as a big glass card. Its own artwork, blurred and dimmed, colours the glass from inside,
- * so each mix reads as a different object rather than another row.
- */
+/** One mix as a big clear-glass card: a 2×2 cover collage, its name, Play, and a few songs. */
 @Composable
 private fun HeroMixCard(section: HomeSection.HeroMix, loadingId: String?, play: (FeedSong) -> Unit) {
     val songs = section.songs
@@ -316,12 +312,6 @@ private fun HeroMixCard(section: HomeSection.HeroMix, loadingId: String?, play: 
             .fillMaxWidth()
             .glassPane(GlassShapes.Card, GlassLevel.Thick)
     ) {
-        AsyncImage(
-            model = songs.first().art,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize().graphicsLayer { alpha = 0.35f; scaleX = 1.4f; scaleY = 1.4f }.blur(48.dp),
-        )
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(112.dp).clip(RoundedCornerShape(16.dp))) {

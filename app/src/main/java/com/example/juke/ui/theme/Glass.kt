@@ -190,19 +190,22 @@ fun Modifier.glassPane(
             )
             .glassRim(shape, spec.rimAlpha, dark)
     }
-    // In-flow surfaces sample the ambient layer behind the page (see GlassAmbient): more body
-    // blur than floating glass so their own text stays clean, a slightly narrower rim.
+    // In-flow surfaces are clear liquid: no frost, no white-point wash and no accent tint, only a
+    // whisper of neutral body so the pane reads as glass. Rim refraction, Fresnel edge, specular
+    // and rainbow carry the material.
     val boost = LocalGlassBoost.current
-    val style = remember(base, spec, shape, dark, boost) {
+    val clearTint = if (dark) Color.White.copy(alpha = 0.035f + 0.01f * level.ordinal) else Color.White.copy(alpha = 0.28f)
+    val style = remember(clearTint, shape, dark, boost) {
         liquidStyle(
             boost = boost,
             shape = shape,
-            tint = base.copy(alpha = spec.fill),
+            tint = clearTint,
             dark = dark,
-            blur = spec.blur,
+            blur = 3.dp,
             displacement = 48.dp,
             edge = 24.dp,
             fold = 0.25f,
+            clear = true,
             rainbow = { 0.6f },
         )
     }

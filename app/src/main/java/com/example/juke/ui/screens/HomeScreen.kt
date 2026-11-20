@@ -64,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -102,8 +103,6 @@ import androidx.compose.runtime.derivedStateOf
 import com.example.juke.home.HomeSection
 import com.example.juke.ui.screens.home.HomeSectionView
 import com.example.juke.ui.theme.liquidGlass
-
-private val MOODS = listOf("Relax", "Energise", "Romance", "Feel good", "Focus", "Party", "Sad", "Workout")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,6 +166,7 @@ fun HomeScreen(
                 onSearchClick = onSearchClick,
                 onRetry = { homeViewModel.refresh() },
                 onLoadMore = { homeViewModel.loadMore() },
+                onMoodClick = { homeViewModel.selectMood(it) },
                 bottomPadding = bottomPadding
             )
         }
@@ -186,10 +186,14 @@ private fun HomeFeed(
     onSearchClick: (String?) -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
+    onMoodClick: (com.example.juke.home.YtmMoods.Mood) -> Unit,
     bottomPadding: Dp
 ) {
     val listState = rememberLazyListState()
-    val emptyLibrary = state.recentlyPlayed.isEmpty() && state.mostPlayed.isEmpty() && state.favorites.isEmpty()
+    val inMood = state.selectedMood != null
+    val emptyLibrary = !inMood && state.recentlyPlayed.isEmpty() && state.mostPlayed.isEmpty() && state.favorites.isEmpty()
+    // A new mood starts at the top.
+    LaunchedEffect(state.selectedMood) { if (listState.firstVisibleItemIndex > 1) listState.scrollToItem(0) }
     val nearEnd by remember {
         derivedStateOf {
             val info = listState.layoutInfo
@@ -206,7 +210,12 @@ private fun HomeFeed(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp + bottomPadding)
     ) {
-        item(key = "moods", contentType = "moods") { MoodChips(onSearchClick) }
+        // Always present (placeholder pills until the moods land): an item inserted above the first
+        // visible one later would be scrolled out of view, since the list keeps its anchor.
+        item(key = "moods", contentType = "moods") {
+            if (state.moods.isEmpty()) MoodChipsPlaceholder()
+            else MoodChips(state.moods, state.selectedMood, onMoodClick)
+        }
 
         if (emptyLibrary) {
             item(key = "empty", contentType = "empty") {
@@ -221,7 +230,7 @@ private fun HomeFeed(
         if (state.headPending && state.sections.none { it is HomeSection.QuickPicks }) {
             item(key = "head_skeleton", contentType = "skeleton") { ListSectionSkeleton() }
         }
-        if (state.discoveryOffline) {
+        if (state.discoveryOffline && !inMood) {
             item(key = "offline", contentType = "offline") { OfflineNotice(onRetry = onRetry) }
         }
 
@@ -241,32 +250,61 @@ private fun HomeFeed(
     }
 }
 
-/** Mood shortcuts: liquid glass pills that open Search with that mood. */
+/**
+ * YouTube Music's moods as clear liquid-glass pills. The picked one turns the feed into that mood;
+ * picking it again goes back to "For you".
+ */
 @Composable
-private fun MoodChips(onSearchClick: (String?) -> Unit) {
+private fun MoodChips(
+    moods: List<com.example.juke.home.YtmMoods.Mood>,
+    selectedTitle: String?,
+    onMoodClick: (com.example.juke.home.YtmMoods.Mood) -> Unit
+) {
     val haptic = rememberJukeHaptics()
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.padding(bottom = 4.dp)
     ) {
-        items(MOODS, key = { it }) { mood ->
+        items(moods, key = { it.params }) { mood ->
+            val on = mood.title == selectedTitle
             Box(
                 Modifier
                     .clip(GlassShapes.Pill)
                     .liquidGlass(
                         shape = GlassShapes.Pill,
-                        fill = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                        // Picked: a brighter body of the same clear glass, never a colour tint.
+                        fill = MaterialTheme.colorScheme.onSurface.copy(alpha = if (on) 0.22f else 0.05f),
                         blur = 2.dp,
                     )
-                    .clickable(role = Role.Button, onClickLabel = "Search $mood") {
+                    .clickable(role = Role.Button, onClickLabel = if (on) "Back to For you" else "Show ${mood.title}") {
                         haptic.click()
-                        onSearchClick(mood)
+                        onMoodClick(mood)
                     }
+                    .semantics { selected = on }
                     .padding(horizontal = 16.dp, vertical = 9.dp)
             ) {
-                Text(mood, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    mood.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun MoodChipsPlaceholder() {
+    Row(
+        Modifier
+            .padding(start = 16.dp, bottom = 4.dp)
+            .height(38.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        listOf(64.dp, 92.dp, 84.dp, 96.dp, 72.dp).forEach {
+            ShapedSkeletonBlock(Modifier.width(it).height(38.dp), GlassShapes.Pill)
         }
     }
 }

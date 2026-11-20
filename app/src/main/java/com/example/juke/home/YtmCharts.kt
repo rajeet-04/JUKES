@@ -42,10 +42,12 @@ object YtmCharts {
         }
     }
 
-    private suspend fun browse(browseId: String, country: String): String =
+    /** One unauthenticated YouTube Music browse call (also used by [YtmMoods]). */
+    internal suspend fun browse(browseId: String, country: String, params: String? = null): String =
         ApiClient.httpClient.post(BROWSE) {
             contentType(ContentType.Application.Json)
-            setBody("""{"context":{"client":{"clientName":"WEB_REMIX","clientVersion":"$CLIENT_VERSION","hl":"en","gl":"$country"}},"browseId":"$browseId"}""")
+            val extra = params?.let { ""","params":"$it"""" }.orEmpty()
+            setBody("""{"context":{"client":{"clientName":"WEB_REMIX","clientVersion":"$CLIENT_VERSION","hl":"en","gl":"$country"}},"browseId":"$browseId"$extra}""")
         }.bodyAsText()
 
     /** The chart playlist to use: daily top videos, else the top 100, else whichever comes first. */
@@ -86,7 +88,7 @@ object YtmCharts {
             .trim()
             .ifBlank { raw.trim() }
 
-    private fun walk(e: JsonElement, visit: (JsonObject) -> Unit) {
+    internal fun walk(e: JsonElement, visit: (JsonObject) -> Unit) {
         when (e) {
             is JsonObject -> { visit(e); e.values.forEach { walk(it, visit) } }
             is JsonArray -> e.forEach { walk(it, visit) }
@@ -94,12 +96,12 @@ object YtmCharts {
         }
     }
 
-    private fun JsonObject.path(vararg keys: String): JsonElement? =
+    internal fun JsonObject.path(vararg keys: String): JsonElement? =
         keys.fold(this as JsonElement?) { acc, k -> (acc as? JsonObject)?.get(k) }
 
-    private fun JsonElement.str(): String? = (this as? JsonPrimitive)?.contentOrNull
+    internal fun JsonElement.str(): String? = (this as? JsonPrimitive)?.contentOrNull
 
-    private fun runsText(text: JsonElement?): String =
+    internal fun runsText(text: JsonElement?): String =
         ((text as? JsonObject)?.get("runs") as? JsonArray).orEmpty()
             .joinToString("") { ((it as JsonObject)["text"] as? JsonPrimitive)?.contentOrNull.orEmpty() }
 }

@@ -46,6 +46,9 @@ data class HomeUiState(
     val endReached: Boolean = false,
     val loadMoreFailed: Boolean = false,
     val discoveryOffline: Boolean = false,
+    /** YouTube Music's "Moods & moments", shown as chips; picking one turns Home into that mood. */
+    val moods: List<com.example.juke.home.YtmMoods.Mood> = emptyList(),
+    val selectedMood: String? = null,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false
 )
@@ -114,6 +117,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var tail: List<HomeSection> = emptyList()
     private var pager: FeedPager? = null
 
+    // Mood mode: its own pager and sections; the "For you" feed above stays intact underneath.
+    private var mood: com.example.juke.home.YtmMoods.Mood? = null
+    private var moodPager: com.example.juke.home.MoodPager? = null
+    private var moodSections: List<HomeSection> = emptyList()
+    private var moodJob: Job? = null
+
     private data class Local(
         val speedDial: List<Track> = emptyList(),
         val forgotten: List<Track> = emptyList(),
@@ -158,6 +167,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         publish()
+        if (_uiState.value.moods.isEmpty()) viewModelScope.launch {
+            val moods = com.example.juke.home.YtmMoods.moods()
+            _uiState.update { it.copy(moods = moods) }
+        }
+        mood?.let { if (force) { startMood(it); return } }
         lastForce = force
         discoveryJob?.cancel()
         // A page that was loading belongs to the old pager; drop it and its flags with it.
@@ -168,6 +182,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Head order alternates shapes so the eye never meets the same row twice in a row. */
     private fun publish() {
+        if (mood != null) {
+            _uiState.update { it.copy(sections = moodSections) }
+            return
+        }
         val head = buildList {
             page1.getOrNull(0)?.let(::add)
             if (local.speedDial.size >= 4) add(HomeSection.SpeedDial("speed_dial", "Speed dial", local.speedDial))
@@ -203,7 +221,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (cached != null && !force) {
             pager = cached.pager
             page1 = cached.page1; releases = cached.releases; trending = cached.trending; tail = cached.tail
-            _uiState.update { it.copy(headPending = false, discoveryOffline = false, endReached = cached.pager.exhausted && cached.tail.isNotEmpty()) }
+            if (mood == null) _uiState.update { it.copy(headPending = false, discoveryOffline = false, endReached = cached.pager.exhausted && cached.tail.isNotEmpty()) }
             publish()
             val fresh = cached.key == key && System.currentTimeMillis() - cached.at < DiscoveryCache.FRESH_MS
             if (fresh) return@coroutineScope
@@ -215,7 +233,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val fresh = newPager().also { it.reset(seeds, knownKeys) }
-        _uiState.update {
+        if (mood == null) _uiState.update {
             it.copy(discoveryOffline = false, headPending = cached == null || force, loadMoreFailed = false, endReached = false)
         }
 
@@ -226,7 +244,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 page1 = p.sections
                 tail = emptyList()
             }
-            _uiState.update { it.copy(headPending = false) }
+            if (mood == null) _uiState.update { it.copy(headPending = false) }
             publish()
         }
         val releasesJob = async {
@@ -246,8 +264,64 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Picks a mood, or goes back to the "For you" feed when it is the mood already picked (or null). */
+    fun selectMood(next: com.example.juke.home.YtmMoods.Mood?) {
+        moodJob?.cancel()
+        moreJob?.cancel()
+        if (next == null || next.title == mood?.title) {
+            mood = null; moodPager = null; moodSections = emptyList()
+            _uiState.update {
+                it.copy(selectedMood = null, headPending = false, loadingMore = false, loadMoreFailed = false,
+                    endReached = false)
+            }
+            publish()
+            return
+        }
+        startMood(next)
+    }
+
+    private fun startMood(next: com.example.juke.home.YtmMoods.Mood) {
+        moodJob?.cancel()
+        mood = next; moodPager = null; moodSections = emptyList()
+        _uiState.update {
+            it.copy(selectedMood = next.title, headPending = true, loadingMore = false, loadMoreFailed = false,
+                endReached = false, isRefreshing = false)
+        }
+        publish()
+        moodJob = viewModelScope.launch {
+            val shelves = com.example.juke.home.YtmMoods.shelves(next)
+            val p = com.example.juke.home.MoodPager(com.example.juke.home.YtmMoods::playlistSongs).also { it.reset(shelves) }
+            val page = if (shelves.isEmpty()) null else withTimeoutOrNull(DiscoveryCache.PAGE_TIMEOUT) { p.nextPage() }
+            if (page == null || page.failed) {
+                _uiState.update { it.copy(headPending = false, loadMoreFailed = true) }
+                return@launch
+            }
+            moodPager = p
+            moodSections = page.sections
+            _uiState.update { it.copy(headPending = false, endReached = p.exhausted) }
+            publish()
+        }
+    }
+
     /** Appends the next page; called as the listener nears the bottom, and by the retry row. */
     fun loadMore() {
+        mood?.let { m ->
+            val mp = moodPager ?: return startMood(m) // the mood never loaded: retry from the top
+            val st = _uiState.value
+            if (st.loadingMore || st.endReached || st.headPending) return
+            _uiState.update { it.copy(loadingMore = true, loadMoreFailed = false) }
+            moreJob = viewModelScope.launch {
+                val page = withTimeoutOrNull(DiscoveryCache.PAGE_TIMEOUT) { mp.nextPage() }
+                if (page == null || page.failed) {
+                    _uiState.update { it.copy(loadingMore = false, loadMoreFailed = true) }
+                    return@launch
+                }
+                moodSections = moodSections + page.sections
+                _uiState.update { it.copy(loadingMore = false, endReached = mp.exhausted) }
+                publish()
+            }
+            return
+        }
         val p = pager ?: return
         val st = _uiState.value
         if (st.loadingMore || st.endReached || st.headPending) return
