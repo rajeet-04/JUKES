@@ -6,6 +6,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.composed
 import androidx.compose.ui.Modifier
@@ -14,6 +15,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import com.example.juke.home.FeedSong
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
@@ -84,9 +86,49 @@ fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, play: () -
     ) + listOfNotNull(
         // Only a streamed song has something to save; a downloaded one already plays offline.
         if (track.isStream) MenuAction("Download") { musicViewModel.promoteTrackToDownload(track); say("Downloading ${track.title}") } else null
-    ) + shareAction("track", track.spotifyId) + mediaActions(track.albumSpotifyId, listOfNotNull(track.artistSpotifyIds?.firstOrNull()?.let { track.artist.substringBefore(", ") to it }))
+    ) + shareAction("track", track.spotifyId) + mediaActions(track.albumSpotifyId, artistLinks(track.artist, track.artistSpotifyIds))
 }
 
 /** Download from any song menu (#34): the download queue skips songs that are already saved. */
 fun downloadSpotifyTrack(musicViewModel: MusicViewModel, track: SpotifyTrack) =
     musicViewModel.addToDownloadQueue(SpotifyApi.spotifyTrackToSong(track))
+
+/**
+ * Pairs a library song's artist names (stored joined with ", ") with its Spotify artist ids, in
+ * order. When the two don't line up, only the first artist is linked rather than guessing.
+ */
+fun artistLinks(names: String, ids: List<String>?): List<Pair<String, String>> {
+    if (ids.isNullOrEmpty()) return emptyList()
+    val split = names.split(", ").map { it.trim() }.filter { it.isNotEmpty() }
+    if (split.size == ids.size) return split.zip(ids)
+    return listOf((split.firstOrNull() ?: names) to ids.first())
+}
+
+/**
+ * Long-press menu for a Home feed song. The song only has a YouTube id, so opening the menu matches
+ * it on Spotify (once; the view model caches it) and then shows the same entries as any song,
+ * with one "Go to" per artist.
+ */
+@Composable
+fun FeedSongMenu(expanded: Boolean, onDismiss: () -> Unit, song: FeedSong, musicViewModel: MusicViewModel) {
+    if (!expanded) return
+    val match by produceState<Pair<Boolean, SpotifyTrack?>>(false to null, song.videoId) {
+        value = true to musicViewModel.matchFeedSong(song)
+    }
+    val (done, track) = match
+    val play = MenuAction("Play") { musicViewModel.playRec(song) }
+    val actions = when {
+        track != null -> spotifyTrackActions(track, musicViewModel, play = { musicViewModel.playRec(song) })
+        !done -> listOf(play, MenuAction("Finding song…") {})
+        // No match: the song leaves Home (and this menu with it); say why once.
+        else -> emptyList()
+    }
+    if (done && track == null) {
+        val context = LocalContext.current
+        androidx.compose.runtime.LaunchedEffect(song.videoId) {
+            Toast.makeText(context, "Couldn't find ${song.title}, so it's off Home now", Toast.LENGTH_SHORT).show()
+            onDismiss()
+        }
+    }
+    ActionMenu(true, onDismiss, actions)
+}

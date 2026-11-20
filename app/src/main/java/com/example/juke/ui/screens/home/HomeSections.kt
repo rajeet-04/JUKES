@@ -57,6 +57,7 @@ import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.Track
 import com.example.juke.ui.components.ActionMenu
 import com.example.juke.ui.components.ArrowRow
+import com.example.juke.ui.components.FeedSongMenu
 import com.example.juke.ui.components.GlassPillButton
 import com.example.juke.ui.components.MenuAction
 import com.example.juke.ui.components.libraryTrackActions
@@ -81,10 +82,11 @@ fun HomeSectionView(
 ) {
     val loadingId by musicViewModel.recLoading.collectAsStateWithLifecycle()
     val play: (FeedSong) -> Unit = { musicViewModel.playRec(it) }
+    val feedMenu: FeedMenu = { song, open, close -> FeedSongMenu(open, close, song, musicViewModel) }
     when (section) {
         is HomeSection.QuickPicks -> {
             SectionHeader(section.title, action = "Play all") { section.songs.firstOrNull()?.let(play) }
-            QuickPicksPager(section.songs, loadingId, play)
+            QuickPicksPager(section.songs, loadingId, play, feedMenu)
         }
         is HomeSection.SpeedDial -> {
             SectionHeader(section.title)
@@ -98,7 +100,7 @@ fun HomeSectionView(
                         title = song.title, subtitle = song.artist, imageUrl = song.art,
                         loading = loadingId == song.videoId,
                         description = "${song.title} by ${song.artist}",
-                        actions = listOf(MenuAction("Play") { play(song) }),
+                        menu = { open, close -> feedMenu(song, open, close) },
                     ) { play(song) }
                 }
             }
@@ -111,7 +113,7 @@ fun HomeSectionView(
                     CoverCard(
                         title = track.title, subtitle = track.artist, imageUrl = track.thumbnailUri,
                         description = "${track.title} by ${track.artist}",
-                        actions = libraryTrackActions(track, musicViewModel, start),
+                        menu = { open, close -> ActionMenu(open, close, libraryTrackActions(track, musicViewModel, start)) },
                         onClick = start,
                     )
                 }
@@ -135,11 +137,11 @@ fun HomeSectionView(
         }
         is HomeSection.HeroMix -> {
             SectionHeader(section.title)
-            HeroMixCard(section, loadingId, play)
+            HeroMixCard(section, loadingId, play, feedMenu)
         }
         is HomeSection.Ranked -> {
             SectionHeader(section.title, action = "Play all") { section.songs.firstOrNull()?.let(play) }
-            RankedPane(section.songs, loadingId, play)
+            RankedPane(section.songs, loadingId, play, feedMenu)
         }
     }
 }
@@ -174,7 +176,7 @@ internal fun SectionHeader(title: String, action: String? = null, onAction: () -
  * so the next one peeks in, and a fling settles on a page edge.
  */
 @Composable
-private fun QuickPicksPager(songs: List<FeedSong>, loadingId: String?, play: (FeedSong) -> Unit) {
+private fun QuickPicksPager(songs: List<FeedSong>, loadingId: String?, play: (FeedSong) -> Unit, menu: FeedMenu) {
     val pages = remember(songs) { songs.chunked(4) }
     val state = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -192,7 +194,7 @@ private fun QuickPicksPager(songs: List<FeedSong>, loadingId: String?, play: (Fe
                         .glassPane(GlassShapes.Card, GlassLevel.Regular)
                         .padding(vertical = 6.dp)
                 ) {
-                    page.forEach { song -> SongLine(song, loadingId == song.videoId, leading = null) { play(song) } }
+                    page.forEach { song -> SongLine(song, loadingId == song.videoId, leading = null, menu) { play(song) } }
                 }
             }
         }
@@ -201,7 +203,7 @@ private fun QuickPicksPager(songs: List<FeedSong>, loadingId: String?, play: (Fe
 
 /** Numbered chart rows in one glass pane. */
 @Composable
-private fun RankedPane(songs: List<FeedSong>, loadingId: String?, play: (FeedSong) -> Unit) {
+private fun RankedPane(songs: List<FeedSong>, loadingId: String?, play: (FeedSong) -> Unit, menu: FeedMenu) {
     Column(
         Modifier
             .padding(horizontal = 16.dp)
@@ -209,13 +211,14 @@ private fun RankedPane(songs: List<FeedSong>, loadingId: String?, play: (FeedSon
             .glassPane(GlassShapes.Card, GlassLevel.Regular)
             .padding(vertical = 6.dp)
     ) {
-        songs.forEachIndexed { i, song -> SongLine(song, loadingId == song.videoId, leading = "${i + 1}") { play(song) } }
+        songs.forEachIndexed { i, song -> SongLine(song, loadingId == song.videoId, leading = "${i + 1}", menu) { play(song) } }
     }
 }
 
 @Composable
-private fun SongLine(song: FeedSong, loading: Boolean, leading: String?, onClick: () -> Unit) {
+private fun SongLine(song: FeedSong, loading: Boolean, leading: String?, menu: FeedMenu, onClick: () -> Unit) {
     val haptic = rememberJukeHaptics()
+    var menuOpen by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.98f else 1f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium), label = "lineScale")
@@ -223,12 +226,18 @@ private fun SongLine(song: FeedSong, loading: Boolean, leading: String?, onClick
         Modifier
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .combinedClickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = "Play ${song.title}") {
+            .onRightClick { menuOpen = true }
+            .combinedClickable(
+                interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = "Play ${song.title}",
+                onLongClickLabel = "More options for ${song.title}",
+                onLongClick = { haptic.heavyClick(); menuOpen = true },
+            ) {
                 haptic.click(); onClick()
             }
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        menu(song, menuOpen) { menuOpen = false }
         if (leading != null) {
             Text(
                 leading,
@@ -264,7 +273,8 @@ private fun SpeedDialGrid(tracks: List<Track>, musicViewModel: MusicViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 chunk.forEachIndexed { col, track ->
                     val index = row * 3 + col
-                    DialTile(track, Modifier.weight(1f)) { musicViewModel.setQueue(tracks, index, jamSingle = true) }
+                    val start = { musicViewModel.setQueue(tracks, index, jamSingle = true) }
+                    DialTile(track, Modifier.weight(1f), { open, close -> ActionMenu(open, close, libraryTrackActions(track, musicViewModel, start)) }, start)
                 }
                 repeat(3 - chunk.size) { Box(Modifier.weight(1f)) }
             }
@@ -273,8 +283,9 @@ private fun SpeedDialGrid(tracks: List<Track>, musicViewModel: MusicViewModel) {
 }
 
 @Composable
-private fun DialTile(track: Track, modifier: Modifier, onClick: () -> Unit) {
+private fun DialTile(track: Track, modifier: Modifier, menu: MenuSlot, onClick: () -> Unit) {
     val haptic = rememberJukeHaptics()
+    var menuOpen by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.95f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "dialScale")
@@ -284,10 +295,16 @@ private fun DialTile(track: Track, modifier: Modifier, onClick: () -> Unit) {
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(14.dp))
             .semantics(mergeDescendants = true) { contentDescription = "${track.title} by ${track.artist}" }
-            .combinedClickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = "Play ${track.title}") {
+            .onRightClick { menuOpen = true }
+            .combinedClickable(
+                interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = "Play ${track.title}",
+                onLongClickLabel = "More options for ${track.title}",
+                onLongClick = { haptic.heavyClick(); menuOpen = true },
+            ) {
                 haptic.click(); onClick()
             }
     ) {
+        menu(menuOpen) { menuOpen = false }
         ArtImage(track.thumbnailUri, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.8f))))
         Text(
@@ -304,7 +321,7 @@ private fun DialTile(track: Track, modifier: Modifier, onClick: () -> Unit) {
 
 /** One mix as a big clear-glass card: a 2×2 cover collage, its name, Play, and a few songs. */
 @Composable
-private fun HeroMixCard(section: HomeSection.HeroMix, loadingId: String?, play: (FeedSong) -> Unit) {
+private fun HeroMixCard(section: HomeSection.HeroMix, loadingId: String?, play: (FeedSong) -> Unit, menu: FeedMenu) {
     val songs = section.songs
     Box(
         Modifier
@@ -329,7 +346,7 @@ private fun HeroMixCard(section: HomeSection.HeroMix, loadingId: String?, play: 
                 }
             }
             androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-            songs.drop(4).take(3).forEach { song -> SongLine(song, loadingId == song.videoId, leading = null) { play(song) } }
+            songs.drop(4).take(3).forEach { song -> SongLine(song, loadingId == song.videoId, leading = null, menu) { play(song) } }
         }
     }
 }
@@ -384,7 +401,7 @@ private fun CoverCard(
     imageUrl: String?,
     description: String,
     loading: Boolean = false,
-    actions: List<MenuAction> = emptyList(),
+    menu: MenuSlot? = null,
     onClick: () -> Unit,
 ) {
     val haptic = rememberJukeHaptics()
@@ -398,17 +415,17 @@ private fun CoverCard(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .glassPane(GlassShapes.Card, GlassLevel.Regular)
             .semantics(mergeDescendants = true) { contentDescription = description }
-            .onRightClick { if (actions.isNotEmpty()) menuOpen = true }
+            .onRightClick { if (menu != null) menuOpen = true }
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
                 role = Role.Button,
                 onClickLabel = "Play $title",
-                onLongClickLabel = if (actions.isEmpty()) null else "More options for $title",
-                onLongClick = if (actions.isEmpty()) null else ({ haptic.heavyClick(); menuOpen = true })
+                onLongClickLabel = if (menu == null) null else "More options for $title",
+                onLongClick = if (menu == null) null else ({ haptic.heavyClick(); menuOpen = true })
             ) { haptic.click(); onClick() }
     ) {
-        ActionMenu(menuOpen, { menuOpen = false }, actions)
+        menu?.invoke(menuOpen) { menuOpen = false }
         ArtImage(imageUrl, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)), startY = 160f)))
         Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
@@ -429,3 +446,9 @@ internal fun ArtImage(url: String?, modifier: Modifier) {
         }
     }
 }
+
+/** A long-press menu drawn by the card that owns it: (open, close). */
+private typealias MenuSlot = @Composable (Boolean, () -> Unit) -> Unit
+
+/** The long-press menu for one feed song: (song, open, close). */
+private typealias FeedMenu = @Composable (FeedSong, Boolean, () -> Unit) -> Unit

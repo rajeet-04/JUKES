@@ -190,6 +190,9 @@ private fun HomeFeed(
     bottomPadding: Dp
 ) {
     val listState = rememberLazyListState()
+    // Songs with no Spotify match are found on tap or long-press; Home drops them from then on.
+    val misses by com.example.juke.home.FeedMisses.ids.collectAsStateWithLifecycle()
+    val shown = remember(state.sections, misses) { com.example.juke.home.withoutMisses(state.sections, misses) }
     val inMood = state.selectedMood != null
     val emptyLibrary = !inMood && state.recentlyPlayed.isEmpty() && state.mostPlayed.isEmpty() && state.favorites.isEmpty()
     // A new mood starts at the top.
@@ -234,7 +237,7 @@ private fun HomeFeed(
             item(key = "offline", contentType = "offline") { OfflineNotice(onRetry = onRetry) }
         }
 
-        items(state.sections, key = { it.id }, contentType = { it::class.simpleName }) { section ->
+        items(shown, key = { it.id }, contentType = { it::class.simpleName }) { section ->
             Column(Modifier.animateItem(fadeInSpec = tween(320), placementSpec = spring(dampingRatio = 0.85f, stiffness = 300f))) {
                 HomeSectionView(section, musicViewModel, onAlbumClick, onSeeAllClick)
                 Spacer(Modifier.height(28.dp))

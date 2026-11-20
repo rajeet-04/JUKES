@@ -1110,17 +1110,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _recLoading.value = song.videoId
         viewModelScope.launch {
             try {
-                val track = com.example.juke.home.resolveFeedSong(song) { rec ->
-                    RecommenderApi.matchOnSpotify(rec)?.let {
-                        SpotifyApi.getTrack(it.spotifyUrl.substringAfterLast("/").substringBefore("?"))
-                    }
-                }
+                val track = matchFeedSong(song)
                 if (track != null) playInstant(SpotifyApi.spotifyTrackToSong(track))
-                else Toast.makeText(getApplication(), "Couldn't find that song", Toast.LENGTH_SHORT).show()
+                else Toast.makeText(getApplication(), "Couldn't find that song, so it's off Home now", Toast.LENGTH_SHORT).show()
             } finally {
                 _recLoading.value = null
             }
         }
+    }
+
+    /** Feed songs already matched on Spotify, by video id, so a menu and a later tap match once. */
+    private val feedMatches = java.util.concurrent.ConcurrentHashMap<String, com.example.juke.models.SpotifyTrack>()
+
+    /** The Spotify track for a Home feed song, or null when there is no match (or the lookup failed). */
+    suspend fun matchFeedSong(song: com.example.juke.home.FeedSong): com.example.juke.models.SpotifyTrack? {
+        feedMatches[song.videoId]?.let { return it }
+        return withContext(Dispatchers.IO) {
+            com.example.juke.home.resolveFeedSong(song) { rec ->
+                // No match at all (not a failed lookup: offline throws) hides the song from Home.
+                val match = RecommenderApi.matchOnSpotify(rec)
+                if (match == null) com.example.juke.home.FeedMisses.add(song.videoId)
+                match?.let { SpotifyApi.getTrack(it.spotifyUrl.substringAfterLast("/").substringBefore("?")) }
+            }
+        }?.also { feedMatches[song.videoId] = it }
     }
 
     fun playInstant(song: SpotdownSong) {
