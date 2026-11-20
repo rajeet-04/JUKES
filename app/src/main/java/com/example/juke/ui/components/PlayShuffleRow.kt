@@ -15,20 +15,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.juke.ui.icons.JukeIcons
 
-/** Shuffle and a round Play: the one place a list starts playing from. */
+/** Shuffle and a round Play: the one place a list starts playing from. [playing] swaps Play for Pause. */
 @Composable
-fun PlayShuffle(onShuffle: () -> Unit, onPlay: () -> Unit, modifier: Modifier = Modifier) {
+fun PlayShuffle(onShuffle: () -> Unit, onPlay: () -> Unit, modifier: Modifier = Modifier, playing: Boolean = false) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onShuffle, Modifier.size(48.dp)) { Icon(JukeIcons.Shuffle, "Shuffle") }
-        FilledIconButton(onPlay, Modifier.size(48.dp)) { Icon(JukeIcons.Play, "Play", Modifier.size(26.dp)) }
+        FilledIconButton(onPlay, Modifier.size(48.dp)) {
+            if (playing) Icon(JukeIcons.Pause, "Pause", Modifier.size(26.dp))
+            else Icon(JukeIcons.Play, "Play", Modifier.size(26.dp))
+        }
     }
 }
 
 /** A list's section title on the left, [PlayShuffle] on the right: the controls sit with the list they play. */
 @Composable
-fun PlayShuffleRow(title: String, onShuffle: () -> Unit, onPlay: () -> Unit, modifier: Modifier = Modifier) {
+fun PlayShuffleRow(title: String, onShuffle: () -> Unit, onPlay: () -> Unit, modifier: Modifier = Modifier, playing: Boolean = false) {
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleLarge)
-        PlayShuffle(onShuffle, onPlay)
+        PlayShuffle(onShuffle, onPlay, playing = playing)
     }
 }

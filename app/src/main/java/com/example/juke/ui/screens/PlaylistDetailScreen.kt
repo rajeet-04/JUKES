@@ -54,6 +54,14 @@ fun PlaylistDetailScreen(
     val scope = rememberCoroutineScope()
     val playlist = uiState.playlist
 
+    // This playlist "owns" playback when the loaded song is one of its tracks: Play then pauses/resumes instead of restarting.
+    val musicState = musicViewModel.uiState.collectAsStateWithLifecycle()
+    val trackIds = androidx.compose.runtime.remember(uiState.tracks) { uiState.tracks.mapTo(HashSet()) { it.id } }
+    val isThisPlaylist by androidx.compose.runtime.remember(trackIds) {
+        androidx.compose.runtime.derivedStateOf { musicState.value.currentTrack?.spotifyId?.let { it in trackIds } == true }
+    }
+    val isPlaying by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { musicState.value.isPlaying } }
+
     Scaffold(
         topBar = {
             GlassTopAppBar(
@@ -199,7 +207,11 @@ fun PlaylistDetailScreen(
                         com.example.juke.ui.components.PlayShuffleRow(
                             title = "Tracks",
                             onShuffle = { musicViewModel.setQueueFromSpotifyTracks(uiState.tracks.shuffled(), 0) },
-                            onPlay = { musicViewModel.setQueueFromSpotifyTracks(uiState.tracks, 0) }
+                            onPlay = {
+                                if (isThisPlaylist) musicViewModel.togglePlayPause()
+                                else musicViewModel.setQueueFromSpotifyTracks(uiState.tracks, 0)
+                            },
+                            playing = isThisPlaylist && isPlaying
                         )
                     }
 
