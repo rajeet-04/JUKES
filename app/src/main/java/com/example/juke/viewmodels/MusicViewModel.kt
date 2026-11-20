@@ -1035,6 +1035,32 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Instant playback for SpotdownSong (used by Search/Artist/Album screens via downloadAndPlay)
      */
+    /** The feed song being matched for playback (its video id), for a spinner on its row. */
+    private val _recLoading = MutableStateFlow<String?>(null)
+    val recLoading: StateFlow<String?> = _recLoading.asStateFlow()
+
+    /**
+     * Plays a Home feed song: matched on Spotify only now, at tap time, then played like any search
+     * result (radio carries on after it as usual). A second tap while one is matching is ignored.
+     */
+    fun playRec(song: com.example.juke.home.FeedSong) {
+        if (_recLoading.value != null) return
+        _recLoading.value = song.videoId
+        viewModelScope.launch {
+            try {
+                val track = com.example.juke.home.resolveFeedSong(song) { rec ->
+                    RecommenderApi.matchOnSpotify(rec)?.let {
+                        SpotifyApi.getTrack(it.spotifyUrl.substringAfterLast("/").substringBefore("?"))
+                    }
+                }
+                if (track != null) playInstant(SpotifyApi.spotifyTrackToSong(track))
+                else Toast.makeText(getApplication(), "Couldn't find that song", Toast.LENGTH_SHORT).show()
+            } finally {
+                _recLoading.value = null
+            }
+        }
+    }
+
     fun playInstant(song: SpotdownSong) {
         if (JamControls.playNow(listOf(song.toJamPick()))) return
         playInstantLocal(song)
