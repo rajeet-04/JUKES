@@ -497,8 +497,9 @@ class MainActivity : ComponentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                     // Backdrop source: the ambient light field and every screen scroll inside it,
                     // so the floating glass (tab bar, mini player) blurs what is really behind it.
+                    // Ambient layer below the page source: cards inside the page refract it.
+                    com.example.juke.ui.theme.GlassAmbient(Modifier.hazeSource(hazeState, zIndex = -1f))
                     Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
-                    Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (isExpanded && currentRoute != "settings") {
                             GlassNavRail(items = navItems, modifier = Modifier.statusBarsPadding())

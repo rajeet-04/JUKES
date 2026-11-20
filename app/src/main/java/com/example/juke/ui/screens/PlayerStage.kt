@@ -1,5 +1,9 @@
 package com.example.juke.ui.screens
 
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
+import com.example.juke.ui.theme.glassPane
+import com.example.juke.ui.theme.liquidGlass
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -69,7 +73,7 @@ private val Base = Color(0xFF0E0B0C)
  * where the controls sit. The lyrics view gets a slightly warmer wash so the switch is felt.
  */
 @Composable
-internal fun ArtBackdrop(colors: ExtractedColors?, stage: PlayerStage, modifier: Modifier = Modifier) {
+internal fun ArtBackdrop(colors: ExtractedColors?, stage: PlayerStage, modifier: Modifier = Modifier, artwork: Any? = null) {
     val tint = colors?.secondary ?: Base
     val strength = if (stage == PlayerStage.Lyrics) 0.62f else 0.45f
     val top by animateColorAsState(lerp(Base, tint, strength), tween(450), label = "backdropTop")
@@ -78,7 +82,25 @@ internal fun ArtBackdrop(colors: ExtractedColors?, stage: PlayerStage, modifier:
         modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(0f to top, 0.5f to mid, 1f to Base))
-    )
+    ) {
+        // Where glass is live, a huge, heavily blurred copy of the artwork gives the player's
+        // glass real colour structure to bend and split into a rainbow (a smooth gradient alone
+        // refracts to nothing). It fades out toward the controls so they stay legible.
+        if (artwork != null && com.example.juke.ui.theme.glassIsLive()) {
+            androidx.compose.animation.Crossfade(artwork, animationSpec = tween(600), label = "backdropArt") { art ->
+                coil.compose.AsyncImage(
+                    model = art,
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { scaleX = 1.5f; scaleY = 1.5f; alpha = if (stage == PlayerStage.Art) 0.5f else 0.38f }
+                        .blur(64.dp)
+                )
+            }
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, 0.55f to Base.copy(alpha = 0.35f), 1f to Base.copy(alpha = 0.85f))))
+        }
+    }
 }
 
 /**
@@ -217,23 +239,31 @@ internal fun StageDock(
     onSelect: (PlayerStage) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val live = com.example.juke.ui.theme.glassIsLive()
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.07f))
+            .then(
+                if (live) Modifier.glassPane(RoundedCornerShape(18.dp), com.example.juke.ui.theme.GlassLevel.Thin)
+                else Modifier.clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.07f))
+            )
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         listOf(PlayerStage.Lyrics to "Lyrics", PlayerStage.Queue to "Up next", PlayerStage.Mix to "Mix").forEach { (tab, label) ->
             val on = stage == tab
             val bg by animateColorAsState(
-                if (on) Color.White.copy(alpha = 0.16f) else Color.Transparent, tween(180), label = "dockTab"
+                if (on && !live) Color.White.copy(alpha = 0.16f) else Color.Transparent, tween(180), label = "dockTab"
             )
             Box(
                 Modifier
                     .weight(1f)
                     .heightIn(min = 44.dp)
+                    // The open tab is a liquid lens sitting in the glass dock.
+                    .then(
+                        if (on && live) Modifier.liquidGlass(RoundedCornerShape(14.dp), Color.White.copy(alpha = 0.12f), blur = 4.dp)
+                        else Modifier
+                    )
                     .clip(RoundedCornerShape(12.dp))
                     .background(bg)
                     .semantics { selected = on }

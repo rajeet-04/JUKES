@@ -1,5 +1,6 @@
 package com.example.juke.ui.screens
 
+import dev.chrisbanes.haze.hazeSource
 import com.example.juke.ui.components.playerStage
 import com.example.juke.ui.icons.JukeIcons
 
@@ -359,9 +360,20 @@ fun PlayerScreen(
 
     // The host owns expansion so artwork and player share one coordinate space.
     Box(Modifier.fillMaxSize()) {
+        // The player is its own glass world: its glass samples the player's backdrop (artwork and
+        // gradient), never the app behind it, and every surface gets the boosted recipe.
+        val playerHaze = remember { dev.chrisbanes.haze.HazeState() }
         JUKETheme(darkTheme = true, extractedColors = uiState.extractedColors) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.example.juke.ui.theme.LocalHazeState provides (if (stagePlayer) playerHaze else com.example.juke.ui.theme.LocalHazeState.current),
+            com.example.juke.ui.theme.LocalGlassBoost provides stagePlayer,
+        ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (stagePlayer) ArtBackdrop(uiState.extractedColors, stage)
+            if (stagePlayer) ArtBackdrop(
+                uiState.extractedColors, stage,
+                Modifier.hazeSource(playerHaze, zIndex = -1f),
+                artwork = currentTrack?.thumbnailUri
+            )
             // Plain black backdrop; the artwork is the only color on the screen.
             else Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
             // Content — fully responsive, adapts to screen height
@@ -843,6 +855,7 @@ fun PlayerScreen(
                     }
                 }
             }
+        }
         }
         }
     }

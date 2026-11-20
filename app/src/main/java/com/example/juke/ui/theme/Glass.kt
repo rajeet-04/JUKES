@@ -3,6 +3,7 @@ package com.example.juke.ui.theme
 import android.os.Build
 import android.view.WindowManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
@@ -66,6 +67,16 @@ val LocalHazeState = compositionLocalOf<HazeState?> { null }
 
 /** The accent the ambient field and glass tint pick up (album art when available). */
 val LocalGlassAccent = compositionLocalOf { Color(0xFF8E7CFF) }
+
+/**
+ * The player's "maximum" glass: deeper refraction, a thicker fold, full rainbow and a brighter
+ * highlight. Set true around a screen to boost every glass surface inside it.
+ */
+val LocalGlassBoost = compositionLocalOf { false }
+
+/** Whether glass is drawn as real liquid here (a source exists and solid surfaces are off). */
+@Composable
+fun glassIsLive(): Boolean = LocalHazeState.current != null && !GlassPrefs.solid
 
 object GlassShapes {
     val Pill = RoundedCornerShape(percent = 50)
@@ -168,14 +179,85 @@ fun Modifier.glassPane(
     val dark = isGlassDark()
     val spec = level.spec(dark)
     val base = glassBase(tint ?: LocalGlassAccent.current, dark)
-    return this
-        .glassShadow(shape, spec.elevation, 0.30f)
-        .clip(shape)
-        .background(
-            if (GlassPrefs.solid) solidBase(base, tint ?: LocalGlassAccent.current, dark).copy(alpha = 0.94f)
-            else base.copy(alpha = spec.fill)
+    val source = LocalHazeState.current
+    val lifted = this.glassShadow(shape, spec.elevation, 0.30f)
+    if (source == null || GlassPrefs.solid) {
+        return lifted
+            .clip(shape)
+            .background(
+                if (GlassPrefs.solid) solidBase(base, tint ?: LocalGlassAccent.current, dark).copy(alpha = 0.94f)
+                else base.copy(alpha = spec.fill)
+            )
+            .glassRim(shape, spec.rimAlpha, dark)
+    }
+    // In-flow surfaces sample the ambient layer behind the page (see GlassAmbient): more body
+    // blur than floating glass so their own text stays clean, a slightly narrower rim.
+    val boost = LocalGlassBoost.current
+    val style = remember(base, spec, shape, dark, boost) {
+        liquidStyle(
+            boost = boost,
+            shape = shape,
+            tint = base.copy(alpha = spec.fill),
+            dark = dark,
+            blur = spec.blur,
+            displacement = 48.dp,
+            edge = 24.dp,
+            fold = 0.25f,
+            rainbow = { 0.6f },
         )
-        .glassRim(shape, spec.rimAlpha, dark)
+    }
+    return lifted.hazeLiquid(source, shape, style)
+}
+
+/**
+ * The one liquid-glass recipe every surface uses; presets only change its strength. Dense-liquid
+ * optics: a wide, strongly bending rim with an inverted fold (the meniscus of a thick fluid),
+ * seven-sample spectral dispersion for the rainbow, a bright Fresnel edge, and a highlight placed
+ * by [GlassLight] (the gravity sensor). Snapshot reads inside [rainbow] are observed per frame.
+ */
+private fun liquidStyle(
+    shape: Shape,
+    tint: Color,
+    dark: Boolean,
+    blur: Dp,
+    displacement: Dp = 64.dp,
+    edge: Dp = 30.dp,
+    fold: Float = 0.35f,
+    specular: Float = 0.7f,
+    clear: Boolean = false,
+    boost: Boolean = false,
+    rainbow: () -> Float = { 0.85f },
+): GlassStyle = (if (clear) GlassStyle.clear else GlassStyle.regular).shaped(shape).then {
+    val displacement = if (boost) displacement * 1.3f else displacement
+    val edge = if (boost) edge + 8.dp else edge
+    val fold = if (boost) (fold + 0.15f).coerceAtMost(1f) else fold
+    val specular = if (boost) (specular + 0.1f).coerceAtMost(1f) else specular
+    optics {
+        copy(
+            blurRadius = OpticalSizeValue.Fixed(blur),
+            // Regular keeps compact controls partly sharp (depth 0.65 at 64dp), which let list
+            // text show through the mini player over its own title. Fully diffuse the body;
+            // the rim still bends sharp content.
+            depth = OpticalSizeValue.Fixed(if (clear) 0.6f else 1f),
+            refractionStrength = if (clear) 1f else 0.95f,
+            refractionDisplacement = displacement,
+            refractionProfile = RefractionProfile.Edge(edge),
+            refractionFoldStrength = fold,
+            refractionDetailIntensity = 0.45f,
+        )
+    }
+    chromaticAberrationMode(ChromaticAberrationMode.Full)
+    fresnelExponent(2f)
+    tint(tint)
+    // Haze's dark Regular pulls the white point to -0.22, which reads as a grey slab.
+    if (!clear) {
+        whitePoint(if (dark) 0.06f else 0.5f)
+        contrast(0f)
+        ambientResponse(0.22f)
+    }
+    specularIntensity(specular)
+    lightPosition(GlassLight.position)
+    chromaticAberrationStrength((if (boost) rainbow() * 1.25f + 0.1f else rainbow()).coerceIn(0f, 1f))
 }
 
 /**
@@ -212,23 +294,20 @@ fun Modifier.liquidGlass(
         val solid = fill.copy(alpha = (fill.alpha + if (GlassPrefs.solid) 0.6f else 0.3f).coerceAtMost(0.96f))
         return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
-    val style = remember(fill, shape, blur) {
-        GlassStyle.clear.shaped(shape).then {
-            optics {
-                copy(
-                    blurRadius = OpticalSizeValue.Fixed(blur),
-                    refractionStrength = 1f,
-                    refractionDisplacement = 64.dp,
-                    refractionFoldStrength = 0.4f,
-                )
-            }
-            chromaticAberrationMode(ChromaticAberrationMode.Full)
-            tint(fill)
-            lightPosition(GlassLight.position)
-            // Snapshot reads here are observed by the glass node: the rainbow swells while moving.
-            specularIntensity(0.66f)
-            chromaticAberrationStrength((0.45f + 0.5f * strength()).coerceIn(0f, 1f))
-        }
+    val boost = LocalGlassBoost.current
+    val style = remember(fill, shape, blur, dark, boost) {
+        liquidStyle(
+            boost = boost,
+            shape = shape,
+            tint = fill,
+            dark = dark,
+            blur = blur,
+            fold = 0.4f,
+            specular = 0.66f,
+            clear = true,
+            // The rainbow swells while the pane moves.
+            rainbow = { 0.45f + 0.5f * strength() },
+        )
     }
     return lifted.hazeLiquid(source, shape, style)
 }
@@ -366,32 +445,9 @@ fun Modifier.glassFloat(
             )
             .glassRim(shape, spec.rimAlpha, dark)
     }
-    val style = remember(base, spec, shape, dark) {
-        GlassStyle.regular.shaped(shape).then {
-            // Clearer than Haze's dark Regular (which pulls the white point down to -0.22): less
-            // blur so the backdrop reads through, a brighter body, and a visible rainbow rim.
-            // Dense-liquid optics: a wide, strongly bending rim with an inverted fold (the
-            // meniscus of a thick fluid) and seven-sample spectral dispersion for the rainbow.
-            optics {
-                copy(
-                    blurRadius = OpticalSizeValue.Fixed(spec.blur * 0.75f),
-                    refractionStrength = 0.95f,
-                    refractionDisplacement = 64.dp,
-                    refractionProfile = RefractionProfile.Edge(30.dp),
-                    refractionFoldStrength = 0.35f,
-                    refractionDetailIntensity = 0.45f,
-                )
-            }
-            chromaticAberrationMode(ChromaticAberrationMode.Full)
-            fresnelExponent(2f)
-            tint(base.copy(alpha = spec.fill * 0.9f))
-            whitePoint(if (dark) 0.06f else 0.5f)
-            contrast(0f)
-            specularIntensity(0.7f)
-            lightPosition(GlassLight.position)
-            ambientResponse(0.22f)
-            chromaticAberrationStrength(0.85f)
-        }
+    val boost = LocalGlassBoost.current
+    val style = remember(base, spec, shape, dark, boost) {
+        liquidStyle(shape = shape, tint = base.copy(alpha = spec.fill * 1.1f), dark = dark, blur = spec.blur, boost = boost)
     }
     return lifted.hazeLiquid(source, shape, style)
 }
@@ -401,6 +457,36 @@ object GlassBackdrop {
     val Dark = Color.Black
     val Light = Color(0xFFF2F2F7)
     fun color(dark: Boolean): Color = if (dark) Dark else Light
+}
+
+/**
+ * The layer behind every page, today just the app backdrop. Give it
+ * `hazeSource(state, zIndex = -1f)` under the page's own source: glass inside the page samples
+ * only sources below its ancestor, so cards refract this layer while floating glass (outside both)
+ * refracts everything. A richer, immersive background goes here.
+ */
+@Composable
+fun GlassAmbient(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Box(
+        modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark()))
+    )
+}
+
+/**
+ * Liquid glass for a sheet or dialog surface. Sheets live in their own window, so they sample the
+ * app's sources from the window behind ([HazeInput.Sources] reads across windows). Returns null
+ * when glass is off, so callers keep their solid container colour.
+ */
+@Composable
+fun glassSheetModifier(shape: Shape, source: HazeState? = LocalHazeState.current): Modifier? {
+    if (source == null || GlassPrefs.solid) return null
+    val dark = isGlassDark()
+    val tint = lerp(MaterialTheme.colorScheme.surface, glassBase(LocalGlassAccent.current, dark), 0.10f)
+        .copy(alpha = if (dark) 0.55f else 0.62f)
+    val style = remember(shape, tint, dark) {
+        liquidStyle(shape = shape, tint = tint, dark = dark, blur = 30.dp, displacement = 56.dp, edge = 28.dp, rainbow = { 0.7f })
+    }
+    return Modifier.hazeLiquid(source, shape, style)
 }
 
 /**
