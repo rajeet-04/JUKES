@@ -193,6 +193,15 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
 }
 
 /** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
+/** Song exposure remembers when a song last played or was skipped, for the repeat policy. */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_at INTEGER")
+        db.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_seq INTEGER")
+        db.execSQL("ALTER TABLE song_exposure ADD COLUMN last_skip_at INTEGER")
+    }
+}
+
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
@@ -224,7 +233,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -255,7 +264,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
-                        MIGRATION_11_12
+                        MIGRATION_11_12,
+                        MIGRATION_12_13
                     )
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
