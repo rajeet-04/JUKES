@@ -118,20 +118,20 @@ fun GlassAlertDialog(
     shape: Shape = GlassShapes.Card,
     properties: DialogProperties = DialogProperties(),
 ) {
-    val liquid = com.example.juke.ui.theme.glassSheetModifier(shape)
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
             GlassWindowBlur()
             confirmButton()
         },
-        modifier = if (liquid != null) modifier.then(liquid) else modifier,
+        modifier = modifier,
         dismissButton = dismissButton,
         icon = icon,
         title = title,
         text = text,
         shape = shape,
-        containerColor = if (liquid != null) Color.Transparent else glassSheetColor(),
+        // Not liquid glass: a dialog is its own window, which Haze can't sample the app from.
+        containerColor = glassSheetColor(),
         tonalElevation = 0.dp,
         iconContentColor = MaterialTheme.colorScheme.primary,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
@@ -150,15 +150,16 @@ fun GlassModalBottomSheet(
     showHandle: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // The sheet surface is liquid glass over the app behind it; glass inside the sheet falls back
-    // to tinted panes, since it would otherwise sample the app through the sheet.
-    val liquid = com.example.juke.ui.theme.glassSheetModifier(GlassShapes.Sheet)
+    // The sheet lives in its own dialog window, which Haze can't sample the app from: a liquid
+    // surface there drew a sharp, misplaced copy of the page over the sheet's actions, so only the
+    // drag handle and title showed. The window manager blurs the app behind instead
+    // (GlassWindowBlur) under the thick glass colour. Glass inside the sheet falls back to tinted panes.
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        modifier = modifier.arrowKeyFocus().then(liquid ?: Modifier),
+        modifier = modifier.arrowKeyFocus(),
         sheetState = sheetState,
         shape = GlassShapes.Sheet,
-        containerColor = if (liquid != null) Color.Transparent else glassSheetColor(),
+        containerColor = glassSheetColor(),
         // The glass colour isn't a scheme colour, so Material can't derive text on it and would
         // inherit the caller's (on the player that is a dim tint): headers came out near-invisible.
         contentColor = MaterialTheme.colorScheme.onSurface,

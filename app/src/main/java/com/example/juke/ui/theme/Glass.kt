@@ -481,23 +481,6 @@ fun GlassAmbient(modifier: Modifier = Modifier, content: @Composable () -> Unit 
 }
 
 /**
- * Liquid glass for a sheet or dialog surface. Sheets live in their own window, so they sample the
- * app's sources from the window behind ([HazeInput.Sources] reads across windows). Returns null
- * when glass is off, so callers keep their solid container colour.
- */
-@Composable
-fun glassSheetModifier(shape: Shape, source: HazeState? = LocalHazeState.current): Modifier? {
-    if (source == null || GlassPrefs.solid) return null
-    val dark = isGlassDark()
-    val tint = lerp(MaterialTheme.colorScheme.surface, glassBase(LocalGlassAccent.current, dark), 0.10f)
-        .copy(alpha = if (dark) 0.55f else 0.62f)
-    val style = remember(shape, tint, dark) {
-        liquidStyle(shape = shape, tint = tint, dark = dark, blur = 30.dp, displacement = 56.dp, edge = 28.dp, rainbow = { 0.7f })
-    }
-    return Modifier.hazeLiquid(source, shape, style)
-}
-
-/**
  * Blurs the real window behind a dialog or bottom sheet (API 31+). Dialog windows can't be
  * sampled by Haze, so the platform does it: the app behind dissolves into frosted light.
  * Below API 31 this is a no-op and the sheet's thicker tint carries the material alone.
