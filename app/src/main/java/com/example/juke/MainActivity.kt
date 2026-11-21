@@ -364,6 +364,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // Menus are drawn in this window (GlassSheetLayer below) so their glass can refract the app.
+                val sheetHost = remember { com.example.juke.ui.components.GlassSheetHost() }
+                CompositionLocalProvider(com.example.juke.ui.components.LocalGlassSheetHost provides sheetHost) {
                 com.example.juke.ui.components.PlayerTransitionHost(expanded = showPlayerModal, musicViewModel = musicViewModel) {
                 val openMedia = remember(navController) {
                     com.example.juke.ui.components.OpenMedia(
@@ -730,6 +733,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
+                }
+                // Above the pages and the player: open menus.
+                com.example.juke.ui.components.GlassSheetLayer(sheetHost)
                 }
                 }
             }

@@ -293,6 +293,8 @@ fun Modifier.liquidGlass(
     displacement: Dp = 64.dp,
     edge: Dp = 30.dp,
     fold: Float = 0.4f,
+    /** False: a fully frosted body (sheets, where text sits over the page); the rim still bends. */
+    clear: Boolean = true,
 ): Modifier {
     val dark = isGlassDark()
     val lifted = if (shadow > 0.dp) glassShadow(shape, shadow, 0.34f) else this
@@ -301,7 +303,7 @@ fun Modifier.liquidGlass(
         return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
     val boost = LocalGlassBoost.current
-    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold) {
+    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold, clear) {
         liquidStyle(
             boost = boost,
             shape = shape,
@@ -312,7 +314,7 @@ fun Modifier.liquidGlass(
             edge = edge,
             fold = fold,
             specular = 0.66f,
-            clear = true,
+            clear = clear,
             // The rainbow swells while the pane moves.
             rainbow = { 0.45f + 0.5f * strength() },
         )

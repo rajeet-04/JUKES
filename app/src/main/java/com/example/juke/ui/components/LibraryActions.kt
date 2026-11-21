@@ -97,7 +97,7 @@ fun LibraryTrackActionsSheet(
     /** Only when some of the songs are streamed (nothing to save otherwise). */
     onDownload: (() -> Unit)? = null,
 ) {
-    GlassModalBottomSheet(onDismissRequest = onDismiss) {
+    GlassMenuSheet(onDismissRequest = onDismiss, title = title) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             LibrarySheetHeader(title, subtitle, onDismiss, enabled = enabled, artUrl = artUrl)
