@@ -4,6 +4,54 @@
 
 ## [Unreleased]
 
+## [3.1.1-unreleased]
+
+Android and desktop. Changes since 3.1.1-stable, from 2026-11-20.
+
+### Added
+
+- **Endless Home feed.** Home is one scrolling feed: Quick picks as paged glass panels, a 3x3 Speed dial, Forgotten favourites, New releases, Trending songs from YouTube Music's charts and hero "Mixed for you" cards tinted by their own artwork. Three more sections load whenever the list nears its end.
+- **Real mood chips on Home.** The chips are YouTube Music's regional Home chips (Relax, Romance, Energize...). Picking one turns Home into that mood, with one section per curated shelf paged endlessly and no repeats. Picking it again returns to For you.
+- **Full song menu on Home.** Every song has Play, Play next, Add to queue, Add to playlist, Download, Share, Go to album and a Go to entry per artist. A feed song is matched on Spotify when its menu opens. A feed song with no Spotify match is hidden from Home for the session.
+- **One player stage.** The phone player keeps its controls fixed and switches what sits above them between artwork, lyrics, the queue and a Mix view. The artwork shrinks to a header while another view is open, and Back returns to it before closing the player. Scrolling from the square artwork opens an expandable lyrics card.
+- **Mix preview.** Opening Mix builds the mix in the background before you start it. The preview skips songs already queued, waiting or recently played. Start mix replaces Up Next with it.
+- **Background waves.** Soft waves low on the app background, in the playing song's artwork colours. They swell with the bass, ripple with the treble and punch on each kick drum. They fade out on pause, and they turn off in battery saver, with animations removed, or from the Background waves setting. Battery saver is followed live, so the waves come back when it ends or the charger is plugged in.
+- **Artist page.** A featured latest-release card, then side-scrolling Albums and Singles & EPs lanes of bare rounded covers. Releases show Single, EP or Album, the year and the song count. A NEW tag shows for releases from the last 60 days.
+- **Download in more menus.** Download is in the long-press and 3-dot menus for Home, playlists, artists, Search results, album tracks and the Library song sheet. Spotify songs go to the download queue, which skips ones already saved.
+- **Desktop: lyrics timing adjuster.** The full player's lyrics pane has a Sync button with the same slider as the phone (-/+0.5 s, reset, done). Changes are saved per song.
+- **Liquid glass across the app.** Cards, chips, buttons, sheets, dialogs and the nav bar share one glass style. The player has its own glass stage with a liquid lens that slides between Lyrics, Up next and Mix, stretches with speed, refracts the tab labels and snaps to the nearest tab on drag.
+- **Tilt-driven glass highlight.** The highlight follows the gravity sensor, so the light stays up as the phone tilts. It runs only while the app is in front and stays still when animations are off.
+- **Recommendations: persistent listening session.** A session lasts until nothing has played for an hour. Songs heard or skipped in a session are held back across new queues and app restarts. Favourites return after a cooldown counted in songs. Every third recommendation is a song you have never heard, when one is available.
+- **Power tools: Favourite cooldown.** Replaces "Repeat threshold". Choose 10, 15, 20, 30 or 40 songs (default 20).
+
+### Changed
+
+- **Haze 2.1 glass.** Floating glass (nav bar, mini player, top bars) and the nav bubble use Haze 2.1's glass with edge refraction, a specular highlight and a rainbow rim. Desktop stays on Haze 1.2.
+- **Solid surfaces on Android 12 and older.** Those versions drew grey bands through the blur, so they always use solid surfaces, and the setting is locked with an explanation.
+- **Clear mini player.** The mini player uses the same clear liquid glass as the nav bar, with no frost.
+- **Clear in-flow glass.** Cards and panes use a clear liquid style: no frost, no white wash, no accent tint.
+- **Denser glass optics.** Floating glass and the nav bubble bend light like a denser fluid, with stronger edge refraction and a brighter Fresnel edge.
+- **Jam listeners get full track details.** A follower takes the full Spotify track by id, so album and artist links work on a phone playing from a room.
+- **Playlist and album Play on slow networks.** The first song starts alone and the rest load three at a time in parallel, in order. A newer list or a Jam stops one still loading.
+- **Jam prefetch.** Once the playing song is safe, the next three room songs are fetched to disk in parallel, so a song change plays with nothing to re-buffer.
+- **Desktop playback.** Prefetch of the next song waits until the current one has 20 seconds buffered (local files start at once). Requests to recover the same missing track now share one fetch instead of starting two.
+- **Connect follows the account.** Connect is tied to the account's lifetime, and buffered Jam playback gets priority.
+- **Search runs off the main thread.** The library is ranked and results are decoded in the background, so frames keep drawing (and the waves keep moving) during a search.
+- **Build.** Kotlin 2.4.21, compileSdk 37 (targetSdk stays 36), Compose 1.12, for Haze 2.1.
+- **Recommendations data.** Database version 12 to 13 adds last-play and last-skip columns to the song exposure table. Existing rows start with nothing blocked.
+
+### Fixed
+
+- **Sleep timer crash.** The countdown paused playback from a background thread, which Media3 rejects. It now pauses on the main thread.
+- **Duplicate songs in the queue.** Removing one copy of a duplicate song no longer removes the other copy too.
+- **Playlist Play.** Once the loaded song is one of the playlist's tracks, the button shows Pause or Resume and toggles playback instead of restarting the playlist.
+- **Second playlist import.** Pasting a second playlist link while one is importing shows that link's own progress and Import button.
+- **Jam re-seek loop.** A follower no longer seeks every 3 seconds after a song change. It corrects its seek offset in one step and stops hard seeking a song after four missed seeks in a row.
+- **Waves in battery saver.** The waves stay off in battery saver and come back when it ends, without a restart.
+- **Recommendations after a skip.** A song skipped after 30 seconds can't come straight back. Songs in a radio that were played since it was pulled are held back, not queued.
+
+See full release notes: [v3.1.1-stable-RELEASE_NOTES.md](docs/v3.1.1-stable-RELEASE_NOTES.md)
+
 ## [3.1.1-stable] - 2026-11-16
 
 Android only; the desktop apps stay on 3.1.0.
