@@ -18,7 +18,12 @@ data class SongExposureEntity(
     @ColumnInfo(name = "play_score") val playScore: Double = 0.0,
     @ColumnInfo(name = "skip_score") val skipScore: Double = 0.0,
     @ColumnInfo(name = "rec_score") val recScore: Double = 0.0,
-    @ColumnInfo(name = "updated_at") val updatedAt: Long
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    /** Last qualified play and the session song count at that play (see RepeatPolicy). */
+    @ColumnInfo(name = "last_play_at") val lastPlayAt: Long? = null,
+    @ColumnInfo(name = "last_play_seq") val lastPlaySeq: Long? = null,
+    /** Last early skip. */
+    @ColumnInfo(name = "last_skip_at") val lastSkipAt: Long? = null
 )
 
 @Dao
