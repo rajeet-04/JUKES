@@ -8,7 +8,7 @@ posthogAndroid = "3.71.4"
 profileinstaller = "1.4.1"
 uiautomator = "2.3.0"
 agp = "9.4.1"
-kotlin = "2.2.10"
+kotlin = "2.4.21"
 coreKtx = "1.15.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
@@ -27,6 +27,7 @@ gson = "2.10.1"
 foundationLayout = "1.10.0"
 palette = "1.0.0"
 haze = "1.2.2"
+haze2 = "2.1.0"
 
 [libraries]
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
@@ -96,6 +97,10 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 
 # Haze (backdrop blur for glass surfaces)
 haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
+# Haze 2 for Android: blur and liquid glass (refraction, specular, chromatic edges)
+haze2 = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze2" }
+haze2-blur = { group = "dev.chrisbanes.haze", name = "haze-blur", version.ref = "haze2" }
+haze2-glass = { group = "dev.chrisbanes.haze", name = "haze-glass", version.ref = "haze2" }
 
 # Gson
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }

@@ -57,9 +57,8 @@ data class SearchUiState(
     val error: String? = null,
     val isPlaylistUrl: Boolean = false,
     val playlistId: String? = null,
-    val isImportingPlaylist: Boolean = false,
-    val importProgress: Int = 0,
-    val importTotal: Int = 0,
+    /** Every running playlist import by playlist id: several can run at once (#36). */
+    val imports: Map<String, com.example.juke.services.ImportStatus> = emptyMap(),
     val recentSearches: List<String> = emptyList()
 )
 
@@ -110,14 +109,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     init {
         // Import progress comes from the persisted job, so it is still there after a restart.
         viewModelScope.launch {
-            importManager.status.collect { map ->
-                val st = map[_uiState.value.playlistId] ?: map.values.firstOrNull()
-                _uiState.value = _uiState.value.copy(
-                    isImportingPlaylist = st != null,
-                    importProgress = st?.done ?: 0,
-                    importTotal = st?.total ?: 0
-                )
-            }
+            importManager.status.collect { map -> _uiState.update { it.copy(imports = map) } }
         }
     }
 
@@ -420,12 +412,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         textQuery.split("\\s+".toRegex()).filter { it.isNotBlank() }
 
                     // Saved songs: typo-tolerant, matches artist + title words together and lyrics (incl. romanized)
-                    val localResults = if (queryTokens.isEmpty()) emptyList() else
+                    // Ranking the whole library is CPU work; off the main thread so the UI keeps drawing.
+                    val localResults = if (queryTokens.isEmpty()) emptyList() else withContext(Dispatchers.Default) {
                         com.example.juke.utils.TrackSearch.rank((trackDao.getAllTracks() + trackDao.getStreamTracks()).map { it.toTrack() }, textQuery).take(50)
+                    }
                     _uiState.value = _uiState.value.copy(localTracks = localResults)
 
                     // Then fetch Spotify results
-                    val response = SpotifyApi.search(textQuery)
+                    // Decoding the response is sizeable too; keep it off the main thread.
+                    val response = withContext(Dispatchers.IO) { SpotifyApi.search(textQuery) }
                     // Filter out Spotify tracks that are already in local results (by title+artist match)
                     val localTitles =
                         localResults.map { it.title.lowercase() to it.artist.lowercase() }.toSet()

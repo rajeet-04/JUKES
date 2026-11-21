@@ -130,6 +130,7 @@ fun GlassAlertDialog(
         title = title,
         text = text,
         shape = shape,
+        // Not liquid glass: a dialog is its own window, which Haze can't sample the app from.
         containerColor = glassSheetColor(),
         tonalElevation = 0.dp,
         iconContentColor = MaterialTheme.colorScheme.primary,
@@ -149,6 +150,10 @@ fun GlassModalBottomSheet(
     showHandle: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // The sheet lives in its own dialog window, which Haze can't sample the app from: a liquid
+    // surface there drew a sharp, misplaced copy of the page over the sheet's actions, so only the
+    // drag handle and title showed. The window manager blurs the app behind instead
+    // (GlassWindowBlur) under the thick glass colour. Glass inside the sheet falls back to tinted panes.
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier.arrowKeyFocus(),
@@ -174,7 +179,9 @@ fun GlassModalBottomSheet(
         }
     ) {
         GlassWindowBlur()
-        content()
+        CompositionLocalProvider(com.example.juke.ui.theme.LocalHazeState provides null) {
+            content()
+        }
     }
 }
 

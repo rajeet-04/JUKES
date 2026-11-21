@@ -80,16 +80,40 @@ object JamResolver {
     }
 
     private val artwork = ConcurrentHashMap<String, String>()
+    private val fullTracks = ConcurrentHashMap<String, SpotifyTrack>()
+
+    /**
+     * The whole Spotify track (every artist with ids, the album) for a room song. The room only carries a
+     * title, one artist string and the artwork, so a phone that plays it from the room fills in the rest
+     * here (#39). Null when Spotify can't be reached; the caller then uses what the room sent.
+     */
+    /** [fullTrack] without a network call: only what an earlier lookup already brought in. */
+    fun cachedFullTrack(id: String): SpotifyTrack? = fullTracks[id]
+
+    suspend fun fullTrack(id: String): SpotifyTrack? {
+        fullTracks[id]?.let { return it }
+        return try {
+            SpotifyApi.getTracks(listOf(id)).firstOrNull { it.id == id }?.also { t ->
+                fullTracks[id] = t
+                t.album.images.firstOrNull()?.url?.let { artwork[id] = it }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     /**
      * Cover art for Spotify ids, 50 per request. A song added from a library has only a file on that phone as
      * its artwork, which means nothing on other phones, so the room gets Spotify's image instead.
      */
     suspend fun artworkFor(ids: List<String>): Map<String, String> {
-        val missing = ids.filter { !artwork.containsKey(it) }.distinct()
+        val missing = ids.filter { !artwork.containsKey(it) || !fullTracks.containsKey(it) }.distinct()
         missing.chunked(50).forEach { chunk ->
             try {
                 SpotifyApi.getTracks(chunk).forEach { t ->
+                    t.id?.let { fullTracks[it] = t } // the same reply has the whole track: keep it for fullTrack()
                     val url = t.album.images.firstOrNull()?.url
                     if (t.id != null && url != null) artwork[t.id] = url
                 }

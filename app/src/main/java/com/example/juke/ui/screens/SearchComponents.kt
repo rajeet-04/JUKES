@@ -148,7 +148,7 @@ internal fun ImportPlaylistCard(
 }
 
 @Composable
-internal fun ImportProgressCard(progress: Int, total: Int) {
+internal fun ImportProgressCard(progress: Int, total: Int, playlists: Int = 1) {
     val fraction = if (total > 0) progress.toFloat() / total else 0f
     GlassCard(
         modifier = Modifier
@@ -171,7 +171,7 @@ internal fun ImportProgressCard(progress: Int, total: Int) {
                 )
             }
             Text(
-                "Importing playlist…",
+                if (playlists > 1) "Importing $playlists playlists…" else "Importing playlist…",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -252,7 +252,8 @@ SwipeToAddNextContainer(
                         track = track,
                         onClick = { musicViewModel.setQueue(listOf(track), 0) },
                         showAccentBar = false,
-                        onPlayNext = { musicViewModel.addNext(track) }
+                        onPlayNext = { musicViewModel.addNext(track) },
+                        onDownload = { musicViewModel.promoteTrackToDownload(track) }
                     )
                 }
                 if (uiState.query.isNotBlank()) {
@@ -290,6 +291,7 @@ SwipeToAddNextContainer(
                     SearchResultItemM3(
                         track = track,
                         isDownloading = uiState.downloadingId == track.id,
+                        onDownload = { com.example.juke.ui.components.downloadSpotifyTrack(musicViewModel, track) },
                         onPlayNext = {
                             scope.launch {
                                 searchViewModel.setDownloading(track.id)
@@ -360,7 +362,8 @@ internal fun LocalTrackItem(
     track: Track,
     onClick: () -> Unit,
     showAccentBar: Boolean = true,
-    onPlayNext: () -> Unit
+    onPlayNext: () -> Unit,
+    onDownload: (() -> Unit)? = null
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val open = com.example.juke.ui.components.LocalOpenMedia.current
@@ -373,6 +376,8 @@ internal fun LocalTrackItem(
             com.example.juke.ui.components.SheetAction("Play now", JukeIcons.Play) { menuOpen = false; onClick() },
             com.example.juke.ui.components.SheetAction("Play next", JukeIcons.Queue) { menuOpen = false; onPlayNext() },
             com.example.juke.ui.components.SheetAction("Add to playlist", JukeIcons.PlaylistAdd) { menuOpen = false; com.example.juke.ui.components.PlaylistAdder.open(track) },
+            // Only a streamed song has something to save (#34)
+            onDownload?.takeIf { track.isStream }?.let { d -> com.example.juke.ui.components.SheetAction("Download", JukeIcons.Download) { menuOpen = false; d() } },
             track.spotifyId?.let { id -> com.example.juke.ui.components.SheetAction("Share", JukeIcons.Share) { menuOpen = false; share.link(com.example.juke.ui.components.spotifyLink("track", id)) } },
             track.albumSpotifyId?.let { id -> com.example.juke.ui.components.SheetAction("Go to album", JukeIcons.Album) { menuOpen = false; open.album(id) } },
             track.artistSpotifyIds?.firstOrNull()?.let { id -> com.example.juke.ui.components.SheetAction("Go to artist", JukeIcons.MusicNote) { menuOpen = false; open.artist(id) } },

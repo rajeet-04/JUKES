@@ -379,7 +379,7 @@ object JamSession {
                         send(Frame.Text(buildJsonObject { put("t", "hello"); put("clientId", clientId); put("name", name) }.toString()))
                         for (frame in incoming) if (frame is Frame.Text) handle(frame.readText())
                     } finally {
-                        outbox = null
+                        if (outbox === box) outbox = null
                         box.close()
                         writer.cancel()
                     }

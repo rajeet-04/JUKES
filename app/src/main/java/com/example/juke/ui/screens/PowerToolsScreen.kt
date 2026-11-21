@@ -54,7 +54,7 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
 
     var preferred by remember { mutableStateOf(memory.preferred) }
     var rejected by remember { mutableIntStateOf(memory.rejectedSongCount()) }
-    var threshold by remember { mutableIntStateOf(settings.getInt("repeat_threshold", 2).coerceIn(2, 6)) }
+    var cooldown by remember { mutableIntStateOf(settings.getInt("favourite_cooldown", 20).coerceIn(10, 40)) }
     var doubleTap by remember { mutableStateOf(power.getBoolean("mini_double_tap_play_pause", false)) }
     var longPress by remember { mutableStateOf(power.getBoolean("mini_long_press_favorite", false)) }
     var stats by remember { mutableStateOf<ListeningStats?>(null) }
@@ -102,15 +102,15 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
                             )
                         }
                     }
-                    Label("Repeat threshold", "Plays in one day after which a song counts as on repeat and may return in recommendations.")
+                    Label("Favourite cooldown", "Songs before a favourite can come back in recommendations. Other songs play once per listening session.")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        (2..6).forEach { n ->
+                        listOf(10, 15, 20, 30, 40).forEach { n ->
                             GlassFilterChip(
-                                selected = threshold == n,
+                                selected = cooldown == n,
                                 onClick = {
                                     haptic.click()
-                                    threshold = n
-                                    settings.edit { putInt("repeat_threshold", n) }
+                                    cooldown = n
+                                    settings.edit { putInt("favourite_cooldown", n) }
                                 },
                                 label = { Text("$n") }
                             )

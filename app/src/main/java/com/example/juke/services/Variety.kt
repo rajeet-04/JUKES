@@ -39,14 +39,23 @@ object Variety {
         )
     }
 
-    /** [existing] (may be null) with one [event] added at [now]. */
-    fun record(existing: SongExposureEntity?, key: String, event: Event, now: Long): SongExposureEntity {
+    /** [existing] (may be null) with one [event] added at [now]; a play also stores the session song count [seq]. */
+    fun record(existing: SongExposureEntity?, key: String, event: Event, now: Long, seq: Long = 0): SongExposureEntity {
         val base = existing?.let { decayed(it, now) } ?: SongExposureEntity(key, updatedAt = now)
         return when (event) {
-            Event.PLAY -> base.copy(playScore = base.playScore + event.weight)
-            Event.SKIP -> base.copy(skipScore = base.skipScore + event.weight)
+            Event.PLAY -> base.copy(playScore = base.playScore + event.weight, lastPlayAt = now, lastPlaySeq = seq)
+            Event.SKIP -> base.copy(skipScore = base.skipScore + event.weight, lastSkipAt = now)
             Event.RECOMMENDED -> base.copy(recScore = base.recScore + event.weight)
         }
+    }
+
+    /**
+     * A song started playing: it counts as heard this session (and a favourite's cooldown starts)
+     * even if it is skipped before it qualifies as a play. Scores are untouched.
+     */
+    fun started(existing: SongExposureEntity?, key: String, now: Long, seq: Long): SongExposureEntity {
+        val base = existing?.let { decayed(it, now) } ?: SongExposureEntity(key, updatedAt = now)
+        return base.copy(lastPlayAt = now, lastPlaySeq = seq)
     }
 
     /** 1.0 = never heard or shown lately; tends to 0 the more it was played/skipped/recommended. */

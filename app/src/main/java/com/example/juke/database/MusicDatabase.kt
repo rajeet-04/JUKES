@@ -192,6 +192,15 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
+/** Song exposure remembers when a song last played or was skipped, for the repeat policy. */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_at INTEGER")
+        db.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_seq INTEGER")
+        db.execSQL("ALTER TABLE song_exposure ADD COLUMN last_skip_at INTEGER")
+    }
+}
+
 /** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -224,7 +233,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -255,7 +264,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
-                        MIGRATION_11_12
+                        MIGRATION_11_12,
+                        MIGRATION_12_13
                     )
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
@@ -413,6 +423,10 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
     suspend fun getTrackByUuid(uuid: String): TrackEntity?
+
+    /** A library song saved from this YouTube upload that has a Spotify id. */
+    @Query("SELECT * FROM tracks WHERE yt_video_id = :videoId AND spotify_id IS NOT NULL LIMIT 1")
+    suspend fun findByVideoId(videoId: String): TrackEntity?
 
     @Query("SELECT * FROM tracks WHERE last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT :limit")
     suspend fun getRecentlyPlayed(limit: Int = 10): List<TrackEntity>

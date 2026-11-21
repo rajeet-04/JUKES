@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.graphics.ColorUtils
@@ -31,6 +32,38 @@ import org.junit.Test
 
 class BetaUiRegressionTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun largeTextPlayerOpensLyricsFromTickerAndDockReturnsToArt() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as android.app.Application
+        lateinit var vm: com.example.juke.viewmodels.MusicViewModel
+        compose.runOnUiThread { vm = com.example.juke.viewmodels.MusicViewModel(app) }
+        compose.setContent {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(density.density, 2f)
+            ) {
+                com.example.juke.ui.screens.PlayerScreen(vm, onDismiss = {}, onNavigateToArtist = {},
+                    onNavigateToAlbum = {}, onShareTrack = {})
+            }
+        }
+        compose.runOnIdle {
+            vm.playTrackLocal(Track(uuid = "layout-fixture", title = "Layout test", artist = "Artist",
+                durationSec = 120, syncedLyrics = "[00:00.00]First line\n[00:30.00]Second line"))
+        }
+        // The ticker under the artwork opens the lyrics view in the stage, and the controls stay put.
+        // (Which fixture line it shows depends on where playback is, so find it by its action.)
+        val ticker = androidx.compose.ui.test.SemanticsMatcher("opens lyrics") {
+            it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsActions.OnClick) { null }?.label == "Open lyrics"
+        }
+        compose.waitUntil(5_000) { compose.onAllNodes(ticker).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(ticker).assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Adjust lyrics timing").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        // Tapping the open dock tab goes back to the artwork.
+        compose.onNode(androidx.compose.ui.test.hasText("Lyrics") and androidx.compose.ui.test.isSelected()).performClick()
+        compose.onNodeWithContentDescription("Adjust lyrics timing").assertDoesNotExist()
+        compose.onNode(ticker).assertIsDisplayed()
+    }
 
     @Test fun seekCanBeAdjustedThroughAccessibility() {
         val position = mutableLongStateOf(0L)

@@ -107,4 +107,25 @@ class VarietyTest {
         assertNotEquals(200, xFirst)
         assertTrue(xFirst < 140) // ~0.35/1.35 ≈ 26%
     }
+
+    @Test fun `play records time and sequence`() {
+        val e = Variety.record(null, "k", Variety.Event.PLAY, 5_000L, seq = 42)
+        org.junit.Assert.assertEquals(5_000L, e.lastPlayAt)
+        org.junit.Assert.assertEquals(42L, e.lastPlaySeq)
+        org.junit.Assert.assertNull(e.lastSkipAt)
+    }
+
+    @Test fun `skip records time and keeps the last play`() {
+        val played = Variety.record(null, "k", Variety.Event.PLAY, 5_000L, seq = 42)
+        val e = Variety.record(played, "k", Variety.Event.SKIP, 9_000L)
+        org.junit.Assert.assertEquals(9_000L, e.lastSkipAt)
+        org.junit.Assert.assertEquals(5_000L, e.lastPlayAt)
+    }
+
+    @Test fun `starting a song marks it heard without counting a play`() {
+        val e = Variety.started(null, "k", 7_000L, seq = 9)
+        org.junit.Assert.assertEquals(7_000L, e.lastPlayAt)
+        org.junit.Assert.assertEquals(9L, e.lastPlaySeq)
+        org.junit.Assert.assertEquals(0.0, e.playScore, 0.0)
+    }
 }

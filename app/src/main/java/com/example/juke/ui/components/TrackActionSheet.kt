@@ -40,7 +40,7 @@ fun TrackActionSheet(
     onDismiss: () -> Unit,
     enabled: Boolean = true,
 ) {
-    GlassModalBottomSheet(onDismissRequest = onDismiss) {
+    GlassMenuSheet(onDismissRequest = onDismiss, title = title) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)) {

@@ -94,14 +94,17 @@ fun LibraryTrackActionsSheet(
     artUrl: String? = null,
     /** Single song with a Spotify id only. */
     onShare: (() -> Unit)? = null,
+    /** Only when some of the songs are streamed (nothing to save otherwise). */
+    onDownload: (() -> Unit)? = null,
 ) {
-    GlassModalBottomSheet(onDismissRequest = onDismiss) {
+    GlassMenuSheet(onDismissRequest = onDismiss, title = title) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             LibrarySheetHeader(title, subtitle, onDismiss, enabled = enabled, artUrl = artUrl)
             LibraryActionRow("Play next", "Immediately after the current song", JukeIcons.Play, enabled, onPlayNext, modifier = Modifier.initialFocus())
             LibraryActionRow("Add to queue end", "After the songs already queued", JukeIcons.Queue, enabled, onQueueEnd)
             LibraryActionRow("Add to playlist", "Choose an existing playlist or create one", JukeIcons.PlaylistAdd, enabled, onPlaylist)
+            onDownload?.let { LibraryActionRow("Download", "Save for offline listening", JukeIcons.Download, enabled, it) }
             onShare?.let { LibraryActionRow("Share", "Send a Spotify link to this song", JukeIcons.Share, enabled, it) }
             onAlbum?.let { LibraryActionRow("Go to album", "Open this song's album", JukeIcons.Album, enabled, it) }
             onArtist?.let { LibraryActionRow("Go to artist", "Open $subtitle", JukeIcons.MusicNote, enabled, it) }

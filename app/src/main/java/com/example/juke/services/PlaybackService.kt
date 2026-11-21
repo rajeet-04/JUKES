@@ -877,7 +877,7 @@ class PlaybackService : MediaLibraryService() {
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .setAudioOffloadSupportProvider(offloadSupportProvider)
                 .setAudioProcessorChain(
-                    JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor)
+                    JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor, com.example.juke.ambient.LevelMeterProcessor())
                 )
                 .build()
         }
@@ -2691,6 +2691,10 @@ class PlaybackManager private constructor(private val context: Context) {
         Log.d(tag, "Seeked to index $index")
     }
 
+    fun cachedAudioFile(url: String): java.io.File? = null // Media3 caches spans, not complete files
+
+    fun bufferedAheadMs(): Long = controller?.totalBufferedDuration ?: 0L
+
     fun getCurrentPosition(): Long {
         return controller?.currentPosition ?: 0L
     }
@@ -2954,7 +2958,8 @@ class PlaybackManager private constructor(private val context: Context) {
 
             // Timer finished - pause playback
             _sleepTimerRemaining.value = null
-            controller?.pause()
+            // MediaController must be called on its application (main) thread; scope runs on IO.
+            withContext(Dispatchers.Main) { controller?.pause() }
             Log.d(tag, "Sleep timer finished - paused playback")
         }
 

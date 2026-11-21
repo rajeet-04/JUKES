@@ -42,6 +42,9 @@ import com.example.juke.utils.DatabaseMigrationHelper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,6 +96,9 @@ data class MusicUiState(
     val repeatMode: Int = androidx.media3.common.Player.REPEAT_MODE_OFF,
     val extractedColors: ExtractedColors? = null
 )
+
+private const val LIST_QUEUE_BATCH = 3
+private const val FIRST_SONG_WAIT_MS = 30_000L
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -198,6 +204,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
+
+    // Saved like the queue, so "Playing from" is still there after a restart.
+    private val playContextPrefs = application.getSharedPreferences("play_context", android.content.Context.MODE_PRIVATE)
+    private val playContext = MutableStateFlow(PlayContext.decode(playContextPrefs.getString("current", null)))
+
+    private fun setPlayContext(from: PlayContext?) {
+        playContext.value = from
+        viewModelScope.launch(Dispatchers.IO) {
+            playContextPrefs.edit().apply { if (from == null) remove("current") else putString("current", from.encode()) }.apply()
+        }
+    }
+
+    /** The list the playing song was started from, or null once something else plays. */
+    val playingFrom: StateFlow<PlayContext?> = combine(playContext, _uiState) { c, s -> c?.takeIf { it.owns(s.currentTrack) } }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
 
     private var isProcessingQueue = false
     private var hasStartedDeferredStartupWork = false
@@ -754,6 +776,68 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** The Mix tab's preview of the mix the playing song would start. */
+    sealed interface MixPreviewState {
+        val trackUuid: String?
+        data object Idle : MixPreviewState { override val trackUuid: String? = null }
+        data class Loading(override val trackUuid: String) : MixPreviewState
+        data class Ready(override val trackUuid: String, val preview: QueueManager.MixPreview, val songs: List<com.example.juke.home.FeedSong>) : MixPreviewState
+        data class Failed(override val trackUuid: String) : MixPreviewState
+    }
+
+    private val _mixPreview = MutableStateFlow<MixPreviewState>(MixPreviewState.Idle)
+    val mixPreview: StateFlow<MixPreviewState> = _mixPreview.asStateFlow()
+    private var mixPreviewJob: Job? = null
+
+    /**
+     * Build the mix for the playing song in the background while the Mix tab is open, and warm
+     * its first two songs on the server so they're ready the moment the mix starts.
+     */
+    fun loadMixPreview() {
+        val current = _uiState.value.currentTrack ?: return
+        val state = _mixPreview.value
+        if (state.trackUuid == current.uuid && state !is MixPreviewState.Failed) return
+        mixPreviewJob?.cancel()
+        _mixPreview.value = MixPreviewState.Loading(current.uuid)
+        mixPreviewJob = viewModelScope.launch(Dispatchers.IO) {
+            val preview = try {
+                queueManager.previewMix(current)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("MusicViewModel", "Mix preview failed: ${e.message}")
+                null
+            }
+            if (preview == null || preview.songs.isEmpty()) {
+                _mixPreview.value = MixPreviewState.Failed(current.uuid)
+                return@launch
+            }
+            preview.songs.take(QueueManager.MIX_FIRST).forEach { com.example.juke.network.JukesApi.warmupVideo(it.id, source = "mix") }
+            _mixPreview.value = MixPreviewState.Ready(current.uuid, preview, preview.songs.map(com.example.juke.home.FeedSong::from))
+        }
+    }
+
+    /**
+     * Start mix: replace Up Next with the previewed mix, or a fresh radio when there's no preview.
+     * [playId]: a previewed song the listener tapped, played as soon as the mix is in.
+     */
+    fun startMix(playId: String? = null) {
+        if (JamControls.mix()) return // in a Jam the room gets a fresh radio, built by the host
+        val current = _uiState.value.currentTrack ?: return
+        val ready = (_mixPreview.value as? MixPreviewState.Ready)?.takeIf { it.trackUuid == current.uuid }
+        if (ready == null) {
+            startRadio()
+            return
+        }
+        _mixPreview.value = MixPreviewState.Idle // used up: opening Mix again builds the next one
+        viewModelScope.launch {
+            playbackManager.keepOnlyCurrentTrack()
+            queueManager.startMix(current, ready.preview)
+            _uiState.update { it.copy(queue = listOf(current), queueIndex = 0) }
+            playId?.let(::playPendingSong)
+        }
+    }
+
     /** Play a queued song; [index] picks the entry when the song is queued twice. */
     fun playTrackFromQueue(track: Track, index: Int? = null) {
         if (JamControls.playItem(track.uuid)) return // an entry of the room's queue (its uuid is the room's item id)
@@ -802,7 +886,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * [jamSingle]: the caller is a tap on one song inside a list. Normally the list follows it into the queue,
      * but in a Jam only that song goes into the room, not the rest of a long list.
      */
-    fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false, startPositionMs: Long? = null) {
+    fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false, startPositionMs: Long? = null, from: PlayContext? = null) {
+        setPlayContext(from)
         val forJam = if (jamSingle) listOfNotNull(tracks.getOrNull(startIndex)) else tracks.drop(startIndex)
         if (JamControls.playNow(forJam.map { it.toJamPick() })) return
         viewModelScope.launch {
@@ -835,6 +920,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    /** A list's Play button: pauses and resumes while that list is playing, otherwise [start]s it. */
+    fun playList(kind: PlayContext.Kind, id: String, start: () -> Unit) {
+        if (playingFrom.value?.isList(kind, id) == true) togglePlayPause() else start()
     }
 
     fun togglePlayPause() {
@@ -1016,8 +1106,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val tracks = collectAlbumTracks { offset -> SpotifyApi.getAlbumTracks(id, offset = offset) }
                 val ordered = if (shuffle) tracks.shuffled() else tracks
                 val locals = ordered.mapNotNull { it.findOfflineTrack(offlineTracks.value) }
-                if (ordered.isNotEmpty() && locals.size == ordered.size) setQueue(locals)
-                else setQueueFromSimplifiedTracks(ordered, album, 0)
+                val from = PlayContext(PlayContext.Kind.ALBUM, id, album.name, ordered.mapNotNullTo(HashSet()) { it.id } + locals.map { it.uuid })
+                if (ordered.isNotEmpty() && locals.size == ordered.size) setQueue(locals, from = from)
+                else setQueueFromSimplifiedTracks(ordered, album, 0, from = from)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1029,6 +1120,68 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Instant playback for SpotdownSong (used by Search/Artist/Album screens via downloadAndPlay)
      */
+    /** The feed song being matched for playback (its video id), for a spinner on its row. */
+    private val _recLoading = MutableStateFlow<String?>(null)
+    val recLoading: StateFlow<String?> = _recLoading.asStateFlow()
+
+    /**
+     * Plays a Home feed song: matched on Spotify only now, at tap time, then played like any search
+     * result (radio carries on after it as usual). A second tap while one is matching is ignored.
+     */
+    fun playRec(song: com.example.juke.home.FeedSong) {
+        if (_recLoading.value != null) return
+        _recLoading.value = song.videoId
+        viewModelScope.launch {
+            try {
+                val track = matchFeedSong(song)
+                if (track != null) playInstant(SpotifyApi.spotifyTrackToSong(track))
+                else Toast.makeText(getApplication(), "Couldn't find that song, so it's off Home now", Toast.LENGTH_SHORT).show()
+            } finally {
+                _recLoading.value = null
+            }
+        }
+    }
+
+    /** Feed songs already matched on Spotify, by video id, so a menu and a later tap match once. */
+    private val feedMatches = java.util.concurrent.ConcurrentHashMap<String, com.example.juke.models.SpotifyTrack>()
+
+    /**
+     * The Spotify track for a Home feed song, or null when there is no match (or the lookup failed).
+     * Tried in order: the same song in the library (by YouTube upload, then title and artist), the
+     * strict radio matcher, then a looser pick from Spotify's results ([com.example.juke.home.FeedMatch]).
+     */
+    suspend fun matchFeedSong(song: com.example.juke.home.FeedSong): com.example.juke.models.SpotifyTrack? {
+        feedMatches[song.videoId]?.let { return it }
+        return withContext(Dispatchers.IO) {
+            com.example.juke.home.resolveFeedSong(song) { rec ->
+                val match = libraryFeedMatch(song)?.let { id -> runCatching { SpotifyApi.getTrack(id) }.getOrNull() }
+                    ?: RecommenderApi.matchOnSpotify(rec)?.let { SpotifyApi.getTrack(it.spotifyUrl.substringAfterLast("/").substringBefore("?")) }
+                    ?: looseSpotifyMatch(song)
+                // No match at all (not a failed lookup: offline throws) hides the song from Home.
+                if (match == null) com.example.juke.home.FeedMisses.add(song.videoId)
+                match
+            }
+        }?.also { feedMatches[song.videoId] = it }
+    }
+
+    /** Spotify id of the same song already in the library, if any. */
+    private suspend fun libraryFeedMatch(song: com.example.juke.home.FeedSong): String? {
+        trackDao.findByVideoId(song.videoId)?.spotifyId?.let { return it }
+        val rows = trackDao.searchTracksLight(com.example.juke.home.FeedMatch.libraryQuery(song), 50).filter { it.spotifyId != null }
+        return com.example.juke.home.FeedMatch.pick(song, rows, { it.title }, { it.artist }, { it.durationSec })?.spotifyId
+    }
+
+    /** Spotify's results for the bare title and artist, then the title alone, judged by [com.example.juke.home.FeedMatch]. */
+    private suspend fun looseSpotifyMatch(song: com.example.juke.home.FeedSong): com.example.juke.models.SpotifyTrack? {
+        val title = com.example.juke.home.FeedMatch.libraryQuery(song)
+        for (query in listOf("$title ${song.artist}", title)) {
+            val items = SpotifyApi.search(query, listOf("track")).tracks?.items.orEmpty().take(10)
+            com.example.juke.home.FeedMatch.pick(song, items, { it.name }, { t -> t.artists.joinToString(", ") { it.name } }, { it.durationMs / 1000 })
+                ?.let { return it }
+        }
+        return null
+    }
+
     fun playInstant(song: SpotdownSong) {
         if (JamControls.playNow(listOf(song.toJamPick()))) return
         playInstantLocal(song)
@@ -1100,6 +1253,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             song = song,
                             forceSpotmateFirst = true,
                             pinnedUuids = pinnedUuids,
+                            cachedAudioFile = playbackManager::cachedAudioFile,
                             awaitPlaybackStarted = { trackId ->
                                 combine(
                                     playbackManager.currentTrackIdFlow,
@@ -2008,92 +2162,112 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Set queue from Spotify tracks (for Artist, Playlist screens)
-     * Downloads the first track and queues the remaining tracks sequentially
+     * Set queue from Spotify tracks (Artist and Playlist screens, a handoff from another device)
+     * Plays the first track, then queues the remaining tracks in parallel batches
      */
-    fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0) {
+    fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0, from: PlayContext? = null) {
+        setPlayContext(from)
         if (JamControls.playNow(spotifyTracks.drop(startIndex).map { it.toJamPick() })) return
-        viewModelScope.launch {
-            try {
-                if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return@launch
-
-                // Download and play the first track
-                downloadAndPlay(
-                    SpotifyApi.spotifyTrackToSong(spotifyTracks[startIndex])
-                )
-
-                // Wait for the first track to start playing before queuing others
-                // This ensures proper queue order and avoids parallel download crashes
-                delay(800.milliseconds)
-
-                // Queue the remaining tracks sequentially - one at a time with proper delays
-                // This prevents download parallelization and maintains queue order
-                for (i in (startIndex + 1) until spotifyTracks.size) {
-                    // Add delay to prevent overwhelming the download system
-                    delay(200.milliseconds)
-
-                    // Queue each track individually to the QueueManager's normal flow
-                    // The queueSpotifyTrackNext will add them to queue one by one
-                    queueSpotifyTrackNext(spotifyTracks[i])
-
-                    // Wait for the queue operation to complete before adding next
-                    // The isQueueOperationInProgress flag ensures sequential queueing
-                    while (_uiState.value.isQueueOperationInProgress) {
-                        delay(50.milliseconds)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("MusicViewModel", "Error setting queue from Spotify tracks: ${e.message}", e)
-            }
-        }
+        if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return
+        loadListQueue(spotifyTracks.drop(startIndex).map { SpotifyApi.spotifyTrackToSong(it) })
     }
 
     /**
      * Set queue from Simplified tracks (for Album screen)
-     * Downloads the first track and queues the remaining tracks sequentially
+     * Downloads the first track and queues the remaining tracks in parallel batches
      */
     fun setQueueFromSimplifiedTracks(
         simplifiedTracks: List<SpotifySimplifiedTrack>,
         album: SpotifyAlbum,
-        startIndex: Int = 0
+        startIndex: Int = 0,
+        from: PlayContext? = null
     ) {
+        setPlayContext(from)
         if (JamControls.playNow(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album).toJamPick() })) return
-        viewModelScope.launch {
+        if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return
+        loadListQueue(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album) })
+    }
+
+    private var listQueueJob: Job? = null
+
+    /**
+     * Plays [songs] as the queue (a playlist, album, or a handoff from another device): the first song
+     * alone first, so on a slow network nothing competes with it, then the rest [LIST_QUEUE_BATCH] at a
+     * time in parallel, each batch placed in order after the songs already queued. A newer list (or a Jam)
+     * stops an older one still loading.
+     */
+    private fun loadListQueue(songs: List<SpotdownSong>) {
+        listQueueJob?.cancel()
+        listQueueJob = viewModelScope.launch {
             try {
-                if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return@launch
-
-                // Download and play the first track
-                downloadAndPlay(
-                    SpotifyApi.simplifiedTrackToSong(simplifiedTracks[startIndex], album)
-                )
-
-                // Wait for the first track to start playing before queuing others
-                // This ensures proper queue order and avoids parallel download crashes
-                delay(800.milliseconds)
-
-                // Queue the remaining tracks sequentially - one at a time with proper delays
-                // This prevents download parallelization and maintains queue order
-                for (i in (startIndex + 1) until simplifiedTracks.size) {
-                    // Add delay to prevent overwhelming the download system
-                    delay(200.milliseconds)
-
-                    // Queue each track individually to the QueueManager's normal flow
-                    // The queueSimplifiedTrackNext will add them to queue one by one
-                    queueSimplifiedTrackNext(simplifiedTracks[i], album)
-
-                    // Wait for the queue operation to complete before adding next
-                    // The isQueueOperationInProgress flag ensures sequential queueing
-                    while (_uiState.value.isQueueOperationInProgress) {
-                        delay(50.milliseconds)
-                    }
+                val first = songs.first()
+                playInstant(first)
+                // Wait until the first song really plays (it may need a while on a slow network), not a fixed delay
+                withTimeoutOrNull(FIRST_SONG_WAIT_MS) {
+                    uiState.first { st -> st.isPlaying && st.currentTrack?.let { isSameSong(it, first) } == true }
                 }
+                val placed = mutableListOf<Track>()
+                for (batch in songs.drop(1).chunked(LIST_QUEUE_BATCH)) {
+                    if (com.example.juke.jam.JamSession.state.value.active) return@launch
+                    val tracks = coroutineScope {
+                        batch.map { song ->
+                            async(Dispatchers.IO) {
+                                try { resolveQueueTrack(song, queueManager.isStreamMode) }
+                                catch (e: CancellationException) { throw e }
+                                catch (e: Exception) { Log.w("MusicViewModel", "Skipped '${song.title}': ${e.message}"); null }
+                            }
+                        }.awaitAll().filterNotNull()
+                    }
+                    if (tracks.isEmpty()) continue
+                    placed += tracks
+                    // Re-place every queued song of this list that hasn't played yet plus the new batch, right
+                    // after the current song: one "play next" per song would reverse their order.
+                    val state = _uiState.value
+                    val ahead = state.queue.drop(state.queueIndex + 1).mapTo(HashSet()) { it.uuid }
+                    val upcoming = placed.filter { it.uuid in ahead } + tracks
+                    while (_uiState.value.isQueueOperationInProgress) delay(50.milliseconds)
+                    val done = kotlinx.coroutines.CompletableDeferred<Unit>()
+                    placeLibraryTracks(upcoming.distinctBy { it.uuid }, next = true) { done.complete(Unit) }
+                    done.await()
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e(
-                    "MusicViewModel",
-                    "Error setting queue from simplified tracks: ${e.message}",
-                    e
-                )
+                Log.e("MusicViewModel", "Error loading list queue: ${e.message}", e)
             }
+        }
+    }
+
+    private fun isSameSong(track: Track, song: SpotdownSong): Boolean =
+        (song.spotifyId != null && track.spotifyId == song.spotifyId) ||
+            (track.title.equals(song.title, true) && ArtistUtils.areArtistsEqual(track.artist, song.artist))
+
+    /**
+     * Fetch a song to this phone's stream cache without playing it or saving it to the library, so it
+     * plays from disk when its turn comes (a Jam's upcoming songs). Null if it couldn't be fetched.
+     */
+    suspend fun prefetchStream(song: SpotdownSong, pinned: Set<String> = emptySet()): Track? = withContext(Dispatchers.IO) {
+        try {
+            musicService.streamTrack(
+                song = song,
+                pinnedUuids = _uiState.value.queue.mapTo(HashSet()) { it.uuid } + pinned,
+                fetchLyricsSynchronously = false,
+                fetchYtVideoIdSynchronously = false
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("MusicViewModel", "Prefetch failed for '${song.title}': ${e.message}")
+            null
+        }
+    }
+
+    /** Play a song [prefetchStream] fetched earlier: saved now that it plays, like any streamed song. */
+    fun playPrefetchedLocal(track: Track) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { trackDao.insertTrack(track.toEntity()) }
+            playTrackLocal(track)
+            if (track.ytVideoId.isNullOrBlank()) refreshYtVideoId(track)
         }
     }
 

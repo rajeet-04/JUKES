@@ -35,7 +35,10 @@ fun PlayerProgress(
     currentPosition: Long,
     uiState: MusicUiState,
     musicViewModel: MusicViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** End label counts down what is left (-1:55) instead of the length. */
+    showRemaining: Boolean = false,
+    thumbSize: androidx.compose.ui.unit.Dp = 22.dp
 ) {
     val duration = if (uiState.duration > 0) uiState.duration else musicViewModel.playbackManager.getDuration()
 
@@ -43,7 +46,8 @@ fun PlayerProgress(
         PlaybackSeekSlider(
             positionMs = currentPosition,
             durationMs = duration,
-            onSeek = musicViewModel::seekTo
+            onSeek = musicViewModel::seekTo,
+            thumbSize = thumbSize
         )
 
         Row(
@@ -58,7 +62,7 @@ fun PlayerProgress(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                formatTime(duration),
+                if (showRemaining && duration > 0) "-" + formatTime((duration - currentPosition).coerceAtLeast(0)) else formatTime(duration),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

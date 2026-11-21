@@ -461,16 +461,50 @@ fun AudioSettingsScreen(
                                     fontWeight = FontWeight.SemiBold
                                 )
                             },
-                            supportingContent = { Text("Turn off blur and transparency") },
+                            supportingContent = {
+                                Text(
+                                    if (com.example.juke.ui.theme.GlassPrefs.supported) "Turn off blur and transparency"
+                                    else "Always on: glass needs Android 13 or newer"
+                                )
+                            },
                             leadingContent = { Icon(JukeIcons.Equalizer, contentDescription = null) },
                             trailingContent = {
                                 Switch(
                                     checked = com.example.juke.ui.theme.GlassPrefs.solid,
+                                    enabled = com.example.juke.ui.theme.GlassPrefs.supported,
                                     onCheckedChange = {
                                         haptic.toggle()
                                         com.example.juke.ui.theme.GlassPrefs.solid = it
                                         ctx.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE)
                                             .edit { putBoolean("solid_surfaces", it) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    val ctx = LocalContext.current
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        CompactItem(
+                            headlineContent = {
+                                Text(
+                                    "Background waves",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            supportingContent = { Text("Soft waves in the artwork's colours that move with the music") },
+                            leadingContent = { Icon(JukeIcons.Equalizer, contentDescription = null) },
+                            trailingContent = {
+                                Switch(
+                                    checked = com.example.juke.ambient.AmbientPrefs.enabled,
+                                    onCheckedChange = {
+                                        haptic.toggle()
+                                        com.example.juke.ambient.AmbientPrefs.enabled = it
+                                        ctx.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE)
+                                            .edit { putBoolean("ambient_waves", it) }
                                     }
                                 )
                             }

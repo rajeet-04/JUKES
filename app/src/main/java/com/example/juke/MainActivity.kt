@@ -137,6 +137,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         com.example.juke.ui.theme.GlassPrefs.solid =
             getSharedPreferences("ui_prefs", MODE_PRIVATE).getBoolean("solid_surfaces", false)
+        com.example.juke.ambient.AmbientPrefs.enabled =
+            getSharedPreferences("ui_prefs", MODE_PRIVATE).getBoolean("ambient_waves", true)
 
         // Check intent immediately
         handlePlayerIntent(intent)
@@ -351,6 +353,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val hazeState = remember { HazeState() }
+                com.example.juke.ui.theme.GlassTiltLight()
                 val haptic = rememberJukeHaptics()
                 val navItems = items.map { screen ->
                     GlassNavItem(
@@ -361,6 +364,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // Menus are drawn in this window (GlassSheetLayer below) so their glass can refract the app.
+                val sheetHost = remember { com.example.juke.ui.components.GlassSheetHost() }
+                CompositionLocalProvider(com.example.juke.ui.components.LocalGlassSheetHost provides sheetHost) {
                 com.example.juke.ui.components.PlayerTransitionHost(expanded = showPlayerModal, musicViewModel = musicViewModel) {
                 val openMedia = remember(navController) {
                     com.example.juke.ui.components.OpenMedia(
@@ -496,8 +502,18 @@ class MainActivity : ComponentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                     // Backdrop source: the ambient light field and every screen scroll inside it,
                     // so the floating glass (tab bar, mini player) blurs what is really behind it.
+                    // Ambient layer below the page source: cards inside the page refract it.
+                    com.example.juke.ui.theme.GlassAmbient(Modifier.hazeSource(hazeState, zIndex = -1f)) {
+                        // Waves that move with the music, in the artwork's colours. The player has its
+                        // own backdrop, so they settle while it's open.
+                        val art = uiState.extractedColors
+                        com.example.juke.ambient.AmbientWaves(
+                            playing = uiState.isPlaying && !showPlayerModal,
+                            colors = art?.let { listOf(it.primary, it.secondary, it.tertiary) }.orEmpty(),
+                            dark = com.example.juke.ui.theme.isGlassDark()
+                        )
+                    }
                     Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
-                    Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (isExpanded && currentRoute != "settings") {
                             GlassNavRail(items = navItems, modifier = Modifier.statusBarsPadding())
@@ -518,7 +534,13 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     musicViewModel = musicViewModel,
                                     onSettingsClick = { navController.navigate("settings") },
-                                    onSearchClick = { onNavigate(Screen.Search) },
+                                    onSearchClick = { query ->
+                                        if (query != null) activityViewModelProvider[SearchViewModel::class.java].apply {
+                                            updateQuery(query)
+                                            search(query)
+                                        }
+                                        onNavigate(Screen.Search)
+                                    },
                                     onSeeAllClick = {
                                         navController.navigate(Screen.Library.route) {
                                             popUpTo(navController.graph.findStartDestination().id) {
@@ -687,8 +709,33 @@ class MainActivity : ComponentActivity() {
                             }
                             val shareIntent = Intent.createChooser(sendIntent, null)
                             context.startActivity(shareIntent)
+                        },
+                        onOpenPlayingFrom = { from ->
+                            showPlayerModal = false
+                            when (from.kind) {
+                                com.example.juke.viewmodels.PlayContext.Kind.LIBRARY_PLAYLIST -> {
+                                    com.example.juke.viewmodels.PlayContext.openLibraryPlaylist.value = from.id
+                                    onNavigate(Screen.Library)
+                                }
+                                com.example.juke.viewmodels.PlayContext.Kind.LIBRARY -> onNavigate(Screen.Library)
+                                com.example.juke.viewmodels.PlayContext.Kind.PLAYLIST -> from.playlist?.let { playlist ->
+                                    activityViewModelProvider[PlaylistDetailViewModel::class.java].loadPlaylistDetails(playlist)
+                                    navController.navigate("playlist/${playlist.id}")
+                                }
+                                com.example.juke.viewmodels.PlayContext.Kind.ALBUM -> {
+                                    activityViewModelProvider[AlbumDetailViewModel::class.java].loadAlbumDetailsById(from.id)
+                                    navController.navigate("album/${from.id}")
+                                }
+                                com.example.juke.viewmodels.PlayContext.Kind.ARTIST -> {
+                                    activityViewModelProvider[SearchViewModel::class.java].loadArtistDetailsById(from.id)
+                                    navController.navigate("artist/${from.id}")
+                                }
+                            }
                         }
                     )
+                }
+                // Above the pages and the player: open menus.
+                com.example.juke.ui.components.GlassSheetLayer(sheetHost)
                 }
                 }
             }

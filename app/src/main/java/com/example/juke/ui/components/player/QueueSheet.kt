@@ -97,7 +97,9 @@ fun QueueBottomSheetContent(
     onSortUpcoming: () -> Unit = {},
     onClearPlayed: () -> Unit = {},
     onSaveAsPlaylist: (name: String, includeWaiting: Boolean) -> Unit = { _, _ -> },
-    suggestedPlaylistName: () -> String = { "Queue" }
+    suggestedPlaylistName: () -> String = { "Queue" },
+    /** Shown inside the player's stage: no back button, insets or now-playing card. */
+    embedded: Boolean = false
 ) {
     val haptic = rememberJukeHaptics()
     // Songs already loaded when the sheet opened don't replay the colour-up.
@@ -107,8 +109,7 @@ fun QueueBottomSheetContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 16.dp)
+            .then(if (embedded) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp))
     ) {
         // Header with close button and title
         Row(
@@ -118,10 +119,11 @@ fun QueueBottomSheetContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onClose) {
+            if (!embedded) IconButton(onClick = onClose) {
                 Icon(JukeIcons.Back, "Close")
             }
-            Text(
+            // In the player's stage the top bar already says "Up next".
+            if (embedded) Spacer(Modifier.weight(1f)) else Text(
                 "Up Next",
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
@@ -195,7 +197,7 @@ fun QueueBottomSheetContent(
         // Queue list with swipe-to-remove
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Current track indicator
-            item(key = "now_playing_card") {
+            if (!embedded) item(key = "now_playing_card") {
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
         accent = MaterialTheme.colorScheme.primaryContainer) {
@@ -362,6 +364,7 @@ fun QueueBottomSheetContent(
 
                     // The swipe callback can fire repeatedly while past the threshold: one copy per swipe.
                     val copyQueued = remember { mutableStateOf(false) }
+                    val removed = remember { mutableStateOf(false) }
                     val dismissState = rememberSwipeToDismissBoxState(
                         positionalThreshold = { distance -> distance * 0.5f },
                         confirmValueChange = { dismissValue ->
@@ -373,8 +376,14 @@ fun QueueBottomSheetContent(
                                     false
                                 }
                                 dismissValue == SwipeToDismissBoxValue.EndToStart -> {
-                                    haptic.reject()
-                                    onRemoveTrack(track.uuid, actualQueueIndex)
+                                    // The state keeps this lambda from the first composition: read the live
+                                    // row, and remove once per swipe (the callback can repeat past threshold).
+                                    val liveTrack = upcomingNow.getOrNull(indexNow)
+                                    if (!removed.value && liveTrack != null) {
+                                        removed.value = true
+                                        haptic.reject()
+                                        onRemoveTrack(liveTrack.uuid, queueIndexNow + 1 + indexNow)
+                                    }
                                     true
                                 }
                                 // Swipe right: a copy plays next; this one keeps its place.
@@ -622,10 +631,13 @@ fun QueueBottomSheetContent(
 
 /** One unique key per upcoming row: the same song can be queued twice. */
 private fun upcomingRowKeys(tracks: List<com.example.juke.models.Track>): List<String> {
+    // The copy count is part of the key: removing either copy of a duplicate gives the survivor a new
+    // key, so it never inherits the dismissed swipe state of the row that just went away (#33).
+    val total = tracks.groupingBy { it.uuid }.eachCount()
     val seen = HashMap<String, Int>()
     return tracks.map { t ->
         val n = seen.merge(t.uuid, 1, Int::plus)!! - 1
-        "queue_item_${t.uuid}#$n"
+        "queue_item_${t.uuid}#$n/${total[t.uuid]}"
     }
 }
 

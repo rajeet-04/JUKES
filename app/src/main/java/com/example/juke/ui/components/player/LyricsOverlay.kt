@@ -19,6 +19,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -122,7 +123,11 @@ fun LyricsOverlay(
     currentPosition: Long,
     musicViewModel: MusicViewModel,
     isTablet: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Inside the player's stage: no backdrop or buttons; the player's top bar opens [syncOpen]. */
+    embedded: Boolean = false,
+    syncOpen: Boolean = false,
+    onSyncOpenChange: (Boolean) -> Unit = {}
 ) {
     val density = LocalDensity.current
     val haptic = rememberJukeHaptics()
@@ -135,7 +140,9 @@ fun LyricsOverlay(
     var lastTick by remember(currentTrack.uuid) {
         mutableIntStateOf((currentTrack.lyricsOffsetMs / 100L).toInt())
     }
-    var showSyncControls by remember(currentTrack.uuid) { mutableStateOf(false) }
+    var ownSyncControls by remember(currentTrack.uuid) { mutableStateOf(false) }
+    val showSyncControls = if (embedded) syncOpen else ownSyncControls
+    val setSyncControls: (Boolean) -> Unit = { if (embedded) onSyncOpenChange(it) else ownSyncControls = it }
     // Loading only while a lookup really runs (the server may take a while to align lyrics);
     // once it finishes empty, say so.
     val searching by musicViewModel.lyricsSearching.collectAsState()
@@ -153,7 +160,7 @@ fun LyricsOverlay(
             .fillMaxSize()
             .onSizeChanged { overlayHeightPx = it.height }
     ) {
-        if (!currentTrack.thumbnailUri.isNullOrBlank()) {
+        if (!embedded && !currentTrack.thumbnailUri.isNullOrBlank()) {
             val blurDp = if (isTablet) 92.dp else 72.dp
             AsyncImage(
                 model = currentTrack.thumbnailUri,
@@ -168,7 +175,7 @@ fun LyricsOverlay(
 
         // The artwork gives the card its colour only: under this scrim its light and dark patches
         // even out, so every line has the same contrast wherever it sits.
-        Box(
+        if (!embedded) Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
@@ -212,8 +219,8 @@ fun LyricsOverlay(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp)
-                    .fadingEdges(),
+                    .padding(horizontal = if (embedded) 0.dp else 24.dp)
+                    .fadingEdges(clear = if (embedded) 0.dp else 52.dp, fade = if (embedded) 40.dp else 56.dp),
                 contentPadding = PaddingValues(top = topPadding, bottom = bottomPadding),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
@@ -244,8 +251,8 @@ fun LyricsOverlay(
                     Text(
                         text = text,
                         style = MaterialTheme.typography.headlineSmall.copy(
-                            fontSize = 25.sp,
-                            lineHeight = 32.sp,
+                            fontSize = if (embedded) 22.sp else 25.sp,
+                            lineHeight = if (embedded) 29.sp else 32.sp,
                             letterSpacing = (-0.4).sp
                         ),
                         color = Color.White,
@@ -314,10 +321,10 @@ fun LyricsOverlay(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 24.dp)
-                        .fadingEdges(bottomFraction = 0.14f),
+                        .padding(horizontal = if (embedded) 0.dp else 24.dp)
+                        .fadingEdges(clear = if (embedded) 0.dp else 52.dp, bottomFraction = 0.14f),
                     // Top clears the sync/close buttons; bottom lets the last line scroll to mid-card.
-                    contentPadding = PaddingValues(top = 84.dp, bottom = 120.dp),
+                    contentPadding = PaddingValues(top = if (embedded) 16.dp else 84.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(rows.size) { i ->
@@ -349,11 +356,18 @@ fun LyricsOverlay(
         if (syncedLyrics != null && showSyncControls) {
             Box(
                 modifier = Modifier.fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.25f))
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                    .then(
+                        // The card is opaque, so the lyrics above it stay as they are; a tap there closes it.
+                        if (embedded) Modifier
+                            .clickable(interactionSource = null, indication = null) { setSyncControls(false) }
+                            .padding(bottom = 4.dp)
+                        else Modifier.background(Color.Black.copy(alpha = 0.25f)).padding(horizontal = 16.dp, vertical = 16.dp)
+                    ),
                 contentAlignment = Alignment.BottomCenter
             ) {
                 LyricsSyncPanel(
+                    accent = if (embedded) MaterialTheme.colorScheme.primary else null,
+                    onAccent = MaterialTheme.colorScheme.onPrimary,
                     offsetMs = localOffsetMs,
                     onOffsetChange = { value ->
                         val step = (value / 100f).roundToInt()
@@ -370,14 +384,14 @@ fun LyricsOverlay(
                     onDone = {
                         haptic.click()
                         musicViewModel.saveLyricsOffset(currentTrack, localOffsetMs.toLong())
-                        showSyncControls = false
+                        setSyncControls(false)
                     }
                 )
             }
         }
 
         // Top action buttons
-        Box(
+        if (!embedded) Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(12.dp),
@@ -391,7 +405,7 @@ fun LyricsOverlay(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (syncedLyrics != null) {
                         IconButton(
-                            onClick = { showSyncControls = !showSyncControls },
+                            onClick = { setSyncControls(!showSyncControls) },
                             modifier = Modifier
                                 .size(40.dp)
                                 .background(
@@ -427,15 +441,22 @@ fun LyricsOverlay(
     }
 }
 
-/** User adjustment is relative to the fixed internal render lead; zero remains the default. */
+/** User adjustment is relative to the fixed internal render lead; zero remains the default. Shared with desktop. */
 @Composable
-private fun LyricsSyncPanel(
+internal fun LyricsSyncPanel(
     offsetMs: Float,
     onOffsetChange: (Float) -> Unit,
     onSave: () -> Unit,
     onReset: () -> Unit,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    /** The phone player passes the artwork accent and gets the tinted panel; desktop keeps the grey one. */
+    accent: Color? = null,
+    onAccent: Color = Color.Black
 ) {
+    if (accent != null) {
+        TintedSyncPanel(offsetMs, onOffsetChange, onSave, onReset, onDone, accent, onAccent)
+        return
+    }
     val shape = RoundedCornerShape(24.dp)
     val foreground = Color(0xFFF4F4F5)
     val secondary = Color(0xFFB7B7BD)
@@ -504,5 +525,135 @@ private suspend fun androidx.compose.foundation.lazy.LazyListState.glideTo(index
     } else {
         val delta = item.offset - layoutInfo.beforeContentPadding
         if (delta != 0) animateScrollBy(delta.toFloat(), spring(dampingRatio = 1f, stiffness = 180f))
+    }
+}
+
+/**
+ * The lyrics timing panel in the phone player: a card tinted from the artwork, a centre-zero slider
+ * that fills from 0 toward the thumb in the accent, and pill buttons like the rest of the player.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TintedSyncPanel(
+    offsetMs: Float,
+    onOffsetChange: (Float) -> Unit,
+    onSave: () -> Unit,
+    onReset: () -> Unit,
+    onDone: () -> Unit,
+    accent: Color,
+    onAccent: Color
+) {
+    val haptic = rememberJukeHaptics()
+    val shape = RoundedCornerShape(24.dp)
+    val card = androidx.compose.ui.graphics.lerp(Color(0xFF141012), accent, 0.12f)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(card)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), shape)
+            // Taps inside the panel must not reach the scrim, which closes it.
+            .clickable(interactionSource = null, indication = null) {}
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Lyrics timing", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(
+                    when {
+                        offsetMs < 0f -> "Lines appear earlier"
+                        offsetMs > 0f -> "Lines appear later"
+                        else -> "In sync with the song"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+            val sign = if (offsetMs > 0f) "+" else ""
+            Text(
+                "$sign${String.format(Locale.US, "%.1f", offsetMs / 1000f)} s",
+                style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
+                fontWeight = FontWeight.Bold,
+                color = if (offsetMs == 0f) Color.White else accent
+            )
+        }
+
+        Column {
+            Slider(
+                value = offsetMs.coerceIn(-60000f, 60000f),
+                onValueChange = onOffsetChange,
+                onValueChangeFinished = onSave,
+                valueRange = -60000f..60000f,
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Lyrics timing offset" },
+                thumb = {
+                    Box(Modifier.size(20.dp).background(Color.White, CircleShape))
+                },
+                track = { state ->
+                    val range = state.valueRange
+                    val fraction = ((state.value - range.start) / (range.endInclusive - range.start)).coerceIn(0f, 1f)
+                    androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(20.dp)) {
+                        val y = size.height / 2
+                        val h = 4.dp.toPx()
+                        val mid = size.width / 2
+                        val x = size.width * fraction
+                        drawRoundRect(
+                            Color.White.copy(alpha = 0.14f),
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, y - h / 2),
+                            size = androidx.compose.ui.geometry.Size(size.width, h),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2)
+                        )
+                        // Filled from zero to the thumb, so the direction of the shift is visible.
+                        drawRoundRect(
+                            accent,
+                            topLeft = androidx.compose.ui.geometry.Offset(minOf(mid, x), y - h / 2),
+                            size = androidx.compose.ui.geometry.Size(kotlin.math.abs(x - mid), h),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2)
+                        )
+                        // Zero mark.
+                        drawRoundRect(
+                            Color.White.copy(alpha = 0.55f),
+                            topLeft = androidx.compose.ui.geometry.Offset(mid - 1.dp.toPx(), y - 6.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(2.dp.toPx(), 12.dp.toPx()),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
+                        )
+                    }
+                }
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Earlier", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
+                Text("Later", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            @Composable
+            fun Pill(label: String, enabled: Boolean = true, onClick: () -> Unit) = Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = if (enabled) 0.09f else 0.04f))
+                    .clickable(enabled = enabled) { haptic.click(); onClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = if (enabled) 0.92f else 0.35f))
+            }
+            Pill("−0.5 s", enabled = offsetMs > -60000f) { onOffsetChange((offsetMs - 500f).coerceAtLeast(-60000f)); onSave() }
+            Pill("Reset", enabled = offsetMs != 0f, onClick = onReset)
+            Pill("+0.5 s", enabled = offsetMs < 60000f) { onOffsetChange((offsetMs + 500f).coerceAtMost(60000f)); onSave() }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(accent)
+                    .clickable(onClick = onDone),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Done", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = onAccent)
+            }
+        }
     }
 }

@@ -1,6 +1,18 @@
 package com.example.juke.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import android.os.Build
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import com.example.juke.ui.theme.glassIsLive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateIntSizeAsState
 import androidx.compose.animation.core.spring
@@ -111,15 +123,15 @@ private fun LiquidBar(modifier: Modifier, content: @Composable () -> Unit) {
 }
 
 /**
- * One liquid selection lens. It travels on a loose spring, stretches along its direction of
- * travel in proportion to its speed while squashing across it, and swells slightly while moving,
- * like a drop of glass sliding between tabs. On the horizontal bar it can also be dragged and
- * released onto the nearest tab.
+ * One clear liquid lens over the selected tab, the same glass as the player's Lyrics / Up next / Mix
+ * dock. The icons are its haze source and are cut out beneath it, so what shows through the lens is
+ * the icon bent at its rim, not a tinted pill behind it. It travels on a loose spring, stretches
+ * along its travel and squashes across it in proportion to its speed (a drag's real finger speed
+ * too), its rim flaring while it moves. On the horizontal bar it can be dragged; let go, it carries
+ * the flick's momentum to the tab it is heading for.
  */
 @Composable
 private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier: Modifier = Modifier) {
-    val accent = LocalGlassAccent.current
-    val neon = rememberNeon(accent)
     val scope = rememberCoroutineScope()
     val bounds = remember { mutableStateMapOf<Int, Pair<IntOffset, IntSize>>() }
     val selectedIndex = items.indexOfFirst { it.selected }
@@ -128,13 +140,17 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
     val pos = remember { Animatable(0f) }
     var dragging by remember { mutableStateOf(false) }
     var placed by remember { mutableStateOf(false) }
+    // Finger speed while dragging (snapTo leaves the animation's own velocity at zero).
+    var dragVelocity by remember { mutableFloatStateOf(0f) }
+    val currentItems by rememberUpdatedState(items)
     fun axis(o: IntOffset) = if (vertical) o.y.toFloat() else o.x.toFloat()
     val lensSpring = spring<Float>(dampingRatio = 0.8f, stiffness = 300f) // a tap settles; only a drag release carries momentum
+    val speed = { ((if (dragging) kotlin.math.abs(dragVelocity) else kotlin.math.abs(pos.velocity)) / 5000f).coerceIn(0f, 1f) }
 
     LaunchedEffect(selected, dragging) {
         val target = selected?.first?.let(::axis) ?: return@LaunchedEffect
         if (dragging) return@LaunchedEffect
-        if (!placed) { pos.snapTo(target); placed = true } else pos.animateTo(target, lensSpring)
+        if (!placed) { pos.snapTo(target); placed = true } else pos.animateTo(target, lensSpring, pos.velocity)
     }
     val size by animateIntSizeAsState(
         selected?.second ?: IntSize.Zero,
@@ -143,31 +159,87 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
     )
     val cross = selected?.first?.let { if (vertical) it.x else it.y } ?: 0
 
-    val dragModifier = if (vertical) Modifier else Modifier.pointerInput(items) {
+    val dragModifier = if (vertical) Modifier else Modifier.pointerInput(Unit) {
+        val tracker = VelocityTracker()
+        fun range(): Pair<Float, Float> {
+            val lo = bounds.values.minOfOrNull { it.first.x }?.toFloat() ?: 0f
+            val hi = bounds.values.maxOfOrNull { it.first.x }?.toFloat() ?: 0f
+            return lo to hi
+        }
+        fun release() {
+            val v = tracker.calculateVelocity().x
+            tracker.resetTracking()
+            dragging = false
+            dragVelocity = 0f
+            // Land where the flick was heading: the lens' position projected a little by its speed.
+            val projected = pos.value + v * 0.12f
+            val nearest = bounds.entries.minByOrNull { (_, b) -> kotlin.math.abs(b.first.x - projected) }?.key ?: return
+            val (lo, hi) = range()
+            scope.launch {
+                // Hand the finger's speed to the spring so the lens keeps moving, then settles.
+                pos.snapTo(pos.value.coerceIn(lo, hi))
+                val target = bounds[nearest]?.first?.x?.toFloat() ?: return@launch
+                val go = currentItems.getOrNull(nearest)
+                if (go != null && !go.selected) go.onClick()
+                pos.animateTo(target, lensSpring, v)
+            }
+        }
         detectHorizontalDragGestures(
-            onDragStart = { dragging = true },
-            onDragCancel = { dragging = false },
-            onDragEnd = { dragging = false },
+            onDragStart = { tracker.resetTracking(); dragging = true },
+            onDragCancel = { release() },
+            onDragEnd = { release() },
             onHorizontalDrag = { change, dx ->
                 change.consume()
-                val lo = bounds.values.minOfOrNull { it.first.x }?.toFloat() ?: 0f
-                val hi = bounds.values.maxOfOrNull { it.first.x }?.toFloat() ?: 0f
-                scope.launch { pos.snapTo((pos.value + dx).coerceIn(lo, hi)) }
+                tracker.addPosition(change.uptimeMillis, change.position)
+                dragVelocity = tracker.calculateVelocity().x
+                val (lo, hi) = range()
+                // Past the end tabs the glass resists: it gives a little, like rubber, instead of stopping dead.
+                val next = pos.value + dx
+                val resisted = when {
+                    next < lo -> lo - (lo - next).coerceAtMost(48f) * 0.35f
+                    next > hi -> hi + (next - hi).coerceAtMost(48f) * 0.35f
+                    else -> next
+                }
+                scope.launch { pos.snapTo(resisted) }
             }
         )
     }
-    // On release, land on whichever tab the lens is nearest to (projected a little by its velocity).
-    LaunchedEffect(dragging) {
-        if (dragging || !placed) return@LaunchedEffect
+
+    val live = glassIsLive() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val neon = rememberNeon(LocalGlassAccent.current)
+    val iconsHaze = remember { HazeState() }
+    val density = LocalDensity.current
+    // Where the lens sits, in the icons' coordinates; the icons are cut out there.
+    fun lensRect(): Rect {
         val p = pos.value
-        val nearest = bounds.entries.minByOrNull { (_, v) -> kotlin.math.abs(v.first.x - p) }?.key ?: return@LaunchedEffect
-        if (nearest != selectedIndex) items.getOrNull(nearest)?.onClick?.invoke()
-        else bounds[nearest]?.let { pos.animateTo(it.first.x.toFloat(), lensSpring) }
+        return if (vertical) Rect(Offset(cross.toFloat(), p), Size(size.width.toFloat(), size.height.toFloat()))
+        else Rect(Offset(p, cross.toFloat()), Size(size.width.toFloat(), size.height.toFloat()))
     }
 
     Box(modifier = modifier.then(dragModifier)) {
-        if (selected != null) {
-            with(LocalDensity.current) {
+        val tabModifier = { i: Int ->
+            Modifier.onPlaced { bounds[i] = it.positionInParent().round() to it.size }
+        }
+        val cutOut = if (live && selected != null && placed) Modifier.drawWithContent {
+            val hole = Path().apply { addRoundRect(RoundRect(lensRect(), CornerRadius(size.height / 2f))) }
+            clipPath(hole, ClipOp.Difference) { this@drawWithContent.drawContent() }
+        } else Modifier
+        Box(Modifier.then(cutOut).hazeSource(iconsHaze)) {
+            if (vertical) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    items.forEachIndexed { i, item -> GlassNavTab(item, tabModifier(i).fillMaxWidth()) }
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items.forEachIndexed { i, item -> GlassNavTab(item, tabModifier(i).width(64.dp)) }
+                }
+            }
+        }
+        if (selected != null && placed) {
+            with(density) {
                 Box(
                     Modifier
                         .offset {
@@ -176,36 +248,25 @@ private fun GlassTabGroup(items: List<GlassNavItem>, vertical: Boolean, modifier
                         }
                         .size(size.width.toDp(), size.height.toDp())
                         .graphicsLayer {
-                            val speed = (kotlin.math.abs(pos.velocity) / 5000f).coerceIn(0f, 1f)
+                            val v = speed()
                             val grab = if (dragging) 0.08f else 0f
-                            val along = 1f + 0.38f * speed + grab
-                            val across = 1f - 0.16f * speed + grab * 0.5f
+                            val along = 1f + 0.38f * v + grab
+                            val across = 1f - 0.16f * v + grab * 0.5f
                             scaleX = if (vertical) across else along
                             scaleY = if (vertical) along else across
                         }
-                        // Light caught in the lens edge; it flares while the lens travels.
-                        .neonRim(neon) {
-                            (kotlin.math.abs(pos.velocity) / 4000f).coerceIn(0f, 1f) + if (dragging) 0.4f else 0f
-                        }
-                        .glassLens(GlassShapes.Pill, accent) {
-                            (kotlin.math.abs(pos.velocity) / 4000f).coerceIn(0f, 1f) + if (dragging) 0.4f else 0f
-                        }
+                        // The neon ring caught in the lens edge; it flares while the lens travels or is held.
+                        .neonRim(neon) { speed() + if (dragging) 0.4f else 0f }
+                        .then(
+                            // Pure clear glass over the icons: no tint, no frost. It bends the icon
+                            // at its rim, with the rainbow edge swelling while it moves or is held.
+                            if (live) Modifier.liquidGlass(
+                                GlassShapes.Pill, Color.Transparent, blur = 0.dp, rimAlpha = 0.7f, source = iconsHaze,
+                                displacement = 18.dp, edge = 14.dp, fold = 0f,
+                                strength = { 0.5f + speed() + if (dragging) 0.5f else 0f }
+                            ) else Modifier.glassLens(GlassShapes.Pill, LocalGlassAccent.current)
+                        )
                 )
-            }
-        }
-        val tabModifier = { i: Int ->
-            Modifier.onPlaced { bounds[i] = it.positionInParent().round() to it.size }
-        }
-        if (vertical) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                items.forEachIndexed { i, item -> GlassNavTab(item, tabModifier(i).fillMaxWidth()) }
-            }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                items.forEachIndexed { i, item -> GlassNavTab(item, tabModifier(i).width(64.dp)) }
             }
         }
     }

@@ -1,11 +1,14 @@
 package com.example.juke.ui.screens
 
+import dev.chrisbanes.haze.hazeSource
 import com.example.juke.ui.components.playerStage
 import com.example.juke.ui.icons.JukeIcons
 
 import android.annotation.SuppressLint
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -228,13 +231,22 @@ fun PlayerScreen(
     onDismiss: () -> Unit,
     onNavigateToArtist: (String) -> Unit,
     onNavigateToAlbum: (String) -> Unit,
-    onShareTrack: (String) -> Unit
+    onShareTrack: (String) -> Unit,
+    /** Tap on "Playing from …": opens the list the queue was started from. */
+    onOpenPlayingFrom: (com.example.juke.viewmodels.PlayContext) -> Unit = {}
 ) {
+    // Phones get the stage player; the desktop build keeps its wide layout.
+    val stagePlayer = !com.example.juke.account.Account.isDesktop
     BackHandler(onBack = onDismiss)
+    var stage by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(PlayerStage.Art) }
+    var lyricsSyncOpen by remember { mutableStateOf(false) }
+    // Back from lyrics, the queue or the mix returns to the artwork before it closes the player.
+    BackHandler(enabled = stagePlayer && stage != PlayerStage.Art) { lyricsSyncOpen = false; stage = PlayerStage.Art }
 
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     val currentTrack = uiState.currentTrack
+    val playingFrom by musicViewModel.playingFrom.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSaveQueue by remember { mutableStateOf(false) }
     val playbackSpeed by musicViewModel.playbackSpeed.collectAsStateWithLifecycle()
@@ -351,10 +363,22 @@ fun PlayerScreen(
 
     // The host owns expansion so artwork and player share one coordinate space.
     Box(Modifier.fillMaxSize()) {
+        // The player is its own glass world: its glass samples the player's backdrop (artwork and
+        // gradient), never the app behind it, and every surface gets the boosted recipe.
+        val playerHaze = remember { dev.chrisbanes.haze.HazeState() }
         JUKETheme(darkTheme = true, extractedColors = uiState.extractedColors) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.example.juke.ui.theme.LocalHazeState provides (if (stagePlayer) playerHaze else com.example.juke.ui.theme.LocalHazeState.current),
+            com.example.juke.ui.theme.LocalGlassBoost provides stagePlayer,
+        ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            if (stagePlayer) ArtBackdrop(
+                uiState.extractedColors, stage,
+                Modifier.hazeSource(playerHaze, zIndex = -1f),
+                artwork = currentTrack?.thumbnailUri
+            )
             // Plain black backdrop; the artwork is the only color on the screen.
-            Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
+            else Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
             // Content — fully responsive, adapts to screen height
             BoxWithConstraints(
                 modifier = Modifier
@@ -365,7 +389,6 @@ fun PlayerScreen(
                 // Scale breakpoints: tight (<640dp), normal (640-800dp), large (>800dp)
                 val isCompact = screenH < 640.dp
                 val spacerSm = if (isCompact) 8.dp else if (screenH < 800.dp) 16.dp else 24.dp
-                if (isCompact) 12.dp else if (screenH < 800.dp) 24.dp else 36.dp
                 val actionIconSize = if (isCompact) 18.dp else 24.dp
                 val actionBtnSize = 48.dp
                 // Fixed sizes for the bottom bar so they never shrink too small
@@ -381,248 +404,471 @@ fun PlayerScreen(
                 // Keep a safe bottom padding to avoid nav bar overlap
                 val bottomPadding = if (isCompact) 16.dp else 24.dp
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Header
-                    PlayerHeader(
-                        modifier = Modifier.playerStage(0.55f, 0.8f, 12.dp),
-                        onDismiss = onDismiss,
-                        onShowSleepTimer = { showSleepTimerDialog = true },
-                        onNavigateToAlbum = {
-                            if (currentTrack.albumSpotifyId != null) onNavigateToAlbum(
-                                currentTrack.albumSpotifyId
-                            )
-                        },
-                        onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
-                        onRefetchSong = { musicViewModel.refetchTrack(currentTrack) },
-                        canRefetchSong = currentTrack.spotifyId != null,
-                        onToggleRomanizedLyrics = { musicViewModel.toggleRomanizedLyrics() },
-                        isRomanizedLyricsEnabled = romanizeLyrics,
-                        showMenuOption = true,
-                        isAlbumAvailable = currentTrack.albumSpotifyId != null,
-                        currentArtist = currentTrack.artist,
-                        onShowBlacklistPicker = { showBlacklistPicker = true },
-                        playbackSpeed = playbackSpeed,
-                        onCycleSpeed = { musicViewModel.cyclePlaybackSpeed() },
-                        onSaveQueue = { showSaveQueue = true }
-                    )
+                @Composable
+                fun Header(title: String = "Now Playing", extraAction: (@Composable () -> Unit)? = null) = PlayerHeader(
+                    modifier = Modifier.playerStage(0.55f, 0.8f, 12.dp),
+                    title = title,
+                    playingFrom = playingFrom.takeIf { title == "Now Playing" },
+                    onOpenPlayingFrom = { playingFrom?.let(onOpenPlayingFrom) },
+                    extraAction = extraAction,
+                    onDismiss = onDismiss,
+                    onShowSleepTimer = { showSleepTimerDialog = true },
+                    onNavigateToAlbum = {
+                        if (currentTrack.albumSpotifyId != null) onNavigateToAlbum(
+                            currentTrack.albumSpotifyId
+                        )
+                    },
+                    onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
+                    onRefetchSong = { musicViewModel.refetchTrack(currentTrack) },
+                    canRefetchSong = currentTrack.spotifyId != null,
+                    onToggleRomanizedLyrics = { musicViewModel.toggleRomanizedLyrics() },
+                    isRomanizedLyricsEnabled = romanizeLyrics,
+                    showMenuOption = true,
+                    isAlbumAvailable = currentTrack.albumSpotifyId != null,
+                    currentArtist = currentTrack.artist,
+                    onShowBlacklistPicker = { showBlacklistPicker = true },
+                    playbackSpeed = playbackSpeed,
+                    onCycleSpeed = { musicViewModel.cyclePlaybackSpeed() },
+                    onSaveQueue = { showSaveQueue = true },
+                    onShare = currentTrack.spotifyId?.let { id -> { onShareTrack(id) } }
+                )
 
-                    Spacer(modifier = Modifier.height(spacerSm))
+                // In a Jam the artwork swipes through (and Up next shows) the room's queue, not this phone's
+                val jamNow by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+                val roomQueue = remember(jamNow.queue) { jamNow.queue.map { it.toTrack() } }
+                val roomIndex = jamNow.playback?.itemId?.let { id -> jamNow.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+                val showRoom = jamNow.active && roomQueue.isNotEmpty() && roomIndex != null
 
-                    // Artwork — fills a portion of screen height. The art is square, so a tall slot
-                    // leaves slack. With synced lyrics the art moves up a little and the rest of the
-                    // slack, between art and title, carries the current line. Without them (or with
-                    // too little room) the art stays centred as before.
-                    // 0 = artwork, 1 = lyrics. The card grows into the lyrics and shrinks back to
-                    // the artwork over this, so the switch is one motion and nothing jumps.
-                    val lyricsShown by androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = if (showLyrics) 1f else 0f,
-                        animationSpec = androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-                        label = "lyricsShown"
-                    )
-                    BoxWithConstraints(
+                if (stagePlayer) {
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(vertical = 8.dp * (1f - lyricsShown))
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp)
+                            .padding(bottom = 12.dp)
                     ) {
-                        val slack = maxHeight - maxWidth
-                        val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
-                        // 40dp fits one line. The old 56dp cut-off hid the strip on phones that landed
-                        // just under it (54.6dp of slack at 1080x2400, 378dpi).
-                        val lineStrip = !showLyrics && syncedLyrics != null && slack >= 40.dp
-                        // The artwork is a square: full width with the line strip under it, else centred.
-                        val side = if (lineStrip) maxWidth else minOf(maxWidth, maxHeight)
-                        // The strip keeps 48dp (two lines) before the artwork takes any slack above it.
-                        val top = if (lineStrip) (slack - 48.dp).coerceIn(0.dp, slack * 0.25f) else (maxHeight - side) / 2
-                        val cardWidth = side + (maxWidth - side) * lyricsShown
-                        val cardHeight = side + (maxHeight - side) * lyricsShown
-                        Column(Modifier.fillMaxSize()) {
-                            Spacer(Modifier.height(top * (1f - lyricsShown)))
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.CenterHorizontally)
-                                    .size(cardWidth, cardHeight),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                // In a Jam the artwork swipes through the room's queue, not this phone's one-song queue
-                                val jamNow by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
-                                val roomQueue = remember(jamNow.queue) { jamNow.queue.map { it.toTrack() } }
-                                val roomIndex = jamNow.playback?.itemId?.let { id -> jamNow.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
-                                val showRoom = jamNow.active && roomQueue.isNotEmpty() && roomIndex != null
-                                PlayerArtwork(
-                                    queue = if (showRoom) roomQueue else uiState.queue,
-                                    queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
-                                    currentTrack = displayTrack,
-                                    currentPosition = uiState.position,
-                                    showLyrics = showLyrics,
-                                    musicViewModel = musicViewModel,
-                                    isTablet = isTablet,
-                                    onToggleLyrics = { showLyrics = !showLyrics }
-                                )
-                            }
-                            if (lineStrip && syncedLyrics != null) {
-                                CurrentLyricLine(
-                                    syncedLyrics = syncedLyrics,
-                                    offsetMs = displayTrack.lyricsOffsetMs.toLong(),
-                                    position = uiState.position,
-                                    playing = uiState.isPlaying,
-                                    onOpen = { showLyrics = true },
-                                    // comes in as the card shrinks back to the artwork
-                                    modifier = Modifier.weight(1f).clipToBounds().graphicsLayer { alpha = 1f - lyricsShown }
-                                )
-                            }
-                        }
-                    }
+                        Header(
+                            title = when (stage) {
+                                PlayerStage.Art -> if (jamNow.active) "Jam ${jamNow.code ?: ""}".trim() else "Now Playing"
+                                PlayerStage.Lyrics -> "Lyrics"
+                                PlayerStage.Queue -> "Up next"
+                                PlayerStage.Mix -> "Mix"
+                            },
+                            extraAction = if (stage == PlayerStage.Lyrics && !displayTrack.syncedLyrics.isNullOrBlank()) {
+                                {
+                                    IconButton(onClick = { haptic.click(); lyricsSyncOpen = !lyricsSyncOpen }) {
+                                        Icon(
+                                            JukeIcons.Equalizer,
+                                            contentDescription = "Adjust lyrics timing",
+                                            tint = if (lyricsSyncOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            } else null
+                        )
+                        Spacer(Modifier.height(spacerSm))
 
-                    Spacer(modifier = Modifier.height(spacerSm))
-
-                    // Track Info & Action icons
-                    Row(
-                        modifier = Modifier.fillMaxWidth().playerStage(0.5f, 0.78f),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = currentTrack.title,
-                                style = titleStyle.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                modifier = Modifier.basicMarquee()
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = currentTrack.artist,
-                                style = subtitleStyle,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                maxLines = 1,
-                                modifier = Modifier
-                                    .basicMarquee()
-                                    .clickable {
-                                        val ids = currentTrack.artistSpotifyIds
-                                        if (!ids.isNullOrEmpty()) {
-                                            if (ids.size == 1) onNavigateToArtist(ids[0])
-                                            else showArtistSelectionSheet = true
+                        StageSwitcher(stage, Modifier.weight(1f).fillMaxWidth()) { shown ->
+                            if (shown == PlayerStage.Art) {
+                                Column(Modifier.fillMaxSize()) {
+                                    val synced = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
+                                    ArtSlot(
+                                        hasTicker = synced != null,
+                                        modifier = Modifier.weight(1f),
+                                        artwork = { m ->
+                                            Box(m) {
+                                                PlayerArtwork(
+                                                    queue = if (showRoom) roomQueue else uiState.queue,
+                                                    queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
+                                                    currentTrack = displayTrack,
+                                                    currentPosition = uiState.position,
+                                                    showLyrics = false,
+                                                    musicViewModel = musicViewModel,
+                                                    isTablet = isTablet,
+                                                    onToggleLyrics = { stage = PlayerStage.Lyrics }
+                                                )
+                                            }
+                                        },
+                                        ticker = { m ->
+                                            if (synced != null) LyricTicker(
+                                                syncedLyrics = synced,
+                                                offsetMs = displayTrack.lyricsOffsetMs.toLong(),
+                                                position = uiState.position,
+                                                playing = uiState.isPlaying,
+                                                accent = MaterialTheme.colorScheme.primary,
+                                                onOpen = { haptic.click(); stage = PlayerStage.Lyrics },
+                                                modifier = m
+                                            )
+                                        }
+                                    )
+                                    Spacer(Modifier.height(spacerSm))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = currentTrack.title,
+                                                style = titleStyle.copy(fontWeight = FontWeight.Bold, fontSize = if (isCompact) 20.sp else 24.sp),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 2,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = currentTrack.artist,
+                                                style = subtitleStyle,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                modifier = Modifier.clickable {
+                                                    val ids = currentTrack.artistSpotifyIds
+                                                    if (!ids.isNullOrEmpty()) {
+                                                        if (ids.size == 1) onNavigateToArtist(ids[0])
+                                                        else showArtistSelectionSheet = true
+                                                    }
+                                                }
+                                            )
+                                        }
+                                        if (currentTrack.isStream) {
+                                            IconButton(onClick = { musicViewModel.promoteTrackToDownload(currentTrack) }) {
+                                                Icon(JukeIcons.Download, "Download", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                                            }
+                                        }
+                                        IconButton(onClick = { showAddToPlaylistDialog = currentTrack }) {
+                                            Icon(JukeIcons.AddCircle, "Add to Playlist", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                                        }
+                                        IconButton(onClick = { haptic.confirm(); musicViewModel.toggleFavorite(currentTrack) }) {
+                                            Icon(
+                                                imageVector = if (currentTrack.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
+                                                contentDescription = if (currentTrack.isFavourite) "Unfavorite" else "Favorite",
+                                                tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                            )
                                         }
                                     }
-                            )
+                                }
+                            } else {
+                                Column(Modifier.fillMaxSize()) {
+                                    StageMiniHeader(
+                                        track = currentTrack,
+                                        onOpenArt = { stage = PlayerStage.Art },
+                                        onFavourite = { haptic.confirm(); musicViewModel.toggleFavorite(currentTrack) }
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                                        when (shown) {
+                                            PlayerStage.Lyrics -> com.example.juke.ui.components.player.LyricsOverlay(
+                                                currentTrack = displayTrack,
+                                                currentPosition = uiState.position,
+                                                musicViewModel = musicViewModel,
+                                                isTablet = isTablet,
+                                                onDismiss = { stage = PlayerStage.Art },
+                                                embedded = true,
+                                                syncOpen = lyricsSyncOpen,
+                                                onSyncOpenChange = { lyricsSyncOpen = it }
+                                            )
+                                            PlayerStage.Queue -> QueueContent(currentTrack, uiState, musicViewModel, embedded = true, onClose = { stage = PlayerStage.Art })
+                                            PlayerStage.Mix -> {
+                                                val preview by musicViewModel.mixPreview.collectAsStateWithLifecycle()
+                                                // Build the mix while the tab is open (and again when the song changes).
+                                                LaunchedEffect(currentTrack.uuid, jamNow.active) {
+                                                    if (!jamNow.active) musicViewModel.loadMixPreview()
+                                                }
+                                                MixStage(
+                                                    track = currentTrack,
+                                                    preview = if (jamNow.active) MusicViewModel.MixPreviewState.Idle else preview,
+                                                    onStartMix = {
+                                                        haptic.confirm()
+                                                        musicViewModel.startMix()
+                                                        stage = PlayerStage.Queue
+                                                    },
+                                                    onPlayPicked = { id ->
+                                                        haptic.confirm()
+                                                        musicViewModel.startMix(playId = id)
+                                                        stage = PlayerStage.Queue
+                                                    }
+                                                )
+                                            }
+                                            PlayerStage.Art -> Unit
+                                        }
+                                    }
+                                }
+                            }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (currentTrack.isStream) {
+                        Spacer(Modifier.height(spacerSm))
+                        Box(Modifier.playerStage(0.58f, 0.86f)) {
+                            PlayerProgress(
+                                currentPosition = uiState.position,
+                                uiState = uiState,
+                                musicViewModel = musicViewModel,
+                                showRemaining = true,
+                                thumbSize = 16.dp
+                            )
+                        }
+                        Box(Modifier.playerStage(0.64f, 0.92f)) {
+                            PlayerControls(
+                                uiState = uiState,
+                                musicViewModel = musicViewModel,
+                                isLarge = isTablet,
+                                playButtonSize = ctrlPlaySize,
+                                buttonSize = ctrlBtnSize,
+                                iconSize = ctrlIconSize,
+                                smallIconSize = ctrlSmallIconSize
+                            )
+                        }
+                        Spacer(Modifier.height(spacerSm))
+                        StageDock(
+                            stage = stage,
+                            onSelect = { haptic.click(); lyricsSyncOpen = false; stage = it },
+                            modifier = Modifier.playerStage(0.72f, 1f)
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Header
+                        PlayerHeader(
+                            modifier = Modifier.playerStage(0.55f, 0.8f, 12.dp),
+                            playingFrom = playingFrom,
+                            onOpenPlayingFrom = { playingFrom?.let(onOpenPlayingFrom) },
+                            onDismiss = onDismiss,
+                            onShowSleepTimer = { showSleepTimerDialog = true },
+                            onNavigateToAlbum = {
+                                if (currentTrack.albumSpotifyId != null) onNavigateToAlbum(
+                                    currentTrack.albumSpotifyId
+                                )
+                            },
+                            onRefreshLyrics = { musicViewModel.refreshLyrics(currentTrack) },
+                            onRefetchSong = { musicViewModel.refetchTrack(currentTrack) },
+                            canRefetchSong = currentTrack.spotifyId != null,
+                            onToggleRomanizedLyrics = { musicViewModel.toggleRomanizedLyrics() },
+                            isRomanizedLyricsEnabled = romanizeLyrics,
+                            showMenuOption = true,
+                            isAlbumAvailable = currentTrack.albumSpotifyId != null,
+                            currentArtist = currentTrack.artist,
+                            onShowBlacklistPicker = { showBlacklistPicker = true },
+                            playbackSpeed = playbackSpeed,
+                            onCycleSpeed = { musicViewModel.cyclePlaybackSpeed() },
+                            onSaveQueue = { showSaveQueue = true }
+                        )
+    
+                        Spacer(modifier = Modifier.height(spacerSm))
+    
+                        // Artwork — fills a portion of screen height. The art is square, so a tall slot
+                        // leaves slack. With synced lyrics the art moves up a little and the rest of the
+                        // slack, between art and title, carries the current line. Without them (or with
+                        // too little room) the art stays centred as before.
+                        // 0 = artwork, 1 = lyrics. The card grows into the lyrics and shrinks back to
+                        // the artwork over this, so the switch is one motion and nothing jumps.
+                        val lyricsShown by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (showLyrics) 1f else 0f,
+                            animationSpec = androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                            label = "lyricsShown"
+                        )
+                        BoxWithConstraints(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(vertical = 8.dp * (1f - lyricsShown))
+                        ) {
+                            val slack = maxHeight - maxWidth
+                            val syncedLyrics = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
+                            // 40dp fits one line. The old 56dp cut-off hid the strip on phones that landed
+                            // just under it (54.6dp of slack at 1080x2400, 378dpi).
+                            val lineStrip = !showLyrics && syncedLyrics != null && slack >= 40.dp
+                            // The artwork is a square: full width with the line strip under it, else centred.
+                            val side = if (lineStrip) maxWidth else minOf(maxWidth, maxHeight)
+                            // The strip keeps 48dp (two lines) before the artwork takes any slack above it.
+                            val top = if (lineStrip) (slack - 48.dp).coerceIn(0.dp, slack * 0.25f) else (maxHeight - side) / 2
+                            val cardWidth = side + (maxWidth - side) * lyricsShown
+                            val cardHeight = side + (maxHeight - side) * lyricsShown
+                            Column(Modifier.fillMaxSize()) {
+                                Spacer(Modifier.height(top * (1f - lyricsShown)))
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterHorizontally)
+                                        .size(cardWidth, cardHeight),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    // In a Jam the artwork swipes through the room's queue, not this phone's one-song queue
+                                    val jamNow by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+                                    val roomQueue = remember(jamNow.queue) { jamNow.queue.map { it.toTrack() } }
+                                    val roomIndex = jamNow.playback?.itemId?.let { id -> jamNow.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+                                    val showRoom = jamNow.active && roomQueue.isNotEmpty() && roomIndex != null
+                                    PlayerArtwork(
+                                        queue = if (showRoom) roomQueue else uiState.queue,
+                                        queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
+                                        currentTrack = displayTrack,
+                                        currentPosition = uiState.position,
+                                        showLyrics = showLyrics,
+                                        musicViewModel = musicViewModel,
+                                        isTablet = isTablet,
+                                        onToggleLyrics = { showLyrics = !showLyrics }
+                                    )
+                                }
+                                if (lineStrip && syncedLyrics != null) {
+                                    CurrentLyricLine(
+                                        syncedLyrics = syncedLyrics,
+                                        offsetMs = displayTrack.lyricsOffsetMs.toLong(),
+                                        position = uiState.position,
+                                        playing = uiState.isPlaying,
+                                        onOpen = { showLyrics = true },
+                                        // comes in as the card shrinks back to the artwork
+                                        modifier = Modifier.weight(1f).clipToBounds().graphicsLayer { alpha = 1f - lyricsShown }
+                                    )
+                                }
+                            }
+                        }
+    
+                        Spacer(modifier = Modifier.height(spacerSm))
+    
+                        // Track Info & Action icons
+                        Row(
+                            modifier = Modifier.fillMaxWidth().playerStage(0.5f, 0.78f),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = currentTrack.title,
+                                    style = titleStyle.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    modifier = Modifier.basicMarquee()
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = currentTrack.artist,
+                                    style = subtitleStyle,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    modifier = Modifier
+                                        .basicMarquee()
+                                        .clickable {
+                                            val ids = currentTrack.artistSpotifyIds
+                                            if (!ids.isNullOrEmpty()) {
+                                                if (ids.size == 1) onNavigateToArtist(ids[0])
+                                                else showArtistSelectionSheet = true
+                                            }
+                                        }
+                                )
+                            }
+    
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (currentTrack.isStream) {
+                                    IconButton(
+                                        onClick = { musicViewModel.promoteTrackToDownload(currentTrack) },
+                                        modifier = Modifier.size(actionBtnSize)
+                                    ) {
+                                        Icon(
+                                            imageVector = JukeIcons.Download,
+                                            contentDescription = "Download",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(actionIconSize)
+                                        )
+                                    }
+                                }
                                 IconButton(
-                                    onClick = { musicViewModel.promoteTrackToDownload(currentTrack) },
+                                    onClick = { showAddToPlaylistDialog = currentTrack },
                                     modifier = Modifier.size(actionBtnSize)
                                 ) {
                                     Icon(
-                                        imageVector = JukeIcons.Download,
-                                        contentDescription = "Download",
+                                        imageVector = JukeIcons.AddCircle,
+                                        contentDescription = "Add to Playlist",
                                         tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(actionIconSize)
                                     )
                                 }
-                            }
-                            IconButton(
-                                onClick = { showAddToPlaylistDialog = currentTrack },
-                                modifier = Modifier.size(actionBtnSize)
-                            ) {
-                                Icon(
-                                    imageVector = JukeIcons.AddCircle,
-                                    contentDescription = "Add to Playlist",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(actionIconSize)
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    haptic.confirm()
-                                    musicViewModel.toggleFavorite(currentTrack)
-                                },
-                                modifier = Modifier.size(actionBtnSize)
-                            ) {
-                                Icon(
-                                    imageVector = if (currentTrack.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
-                                    contentDescription = if (currentTrack.isFavourite) "Unfavorite" else "Favorite",
-                                    tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(actionIconSize)
-                                )
+                                IconButton(
+                                    onClick = {
+                                        haptic.confirm()
+                                        musicViewModel.toggleFavorite(currentTrack)
+                                    },
+                                    modifier = Modifier.size(actionBtnSize)
+                                ) {
+                                    Icon(
+                                        imageVector = if (currentTrack.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart,
+                                        contentDescription = if (currentTrack.isFavourite) "Unfavorite" else "Favorite",
+                                        tint = if (currentTrack.isFavourite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(actionIconSize)
+                                    )
+                                }
                             }
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(spacerSm))
-
-                    // Progress
-                    Box(Modifier.playerStage(0.58f, 0.86f)) {
-                        PlayerProgress(
-                            currentPosition = uiState.position,
-                            uiState = uiState,
-                            musicViewModel = musicViewModel
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(spacerSm))
-
-                    // Controls
-                    Box(Modifier.playerStage(0.64f, 0.92f)) {
-                        PlayerControls(
-                            uiState = uiState,
-                            musicViewModel = musicViewModel,
-                            isLarge = isTablet,
-                            playButtonSize = ctrlPlaySize,
-                            buttonSize = ctrlBtnSize,
-                            iconSize = ctrlIconSize,
-                            smallIconSize = ctrlSmallIconSize
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(spacerSm))
-
-                    // Bottom actions: bare icons, no container
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .playerStage(0.72f, 1f)
-                            .padding(bottom = bottomPadding)
-                            .pointerInput(Unit) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    if (dragAmount.y < -50) showQueue = true
-                                }
-                            },
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        PlayerAction(
-                            icon = rememberVectorPainter(JukeIcons.Lyrics),
-                            label = "Lyrics",
-                            active = showLyrics,
-                            iconSize = actionBarIconSize
-                        ) { haptic.click(); showLyrics = !showLyrics }
-                        PlayerAction(
-                            icon = rememberVectorPainter(JukeIcons.List),
-                            label = "Queue",
-                            iconSize = actionBarIconSize
-                        ) { haptic.click(); showQueue = true }
-                        PlayerAction(
-                            icon = painterResource(id = R.drawable.baseline_mix),
-                            label = "Mix",
-                            iconSize = actionBarIconSize
-                        ) { haptic.click(); musicViewModel.startRadio() }
-                        if (currentTrack.spotifyId != null) {
+    
+                        Spacer(modifier = Modifier.height(spacerSm))
+    
+                        // Progress
+                        Box(Modifier.playerStage(0.58f, 0.86f)) {
+                            PlayerProgress(
+                                currentPosition = uiState.position,
+                                uiState = uiState,
+                                musicViewModel = musicViewModel
+                            )
+                        }
+    
+                        Spacer(modifier = Modifier.height(spacerSm))
+    
+                        // Controls
+                        Box(Modifier.playerStage(0.64f, 0.92f)) {
+                            PlayerControls(
+                                uiState = uiState,
+                                musicViewModel = musicViewModel,
+                                isLarge = isTablet,
+                                playButtonSize = ctrlPlaySize,
+                                buttonSize = ctrlBtnSize,
+                                iconSize = ctrlIconSize,
+                                smallIconSize = ctrlSmallIconSize
+                            )
+                        }
+    
+                        Spacer(modifier = Modifier.height(spacerSm))
+    
+                        // Bottom actions: bare icons, no container
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .playerStage(0.72f, 1f)
+                                .padding(bottom = bottomPadding)
+                                .pointerInput(Unit) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        if (dragAmount.y < -50) showQueue = true
+                                    }
+                                },
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
                             PlayerAction(
-                                icon = rememberVectorPainter(JukeIcons.Share),
-                                label = "Share",
+                                icon = rememberVectorPainter(JukeIcons.Lyrics),
+                                label = "Lyrics",
+                                active = showLyrics,
                                 iconSize = actionBarIconSize
-                            ) { haptic.click(); onShareTrack(currentTrack.spotifyId) }
+                            ) { haptic.click(); showLyrics = !showLyrics }
+                            PlayerAction(
+                                icon = rememberVectorPainter(JukeIcons.List),
+                                label = "Queue",
+                                iconSize = actionBarIconSize
+                            ) { haptic.click(); showQueue = true }
+                            PlayerAction(
+                                icon = painterResource(id = R.drawable.baseline_mix),
+                                label = "Mix",
+                                iconSize = actionBarIconSize
+                            ) { haptic.click(); musicViewModel.startRadio() }
+                            if (currentTrack.spotifyId != null) {
+                                PlayerAction(
+                                    icon = rememberVectorPainter(JukeIcons.Share),
+                                    label = "Share",
+                                    iconSize = actionBarIconSize
+                                ) { haptic.click(); onShareTrack(currentTrack.spotifyId) }
+                            }
                         }
                     }
                 }
             }
+        }
         }
         }
     }
@@ -650,47 +896,7 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
             showHandle = false
         ) {
-            val rec by musicViewModel.recStatus.collectAsStateWithLifecycle()
-            val pending by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
-            val heldNext by musicViewModel.heldNextSongs.collectAsStateWithLifecycle()
-            // In a Jam the queue is the room's: shown from it, and every edit goes to it
-            val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
-            val inJam = jam.active
-            val jamQueue = remember(jam.queue) { jam.queue.map { it.toTrack() } }
-            val jamIndex = jam.playback?.itemId?.let { id -> jam.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
-            QueueBottomSheetContent(
-                statusText = when {
-                    inJam -> "Jam ${jam.code ?: ""} · everyone hears this queue"
-                    rec.resolving > 0 -> "Loading next songs… (${rec.resolving})"
-                    else -> null
-                },
-                pending = if (inJam) emptyList() else pending,
-                onPlayPending = { id -> musicViewModel.playPendingSong(id) },
-                onRemovePending = { id -> musicViewModel.removePendingSong(id) },
-                heldNext = if (inJam) emptyList() else heldNext,
-                onPlayNextCopy = { track -> musicViewModel.playNextCopy(track) },
-                onPlayNextPending = { id -> musicViewModel.playNextPending(id) },
-                currentTrack = currentTrack,
-                queue = if (inJam) jamQueue else uiState.queue,
-                queueIndex = if (inJam) jamIndex else uiState.queueIndex,
-                uiState = uiState,
-                onClose = { showQueue = false },
-                onMoveTrack = { from, to ->
-                    if (inJam) com.example.juke.jam.JamControls.move(from, to) else musicViewModel.moveInQueue(from, to)
-                },
-                onRemoveTrack = { id, index ->
-                    if (inJam) com.example.juke.jam.JamSession.remove(id) else musicViewModel.removeFromQueue(id, index)
-                },
-                onPlayTrack = { track, index ->
-                    if (inJam) com.example.juke.jam.JamSession.play(track.uuid) else musicViewModel.playTrackFromQueue(track, index)
-                },
-                // These rewrite this phone's own queue, which in a Jam is the room's
-                onShuffleUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
-                onSortUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
-                onClearPlayed = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },
-                onSaveAsPlaylist = { name, includeWaiting -> if (!inJam) musicViewModel.saveQueueAsPlaylist(name, includeWaiting) },
-                suggestedPlaylistName = { musicViewModel.suggestedQueuePlaylistName() }
-            )
+            QueueContent(currentTrack, uiState, musicViewModel, embedded = false, onClose = { showQueue = false })
         }
     }
 
@@ -773,6 +979,59 @@ fun PlayerScreen(
     }
 }
 
+/** Up next, in its own sheet (desktop) or in the phone player's stage. In a Jam the queue is the room's. */
+@Composable
+private fun QueueContent(
+    currentTrack: Track,
+    uiState: com.example.juke.viewmodels.MusicUiState,
+    musicViewModel: MusicViewModel,
+    embedded: Boolean,
+    onClose: () -> Unit
+) {
+    val rec by musicViewModel.recStatus.collectAsStateWithLifecycle()
+    val pending by musicViewModel.pendingSongs.collectAsStateWithLifecycle()
+    val heldNext by musicViewModel.heldNextSongs.collectAsStateWithLifecycle()
+    // In a Jam the queue is the room's: shown from it, and every edit goes to it
+    val jam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
+    val inJam = jam.active
+    val jamQueue = remember(jam.queue) { jam.queue.map { it.toTrack() } }
+    val jamIndex = jam.playback?.itemId?.let { id -> jam.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
+    QueueBottomSheetContent(
+        statusText = when {
+            inJam -> "Jam ${jam.code ?: ""} · everyone hears this queue"
+            rec.resolving > 0 -> "Loading next songs… (${rec.resolving})"
+            else -> null
+        },
+        pending = if (inJam) emptyList() else pending,
+        onPlayPending = { id -> musicViewModel.playPendingSong(id) },
+        onRemovePending = { id -> musicViewModel.removePendingSong(id) },
+        heldNext = if (inJam) emptyList() else heldNext,
+        onPlayNextCopy = { track -> musicViewModel.playNextCopy(track) },
+        onPlayNextPending = { id -> musicViewModel.playNextPending(id) },
+        currentTrack = currentTrack,
+        queue = if (inJam) jamQueue else uiState.queue,
+        queueIndex = if (inJam) jamIndex else uiState.queueIndex,
+        uiState = uiState,
+        onClose = onClose,
+        onMoveTrack = { from, to ->
+            if (inJam) com.example.juke.jam.JamControls.move(from, to) else musicViewModel.moveInQueue(from, to)
+        },
+        onRemoveTrack = { id, index ->
+            if (inJam) com.example.juke.jam.JamSession.remove(id) else musicViewModel.removeFromQueue(id, index)
+        },
+        onPlayTrack = { track, index ->
+            if (inJam) com.example.juke.jam.JamSession.play(track.uuid) else musicViewModel.playTrackFromQueue(track, index)
+        },
+        // These rewrite this phone's own queue, which in a Jam is the room's
+        onShuffleUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SHUFFLE_UPCOMING) },
+        onSortUpcoming = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.SORT_UPCOMING) },
+        onClearPlayed = { if (!inJam) musicViewModel.applyQueueTool(MusicViewModel.QueueTool.CLEAR_PLAYED) },
+        onSaveAsPlaylist = { name, includeWaiting -> if (!inJam) musicViewModel.saveQueueAsPlaylist(name, includeWaiting) },
+        suggestedPlaylistName = { musicViewModel.suggestedQueuePlaylistName() },
+        embedded = embedded
+    )
+}
+
 @Composable
 fun PlayerHeader(
     modifier: Modifier = Modifier,
@@ -790,7 +1049,15 @@ fun PlayerHeader(
     onShowBlacklistPicker: () -> Unit = {},
     playbackSpeed: Float = 1f,
     onCycleSpeed: () -> Unit = {},
-    onSaveQueue: () -> Unit = {}
+    onSaveQueue: () -> Unit = {},
+    title: String = "Now Playing",
+    /** Shown left of the menu button, e.g. the lyrics timing toggle. */
+    extraAction: (@Composable () -> Unit)? = null,
+    /** When set, Share moves into the menu. */
+    onShare: (() -> Unit)? = null,
+    /** Replaces the title with "Playing from <list>", which opens the list. */
+    playingFrom: com.example.juke.viewmodels.PlayContext? = null,
+    onOpenPlayingFrom: () -> Unit = {}
 ) {
     val context = LocalContext.current
     Row(
@@ -808,12 +1075,43 @@ fun PlayerHeader(
             )
         }
 
-        Text(
-            "Now Playing",
+        if (playingFrom != null) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = "Open ${playingFrom.name}", onClick = onOpenPlayingFrom)
+                    .padding(vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Playing from ${playingFrom.kind.label}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1
+                )
+                Text(
+                    playingFrom.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else Text(
+            title,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
         )
 
+        if (extraAction != null) extraAction()
         if (showMenuOption) {
             var showMenu by remember { mutableStateOf(false) }
             Box {
@@ -834,6 +1132,14 @@ fun PlayerHeader(
                             Icon(Icons.Outlined.Speed, contentDescription = null)
                         },
                         onClick = onCycleSpeed
+                    )
+                    if (onShare != null) DropdownMenuItem(
+                        text = { Text("Share") },
+                        leadingIcon = { Icon(JukeIcons.Share, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onShare()
+                        }
                     )
                     DropdownMenuItem(
                         text = { Text("Sleep Timer") },

@@ -123,7 +123,7 @@ export class ConnectHub extends DurableObject<Env> {
             if (op === 'take') { // "play on <target>": the sender's playback, started there
                 const mine = (await this.load()).get(me.deviceId);
                 if (!mine?.track) return this.send(ws, { t: 'error', code: 'nothing_playing' });
-                return this.send(w, { t: 'take', state: { ...this.live(mine, now), playing: true }, from: me.name });
+                return this.send(w, { t: 'take', state: { ...this.live(mine, now), at: now, playing: true }, from: me.name });
             }
             return this.send(w, { t: 'cmd', op, posMs: Number.isFinite(msg.posMs) ? msg.posMs : undefined, index: Number.isInteger(msg.index) ? msg.index : undefined, by: me.name });
         }

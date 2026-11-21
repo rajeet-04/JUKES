@@ -30,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -46,6 +48,7 @@ import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyImage
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.ui.components.FlatTrackRow
+import com.example.juke.ui.components.artistReleases
 import com.example.juke.ui.components.GlassTopAppBar
 import com.example.juke.ui.components.MediaDetailSkeleton
 import com.example.juke.ui.components.SwipeToAddNextContainer
@@ -178,10 +181,18 @@ fun ArtistDetailScreen(
                 if (uiState.topTracks.isNotEmpty()) {
                     item {
                         val top = uiState.topTracks.take(10)
+                        val from by musicViewModel.playingFrom.collectAsStateWithLifecycle()
+                        val playing by remember(musicViewModel) { musicViewModel.uiState.map { it.isPlaying }.distinctUntilChanged() }
+                            .collectAsStateWithLifecycle(initialValue = false)
                         com.example.juke.ui.components.PlayShuffleRow(
                             title = "Top Tracks",
-                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(top.shuffled(), 0) },
-                            onPlay = { musicViewModel.setQueueFromSpotifyTracks(top, 0) }
+                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(top.shuffled(), 0, from = topContext(artist, top)) },
+                            onPlay = {
+                                musicViewModel.playList(com.example.juke.viewmodels.PlayContext.Kind.ARTIST, artist.id.orEmpty()) {
+                                    musicViewModel.setQueueFromSpotifyTracks(top, 0, from = topContext(artist, top))
+                                }
+                            },
+                            playing = playing && from?.isList(com.example.juke.viewmodels.PlayContext.Kind.ARTIST, artist.id.orEmpty()) == true
                         )
                     }
 
@@ -202,7 +213,8 @@ fun ArtistDetailScreen(
                                         // Queue this track and all tracks below it
                                         musicViewModel.setQueueFromSpotifyTracks(
                                             topTracksSubset,
-                                            topTracksSubset.indexOf(track)
+                                            topTracksSubset.indexOf(track),
+                                            from = topContext(artist, topTracksSubset)
                                         )
                                     }
                                 }
@@ -211,39 +223,8 @@ fun ArtistDetailScreen(
                     }
                 }
 
-                // Albums Section (2x2 grid)
-                if (uiState.albums.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Albums",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    }
-
-                    val albumRows = uiState.albums.chunked(2)
-                    items(albumRows) { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            for (album in row) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                ) {
-                                    AlbumItem(
-                                        album = album,
-                                        onClick = { onNavigateToAlbum(album) }
-                                    )
-                                }
-                            }
-
-                            if (row.size == 1) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
+                // Discography: newest release, then albums and singles lanes
+                artistReleases(uiState.albums, gutter = 20.dp, onOpen = onNavigateToAlbum)
             }
         }
     }
@@ -265,63 +246,6 @@ private fun TrackItem(
     )
 }
 
-@Composable
-private fun AlbumItem(
-    album: SpotifyAlbum,
-    onClick: () -> Unit
-) {
-    GlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        onClick = onClick) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-        ) {
-            AsyncImage(
-                model = bestImageUrl(album.images) ?: album.images.lastOrNull()?.url ?: "",
-                contentDescription = album.name,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                contentScale = ContentScale.Crop
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = album.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "${
-                        album.albumType?.replaceFirstChar {
-                            if (it.isLowerCase()) it.titlecase(
-                                java.util.Locale.getDefault()
-                            ) else it.toString()
-                        } ?: "Album"
-                    } • ${album.releaseDate?.take(4) ?: ""} • ${album.totalTracks ?: 0} tracks",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
 
 private fun formatNumber(num: Int): String {
     return when {
@@ -344,3 +268,10 @@ private fun bestImageUrl(images: List<SpotifyImage>?): String? {
     images.find { (it.height == 640 || it.width == 640) }?.let { return it.url }
     return images.maxByOrNull { (it.height ?: 0) * (it.width ?: 0) }?.url
 }
+
+/** An artist's top tracks as a list the player can name and reopen. */
+private fun topContext(artist: com.example.juke.models.SpotifyArtist, tracks: List<com.example.juke.models.SpotifyTrack>) =
+    com.example.juke.viewmodels.PlayContext(
+        com.example.juke.viewmodels.PlayContext.Kind.ARTIST, artist.id.orEmpty(), artist.name,
+        keys = tracks.mapNotNullTo(HashSet()) { it.id }
+    )
