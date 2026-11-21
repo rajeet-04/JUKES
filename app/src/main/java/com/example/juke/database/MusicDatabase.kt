@@ -424,6 +424,10 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
     suspend fun getTrackByUuid(uuid: String): TrackEntity?
 
+    /** A library song saved from this YouTube upload that has a Spotify id. */
+    @Query("SELECT * FROM tracks WHERE yt_video_id = :videoId AND spotify_id IS NOT NULL LIMIT 1")
+    suspend fun findByVideoId(videoId: String): TrackEntity?
+
     @Query("SELECT * FROM tracks WHERE last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT :limit")
     suspend fun getRecentlyPlayed(limit: Int = 10): List<TrackEntity>
 

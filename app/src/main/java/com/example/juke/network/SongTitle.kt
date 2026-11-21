@@ -100,6 +100,10 @@ object SongTitle {
         return Parts(alnum(core).ifEmpty { alnum(title) }, versions.sorted().distinct(), guests.distinct())
     }
 
+    /** Every credited artist, normalised like [primaryArtist]. */
+    fun artists(artist: String): List<String> =
+        artist.split(ARTIST_SPLIT).map(::alnum).filter { it.isNotEmpty() }
+
     /** The first credited artist, however the list is joined ("A & B", "A, B", "A x B", "A feat. B"). */
     fun primaryArtist(artist: String): String =
         artist.split(ARTIST_SPLIT).map(::alnum).firstOrNull { it.isNotEmpty() }.orEmpty()

@@ -51,6 +51,7 @@ Android and desktop. Changes since 3.1.1-stable, from 2026-11-20.
 - **Second playlist import.** Pasting a second playlist link while one is importing shows that link's own progress and Import button.
 - **Jam re-seek loop.** A follower no longer seeks every 3 seconds after a song change. It corrects its seek offset in one step and stops hard seeking a song after four missed seeks in a row.
 - **Waves in battery saver.** The waves stay off in battery saver and come back when it ends, without a restart.
+- **Fewer "Couldn't find" songs on Home.** A Home song's menu looks in your library first, so a song you already have (downloaded or favourited) is found by title and artist. If that fails, it tries the recommender match and then a looser Spotify search. YouTube title extras like "(From ...)" or "Official Video" are ignored, and a music video's longer intro no longer hides the same song by the same artist.
 - **Blank sheets.** Song menus and other sheets showed only their handle and title, with a copy of the page over their buttons. Sheets and dialogs with text fields use frosted glass again; song menus use the new in-window liquid glass.
 - **Recommendations after a skip.** A song skipped after 30 seconds can't come straight back. Songs in a radio that were played since it was pulled are held back, not queued.
 

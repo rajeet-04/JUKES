@@ -1145,17 +1145,41 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /** Feed songs already matched on Spotify, by video id, so a menu and a later tap match once. */
     private val feedMatches = java.util.concurrent.ConcurrentHashMap<String, com.example.juke.models.SpotifyTrack>()
 
-    /** The Spotify track for a Home feed song, or null when there is no match (or the lookup failed). */
+    /**
+     * The Spotify track for a Home feed song, or null when there is no match (or the lookup failed).
+     * Tried in order: the same song in the library (by YouTube upload, then title and artist), the
+     * strict radio matcher, then a looser pick from Spotify's results ([com.example.juke.home.FeedMatch]).
+     */
     suspend fun matchFeedSong(song: com.example.juke.home.FeedSong): com.example.juke.models.SpotifyTrack? {
         feedMatches[song.videoId]?.let { return it }
         return withContext(Dispatchers.IO) {
             com.example.juke.home.resolveFeedSong(song) { rec ->
+                val match = libraryFeedMatch(song)?.let { id -> runCatching { SpotifyApi.getTrack(id) }.getOrNull() }
+                    ?: RecommenderApi.matchOnSpotify(rec)?.let { SpotifyApi.getTrack(it.spotifyUrl.substringAfterLast("/").substringBefore("?")) }
+                    ?: looseSpotifyMatch(song)
                 // No match at all (not a failed lookup: offline throws) hides the song from Home.
-                val match = RecommenderApi.matchOnSpotify(rec)
                 if (match == null) com.example.juke.home.FeedMisses.add(song.videoId)
-                match?.let { SpotifyApi.getTrack(it.spotifyUrl.substringAfterLast("/").substringBefore("?")) }
+                match
             }
         }?.also { feedMatches[song.videoId] = it }
+    }
+
+    /** Spotify id of the same song already in the library, if any. */
+    private suspend fun libraryFeedMatch(song: com.example.juke.home.FeedSong): String? {
+        trackDao.findByVideoId(song.videoId)?.spotifyId?.let { return it }
+        val rows = trackDao.searchTracksLight(com.example.juke.home.FeedMatch.libraryQuery(song), 50).filter { it.spotifyId != null }
+        return com.example.juke.home.FeedMatch.pick(song, rows, { it.title }, { it.artist }, { it.durationSec })?.spotifyId
+    }
+
+    /** Spotify's results for the bare title and artist, then the title alone, judged by [com.example.juke.home.FeedMatch]. */
+    private suspend fun looseSpotifyMatch(song: com.example.juke.home.FeedSong): com.example.juke.models.SpotifyTrack? {
+        val title = com.example.juke.home.FeedMatch.libraryQuery(song)
+        for (query in listOf("$title ${song.artist}", title)) {
+            val items = SpotifyApi.search(query, listOf("track")).tracks?.items.orEmpty().take(10)
+            com.example.juke.home.FeedMatch.pick(song, items, { it.name }, { t -> t.artists.joinToString(", ") { it.name } }, { it.durationMs / 1000 })
+                ?.let { return it }
+        }
+        return null
     }
 
     fun playInstant(song: SpotdownSong) {
