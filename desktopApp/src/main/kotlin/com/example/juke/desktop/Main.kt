@@ -43,6 +43,13 @@ object DesktopViewModels : ViewModelStoreOwner, HasDefaultViewModelProviderFacto
     override val defaultViewModelCreationExtras: CreationExtras get() = CreationExtras.Empty
 }
 
+/** What closing the window does: music keeps playing in the background, silence quits. */
+enum class CloseAction { HideKeepPlaying, Quit }
+fun closeAction(playing: Boolean) = if (playing) CloseAction.HideKeepPlaying else CloseAction.Quit
+
+/** Asks the running app to show its window again (Dock icon click, menu bar item). */
+object WindowControl { val reopen = MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+
 /** Links given to the app (command line arguments). */
 object AppLinks { val incoming = MutableSharedFlow<String>(replay = 8, extraBufferCapacity = 8) }
 
@@ -77,13 +84,47 @@ fun main(args: Array<String>) {
         if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.APP_OPEN_URI))
             java.awt.Desktop.getDesktop().setOpenURIHandler { AppLinks.incoming.tryEmit(it.uri.toString()) }
     }
+    // Clicking the Dock icon while the window is hidden brings it back
+    runCatching {
+        if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.APP_EVENT_REOPENED))
+            java.awt.Desktop.getDesktop().addAppEventListener(object : java.awt.desktop.AppReopenedListener {
+                override fun appReopened(e: java.awt.desktop.AppReopenedEvent) { WindowControl.reopen.tryEmit(Unit) }
+            })
+    }
     startup(args)
     application {
         val state = rememberWindowState(size = DpSize(1180.dp, 780.dp))
+        val player = remember { com.example.juke.services.PlaybackManager.getInstance(Application.instance) }
+        val playing by player.isPlayingFlow.collectAsState()
+        var windowVisible by remember { mutableStateOf(true) }
+        val quit = { player.release(); exitApplication() }
+        LaunchedEffect(Unit) { WindowControl.reopen.collect { windowVisible = true } }
+        // Cmd+Q always quits, even while the window is hidden and music plays
+        LaunchedEffect(Unit) {
+            runCatching {
+                if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.APP_QUIT_HANDLER))
+                    java.awt.Desktop.getDesktop().setQuitHandler { _, response -> player.release(); response.performQuit() }
+            }
+        }
+        // While the window is closed and music plays on, JUKE lives in the menu bar / tray
+        if (!windowVisible && java.awt.SystemTray.isSupported()) {
+            val icon = remember { androidx.compose.ui.graphics.painter.BitmapPainter(androidx.compose.ui.res.loadImageBitmap(object {}.javaClass.getResourceAsStream("/juke_icon.png")!!)) }
+            Tray(icon = icon, tooltip = "JUKE", onAction = { windowVisible = true }) {
+                Item(if (playing) "Pause" else "Play") { player.togglePlayPause() }
+                Item("Next") { player.skipToNext() }
+                Item("Previous") { player.skipToPrevious() }
+                Separator()
+                Item("Open JUKE") { windowVisible = true }
+                Item("Quit JUKE") { quit() }
+            }
+        }
         Window(
+            visible = windowVisible,
             onCloseRequest = {
-                com.example.juke.services.PlaybackManager.getInstance(Application.instance).release()
-                exitApplication()
+                when (closeAction(playing)) {
+                    CloseAction.HideKeepPlaying -> windowVisible = false
+                    CloseAction.Quit -> quit()
+                }
             },
             title = "JUKE",
             icon = androidx.compose.ui.res.loadImageBitmap(object {}.javaClass.getResourceAsStream("/juke_icon.png")!!).let { androidx.compose.ui.graphics.painter.BitmapPainter(it) },
