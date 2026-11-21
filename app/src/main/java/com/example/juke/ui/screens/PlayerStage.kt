@@ -17,6 +17,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import dev.chrisbanes.haze.hazeSource
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.draw.drawWithContent
+import kotlinx.coroutines.launch
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -236,7 +245,11 @@ internal fun StageMiniHeader(
     }
 }
 
-/** Lyrics, Up next and Mix. Tapping the open tab goes back to the artwork. */
+/**
+ * Lyrics, Up next and Mix. Tapping the open tab goes back to the artwork. The open tab sits under
+ * a liquid lens that slides between tabs like the main tab bar's: a loose spring, stretched along
+ * its travel and squashed across it in proportion to speed, its rim flaring while it moves.
+ */
 @Composable
 internal fun StageDock(
     stage: PlayerStage,
@@ -244,43 +257,139 @@ internal fun StageDock(
     modifier: Modifier = Modifier
 ) {
     val live = com.example.juke.ui.theme.glassIsLive()
-    Row(
+    val tabs = listOf(PlayerStage.Lyrics to "Lyrics", PlayerStage.Queue to "Up next", PlayerStage.Mix to "Mix")
+    val bounds = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<Int, Pair<Float, androidx.compose.ui.unit.IntSize>>() }
+    val selectedIndex = tabs.indexOfFirst { it.first == stage }
+    val pos = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    var placed by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var dragging by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val currentStage by androidx.compose.runtime.rememberUpdatedState(stage)
+    val select by androidx.compose.runtime.rememberUpdatedState(onSelect)
+    val lensSpring = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.8f, stiffness = 300f)
+    val target = bounds[selectedIndex]
+    // Back on the artwork no tab is open: the lens fades where it is and reappears at the next tab.
+    val shown by androidx.compose.animation.core.animateFloatAsState(
+        if (selectedIndex >= 0 || dragging) 1f else 0f, tween(180), label = "lensShown"
+    )
+    androidx.compose.runtime.LaunchedEffect(target, dragging) {
+        if (dragging) return@LaunchedEffect
+        val x = target?.first ?: return@LaunchedEffect
+        if (!placed || shown < 0.05f) { pos.snapTo(x); placed = true } else pos.animateTo(x, lensSpring)
+    }
+    // Like the main tab bar: the lens can be dragged and lets go onto the nearest tab.
+    val drag = Modifier.pointerInput(Unit) {
+        detectHorizontalDragGestures(
+            onDragStart = { at ->
+                val w = bounds.values.firstOrNull()?.second?.width ?: 0
+                val lo = bounds.values.minOfOrNull { it.first } ?: 0f
+                val hi = bounds.values.maxOfOrNull { it.first } ?: 0f
+                // From the artwork (no lens yet) it appears under the finger.
+                if (tabs.none { it.first == currentStage }) scope.launch { pos.snapTo((at.x - w / 2f).coerceIn(lo, hi)) }
+                placed = true
+                dragging = true
+            },
+            onDragCancel = { dragging = false },
+            onDragEnd = {
+                val p = pos.value
+                val nearest = bounds.entries.minByOrNull { (_, v) -> kotlin.math.abs(v.first - p) }?.key
+                dragging = false
+                val tab = nearest?.let { tabs.getOrNull(it)?.first }
+                if (tab != null && tab != currentStage) select(tab)
+                else nearest?.let { bounds[it] }?.let { scope.launch { pos.animateTo(it.first, lensSpring) } }
+            },
+            onHorizontalDrag = { change, dx ->
+                change.consume()
+                val lo = bounds.values.minOfOrNull { it.first } ?: 0f
+                val hi = bounds.values.maxOfOrNull { it.first } ?: 0f
+                scope.launch { pos.snapTo((pos.value + dx).coerceIn(lo, hi)) }
+            }
+        )
+    }
+    val lensSize = (target ?: bounds.values.firstOrNull())?.second
+    val dockHaze = androidx.compose.runtime.remember { dev.chrisbanes.haze.HazeState() }
+
+    Box(
         modifier
             .fillMaxWidth()
             .then(
                 if (live) Modifier.glassPane(RoundedCornerShape(18.dp), com.example.juke.ui.theme.GlassLevel.Thin)
                 else Modifier.clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.07f))
             )
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            .then(drag)
+            .padding(4.dp)
     ) {
-        listOf(PlayerStage.Lyrics to "Lyrics", PlayerStage.Queue to "Up next", PlayerStage.Mix to "Mix").forEach { (tab, label) ->
-            val on = stage == tab
-            val bg by animateColorAsState(
-                if (on && !live) Color.White.copy(alpha = 0.16f) else Color.Transparent, tween(180), label = "dockTab"
-            )
+        // The labels are what the lens refracts: they are its haze source, and the part under the
+        // lens is cut out of their normal drawing so only the bent copy shows there.
+        val lensCorner = with(androidx.compose.ui.platform.LocalDensity.current) { 14.dp.toPx() }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .then(
+                    if (live && lensSize != null && placed) Modifier.drawWithContent {
+                        if (shown < 0.5f) { drawContent(); return@drawWithContent }
+                        val hole = androidx.compose.ui.graphics.Path().apply {
+                            addRoundRect(
+                                androidx.compose.ui.geometry.RoundRect(
+                                    pos.value, 0f, pos.value + lensSize.width, lensSize.height.toFloat(),
+                                    androidx.compose.ui.geometry.CornerRadius(lensCorner)
+                                )
+                            )
+                        }
+                        clipPath(hole, androidx.compose.ui.graphics.ClipOp.Difference) { this@drawWithContent.drawContent() }
+                    } else Modifier
+                )
+                .hazeSource(dockHaze),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            tabs.forEachIndexed { i, (tab, label) ->
+                val on = stage == tab
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = 44.dp)
+                        .onPlaced { bounds[i] = it.positionInParent().x to it.size }
+                        .clip(RoundedCornerShape(12.dp))
+                        .semantics { selected = on }
+                        .clickable(role = Role.Tab) { onSelect(if (on) PlayerStage.Art else tab) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val alpha by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0.7f, tween(180), label = "dockLabel")
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                        color = Color.White.copy(alpha = alpha)
+                    )
+                }
+            }
+        }
+        if (lensSize != null && placed) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val speed = { (kotlin.math.abs(pos.velocity) / 4000f).coerceIn(0f, 1f) }
             Box(
                 Modifier
-                    .weight(1f)
-                    .heightIn(min = 44.dp)
-                    // The open tab is a liquid lens sitting in the glass dock.
+                    .offset { androidx.compose.ui.unit.IntOffset(pos.value.toInt(), 0) }
+                    .size(with(density) { lensSize.width.toDp() }, with(density) { lensSize.height.toDp() })
+                    .graphicsLayer {
+                        val v = (kotlin.math.abs(pos.velocity) / 5000f).coerceIn(0f, 1f)
+                        val grab = if (dragging) 0.08f else 0f
+                        scaleX = 1f + 0.38f * v + grab
+                        scaleY = 1f - 0.16f * v + grab * 0.5f
+                        alpha = shown
+                    }
                     .then(
-                        if (on && live) Modifier.liquidGlass(RoundedCornerShape(14.dp), Color.White.copy(alpha = 0.12f), blur = 4.dp)
-                        else Modifier
+                        // Pure clear glass over the labels: no tint, no frost; it bends the text
+                        // under it, with the rim and its rainbow edge (full while moving or held).
+                        if (live) Modifier.liquidGlass(
+                            RoundedCornerShape(14.dp), Color.Transparent, blur = 0.dp, rimAlpha = 0.7f, source = dockHaze,
+                            // Small, short lens: a gentle bend at the rim, no fold (it mirrored the text).
+                            displacement = 14.dp, edge = 10.dp, fold = 0f,
+                            strength = { 0.5f + speed() + if (dragging) 0.5f else 0f }
+                        )
+                        else Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.12f))
                     )
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(bg)
-                    .semantics { selected = on }
-                    .clickable(role = Role.Tab) { onSelect(if (on) PlayerStage.Art else tab) },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
-                    color = Color.White.copy(alpha = if (on) 1f else 0.7f)
-                )
-            }
+            )
         }
     }
 }

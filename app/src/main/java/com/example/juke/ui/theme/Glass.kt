@@ -290,6 +290,9 @@ fun Modifier.liquidGlass(
     rimAlpha: Float = 0.5f,
     source: HazeState? = LocalHazeState.current,
     strength: () -> Float = { 0f },
+    displacement: Dp = 64.dp,
+    edge: Dp = 30.dp,
+    fold: Float = 0.4f,
 ): Modifier {
     val dark = isGlassDark()
     val lifted = if (shadow > 0.dp) glassShadow(shape, shadow, 0.34f) else this
@@ -298,14 +301,16 @@ fun Modifier.liquidGlass(
         return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
     val boost = LocalGlassBoost.current
-    val style = remember(fill, shape, blur, dark, boost) {
+    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold) {
         liquidStyle(
             boost = boost,
             shape = shape,
             tint = fill,
             dark = dark,
             blur = blur,
-            fold = 0.4f,
+            displacement = displacement,
+            edge = edge,
+            fold = fold,
             specular = 0.66f,
             clear = true,
             // The rainbow swells while the pane moves.
