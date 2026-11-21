@@ -19,15 +19,18 @@ Android and desktop. Changes since 3.1.1-stable, from 2026-11-20.
 - **Artist page.** A featured latest-release card, then side-scrolling Albums and Singles & EPs lanes of bare rounded covers. Releases show Single, EP or Album, the year and the song count. A NEW tag shows for releases from the last 60 days.
 - **Download in more menus.** Download is in the long-press and 3-dot menus for Home, playlists, artists, Search results, album tracks and the Library song sheet. Spotify songs go to the download queue, which skips ones already saved.
 - **Desktop: lyrics timing adjuster.** The full player's lyrics pane has a Sync button with the same slider as the phone (-/+0.5 s, reset, done). Changes are saved per song.
-- **Liquid glass across the app.** Cards, chips, buttons, sheets, dialogs and the nav bar share one glass style. The player has its own glass stage with a liquid lens that slides between Lyrics, Up next and Mix, stretches with speed, refracts the tab labels and snaps to the nearest tab on drag.
+- **Liquid glass across the app.** Cards, chips, buttons, song menus and the nav bar share one glass style. The player has its own glass stage with a liquid lens that slides between Lyrics, Up next and Mix, stretches with speed, refracts the tab labels and snaps to the nearest tab on drag.
 - **Tilt-driven glass highlight.** The highlight follows the gravity sensor, so the light stays up as the phone tilts. It runs only while the app is in front and stays still when animations are off.
 - **Recommendations: persistent listening session.** A session lasts until nothing has played for an hour. Songs heard or skipped in a session are held back across new queues and app restarts. Favourites return after a cooldown counted in songs. Every third recommendation is a song you have never heard, when one is available.
 - **Power tools: Favourite cooldown.** Replaces "Repeat threshold". Choose 10, 15, 20, 30 or 40 songs (default 20).
+- **Playing from.** The player names the list the queue came from ("Playing from Playlist", with its name): a Library playlist, a Spotify playlist, an album, an artist's top tracks or the library. Tapping it opens that list. It shows while the playing song belongs to the list and is kept across app restarts, like the queue.
+- **Liquid-glass song menus.** Song menus (long press or 3 dots, in Search, Library and everywhere else) are a floating card of frosted liquid glass that bends the page behind it. Drag down, tap outside or press Back to close.
 
 ### Changed
 
 - **Haze 2.1 glass.** Floating glass (nav bar, mini player, top bars) and the nav bubble use Haze 2.1's glass with edge refraction, a specular highlight and a rainbow rim. Desktop stays on Haze 1.2.
 - **Solid surfaces on Android 12 and older.** Those versions drew grey bands through the blur, so they always use solid surfaces, and the setting is locked with an explanation.
+- **Tab bar lens.** The selected tab sits under a clear liquid lens that bends its icon, with the neon ring on its edge. Dragged, it stretches with the finger's speed, a flick carries it to the tab it heads for, and it gives a little past the end tabs.
 - **Clear mini player.** The mini player uses the same clear liquid glass as the nav bar, with no frost.
 - **Clear in-flow glass.** Cards and panes use a clear liquid style: no frost, no white wash, no accent tint.
 - **Denser glass optics.** Floating glass and the nav bubble bend light like a denser fluid, with stronger edge refraction and a brighter Fresnel edge.
@@ -44,10 +47,11 @@ Android and desktop. Changes since 3.1.1-stable, from 2026-11-20.
 
 - **Sleep timer crash.** The countdown paused playback from a background thread, which Media3 rejects. It now pauses on the main thread.
 - **Duplicate songs in the queue.** Removing one copy of a duplicate song no longer removes the other copy too.
-- **Playlist Play.** Once the loaded song is one of the playlist's tracks, the button shows Pause or Resume and toggles playback instead of restarting the playlist.
+- **Playlist Play.** While a list is playing, its Play button shows Pause and pauses or resumes it instead of restarting it from the first song. This covers the Library playlist card, the library's song list, Spotify playlists, albums and an artist's top tracks.
 - **Second playlist import.** Pasting a second playlist link while one is importing shows that link's own progress and Import button.
 - **Jam re-seek loop.** A follower no longer seeks every 3 seconds after a song change. It corrects its seek offset in one step and stops hard seeking a song after four missed seeks in a row.
 - **Waves in battery saver.** The waves stay off in battery saver and come back when it ends, without a restart.
+- **Blank sheets.** Song menus and other sheets showed only their handle and title, with a copy of the page over their buttons. Sheets and dialogs with text fields use frosted glass again; song menus use the new in-window liquid glass.
 - **Recommendations after a skip.** A song skipped after 30 seconds can't come straight back. Songs in a radio that were played since it was pulled are held back, not queued.
 
 See full release notes: [v3.1.1-stable-RELEASE_NOTES.md](docs/v3.1.1-stable-RELEASE_NOTES.md)
