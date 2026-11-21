@@ -62,6 +62,13 @@ val LocalHazeState = compositionLocalOf<HazeState?> { null }
 /** The accent the ambient field and glass tint pick up (album art when available). */
 val LocalGlassAccent = compositionLocalOf { Color(0xFF8E7CFF) }
 
+/** The player and sheets ask for a stronger lens; Android scales its refraction by this. */
+val LocalGlassBoost = compositionLocalOf { false }
+
+/** True when real backdrop glass is drawn (a haze source exists and solid mode is off). */
+@Composable
+fun glassIsLive(): Boolean = LocalHazeState.current != null && !GlassPrefs.solid
+
 object GlassShapes {
     val Pill = RoundedCornerShape(percent = 50)
     val Control = RoundedCornerShape(18.dp)
@@ -223,6 +230,10 @@ fun Modifier.liquidGlass(
     rimAlpha: Float = 0.5f,
     source: HazeState? = LocalHazeState.current,
     strength: () -> Float = { 0f },
+    displacement: Dp = 64.dp,
+    edge: Dp = 30.dp,
+    fold: Float = 0.4f,
+    clear: Boolean = true,
 ): Modifier {
     val dark = isGlassDark()
     val lifted = if (shadow > 0.dp) glassShadow(shape, shadow, 0.34f) else this

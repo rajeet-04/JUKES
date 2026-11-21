@@ -15,12 +15,24 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 import androidx.room.Upsert
 import androidx.room.RoomRawQuery
 import com.example.juke.models.Track
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+
+/** Same change as Android's 12 -> 13: song exposure remembers when a song last played or was skipped. */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_at INTEGER")
+        connection.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_seq INTEGER")
+        connection.execSQL("ALTER TABLE song_exposure ADD COLUMN last_skip_at INTEGER")
+    }
+}
 
 class Converters {
     @TypeConverter
@@ -39,7 +51,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -57,6 +69,7 @@ abstract class MusicDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder<MusicDatabase>(File(Context.dataDir, "music_database.db").path)
                     .setDriver(BundledSQLiteDriver())
                     .setQueryCoroutineContext(Dispatchers.IO)
+                    .addMigrations(MIGRATION_12_13)
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
                 INSTANCE = instance
@@ -194,6 +207,10 @@ fun Track.toEntity(): TrackEntity {
  */
 @Dao
 interface TrackDao {
+    /** A library song saved from this YouTube upload that has a Spotify id. */
+    @Query("SELECT * FROM tracks WHERE yt_video_id = :videoId AND spotify_id IS NOT NULL LIMIT 1")
+    suspend fun findByVideoId(videoId: String): TrackEntity?
+
 
     // Upsert, never REPLACE: SQLite carries out REPLACE as delete + insert, and the delete
     // cascades to playlist_tracks, so re-saving a track (lyrics, romanization, stream promoted to a
