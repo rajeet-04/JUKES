@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-## [3.1.1-unreleased]
+## [3.2.0-stable] - 2026-11-21
 
 Android and desktop. Changes since 3.1.1-stable, from 2026-11-20.
 
