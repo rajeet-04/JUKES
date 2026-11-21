@@ -25,12 +25,49 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+const val DB_VERSION = 13
+
+private fun SQLiteConnection.hasColumn(table: String, column: String): Boolean =
+    prepare("PRAGMA table_info($table)").use { st ->
+        var found = false
+        while (st.step()) if (st.getText(1) == column) found = true
+        found
+    }
+
+/** Adds the column unless it is there already: a half-applied or dev-build file must not fail the upgrade. */
+private fun SQLiteConnection.addColumnIfMissing(table: String, column: String, type: String) {
+    if (!hasColumn(table, column)) execSQL("ALTER TABLE $table ADD COLUMN $column $type")
+}
+
 /** Same change as Android's 12 -> 13: song exposure remembers when a song last played or was skipped. */
 val MIGRATION_12_13 = object : Migration(12, 13) {
     override fun migrate(connection: SQLiteConnection) {
-        connection.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_at INTEGER")
-        connection.execSQL("ALTER TABLE song_exposure ADD COLUMN last_play_seq INTEGER")
-        connection.execSQL("ALTER TABLE song_exposure ADD COLUMN last_skip_at INTEGER")
+        connection.addColumnIfMissing("song_exposure", "last_play_at", "INTEGER")
+        connection.addColumnIfMissing("song_exposure", "last_play_seq", "INTEGER")
+        connection.addColumnIfMissing("song_exposure", "last_skip_at", "INTEGER")
+    }
+}
+
+/** Copies the database aside before a schema upgrade, so a failed upgrade is never the only copy of the library. */
+object DatabaseBackup {
+    /** The schema version stored in the file, or null when there is no file yet. */
+    fun storedVersion(db: File): Int? {
+        if (!db.exists() || db.length() == 0L) return null
+        return runCatching {
+            BundledSQLiteDriver().open(db.path).use { c ->
+                c.prepare("PRAGMA user_version").use { st -> if (st.step()) st.getLong(0).toInt() else null }
+            }
+        }.getOrNull()
+    }
+
+    /** The copy made (next to the database, in backups/), or null when the version is not changing. */
+    fun beforeUpgrade(db: File, fromVersion: Int, toVersion: Int): File? {
+        if (fromVersion == toVersion || !db.exists() || db.length() == 0L) return null
+        val dir = File(db.parentFile, "backups").apply { mkdirs() }
+        val copy = File(dir, "music_database-v$fromVersion-${System.currentTimeMillis()}.db")
+        db.copyTo(copy)
+        for (ext in listOf("-wal", "-shm")) File(db.path + ext).takeIf { it.exists() }?.copyTo(File(copy.path + ext))
+        return copy
     }
 }
 
@@ -51,7 +88,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
-    version = 13,
+    version = DB_VERSION,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -66,11 +103,14 @@ abstract class MusicDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): MusicDatabase {
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder<MusicDatabase>(File(Context.dataDir, "music_database.db").path)
+                val file = File(Context.dataDir, "music_database.db")
+                DatabaseBackup.storedVersion(file)?.let { DatabaseBackup.beforeUpgrade(file, it, DB_VERSION) }
+                val instance = Room.databaseBuilder<MusicDatabase>(file.path)
                     .setDriver(BundledSQLiteDriver())
                     .setQueryCoroutineContext(Dispatchers.IO)
                     .addMigrations(MIGRATION_12_13)
-                    .fallbackToDestructiveMigration(dropAllTables = false)
+                    // only files from before 3.1 may be reset; anything newer must migrate (the library lives in the account too, but a reset there once spread to the cloud)
+                    .fallbackToDestructiveMigrationFrom(false, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
                     .build()
                 INSTANCE = instance
                 instance
