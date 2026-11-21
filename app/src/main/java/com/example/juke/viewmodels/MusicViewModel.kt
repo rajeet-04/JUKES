@@ -205,7 +205,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
 
-    private val playContext = MutableStateFlow<PlayContext?>(null)
+    // Saved like the queue, so "Playing from" is still there after a restart.
+    private val playContextPrefs = application.getSharedPreferences("play_context", android.content.Context.MODE_PRIVATE)
+    private val playContext = MutableStateFlow(PlayContext.decode(playContextPrefs.getString("current", null)))
+
+    private fun setPlayContext(from: PlayContext?) {
+        playContext.value = from
+        viewModelScope.launch(Dispatchers.IO) {
+            playContextPrefs.edit().apply { if (from == null) remove("current") else putString("current", from.encode()) }.apply()
+        }
+    }
 
     /** The list the playing song was started from, or null once something else plays. */
     val playingFrom: StateFlow<PlayContext?> = combine(playContext, _uiState) { c, s -> c?.takeIf { it.owns(s.currentTrack) } }
@@ -878,7 +887,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * but in a Jam only that song goes into the room, not the rest of a long list.
      */
     fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false, startPositionMs: Long? = null, from: PlayContext? = null) {
-        playContext.value = from
+        setPlayContext(from)
         val forJam = if (jamSingle) listOfNotNull(tracks.getOrNull(startIndex)) else tracks.drop(startIndex)
         if (JamControls.playNow(forJam.map { it.toJamPick() })) return
         viewModelScope.launch {
@@ -2133,7 +2142,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Plays the first track, then queues the remaining tracks in parallel batches
      */
     fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0, from: PlayContext? = null) {
-        playContext.value = from
+        setPlayContext(from)
         if (JamControls.playNow(spotifyTracks.drop(startIndex).map { it.toJamPick() })) return
         if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return
         loadListQueue(spotifyTracks.drop(startIndex).map { SpotifyApi.spotifyTrackToSong(it) })
@@ -2149,7 +2158,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         startIndex: Int = 0,
         from: PlayContext? = null
     ) {
-        playContext.value = from
+        setPlayContext(from)
         if (JamControls.playNow(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album).toJamPick() })) return
         if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return
         loadListQueue(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album) })

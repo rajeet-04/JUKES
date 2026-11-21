@@ -26,3 +26,15 @@ class PlayContextTest {
         assertFalse(ctx.isList(PlayContext.Kind.PLAYLIST, "p2"))
     }
 }
+
+class PlayContextPersistTest {
+    @Test fun `survives a round trip through its saved form`() {
+        val ctx = PlayContext(PlayContext.Kind.ALBUM, "a1", "Moods", keys = setOf("u1", "s2"))
+        org.junit.Assert.assertEquals(ctx, PlayContext.decode(ctx.encode()))
+    }
+
+    @Test fun `bad or missing saved form gives nothing`() {
+        org.junit.Assert.assertNull(PlayContext.decode(null))
+        org.junit.Assert.assertNull(PlayContext.decode("not json"))
+    }
+}
