@@ -56,11 +56,18 @@ fun PlaylistDetailScreen(
 
     // This playlist "owns" playback when the loaded song is one of its tracks: Play then pauses/resumes instead of restarting.
     val musicState = musicViewModel.uiState.collectAsStateWithLifecycle()
-    val trackIds = androidx.compose.runtime.remember(uiState.tracks) { uiState.tracks.mapTo(HashSet()) { it.id } }
+    val trackIds = androidx.compose.runtime.remember(uiState.tracks) { uiState.tracks.mapNotNullTo(HashSet<String>()) { it.id } }
     val isThisPlaylist by androidx.compose.runtime.remember(trackIds) {
         androidx.compose.runtime.derivedStateOf { musicState.value.currentTrack?.spotifyId?.let { it in trackIds } == true }
     }
     val isPlaying by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { musicState.value.isPlaying } }
+    // Lets the player say "Playing from <playlist>" and open it again.
+    fun context() = playlist?.let {
+        com.example.juke.viewmodels.PlayContext(
+            com.example.juke.viewmodels.PlayContext.Kind.PLAYLIST, it.id, it.name,
+            keys = trackIds, playlist = it
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -206,10 +213,10 @@ fun PlaylistDetailScreen(
                     item {
                         com.example.juke.ui.components.PlayShuffleRow(
                             title = "Tracks",
-                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(uiState.tracks.shuffled(), 0) },
+                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(uiState.tracks.shuffled(), 0, from = context()) },
                             onPlay = {
                                 if (isThisPlaylist) musicViewModel.togglePlayPause()
-                                else musicViewModel.setQueueFromSpotifyTracks(uiState.tracks, 0)
+                                else musicViewModel.setQueueFromSpotifyTracks(uiState.tracks, 0, from = context())
                             },
                             playing = isThisPlaylist && isPlaying
                         )
@@ -231,7 +238,8 @@ fun PlaylistDetailScreen(
                                         // Queue this track and all tracks below it from the playlist
                                         musicViewModel.setQueueFromSpotifyTracks(
                                             uiState.tracks,
-                                            uiState.tracks.indexOf(track)
+                                            uiState.tracks.indexOf(track),
+                                            from = context()
                                         )
                                     }
                                 }

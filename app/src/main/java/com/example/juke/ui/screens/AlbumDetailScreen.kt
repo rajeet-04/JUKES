@@ -75,12 +75,20 @@ fun AlbumDetailScreen(
 
     // Same actions as a playlist. Playing works for any track (streamed if not saved); queueing
     // only places songs already on the device, so it says when it had to leave some out.
+    // Lets the player say "Playing from <album>" and open it again.
+    fun context() = album?.let { a ->
+        com.example.juke.viewmodels.PlayContext(
+            com.example.juke.viewmodels.PlayContext.Kind.ALBUM, a.id.orEmpty(), a.name,
+            keys = uiState.tracks.mapNotNullTo(HashSet()) { it.id } +
+                uiState.tracks.mapNotNull { it.findOfflineTrack(offlineTracks)?.uuid }
+        )
+    }
     fun playAlbum(shuffle: Boolean) {
         val tracks = if (shuffle) uiState.tracks.shuffled() else uiState.tracks
         if (album == null || tracks.isEmpty()) return
         val locals = tracks.mapNotNull { it.findOfflineTrack(offlineTracks) }
-        if (locals.size == tracks.size) musicViewModel.setQueue(locals)
-        else musicViewModel.setQueueFromSimplifiedTracks(tracks, album, 0)
+        if (locals.size == tracks.size) musicViewModel.setQueue(locals, from = context())
+        else musicViewModel.setQueueFromSimplifiedTracks(tracks, album, 0, from = context())
     }
     fun queueAlbum(next: Boolean) {
         val locals = uiState.tracks.mapNotNull { it.findOfflineTrack(offlineTracks) }
@@ -226,13 +234,17 @@ fun AlbumDetailScreen(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically) {
+                            // Once this album is playing, the button pauses and resumes it.
+                            val from by musicViewModel.playingFrom.collectAsStateWithLifecycle()
+                            val thisAlbum = from?.isList(com.example.juke.viewmodels.PlayContext.Kind.ALBUM, album.id) == true
+                            val pause = thisAlbum && downloads.isPlaying
                             Button(
-                                onClick = { playAlbum(false) },
+                                onClick = { if (thisAlbum) musicViewModel.togglePlayPause() else playAlbum(false) },
                                 enabled = uiState.tracks.isNotEmpty(),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(JukeIcons.Play, null, Modifier.size(20.dp))
-                                Text("Play", Modifier.padding(start = 8.dp))
+                                Icon(if (pause) JukeIcons.Pause else JukeIcons.Play, null, Modifier.size(20.dp))
+                                Text(if (pause) "Pause" else if (thisAlbum) "Resume" else "Play", Modifier.padding(start = 8.dp))
                             }
                             androidx.compose.material3.OutlinedButton(
                                 onClick = { playAlbum(true) },
@@ -320,9 +332,9 @@ fun AlbumDetailScreen(
                                         val index = uiState.tracks.indexOf(track)
                                         if (track.findOfflineTrack(offlineTracks) != null) {
                                             musicViewModel.setQueue(uiState.tracks.drop(index)
-                                                .mapNotNull { it.findOfflineTrack(offlineTracks) })
+                                                .mapNotNull { it.findOfflineTrack(offlineTracks) }, from = context())
                                         } else {
-                                            musicViewModel.setQueueFromSimplifiedTracks(uiState.tracks, album, index)
+                                            musicViewModel.setQueueFromSimplifiedTracks(uiState.tracks, album, index, from = context())
                                         }
                                     }
                                 }

@@ -30,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -179,10 +181,18 @@ fun ArtistDetailScreen(
                 if (uiState.topTracks.isNotEmpty()) {
                     item {
                         val top = uiState.topTracks.take(10)
+                        val from by musicViewModel.playingFrom.collectAsStateWithLifecycle()
+                        val playing by remember(musicViewModel) { musicViewModel.uiState.map { it.isPlaying }.distinctUntilChanged() }
+                            .collectAsStateWithLifecycle(initialValue = false)
                         com.example.juke.ui.components.PlayShuffleRow(
                             title = "Top Tracks",
-                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(top.shuffled(), 0) },
-                            onPlay = { musicViewModel.setQueueFromSpotifyTracks(top, 0) }
+                            onShuffle = { musicViewModel.setQueueFromSpotifyTracks(top.shuffled(), 0, from = topContext(artist, top)) },
+                            onPlay = {
+                                musicViewModel.playList(com.example.juke.viewmodels.PlayContext.Kind.ARTIST, artist.id.orEmpty()) {
+                                    musicViewModel.setQueueFromSpotifyTracks(top, 0, from = topContext(artist, top))
+                                }
+                            },
+                            playing = playing && from?.isList(com.example.juke.viewmodels.PlayContext.Kind.ARTIST, artist.id.orEmpty()) == true
                         )
                     }
 
@@ -203,7 +213,8 @@ fun ArtistDetailScreen(
                                         // Queue this track and all tracks below it
                                         musicViewModel.setQueueFromSpotifyTracks(
                                             topTracksSubset,
-                                            topTracksSubset.indexOf(track)
+                                            topTracksSubset.indexOf(track),
+                                            from = topContext(artist, topTracksSubset)
                                         )
                                     }
                                 }
@@ -257,3 +268,10 @@ private fun bestImageUrl(images: List<SpotifyImage>?): String? {
     images.find { (it.height == 640 || it.width == 640) }?.let { return it.url }
     return images.maxByOrNull { (it.height ?: 0) * (it.width ?: 0) }?.url
 }
+
+/** An artist's top tracks as a list the player can name and reopen. */
+private fun topContext(artist: com.example.juke.models.SpotifyArtist, tracks: List<com.example.juke.models.SpotifyTrack>) =
+    com.example.juke.viewmodels.PlayContext(
+        com.example.juke.viewmodels.PlayContext.Kind.ARTIST, artist.id.orEmpty(), artist.name,
+        keys = tracks.mapNotNullTo(HashSet()) { it.id }
+    )

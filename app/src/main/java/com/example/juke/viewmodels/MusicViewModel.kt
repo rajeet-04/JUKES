@@ -205,6 +205,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
 
+    private val playContext = MutableStateFlow<PlayContext?>(null)
+
+    /** The list the playing song was started from, or null once something else plays. */
+    val playingFrom: StateFlow<PlayContext?> = combine(playContext, _uiState) { c, s -> c?.takeIf { it.owns(s.currentTrack) } }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+
     private var isProcessingQueue = false
     private var hasStartedDeferredStartupWork = false
     private val pendingQueueOperations =
@@ -870,7 +877,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * [jamSingle]: the caller is a tap on one song inside a list. Normally the list follows it into the queue,
      * but in a Jam only that song goes into the room, not the rest of a long list.
      */
-    fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false, startPositionMs: Long? = null) {
+    fun setQueue(tracks: List<Track>, startIndex: Int = 0, jamSingle: Boolean = false, startPositionMs: Long? = null, from: PlayContext? = null) {
+        playContext.value = from
         val forJam = if (jamSingle) listOfNotNull(tracks.getOrNull(startIndex)) else tracks.drop(startIndex)
         if (JamControls.playNow(forJam.map { it.toJamPick() })) return
         viewModelScope.launch {
@@ -903,6 +911,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    /** A list's Play button: pauses and resumes while that list is playing, otherwise [start]s it. */
+    fun playList(kind: PlayContext.Kind, id: String, start: () -> Unit) {
+        if (playingFrom.value?.isList(kind, id) == true) togglePlayPause() else start()
     }
 
     fun togglePlayPause() {
@@ -1084,8 +1097,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val tracks = collectAlbumTracks { offset -> SpotifyApi.getAlbumTracks(id, offset = offset) }
                 val ordered = if (shuffle) tracks.shuffled() else tracks
                 val locals = ordered.mapNotNull { it.findOfflineTrack(offlineTracks.value) }
-                if (ordered.isNotEmpty() && locals.size == ordered.size) setQueue(locals)
-                else setQueueFromSimplifiedTracks(ordered, album, 0)
+                val from = PlayContext(PlayContext.Kind.ALBUM, id, album.name, ordered.mapNotNullTo(HashSet()) { it.id } + locals.map { it.uuid })
+                if (ordered.isNotEmpty() && locals.size == ordered.size) setQueue(locals, from = from)
+                else setQueueFromSimplifiedTracks(ordered, album, 0, from = from)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -2118,7 +2132,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Set queue from Spotify tracks (Artist and Playlist screens, a handoff from another device)
      * Plays the first track, then queues the remaining tracks in parallel batches
      */
-    fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0) {
+    fun setQueueFromSpotifyTracks(spotifyTracks: List<SpotifyTrack>, startIndex: Int = 0, from: PlayContext? = null) {
+        playContext.value = from
         if (JamControls.playNow(spotifyTracks.drop(startIndex).map { it.toJamPick() })) return
         if (spotifyTracks.isEmpty() || startIndex >= spotifyTracks.size) return
         loadListQueue(spotifyTracks.drop(startIndex).map { SpotifyApi.spotifyTrackToSong(it) })
@@ -2131,8 +2146,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun setQueueFromSimplifiedTracks(
         simplifiedTracks: List<SpotifySimplifiedTrack>,
         album: SpotifyAlbum,
-        startIndex: Int = 0
+        startIndex: Int = 0,
+        from: PlayContext? = null
     ) {
+        playContext.value = from
         if (JamControls.playNow(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album).toJamPick() })) return
         if (simplifiedTracks.isEmpty() || startIndex >= simplifiedTracks.size) return
         loadListQueue(simplifiedTracks.drop(startIndex).map { SpotifyApi.simplifiedTrackToSong(it, album) })

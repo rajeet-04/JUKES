@@ -127,6 +127,26 @@ fun LibraryScreen(
     // opened from outside (the desktop sidebar): show it the way the Playlists tab does
     LaunchedEffect(uiState.selectedPlaylist?.id) { if (uiState.selectedPlaylist != null) librarySection = 1 }
     LaunchedEffect(uiState.showFavoritesOnly) { if (uiState.showFavoritesOnly) librarySection = 0 }
+    // The player's "Playing from" asks to open one of these playlists.
+    val openRequest by com.example.juke.viewmodels.PlayContext.openLibraryPlaylist.collectAsStateWithLifecycle()
+    LaunchedEffect(openRequest) {
+        openRequest?.let { id ->
+            com.example.juke.viewmodels.PlayContext.openLibraryPlaylist.value = null
+            librarySection = 1
+            libraryViewModel.loadPlaylistTracks(id)
+        }
+    }
+    // What is playing, for the Play buttons: they pause and resume the list that is playing.
+    val playingFrom by musicViewModel.playingFrom.collectAsStateWithLifecycle()
+    val musicPlaying by remember(musicViewModel) { musicViewModel.uiState.map { it.isPlaying }.distinctUntilChanged() }
+        .collectAsStateWithLifecycle(initialValue = false)
+    fun listContext(): com.example.juke.viewmodels.PlayContext {
+        val keys = com.example.juke.viewmodels.PlayContext.keysOf(uiState.tracks)
+        return uiState.selectedPlaylist?.let {
+            com.example.juke.viewmodels.PlayContext(com.example.juke.viewmodels.PlayContext.Kind.LIBRARY_PLAYLIST, it.id, it.name, keys)
+        } ?: if (uiState.showFavoritesOnly) com.example.juke.viewmodels.PlayContext(com.example.juke.viewmodels.PlayContext.Kind.LIBRARY, "favourites", "Favourites", keys)
+        else com.example.juke.viewmodels.PlayContext(com.example.juke.viewmodels.PlayContext.Kind.LIBRARY, "library", "Your library", keys)
+    }
     var showSongsFilter by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showLibraryMenu by remember { mutableStateOf(false) }
@@ -603,8 +623,12 @@ fun LibraryScreen(
                                 playlist = playlist,
                                 onEditClick = { showEditPlaylistDialog = true },
                                 onShare = { sharePlaylist(playlist) },
-                                onShuffle = { musicViewModel.setQueue(uiState.tracks.shuffled(), startIndex = 0) }.takeIf { uiState.tracks.isNotEmpty() },
-                                onPlay = { musicViewModel.setQueue(uiState.tracks, startIndex = 0) }
+                                onShuffle = { musicViewModel.setQueue(uiState.tracks.shuffled(), startIndex = 0, from = listContext()) }.takeIf { uiState.tracks.isNotEmpty() },
+                                onPlay = {
+                                    val ctx = listContext()
+                                    musicViewModel.playList(ctx.kind, ctx.id) { musicViewModel.setQueue(uiState.tracks, startIndex = 0, from = ctx) }
+                                },
+                                playing = musicPlaying && playingFrom?.isList(com.example.juke.viewmodels.PlayContext.Kind.LIBRARY_PLAYLIST, playlist.id) == true
                             )
                         }
                     }
@@ -612,8 +636,12 @@ fun LibraryScreen(
                     if (uiState.tracks.isNotEmpty() && uiState.selectedPlaylist == null) item(key = "play_shuffle") {
                         com.example.juke.ui.components.PlayShuffleRow(
                             title = "${uiState.tracks.size} songs",
-                            onShuffle = { musicViewModel.setQueue(uiState.tracks.shuffled(), startIndex = 0) },
-                            onPlay = { musicViewModel.setQueue(uiState.tracks, startIndex = 0) }
+                            onShuffle = { musicViewModel.setQueue(uiState.tracks.shuffled(), startIndex = 0, from = listContext()) },
+                            onPlay = {
+                                val ctx = listContext()
+                                musicViewModel.playList(ctx.kind, ctx.id) { musicViewModel.setQueue(uiState.tracks, startIndex = 0, from = ctx) }
+                            },
+                            playing = musicPlaying && listContext().let { ctx -> playingFrom?.isList(ctx.kind, ctx.id) == true }
                         )
                     }
 
@@ -676,7 +704,8 @@ Box(
                                         musicViewModel.setQueue(
                                             uiState.tracks,
                                             uiState.tracks.indexOf(track),
-                                            jamSingle = true
+                                            jamSingle = true,
+                                            from = listContext()
                                         )
                                     }
                                 },
@@ -765,7 +794,7 @@ Box(
                             val hitScope = rememberCoroutineScope()
                             com.example.juke.ui.components.LyricHitRow(track, uiState.searchQuery) { ms ->
                                 hitScope.launch {
-                                    musicViewModel.playFromLine(track, ms) { at -> musicViewModel.setQueue(uiState.tracks, uiState.tracks.indexOf(track), jamSingle = true, startPositionMs = at) }
+                                    musicViewModel.playFromLine(track, ms) { at -> musicViewModel.setQueue(uiState.tracks, uiState.tracks.indexOf(track), jamSingle = true, startPositionMs = at, from = listContext()) }
                                 }
                             }
                         }
@@ -975,7 +1004,8 @@ private fun PlaylistHeader(
     onShare: () -> Unit,
     /** Null while the playlist has no songs to play. */
     onShuffle: (() -> Unit)?,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    playing: Boolean = false
 ) {
     Column {
     GlassCard(
@@ -1040,7 +1070,7 @@ private fun PlaylistHeader(
                         modifier = Modifier.padding(start = 8.dp).weight(1f)
                     )
                     // the controls sit in the card they play, on the info line
-                    if (onShuffle != null) com.example.juke.ui.components.PlayShuffle(onShuffle, onPlay)
+                    if (onShuffle != null) com.example.juke.ui.components.PlayShuffle(onShuffle, onPlay, playing = playing)
                 }
             }
         }

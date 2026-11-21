@@ -231,7 +231,9 @@ fun PlayerScreen(
     onDismiss: () -> Unit,
     onNavigateToArtist: (String) -> Unit,
     onNavigateToAlbum: (String) -> Unit,
-    onShareTrack: (String) -> Unit
+    onShareTrack: (String) -> Unit,
+    /** Tap on "Playing from …": opens the list the queue was started from. */
+    onOpenPlayingFrom: (com.example.juke.viewmodels.PlayContext) -> Unit = {}
 ) {
     // Phones get the stage player; the desktop build keeps its wide layout.
     val stagePlayer = !com.example.juke.account.Account.isDesktop
@@ -244,6 +246,7 @@ fun PlayerScreen(
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     val currentTrack = uiState.currentTrack
+    val playingFrom by musicViewModel.playingFrom.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSaveQueue by remember { mutableStateOf(false) }
     val playbackSpeed by musicViewModel.playbackSpeed.collectAsStateWithLifecycle()
@@ -405,6 +408,8 @@ fun PlayerScreen(
                 fun Header(title: String = "Now Playing", extraAction: (@Composable () -> Unit)? = null) = PlayerHeader(
                     modifier = Modifier.playerStage(0.55f, 0.8f, 12.dp),
                     title = title,
+                    playingFrom = playingFrom.takeIf { title == "Now Playing" },
+                    onOpenPlayingFrom = { playingFrom?.let(onOpenPlayingFrom) },
                     extraAction = extraAction,
                     onDismiss = onDismiss,
                     onShowSleepTimer = { showSleepTimerDialog = true },
@@ -627,6 +632,8 @@ fun PlayerScreen(
                         // Header
                         PlayerHeader(
                             modifier = Modifier.playerStage(0.55f, 0.8f, 12.dp),
+                            playingFrom = playingFrom,
+                            onOpenPlayingFrom = { playingFrom?.let(onOpenPlayingFrom) },
                             onDismiss = onDismiss,
                             onShowSleepTimer = { showSleepTimerDialog = true },
                             onNavigateToAlbum = {
@@ -1047,7 +1054,10 @@ fun PlayerHeader(
     /** Shown left of the menu button, e.g. the lyrics timing toggle. */
     extraAction: (@Composable () -> Unit)? = null,
     /** When set, Share moves into the menu. */
-    onShare: (() -> Unit)? = null
+    onShare: (() -> Unit)? = null,
+    /** Replaces the title with "Playing from <list>", which opens the list. */
+    playingFrom: com.example.juke.viewmodels.PlayContext? = null,
+    onOpenPlayingFrom: () -> Unit = {}
 ) {
     val context = LocalContext.current
     Row(
@@ -1065,7 +1075,33 @@ fun PlayerHeader(
             )
         }
 
-        Text(
+        if (playingFrom != null) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = "Open ${playingFrom.name}", onClick = onOpenPlayingFrom)
+                    .padding(vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Playing from ${playingFrom.kind.label}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1
+                )
+                Text(
+                    playingFrom.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else Text(
             title,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),

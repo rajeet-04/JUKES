@@ -706,6 +706,28 @@ class MainActivity : ComponentActivity() {
                             }
                             val shareIntent = Intent.createChooser(sendIntent, null)
                             context.startActivity(shareIntent)
+                        },
+                        onOpenPlayingFrom = { from ->
+                            showPlayerModal = false
+                            when (from.kind) {
+                                com.example.juke.viewmodels.PlayContext.Kind.LIBRARY_PLAYLIST -> {
+                                    com.example.juke.viewmodels.PlayContext.openLibraryPlaylist.value = from.id
+                                    onNavigate(Screen.Library)
+                                }
+                                com.example.juke.viewmodels.PlayContext.Kind.LIBRARY -> onNavigate(Screen.Library)
+                                com.example.juke.viewmodels.PlayContext.Kind.PLAYLIST -> from.playlist?.let { playlist ->
+                                    activityViewModelProvider[PlaylistDetailViewModel::class.java].loadPlaylistDetails(playlist)
+                                    navController.navigate("playlist/${playlist.id}")
+                                }
+                                com.example.juke.viewmodels.PlayContext.Kind.ALBUM -> {
+                                    activityViewModelProvider[AlbumDetailViewModel::class.java].loadAlbumDetailsById(from.id)
+                                    navController.navigate("album/${from.id}")
+                                }
+                                com.example.juke.viewmodels.PlayContext.Kind.ARTIST -> {
+                                    activityViewModelProvider[SearchViewModel::class.java].loadArtistDetailsById(from.id)
+                                    navController.navigate("artist/${from.id}")
+                                }
+                            }
                         }
                     )
                 }
