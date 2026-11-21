@@ -176,6 +176,9 @@ class QueueManager private constructor(private val context: Context) {
 
     /** The listener skipped [uuid] early: it should come back less often. */
     fun recordSkip(uuid: String) {
+        // Skipping through songs is listening too: the session stays open.
+        val now = System.currentTimeMillis()
+        saveSession(session(now).copy(lastActivity = now))
         val known = (_currentQueue.value + playedTracksHistory).firstOrNull { it.uuid == uuid }
         serviceScope.launch {
             val track = known ?: trackDao.getTrackByUuid(uuid)?.toTrack() ?: return@launch
@@ -583,7 +586,32 @@ class QueueManager private constructor(private val context: Context) {
      * Called every time a song starts. [remaining] is how many songs the player still has queued
      * after it. Tops the resolved window back up to the user's lookahead.
      */
-    fun onPlaybackAdvanced(track: Track, remaining: Int) = requestFill(track, remaining)
+    fun onPlaybackAdvanced(track: Track, remaining: Int) {
+        if (fillSuspended) serviceScope.launch { markStarted(track) }
+        else requestFill(track, remaining, started = true)
+    }
+
+    @Volatile private var lastStartedUuid: String? = null
+
+    /**
+     * [track] started: it counts as heard this session (a favourite's cooldown starts) even if it
+     * is skipped before it qualifies as a play, and the listening session stays alive.
+     */
+    private suspend fun markStarted(track: Track) {
+        if (lastStartedUuid == track.uuid) return
+        lastStartedUuid = track.uuid
+        val now = System.currentTimeMillis()
+        val s = session(now).copy(lastActivity = now)
+        saveSession(s)
+        val key = songKey(track)
+        try {
+            exposureMutex.withLock { exposureDao.upsert(Variety.started(exposureDao.get(key), key, now, s.songSeq)) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(tag, "Could not mark ${track.title} as started: ${e.message}")
+        }
+    }
 
     /**
      * Ask for recommendations based on [currentTrack]. [isRadioMode] (manual refresh) starts a
@@ -624,13 +652,22 @@ class QueueManager private constructor(private val context: Context) {
         // the radio of the first new song, like the queue itself does, until the mix is full.
         var seed: String? = seedId
         var radios = 0
+        val session = session()
+        val cooldown = favouriteCooldown()
+        val favourites = try { favouriteKeys() } catch (e: Exception) { emptySet() }
         while (seed != null && songs.size < MIX_MIN && radios++ < 3) {
             skip += seed
+            val radio = com.example.juke.network.JukesApi.fullRadio(seed)
+            val exposure = try {
+                exposureFor(radio.mapTo(HashSet()) { RecommenderApi.songKey(it.title, it.artist) })
+            } catch (e: Exception) { emptyMap() }
             songs += mixPicks(
-                com.example.juke.network.JukesApi.fullRadio(seed), blocked, skip, limit - songs.size,
+                radio, blocked, skip, limit - songs.size,
                 isBlocked = { rec ->
-                    blacklist.isNotEmpty() && (BlacklistManager.containsBlacklistedArtist(context, rec.artist, blacklist) ||
-                        BlacklistManager.titleContainsBlacklistedArtist(context, rec.title, blacklist))
+                    val key = RecommenderApi.songKey(rec.title, rec.artist)
+                    RepeatPolicy.blocked(exposure[key], key in favourites, session, cooldown) ||
+                        blacklist.isNotEmpty() && (BlacklistManager.containsBlacklistedArtist(context, rec.artist, blacklist) ||
+                            BlacklistManager.titleContainsBlacklistedArtist(context, rec.title, blacklist))
                 }
             )
             seed = songs.firstOrNull { it.id !in skip }?.id
@@ -722,10 +759,12 @@ class QueueManager private constructor(private val context: Context) {
     /** True while a Jam is in charge of what plays next, so radio recommendations must not join the queue. */
     @Volatile var fillSuspended = false
 
-    private fun requestFill(current: Track, remaining: Int, ignoreQueue: Boolean = false) {
+    private fun requestFill(current: Track, remaining: Int, ignoreQueue: Boolean = false, started: Boolean = false) {
         if (fillSuspended) return
         val gen = sessionGen.get()
         sessionScope.launch {
+            // Written before the fill reads it, so the song that just started can't be queued again.
+            if (started) markStarted(current)
             fillMutex.withLock {
                 if (gen != sessionGen.get()) return@withLock
                 try {
@@ -799,25 +838,34 @@ class QueueManager private constructor(private val context: Context) {
      * a song never heard (see [RepeatPolicy]).
      */
     private suspend fun moveReserveToPending(current: Track) {
-        if (reserve.isEmpty()) return
+        if (reserve.isEmpty() && heldBack.isEmpty()) return
         val blocked = queuedKeys(current).also { it.addAll(pendingKeys()) }
-        val incoming = mutableListOf<Pair<String, RankedRec>>()
+        val pulled = mutableListOf<Pair<String, RankedRec>>()
         while (true) {
             val r = reserve.pollFirst() ?: break
             val key = RecommenderApi.songKey(r.rec.title, r.rec.artist)
-            if (blocked.add(key, recLength(r.rec))) incoming += key to r
+            if (blocked.add(key, recLength(r.rec))) pulled += key to r
         }
-        if (incoming.isEmpty()) return
-        queueInOrder(incoming)
-    }
+        val held = heldBack.map { RecommenderApi.songKey(it.rec.title, it.rec.artist) to it }
+        if (pulled.isEmpty() && held.isEmpty()) return
 
-    /** Append [incoming] (song key to radio song) to Up Next in [RepeatPolicy] order. */
-    private suspend fun queueInOrder(incoming: List<Pair<String, RankedRec>>) {
         val now = System.currentTimeMillis()
         val s = session(now)
         val cooldown = favouriteCooldown()
-        val exposure = try { exposureFor(incoming.mapTo(HashSet()) { it.first }) } catch (e: Exception) { emptyMap() }
+        val exposure = try {
+            exposureFor((pulled + held).mapTo(HashSet()) { it.first })
+        } catch (e: Exception) { emptyMap() }
         val favourites = try { favouriteKeys() } catch (e: Exception) { emptySet() }
+        fun isBlocked(key: String) = RepeatPolicy.blocked(exposure[key], key in favourites, s, cooldown)
+
+        val incoming = mutableListOf<Pair<String, RankedRec>>()
+        // Re-checked now: a song may have been played since its radio was pulled.
+        pulled.forEach { if (isBlocked(it.first)) heldBack.addLast(it.second) else incoming += it }
+        // Held-back songs whose turn has come (a favourite past its cooldown) rejoin.
+        held.forEach { (key, r) ->
+            if (!isBlocked(key) && heldBack.remove(r) && blocked.add(key, recLength(r.rec))) incoming += key to r
+        }
+        if (incoming.isEmpty()) return
         val ordered = RepeatPolicy.order(
             incoming, s.recSeq,
             weightOf = { (key, r) ->
@@ -1257,8 +1305,9 @@ class QueueManager private constructor(private val context: Context) {
                         )
                     },
                     fresh = { c -> RepeatPolicy.neverHeard(exposure[songKey(c.track)], c.track.playCount) },
-                    artistOf = { c -> parseArtistNames(c.track.artist).firstOrNull() ?: c.track.artist }
-                ).take(limit).map { it.track }
+                    artistOf = { c -> parseArtistNames(c.track.artist).firstOrNull() ?: c.track.artist },
+                    limit = limit
+                ).map { it.track }
             } else {
                 // Last resort: favourites first, then most played
                 Log.d(tag, "Offline fallback: no scored candidates, using favourites/most-played")

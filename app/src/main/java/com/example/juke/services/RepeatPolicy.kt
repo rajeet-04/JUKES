@@ -76,17 +76,20 @@ object RepeatPolicy {
         weightOf: (T) -> Double,
         fresh: (T) -> Boolean,
         artistOf: (T) -> String,
-        random: Random = Random.Default
+        random: Random = Random.Default,
+        limit: Int = Int.MAX_VALUE
     ): List<T> {
-        val (live, dead) = items.map { it to weightOf(it) }.partition { it.second > 0.0 }
+        // Weight, freshness and artist are worked out once per item; the draw stops at [limit].
+        class C(val item: T, val w: Double, val fresh: Boolean, val artist: String)
+        val (live, dead) = items.map { C(it, weightOf(it), fresh(it), artistOf(it)) }.partition { it.w > 0.0 }
         val pool = live.toMutableList()
         val hits = HashMap<String, Int>()
-        val out = ArrayList<T>(items.size)
-        while (pool.isNotEmpty()) {
+        val out = ArrayList<T>(minOf(items.size, limit))
+        while (pool.isNotEmpty() && out.size < limit) {
             val wantFresh = isFreshSlot(startRecSeq + out.size)
-            val matching = pool.filter { fresh(it.first) == wantFresh }
+            val matching = pool.filter { it.fresh == wantFresh }
             val from = matching.ifEmpty { pool }
-            val weights = from.map { (item, w) -> w * Variety.SAME_ARTIST_FACTOR.pow(hits[artistOf(item)] ?: 0) }
+            val weights = from.map { c -> c.w * Variety.SAME_ARTIST_FACTOR.pow(hits[c.artist] ?: 0) }
             var r = random.nextDouble() * weights.sum()
             var idx = from.lastIndex
             for (i in weights.indices) {
@@ -95,9 +98,9 @@ object RepeatPolicy {
             }
             val chosen = from[idx]
             pool.remove(chosen)
-            out += chosen.first
-            artistOf(chosen.first).let { hits[it] = (hits[it] ?: 0) + 1 }
+            out += chosen.item
+            hits[chosen.artist] = (hits[chosen.artist] ?: 0) + 1
         }
-        return out + dead.map { it.first }
+        return (out + dead.map { it.item }).take(limit)
     }
 }

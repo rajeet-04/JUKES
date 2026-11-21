@@ -121,4 +121,11 @@ class VarietyTest {
         org.junit.Assert.assertEquals(9_000L, e.lastSkipAt)
         org.junit.Assert.assertEquals(5_000L, e.lastPlayAt)
     }
+
+    @Test fun `starting a song marks it heard without counting a play`() {
+        val e = Variety.started(null, "k", 7_000L, seq = 9)
+        org.junit.Assert.assertEquals(7_000L, e.lastPlayAt)
+        org.junit.Assert.assertEquals(9L, e.lastPlaySeq)
+        org.junit.Assert.assertEquals(0.0, e.playScore, 0.0)
+    }
 }

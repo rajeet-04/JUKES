@@ -192,7 +192,6 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
-/** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
 /** Song exposure remembers when a song last played or was skipped, for the repeat policy. */
 val MIGRATION_12_13 = object : Migration(12, 13) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -202,6 +201,7 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+/** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(

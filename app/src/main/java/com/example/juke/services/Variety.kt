@@ -49,6 +49,15 @@ object Variety {
         }
     }
 
+    /**
+     * A song started playing: it counts as heard this session (and a favourite's cooldown starts)
+     * even if it is skipped before it qualifies as a play. Scores are untouched.
+     */
+    fun started(existing: SongExposureEntity?, key: String, now: Long, seq: Long): SongExposureEntity {
+        val base = existing?.let { decayed(it, now) } ?: SongExposureEntity(key, updatedAt = now)
+        return base.copy(lastPlayAt = now, lastPlaySeq = seq)
+    }
+
     /** 1.0 = never heard or shown lately; tends to 0 the more it was played/skipped/recommended. */
     fun freshness(e: SongExposureEntity?, now: Long): Double {
         if (e == null) return 1.0

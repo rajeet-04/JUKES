@@ -103,4 +103,12 @@ class RepeatPolicyTest {
         assertEquals(items.toSet(), out.toSet())
         assertEquals("a", out.last().name)
     }
+
+    @Test fun `order stops at the limit`() {
+        val items = (1..50).map { Item("i$it", it % 4 == 0) }
+        var calls = 0
+        val out = RepeatPolicy.order(items, 0, { calls++; it.weight }, { it.fresh }, { it.name }, Random(2), limit = 5)
+        assertEquals(5, out.size)
+        assertEquals(50, calls) // each weight worked out once
+    }
 }
