@@ -250,6 +250,7 @@ private fun liquidStyle(
     clear: Boolean = false,
     boost: Boolean = false,
     rainbow: () -> Float = { 0.85f },
+    detail: Float = 0.45f,
 ): GlassStyle = (if (clear) GlassStyle.clear else GlassStyle.regular).shaped(shape).then {
     val displacement = if (boost) displacement * 1.3f else displacement
     val edge = if (boost) edge + 8.dp else edge
@@ -263,7 +264,7 @@ private fun liquidStyle(
             refractionDisplacement = displacement,
             refractionProfile = RefractionProfile.Edge(edge),
             refractionFoldStrength = fold,
-            refractionDetailIntensity = 0.45f,
+            refractionDetailIntensity = detail,
         )
     }
     chromaticAberrationMode(ChromaticAberrationMode.Full)
@@ -305,6 +306,8 @@ fun Modifier.liquidGlass(
     fold: Float = 0.4f,
     /** False: a fully frosted body (sheets, where text sits over the page); the rim still bends. */
     clear: Boolean = true,
+    /** The surface's fine ripple; 0 over artwork, where it reads as streaks. */
+    detail: Float = 0.45f,
 ): Modifier {
     val dark = isGlassDark()
     val lifted = if (shadow > 0.dp) glassShadow(shape, shadow, 0.34f) else this
@@ -313,11 +316,12 @@ fun Modifier.liquidGlass(
         return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
     val boost = LocalGlassBoost.current
-    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold, clear) {
+    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold, clear, detail) {
         liquidStyle(
             boost = boost, shape = shape, tint = fill, dark = dark, blur = blur,
             displacement = displacement, edge = edge, fold = fold, specular = 0.66f, clear = clear,
             rainbow = { 0.45f + 0.5f * strength() },
+            detail = detail,
         )
     }
     return lifted.hazeLiquid(source, shape, style)

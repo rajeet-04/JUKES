@@ -29,8 +29,14 @@ import coil.request.ImageRequest
 import com.example.juke.models.Track
 import com.example.juke.ui.components.playerArtworkEndpoint
 import com.example.juke.ui.icons.JukeIcons
-import com.example.juke.ui.theme.GlassLevel
-import com.example.juke.ui.theme.glassPane
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import com.example.juke.ui.theme.glassIsLive
+import com.example.juke.ui.theme.liquidGlass
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.MusicViewModel
 import kotlin.math.absoluteValue
@@ -133,11 +139,18 @@ private fun ArtworkCard(
     val haptic = rememberJukeHaptics()
     val context = LocalContext.current
 
+    val shape = RoundedCornerShape(32.dp)
+    val live = glassIsLive() && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+    // The artwork is the glass's source: a clear lens over it bends the art's own edges (rim,
+    // rainbow, highlight), so the tile reads as glass. A pane under the opaque art never showed.
+    val artHaze = remember { HazeState() }
     Box(
         modifier = modifier
             .fillMaxSize()
+            // Room for the shadow inside the pager page, which clips its content.
+            .padding(ART_INSET)
             .playerArtworkEndpoint(expanded = true, enabled = isCurrentTrack, fly = !showLyrics)
-            .glassPane(RoundedCornerShape(32.dp), GlassLevel.Thick)
+            .shadow(6.dp, shape)
             .then(if (onToggleLyrics == null) Modifier else Modifier.clickable {
                 haptic.click()
                 onToggleLyrics()
@@ -156,9 +169,18 @@ private fun ArtworkCard(
                     .crossfade(true)
                     .build(),
                 contentDescription = track.title,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().then(if (live) Modifier.hazeSource(artHaze) else Modifier),
                 contentScale = ContentScale.Crop
             )
+            if (live) {
+                Box(
+                    Modifier.matchParentSize().liquidGlass(
+                        shape, Color.Transparent, blur = 0.dp, rimAlpha = 0.7f, source = artHaze,
+                        // No fold: it would mirror the art's edge back in.
+                        displacement = 14.dp, edge = 12.dp, fold = 0f, detail = 0f
+                    )
+                )
+            }
         } else {
             Box(
                 modifier = Modifier
@@ -191,3 +213,6 @@ private fun ArtworkCard(
         }
     }
 }
+
+/** Space around the artwork tile so its shadow isn't cut off by the pager. */
+internal val ART_INSET = 12.dp
