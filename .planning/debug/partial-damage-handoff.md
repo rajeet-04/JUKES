@@ -165,6 +165,14 @@ adb pull /data/misc/perfetto-traces/gpufreq.pftrace
 
 In trace processor, read the power states from `ftrace_event` (name `kgsl_pwr_set_state`, arg `state`). Per-frame GPU time comes from the `GPU completion` counter track: pair each rise (submit) with the next fall (fence signalled) in order. `power/gpu_frequency` produced no events on this phone.
 
+## Background frames (fixed 2026-11-23)
+
+With JUKES backgrounded (music playing or not, player open or closed), the main thread still ran about 9 empty `Choreographer#doFrame` callbacks a second. The RenderThread was asleep and nothing was drawn. A backgrounded Settings app showed none.
+
+Cause: `jam/Handoff.run`, started from `MainActivity` in a `LaunchedEffect`, waited for work by checking a flag every 100 ms (`delay(100.milliseconds)` in a loop), even when logged in or unpaired. Each resume on Compose's `AndroidUiDispatcher` requests a vsync, and Android throttles hidden apps to ~10 Hz, so each check became an empty frame. Found with an ART method trace of the debug build (`am profile start com.example.juke <file>`, opened in trace processor): `Handoff.run` was inside all 26 `AndroidUiDispatcher` dispatches in 3 s.
+
+Fix: a conflated `Channel` with `withTimeoutOrNull` replaces the flag; same 1 s / 4 s poll timeouts. Empty background frames per 8 s went from 65–74 to 1–2. After about a minute without playback Android caches the app (`procState=15`) and its threads stop anyway, so the gain is mostly while music plays in the background.
+
 ## Ideas not yet tried
 
 - **Sibling View overlay.** Put the seek strip in a separate View that is a sibling of the main `ComposeView` in the Activity's content `FrameLayout`, not a child of it. Position it every layout pass from the bounds of a placeholder in the Compose tree (`onGloballyPositioned`). This is the most likely to work and the most fragile:
