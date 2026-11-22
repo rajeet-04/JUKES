@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
@@ -163,6 +164,24 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
                 )
             )
         }
+    }
+}
+
+/**
+ * A still glow in the artwork's colours, for under the glass (issue #41). Glass re-renders whenever
+ * its source changes, so this changes only with the song (colour fade) or play state (fade in/out);
+ * the moving [AmbientWaves] stay outside the glass source.
+ */
+@Composable
+fun AmbientGlow(playing: Boolean, colors: List<Color>, dark: Boolean, modifier: Modifier = Modifier) {
+    val on = AmbientPrefs.enabled && colors.isNotEmpty()
+    val strength by animateFloatAsState(if (on && playing) 1f else 0f, tween(700), label = "glow")
+    val c0 by animateColorAsState(colors.getOrElse(0) { Color.Transparent }, tween(1200), label = "glow0")
+    val c1 by animateColorAsState(colors.getOrElse(1) { colors.getOrElse(0) { Color.Transparent } }, tween(1200), label = "glow1")
+    Canvas(modifier.fillMaxSize()) { // state read here, in draw: no recomposition while it fades
+        if (strength < FADED) return@Canvas
+        val a = strength * (if (dark) 0.22f else 0.14f)
+        drawRect(Brush.verticalGradient(0.45f to Color.Transparent, 0.72f to c0.copy(alpha = a), 1f to c1.copy(alpha = a * 0.8f)))
     }
 }
 
