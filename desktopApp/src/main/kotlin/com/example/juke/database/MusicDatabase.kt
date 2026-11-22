@@ -271,6 +271,10 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE uuid = :uuid")
     suspend fun getTrackByUuid(uuid: String): TrackEntity?
 
+    /** The saved copy of a song by its Spotify id; a downloaded copy wins over a stream. */
+    @Query("SELECT * FROM tracks WHERE spotify_id = :spotifyId ORDER BY is_stream ASC LIMIT 1")
+    suspend fun findBySpotifyId(spotifyId: String): TrackEntity?
+
     @Query("SELECT * FROM tracks WHERE last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT :limit")
     suspend fun getRecentlyPlayed(limit: Int = 10): List<TrackEntity>
 
