@@ -26,7 +26,7 @@ val androidOnly = listOf(
     "ui/icons/JukeIconPreview.kt", "database/MusicDatabase.kt", "push/Push.kt",
     "ambient/AmbientWaves.kt", "ambient/LevelMeterProcessor.kt",
 ).map { "com/example/juke/$it" }
-val stageAndroid by tasks.registering(Sync::class) {
+val stageAndroid = tasks.register<Sync>("stageAndroid") {
     from(androidSrc) {
         androidOnly.forEach { exclude(it) }
         // every viewModel() goes through ours, which always uses the app factory (nav entries bring their own, which can't build AndroidViewModels on desktop)
@@ -48,7 +48,8 @@ val stageAndroid by tasks.registering(Sync::class) {
             filter { it.replace("var librarySection by rememberSaveable { mutableStateOf(0) }", "var librarySection by rememberSaveable { mutableStateOf(if (uiState.selectedPlaylist != null) 1 else 0) }") }
             filter {
                 it.replace("import androidx.compose.ui.graphics.PaintingStyle", "import androidx.compose.ui.graphics.PaintingStyle\nimport androidx.compose.ui.graphics.nativeCanvas")
-                .replace("paint.asFrameworkPaint().maskFilter =",
+                .replace("import androidx.compose.ui.graphics.nativePaint", "") // Android-only
+                .replace("paint.nativePaint.maskFilter =",
                     "val skiaPaint = org.jetbrains.skia.Paint().also { sp -> val c = neon.copy(alpha = 0.6f + 0.35f * e); sp.color = org.jetbrains.skia.Color.makeARGB((c.alpha * 255).toInt(), (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt()); sp.mode = org.jetbrains.skia.PaintMode.STROKE; sp.strokeWidth = 4.dp.toPx() }; skiaPaint.maskFilter =")
                     .replace("canvas.drawRoundRect(0f, 0f, size.width, size.height, r, r, paint)",
                         "canvas.nativeCanvas.drawRRect(org.jetbrains.skia.RRect.makeXYWH(0f, 0f, size.width, size.height, r), skiaPaint)")
@@ -66,16 +67,14 @@ val appVersionName = Regex("versionName = \"([^\"]+)\"").find(appBuild)!!.groupV
 val appVersionCode = Regex("versionCode = (\\d+)").find(appBuild)!!.groupValues[1]
 
 // BuildConfig, from the same local.properties the APK reads
-val genBuildConfig by tasks.registering {
+val genBuildConfig = tasks.register("genBuildConfig") {
     val out = layout.buildDirectory.dir("generated/buildconfig")
     val props = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load) }
     fun p(k: String, d: String) = props.getProperty(k, d)
     outputs.dir(out)
     inputs.property("version", "$appVersionName/$appVersionCode")
-    doLast {
-        val f = out.get().file("com/example/juke/BuildConfig.kt").asFile
-        f.parentFile.mkdirs()
-        f.writeText("""
+    // Resolved at configuration time: doLast must not reach back into the script (configuration cache).
+    val text = """
             package com.example.juke
             object BuildConfig {
                 const val DEBUG = false
@@ -90,7 +89,12 @@ val genBuildConfig by tasks.registering {
                 const val JUKE_BACKEND_KEY = "${p("JUKE_BACKEND_KEY", "unused")}"
                 const val JUKE_BACKEND_V1 = ${p("JUKE_BACKEND_V1", "true")}
             }
-        """.trimIndent())
+        """.trimIndent()
+    inputs.property("text", text)
+    doLast {
+        val f = out.get().file("com/example/juke/BuildConfig.kt").asFile
+        f.parentFile.mkdirs()
+        f.writeText(text)
     }
 }
 sourceSets.main { kotlin.srcDir(genBuildConfig) }

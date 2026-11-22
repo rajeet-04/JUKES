@@ -17,7 +17,7 @@ class EdgeSilenceProcessorTest {
         val rate = 44100
         val p = EdgeSilenceProcessor().apply { enabled = true }
         p.configure(AudioFormat(rate, 1, C.ENCODING_PCM_16BIT))
-        p.flush()
+        p.flush(androidx.media3.common.audio.AudioProcessor.StreamMetadata.DEFAULT)
         // 1s silence, 1s tone, 1s silence (middle gap), 1s tone, 1s silence
         val parts = listOf(false, true, false, true, false)
         val buf = ByteBuffer.allocateDirect(parts.size * rate * 2).order(ByteOrder.nativeOrder())

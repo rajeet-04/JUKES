@@ -375,7 +375,7 @@ fun PlayerScreen(
             if (stagePlayer) ArtBackdrop(
                 uiState.extractedColors, stage,
                 Modifier.hazeSource(playerHaze, zIndex = -1f),
-                artwork = currentTrack?.thumbnailUri
+                artwork = currentTrack.thumbnailUri
             )
             // Plain black backdrop; the artwork is the only color on the screen.
             else Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
@@ -478,7 +478,7 @@ fun PlayerScreen(
                                             Box(m) {
                                                 PlayerArtwork(
                                                     queue = if (showRoom) roomQueue else uiState.queue,
-                                                    queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
+                                                    queueIndex = if (showRoom) roomIndex else uiState.queueIndex,
                                                     currentTrack = displayTrack,
                                                     currentPosition = uiState.position,
                                                     showLyrics = false,
@@ -491,7 +491,7 @@ fun PlayerScreen(
                                         ticker = { m ->
                                             if (synced != null) LyricTicker(
                                                 syncedLyrics = synced,
-                                                offsetMs = displayTrack.lyricsOffsetMs.toLong(),
+                                                offsetMs = displayTrack.lyricsOffsetMs,
                                                 position = uiState.position,
                                                 playing = uiState.isPlaying,
                                                 accent = MaterialTheme.colorScheme.primary,
@@ -700,7 +700,7 @@ fun PlayerScreen(
                                     val showRoom = jamNow.active && roomQueue.isNotEmpty() && roomIndex != null
                                     PlayerArtwork(
                                         queue = if (showRoom) roomQueue else uiState.queue,
-                                        queueIndex = if (showRoom) roomIndex!! else uiState.queueIndex,
+                                        queueIndex = if (showRoom) roomIndex else uiState.queueIndex,
                                         currentTrack = displayTrack,
                                         currentPosition = uiState.position,
                                         showLyrics = showLyrics,
@@ -709,10 +709,10 @@ fun PlayerScreen(
                                         onToggleLyrics = { showLyrics = !showLyrics }
                                     )
                                 }
-                                if (lineStrip && syncedLyrics != null) {
+                                if (lineStrip) {
                                     CurrentLyricLine(
                                         syncedLyrics = syncedLyrics,
-                                        offsetMs = displayTrack.lyricsOffsetMs.toLong(),
+                                        offsetMs = displayTrack.lyricsOffsetMs,
                                         position = uiState.position,
                                         playing = uiState.isPlaying,
                                         onOpen = { showLyrics = true },

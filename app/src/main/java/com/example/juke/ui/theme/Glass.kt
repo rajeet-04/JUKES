@@ -411,7 +411,7 @@ fun GlassTiltLight() {
         val listening = sensor != null && !reducedMotion && !GlassPrefs.solid &&
             sensors?.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME) == true
         if (!listening) GlassLight.reset()
-        onPauseOrDispose { if (listening) sensors?.unregisterListener(listener) }
+        onPauseOrDispose { if (listening) sensors.unregisterListener(listener) }
     }
 }
 

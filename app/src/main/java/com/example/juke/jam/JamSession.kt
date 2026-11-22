@@ -473,7 +473,7 @@ object JamSession {
 
     /** A queue-changing message from the room as an op, or null if it is malformed. */
     internal fun parseOp(obj: JsonObject): JamOp? {
-        val ref = { key: String -> (obj[key] as? JsonElement)?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull }
+        val ref = { key: String -> obj[key]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull }
         val id = obj["id"]?.jsonPrimitive?.contentOrNull
         return try {
             when (obj["t"]?.jsonPrimitive?.contentOrNull) {

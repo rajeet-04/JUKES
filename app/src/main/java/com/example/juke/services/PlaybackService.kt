@@ -610,7 +610,7 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private val artworkLoader by lazy {
         object : androidx.media3.common.util.BitmapLoader {
-            private val delegate = DataSourceBitmapLoader(this@PlaybackService)
+            private val delegate = DataSourceBitmapLoader.Builder(this@PlaybackService).build()
             // Current, next and previous in both directions of a skip; about 1.6 MB each at 640x640.
             private val remote = android.util.LruCache<String, android.graphics.Bitmap>(6)
             private val inFlight = java.util.concurrent.ConcurrentHashMap<String, ListenableFuture<android.graphics.Bitmap>>()
@@ -874,8 +874,12 @@ class PlaybackService : MediaLibraryService() {
                 enableAudioTrackPlaybackParams: Boolean
             ) = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(false) // boost processor works on 16-bit PCM
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioOffloadSupportProvider(offloadSupportProvider)
+                .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
+                .setAudioOutputProvider(
+                    androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider.Builder(context)
+                        .setAudioOffloadSupportProvider(offloadSupportProvider)
+                        .build()
+                )
                 .setAudioProcessorChain(
                     JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor, com.example.juke.ambient.LevelMeterProcessor())
                 )
@@ -1183,9 +1187,9 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun updateCustomLayout(isFavorite: Boolean, isStream: Boolean) {
         val button = if (isStream) {
-            CommandButton.Builder()
+            CommandButton.Builder(CommandButton.ICON_UNDEFINED) // Media3 has no download icon
                 .setDisplayName("Download")
-                .setIconResId(R.drawable.baseline_download_24)
+                .setCustomIconResId(R.drawable.baseline_download_24)
                 .setSessionCommand(
                     SessionCommand(
                         CUSTOM_COMMAND_DOWNLOAD_TRACK_ACTION_ID,
@@ -1196,9 +1200,9 @@ class PlaybackService : MediaLibraryService() {
         } else {
             val iconResId =
                 if (isFavorite) R.drawable.baseline_favorite_24 else R.drawable.baseline_favorite_border_24
-            CommandButton.Builder()
+            CommandButton.Builder(if (isFavorite) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
                 .setDisplayName("Favorite")
-                .setIconResId(iconResId)
+                .setCustomIconResId(iconResId)
                 .setSessionCommand(
                     SessionCommand(
                         CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID,
@@ -1266,7 +1270,8 @@ class PlaybackService : MediaLibraryService() {
                         )
                     )
                     .build()
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            // Empty builder: both command sets are set explicitly below.
+            return MediaSession.ConnectionResult.AcceptedResultBuilder()
                 .setAvailableSessionCommands(sessionCommands)
                 .setAvailablePlayerCommands(
                     MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS

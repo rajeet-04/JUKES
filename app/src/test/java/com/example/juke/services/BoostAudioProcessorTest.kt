@@ -17,7 +17,7 @@ class BoostAudioProcessorTest {
         val p = BoostAudioProcessor()
         p.configure(enabled, 10f, 9f)
         p.configure(AudioFormat(44100, 1, C.ENCODING_PCM_16BIT))
-        p.flush()
+        p.flush(androidx.media3.common.audio.AudioProcessor.StreamMetadata.DEFAULT)
         val n = 4410
         val buf = ByteBuffer.allocateDirect(n * 2).order(ByteOrder.nativeOrder())
         repeat(n) { buf.putShort((sin(2 * PI * hz * it / 44100) * 8000).toInt().toShort()) }
@@ -39,7 +39,7 @@ class BoostAudioProcessorTest {
         val p = BoostAudioProcessor()
         p.configure(false, 0f, 0f, stable = true)
         p.configure(AudioFormat(44100, 1, C.ENCODING_PCM_16BIT))
-        p.flush()
+        p.flush(androidx.media3.common.audio.AudioProcessor.StreamMetadata.DEFAULT)
         val n = 44100 * 6
         val buf = ByteBuffer.allocateDirect(n * 2).order(ByteOrder.nativeOrder())
         repeat(n) { buf.putShort((sin(2 * PI * 440.0 * it / 44100) * amp).toInt().toShort()) }

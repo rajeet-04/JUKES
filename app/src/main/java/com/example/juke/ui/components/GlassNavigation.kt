@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.nativePaint
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import com.example.juke.ui.theme.glassIsLive
@@ -365,7 +366,7 @@ internal fun Modifier.neonRim(neon: Color, energy: () -> Float = { 0f }): Modifi
             style = PaintingStyle.Stroke
             strokeWidth = 4.dp.toPx()
         }
-        paint.asFrameworkPaint().maskFilter =
+        paint.nativePaint.maskFilter =
             android.graphics.BlurMaskFilter(bloomPx, android.graphics.BlurMaskFilter.Blur.NORMAL)
         canvas.drawRoundRect(0f, 0f, size.width, size.height, r, r, paint)
     }
