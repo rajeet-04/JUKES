@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Background wakeups.** The app no longer wakes the main thread about 9 times a second while it's in the background. The "Play on the other device" check waited for work by re-checking every 0.1 s; it now sleeps until there's something to do, with the same check times as before.
+
 ## [3.2.1-stable] - 2026-11-23
 
 Android and desktop. Fixes and optimisations since 3.2.0-stable, from 2026-11-21.
