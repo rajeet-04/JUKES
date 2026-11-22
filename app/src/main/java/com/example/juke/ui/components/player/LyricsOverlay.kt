@@ -514,8 +514,9 @@ private suspend fun androidx.compose.foundation.lazy.LazyListState.glideTo(index
     if (item == null) {
         animateScrollToItem(index, 0)
     } else {
-        val delta = item.offset - layoutInfo.beforeContentPadding
-        if (delta != 0) animateScrollBy(delta.toFloat(), spring(dampingRatio = 1f, stiffness = 180f))
+        // Offsets count from the end of the top padding (viewportStartOffset is -beforeContentPadding),
+        // so 0 is the resting spot. Subtracting the padding again parked the line twice as low.
+        if (item.offset != 0) animateScrollBy(item.offset.toFloat(), spring(dampingRatio = 1f, stiffness = 180f))
     }
 }
 
