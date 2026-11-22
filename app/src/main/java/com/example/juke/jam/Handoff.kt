@@ -15,6 +15,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,7 +59,9 @@ object Handoff {
     private val _status = MutableStateFlow("")
     val status: StateFlow<String> = _status
 
-    @Volatile private var wake = false // an action just happened: poll again at once
+    // An action just happened: poll again at once. A suspending wait, not a polled flag: a 100 ms
+    // flag check resumed on the UI dispatcher and woke the main thread ~10x/s, even in the background.
+    private val wake = Channel<Unit>(Channel.CONFLATED)
 
     private fun prefs(c: Context) = c.applicationContext.getSharedPreferences("handoff", Context.MODE_PRIVATE)
     private fun me(c: Context) = prefs(c).getString("id", null) ?: UUID.randomUUID().toString().replace("-", "").also { prefs(c).edit {
@@ -115,7 +119,7 @@ object Handoff {
         val pm = vm.playbackManager
         val msg = Msg(UUID.randomUUID().toString(), me(c), JamSession.savedName(c), tracks.filterNotNull(), pm.getCurrentPosition(), pm.isPlayingFlow.value)
         if (!write(code, msg)) { _status.value = "Couldn't reach the other device. Check your connection."; return }
-        pendingId = msg.id; pendingAt = System.currentTimeMillis(); wake = true
+        pendingId = msg.id; pendingAt = System.currentTimeMillis(); wake.trySend(Unit)
         _status.value = "Sending ${msg.tracks.size} song${if (msg.tracks.size == 1) "" else "s"}…"
     }
 
@@ -123,7 +127,7 @@ object Handoff {
     suspend fun pull(c: Context) {
         val code = _code.value ?: return
         if (!write(code, Msg(pull = me(c)))) { _status.value = "Couldn't reach the other device. Check your connection."; return }
-        pullUntil = System.currentTimeMillis() + 20_000; wake = true
+        pullUntil = System.currentTimeMillis() + 20_000; wake.trySend(Unit)
         _status.value = "Asking your other device…"
     }
 
@@ -133,9 +137,7 @@ object Handoff {
         load(c)
         val pm = vm.playbackManager
         while (true) {
-            var waited = 0
-            while (!wake && waited < (if (pendingId != null) 1000 else 4000)) { delay(100.milliseconds); waited += 100 }
-            wake = false
+            withTimeoutOrNull((if (pendingId != null) 1000 else 4000).milliseconds) { wake.receive() }
             if (com.example.juke.account.Account.token != null) continue // logged in: Connect does this, live
             val code = _code.value ?: continue
             val r = read(code) ?: continue
