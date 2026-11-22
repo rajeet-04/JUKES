@@ -76,7 +76,6 @@ private fun LabelledLibraryAction(label: String, icon: ImageVector, enabled: Boo
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryTrackActionsSheet(
     title: String,

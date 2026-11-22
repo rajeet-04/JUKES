@@ -130,8 +130,12 @@ object TrackSearch {
             com.example.juke.ui.screens.parseSyncedLyrics(l, t.lyricsOffsetMs).map { it.timeMs as Long? to it.text }
         }.orEmpty()
         fun plain(p: String?) = p.orEmpty().lines().filter { it.isNotBlank() }.map { null as Long? to it }
-        return listOf(synced(t.syncedLyrics), synced(t.romanizedSyncedLyrics), plain(t.plainLyrics), plain(t.romanizedPlainLyrics))
-            .mapNotNull { scan(it) }.firstOrNull()
+        return listOf(
+            synced(t.syncedLyrics),
+            synced(t.romanizedSyncedLyrics),
+            plain(t.plainLyrics),
+            plain(t.romanizedPlainLyrics)
+        ).firstNotNullOfOrNull { scan(it) }
     }
 
     /** Matching tracks, best first; with a blank query, [tracks] unchanged. */

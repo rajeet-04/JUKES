@@ -1,11 +1,8 @@
 package com.example.juke.network
 
-import android.util.Base64
 import android.util.Log
 import com.example.juke.BuildConfig
 import com.example.juke.models.LRCLibResult
-import com.example.juke.models.trusted
-import com.example.juke.models.withWordSync
 import com.example.juke.models.SpotdownSong
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyAlbumTracksResponse
@@ -19,9 +16,10 @@ import com.example.juke.models.SpotifySimplifiedTrack
 import com.example.juke.models.SpotifyTokenResponse
 import com.example.juke.models.SpotifyTopTracksResponse
 import com.example.juke.models.SpotifyTrack
+import com.example.juke.models.trusted
+import com.example.juke.models.withWordSync
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -30,7 +28,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
-import io.ktor.http.Parameters
 import io.ktor.http.contentType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -39,11 +36,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
-import kotlin.time.Duration.Companion.milliseconds
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Thrown when a network operation fails because the device is offline.

@@ -365,7 +365,7 @@ class MusicService(private val context: Context) {
 
         // If track exists with a remote/streaming URL, we'll update it with the downloaded file
         // Otherwise, if it has a local file, just return it
-        if (existingTrack != null && existingTrack.localUri != null) {
+        if (existingTrack?.localUri != null) {
             val isRemoteUri = existingTrack.localUri.startsWith("http", ignoreCase = true)
 
             if (!isRemoteUri && !existingTrack.isStream && LocalAudio.isMissing(existingTrack.localUri)) {

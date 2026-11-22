@@ -104,7 +104,7 @@ internal fun ArtBackdrop(colors: ExtractedColors?, stage: PlayerStage, modifier:
                 coil.compose.AsyncImage(
                     model = art,
                     contentDescription = null,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer { scaleX = 1.5f; scaleY = 1.5f; alpha = if (stage == PlayerStage.Art) 0.5f else 0.38f }

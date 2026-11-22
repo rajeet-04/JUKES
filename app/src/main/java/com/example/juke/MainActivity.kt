@@ -6,7 +6,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,8 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -44,10 +41,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -59,7 +56,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.juke.analytics.AnalyticsManager
-import com.example.juke.repositories.toSpotifyTrack
 import com.example.juke.models.GithubRelease
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.UpdateDownloadState
@@ -78,10 +74,8 @@ import com.example.juke.ui.screens.LibraryScreen
 import com.example.juke.ui.screens.PlayerScreen
 import com.example.juke.ui.screens.PlaylistDetailScreen
 import com.example.juke.ui.screens.SearchScreen
-import com.example.juke.ui.theme.GlassBackdrop
 import com.example.juke.ui.theme.JUKETheme
 import com.example.juke.ui.theme.LocalHazeState
-import com.example.juke.ui.theme.isGlassDark
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
@@ -89,6 +83,8 @@ import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -228,7 +224,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(resumeOnLaunch.value) {
                     if (!resumeOnLaunch.value) return@LaunchedEffect
                     resumeOnLaunch.value = false
-                    kotlinx.coroutines.delay(800) // the saved queue loads first
+                    delay(800.milliseconds) // the saved queue loads first
                     val s = musicViewModel.uiState.value
                     if (!s.isPlaying && s.currentTrack != null) musicViewModel.togglePlayPause()
                 }
@@ -274,7 +270,7 @@ class MainActivity : ComponentActivity() {
                 }
                 androidx.compose.runtime.LaunchedEffect(Unit) { com.example.juke.jam.Handoff.run(musicViewModel) }
                 androidx.compose.runtime.LaunchedEffect(Unit) { com.example.juke.jam.Connect.run(musicViewModel) }
-                com.example.juke.ui.components.PlaylistAdder.PlaylistAdderHost(androidx.lifecycle.viewmodel.compose.viewModel())
+                com.example.juke.ui.components.PlaylistAdder.PlaylistAdderHost(viewModel())
                 val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
                 if (jamSheetOpen) {
                     com.example.juke.ui.components.JamSheet(
@@ -295,7 +291,7 @@ class MainActivity : ComponentActivity() {
                 var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
 
                 LaunchedEffect(currentRoute) { // which screens people actually use
-                    currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
+                    currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
                 }
                 LaunchedEffect(currentRoute) {
                     if (

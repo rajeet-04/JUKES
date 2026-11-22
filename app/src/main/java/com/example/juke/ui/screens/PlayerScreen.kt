@@ -1,27 +1,18 @@
 package com.example.juke.ui.screens
 
-import dev.chrisbanes.haze.hazeSource
-import com.example.juke.ui.components.playerStage
-import com.example.juke.ui.icons.JukeIcons
-
 import android.annotation.SuppressLint
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,10 +48,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -73,6 +67,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.juke.R
 import com.example.juke.database.PlaylistEntity
+import com.example.juke.jam.toTrack
 import com.example.juke.models.Track
 import com.example.juke.ui.components.AddToPlaylistDialog
 import com.example.juke.ui.components.CreatePlaylistDialog
@@ -83,8 +78,9 @@ import com.example.juke.ui.components.PlayerSkeleton
 import com.example.juke.ui.components.player.PlayerArtwork
 import com.example.juke.ui.components.player.PlayerControls
 import com.example.juke.ui.components.player.PlayerProgress
-import com.example.juke.jam.toTrack
 import com.example.juke.ui.components.player.QueueBottomSheetContent
+import com.example.juke.ui.components.playerStage
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassBackdrop
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.ui.theme.GlassShapes
@@ -96,6 +92,7 @@ import com.example.juke.utils.LyricsRomanizer
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.LibraryViewModel
 import com.example.juke.viewmodels.MusicViewModel
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
@@ -1310,7 +1307,7 @@ fun SleepTimerDialog(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 String.format(
-                                    java.util.Locale.getDefault(),
+                                    LocalLocale.current.platformLocale,
                                     "%02d:%02d",
                                     minutes,
                                     seconds

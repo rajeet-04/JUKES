@@ -1,9 +1,11 @@
 package com.example.juke.services
 
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.util.UnstableApi
 import com.example.juke.models.Track
 import java.io.File
 
@@ -66,6 +68,7 @@ object AutoLibrary {
      * What the player gets for [track]. A missing file is pointed at where it will be fetched
      * again (same trick as the queue restore); null when it can't be fetched at all.
      */
+    @OptIn(UnstableApi::class)
     fun playbackItem(packageName: String, filesDir: File, track: Track): MediaItem? {
         var t = track
         if (LocalAudio.isMissing(t.localUri)) {

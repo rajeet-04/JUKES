@@ -56,7 +56,7 @@ fun ActionMenu(expanded: Boolean, onDismiss: () -> Unit, actions: List<MenuActio
 /** "Go to album" / "Go to <artist>" entries, only for ids the song actually carries. */
 @Composable
 fun mediaActions(albumId: String?, artists: List<Pair<String, String>>): List<MenuAction> {
-    val open = com.example.juke.ui.components.LocalOpenMedia.current
+    val open = LocalOpenMedia.current
     return listOfNotNull(albumId?.let { MenuAction("Go to album") { open.album(it) } }) +
         artists.map { (name, id) -> MenuAction("Go to $name") { open.artist(id) } }
 }
@@ -71,7 +71,7 @@ fun spotifyTrackActions(track: SpotifyTrack, musicViewModel: MusicViewModel, pla
         MenuAction("Play") { play?.invoke() ?: musicViewModel.playInstant(SpotifyApi.spotifyTrackToSong(track)) },
         MenuAction("Play next") { musicViewModel.queueSpotifyTrack(track, next = true); say("${track.name} will play next") },
         MenuAction("Add to queue") { musicViewModel.queueSpotifyTrack(track, next = false); say("${track.name} added to queue end") },
-        MenuAction("Add to playlist") { com.example.juke.ui.components.PlaylistAdder.open(track) },
+        MenuAction("Add to playlist") { PlaylistAdder.open(track) },
         // Already saved: nothing to download.
         if (track.findOfflineTrack(owned) == null) MenuAction("Download") { downloadSpotifyTrack(musicViewModel, track); say("Downloading ${track.name}") } else null
     ) + shareAction("track", track.id) + mediaActions(track.album.id, track.artists.take(3).mapNotNull { a -> a.id?.let { a.name to it } })
@@ -86,7 +86,7 @@ fun libraryTrackActions(track: Track, musicViewModel: MusicViewModel, play: () -
         MenuAction("Play", play),
         MenuAction("Play next") { musicViewModel.addNext(track); say("${track.title} will play next") },
         MenuAction("Add to queue") { musicViewModel.addToQueue(listOf(track)); say("${track.title} added to queue end") },
-        MenuAction("Add to playlist") { com.example.juke.ui.components.PlaylistAdder.open(track) }
+        MenuAction("Add to playlist") { PlaylistAdder.open(track) }
     ) + listOfNotNull(
         // Only a streamed song has something to save; a downloaded one already plays offline.
         if (track.isStream) MenuAction("Download") { musicViewModel.promoteTrackToDownload(track); say("Downloading ${track.title}") } else null

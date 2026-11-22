@@ -25,9 +25,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,8 +56,8 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,12 +69,12 @@ import com.example.juke.ui.components.SwipeRevealBackground
 import com.example.juke.ui.components.swipeGlass
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassCard
-import com.example.juke.ui.theme.pressScale
-import androidx.compose.ui.semantics.Role
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.glassPane
+import com.example.juke.ui.theme.pressScale
 import com.example.juke.utils.rememberJukeHaptics
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun QueueBottomSheetContent(
@@ -189,7 +189,7 @@ fun QueueBottomSheetContent(
         LaunchedEffect(queue) { if (dragKey == null) preview = null }
         LaunchedEffect(dragKey) {
             if (dragKey == null && preview != null) {
-                kotlinx.coroutines.delay(1500)
+                kotlinx.coroutines.delay(1500.milliseconds)
                 if (dragKey == null) preview = null
             }
         }

@@ -154,7 +154,7 @@ private fun DeviceCard(d: Connect.Device, s: Connect.State?, canSendHere: Boolea
         }
         if (open && upNext.isNotEmpty()) {
             // the device sends only web artwork; fill the rest from Spotify (cached), else YouTube's thumbnail
-            val art by produceState(emptyMap<String, String>(), upNext) {
+            val art by produceState(emptyMap(), upNext) {
                 value = JamResolver.artworkFor(upNext.filter { it.thumb == null }.mapNotNull { it.spotifyId })
             }
             Text("Up next · ${upNext.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))

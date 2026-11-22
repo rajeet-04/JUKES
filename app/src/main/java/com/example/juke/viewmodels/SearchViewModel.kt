@@ -1,13 +1,10 @@
 package com.example.juke.viewmodels
 
-import com.example.juke.network.userMessage
-
 import android.app.Application
 import android.util.Log
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.sqlite.db.SimpleSQLiteQuery
 import coil.Coil
 import coil.request.ImageRequest
 import com.example.juke.analytics.AnalyticsManager
@@ -22,6 +19,7 @@ import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
 import com.example.juke.network.JukesApi
 import com.example.juke.network.SpotifyApi
+import com.example.juke.network.userMessage
 import com.example.juke.services.PlaylistImportManager
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -31,16 +29,16 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds

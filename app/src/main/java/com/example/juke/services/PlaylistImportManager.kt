@@ -8,7 +8,6 @@ import android.util.Log
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.PendingImportEntity
 import com.example.juke.database.PlaylistEntity
-import com.example.juke.database.PlaylistTrackEntity
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.network.SpotifyApi
 import kotlinx.coroutines.CancellationException

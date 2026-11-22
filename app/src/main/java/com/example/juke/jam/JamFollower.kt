@@ -14,6 +14,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Follows the room's playback anchor on this phone: starts the room's song, corrects drift (seek or small
@@ -84,7 +85,7 @@ object JamFollower {
         queueManager.fillSuspended = true // the room decides what plays next, not radio recommendations
         try {
             while (true) {
-                withTimeoutOrNull(1000) { JamSession.playbackChanged.receive() } // a room change wakes us at once
+                withTimeoutOrNull(1000.milliseconds) { JamSession.playbackChanged.receive() } // a room change wakes us at once
                 val st = JamSession.state.value
                 val pb = st.playback
                 val item = pb?.let { p -> st.queue.firstOrNull { it.id == p.itemId } }

@@ -1,8 +1,5 @@
 package com.example.juke.jam
 
-import com.example.juke.analytics.AnalyticsManager
-import com.example.juke.analytics.EventProperty
-import com.example.juke.analytics.EventType
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -14,6 +11,9 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.example.juke.BuildConfig
+import com.example.juke.analytics.AnalyticsManager
+import com.example.juke.analytics.EventProperty
+import com.example.juke.analytics.EventType
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.models.Track
 import com.example.juke.network.ApiClient
@@ -46,9 +46,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -58,6 +57,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import androidx.core.content.edit
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The Jam the user is in, if any: a room on the Worker (see spotdown-kv-worker/src/jam.ts) that keeps one
@@ -149,13 +150,18 @@ object JamSession {
     fun savedName(context: Context): String =
         prefs(context).getString("name", null)?.takeIf { it.isNotBlank() } ?: Build.MODEL.take(24)
 
-    fun saveName(context: Context, name: String) = prefs(context).edit().putString("name", name.trim().take(24)).apply()
+    fun saveName(context: Context, name: String) = prefs(context).edit {
+        putString(
+            "name",
+            name.trim().take(24)
+        )
+    }
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun clientId(context: Context): String =
         prefs(context).getString("client_id", null) ?: UUID.randomUUID().toString().replace("-", "").also {
-            prefs(context).edit().putString("client_id", it).apply()
+            prefs(context).edit {putString("client_id", it)}
         }
 
     /** Asks the Worker for a new room; null if that failed. */
@@ -219,10 +225,12 @@ object JamSession {
 
     /** The Jam is remembered so closing the app (or having it killed) doesn't drop you out of it. */
     private fun rememberSession(context: Context, code: String, name: String) =
-        prefs(context).edit().putString("session_code", code).putString("session_name", name).putLong("session_at", System.currentTimeMillis()).apply()
+        prefs(context).edit {
+            putString("session_code", code).putString("session_name", name)
+                .putLong("session_at", System.currentTimeMillis())}
 
     private fun clearSession(context: Context) =
-        prefs(context).edit().remove("session_code").remove("session_name").remove("session_at").apply()
+        prefs(context).edit { remove("session_code").remove("session_name").remove("session_at")}
 
     @Volatile private var resumed = false
 
@@ -265,7 +273,7 @@ object JamSession {
     }
 
     /** Runs [block] on the Jam's own scope (it outlives screens and view models). */
-    fun launch(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) = scope.launch(block = block)
+    fun launch(block: suspend CoroutineScope.() -> Unit) = scope.launch(block = block)
 
     /** A short message on screen, from anywhere. */
     fun toast(text: String) {
@@ -334,9 +342,9 @@ object JamSession {
             while (isActive) {
                 repeat(5) {
                     socket?.let { s -> try { s.send(Frame.Text(buildJsonObject { put("t", "ping"); put("t0", System.currentTimeMillis()) }.toString())) } catch (_: Exception) {} }
-                    kotlinx.coroutines.delay(250)
+                    kotlinx.coroutines.delay(250.milliseconds)
                 }
-                kotlinx.coroutines.delay(30_000)
+                kotlinx.coroutines.delay(30_000.milliseconds)
                 clockRttMs = Long.MAX_VALUE // let a fresh, possibly slower, sample replace the old best
             }
         }
@@ -398,7 +406,7 @@ object JamSession {
             }
             _state.update { it.copy(status = Status.RECONNECTING) }
             val wait = minOf(30_000L, 1000L shl minOf(attempt++, 5))
-            withTimeoutOrNull(wait) { nudge.receive() }
+            withTimeoutOrNull(wait.milliseconds) { nudge.receive() }
         }
     }
 
@@ -550,5 +558,5 @@ fun com.example.juke.models.SpotdownSong.toJamTrack(): JamTrack? =
     spotifyId?.let { JamTrack(it, title, artist, com.example.juke.network.SpotifyApi.parseDuration(duration), thumbnail.takeIf { u -> u.startsWith("http") }) }
 
 /** A Jam entry as the queue sheet draws it. The uuid is the Jam item id, so taps and removals map straight back. */
-fun JamItem.toTrack(): com.example.juke.models.Track =
-    com.example.juke.models.Track(uuid = id, title = title, artist = artist, thumbnailUri = thumb, durationSec = durationSec, spotifyId = spotifyId, isStream = true)
+fun JamItem.toTrack(): Track =
+    Track(uuid = id, title = title, artist = artist, thumbnailUri = thumb, durationSec = durationSec, spotifyId = spotifyId, isStream = true)

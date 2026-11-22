@@ -190,7 +190,7 @@ object JukesApi {
 
     /** Returns once no listener-chosen song is loading, or after [maxMs] so fills never starve. */
     suspend fun awaitForegroundIdle(maxMs: Long = 20_000) {
-        kotlinx.coroutines.withTimeoutOrNull(maxMs) { foreground.first { it == 0 } }
+        kotlinx.coroutines.withTimeoutOrNull(maxMs.milliseconds) { foreground.first { it == 0 } }
     }
 
     /** Opens the TLS connection to the backend (a new one costs ~1.2 s) so the first real call reuses it. */

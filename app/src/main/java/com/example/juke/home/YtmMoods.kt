@@ -64,7 +64,7 @@ object YtmMoods {
         YtmCharts.walk(Json.parseToJsonElement(json)) { o ->
             val c = o["musicCarouselShelfRenderer"] as? JsonObject ?: return@walk
             val title = YtmCharts.runsText(c.path("header", "musicCarouselShelfBasicHeaderRenderer", "title"))
-            val items = (c["contents"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            val items = (c["contents"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
             val songs = YtmCharts.parsePlaylist(JsonObject(mapOf("contents" to JsonArray(items))).toString())
             if (songs.isNotEmpty()) {
                 if (title.isNotBlank()) shelves += Shelf(title, emptyList(), songs)

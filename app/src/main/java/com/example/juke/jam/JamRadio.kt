@@ -5,6 +5,7 @@ import com.example.juke.network.SpotifyApi
 import com.example.juke.services.QueueManager
 import com.example.juke.viewmodels.MusicViewModel
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The room's radio: in a normal queue the next songs come from a YouTube Music radio seeded by what is
@@ -31,7 +32,7 @@ object JamRadio {
         val handedOut = ArrayDeque<com.example.juke.models.Track>()
         try {
             while (true) {
-                delay(TICK_MS)
+                delay(TICK_MS.milliseconds)
                 val st = JamSession.state.value
                 val mixAsked = JamSession.mixRequested.tryReceive().isSuccess
                 val isHost = st.status == JamSession.Status.CONNECTED && st.hostId != null && st.hostId == st.you
