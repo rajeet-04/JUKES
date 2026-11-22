@@ -1,5 +1,7 @@
 ﻿package com.example.juke.viewmodels
 
+import com.example.juke.network.userMessage
+
 import android.app.Application
 import android.util.Log
 import android.widget.Toast
@@ -85,7 +87,6 @@ data class MusicUiState(
     val queue: List<Track> = emptyList(),
     val queueIndex: Int = -1,
     val isPlaying: Boolean = false,
-    val position: Long = 0,
     val duration: Long = 0,
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -205,6 +206,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
 
+    private val _position = MutableStateFlow(0L)
+    /**
+     * Where playback is, polled every 300 ms while playing. Kept out of [uiState] so a tick redraws only
+     * what shows the time (progress bar, lyrics), not every screen that reads the state.
+     */
+    val position: StateFlow<Long> = _position.asStateFlow()
+
     // Saved like the queue, so "Playing from" is still there after a restart.
     private val playContextPrefs = application.getSharedPreferences("play_context", android.content.Context.MODE_PRIVATE)
     private val playContext = MutableStateFlow(PlayContext.decode(playContextPrefs.getString("current", null)))
@@ -212,7 +220,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private fun setPlayContext(from: PlayContext?) {
         playContext.value = from
         viewModelScope.launch(Dispatchers.IO) {
-            playContextPrefs.edit().apply { if (from == null) remove("current") else putString("current", from.encode()) }.apply()
+            playContextPrefs.edit {
+                if (from == null) remove("current") else putString(
+                    "current",
+                    from.encode()
+                )
+            }
         }
     }
 
@@ -518,12 +531,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         // Another song: show where the player is in it (its start). While paused
                         // nothing polls the position, so the last song's time would stay on screen.
                         val moved = currentState.queueIndex != index
-                        val position = if (moved) playbackManager.getCurrentPosition() else null
+                        if (moved) _position.value = playbackManager.getCurrentPosition()
                         _uiState.update {
                             it.copy(
                                 currentTrack = track,
-                                queueIndex = index,
-                                position = position ?: it.position
+                                queueIndex = index
                             )
                         }
                         Log.d(
@@ -858,14 +870,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // Seek to the track in the playback manager
             playbackManager.seekToIndex(trackIndex)
 
+            // a different song starts from its beginning, also while paused
+            if (trackIndex != currentState.queueIndex) _position.value = 0L
             // Update UI state to reflect the new current track
             _uiState.update {
                 it.copy(
                     currentTrack = track,
                     queueIndex = trackIndex,
                     isPlaying = shouldResumePlayback,
-                    // a different song starts from its beginning, also while paused
-                    position = if (trackIndex != currentState.queueIndex) 0L else it.position,
                     duration = track.durationSec.toLong() * 1000
                 )
             }
@@ -1112,7 +1124,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Toast.makeText(getApplication(), "Couldn’t load the album: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(getApplication(), e.userMessage("Couldn’t load the album."), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1143,14 +1155,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Feed songs already matched on Spotify, by video id, so a menu and a later tap match once. */
-    private val feedMatches = java.util.concurrent.ConcurrentHashMap<String, com.example.juke.models.SpotifyTrack>()
+    private val feedMatches = java.util.concurrent.ConcurrentHashMap<String, SpotifyTrack>()
 
     /**
      * The Spotify track for a Home feed song, or null when there is no match (or the lookup failed).
      * Tried in order: the same song in the library (by YouTube upload, then title and artist), the
      * strict radio matcher, then a looser pick from Spotify's results ([com.example.juke.home.FeedMatch]).
      */
-    suspend fun matchFeedSong(song: com.example.juke.home.FeedSong): com.example.juke.models.SpotifyTrack? {
+    suspend fun matchFeedSong(song: com.example.juke.home.FeedSong): SpotifyTrack? {
         feedMatches[song.videoId]?.let { return it }
         return withContext(Dispatchers.IO) {
             com.example.juke.home.resolveFeedSong(song) { rec ->
@@ -1172,7 +1184,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Spotify's results for the bare title and artist, then the title alone, judged by [com.example.juke.home.FeedMatch]. */
-    private suspend fun looseSpotifyMatch(song: com.example.juke.home.FeedSong): com.example.juke.models.SpotifyTrack? {
+    private suspend fun looseSpotifyMatch(song: com.example.juke.home.FeedSong): SpotifyTrack? {
         val title = com.example.juke.home.FeedMatch.libraryQuery(song)
         for (query in listOf("$title ${song.artist}", title)) {
             val items = SpotifyApi.search(query, listOf("track")).tracks?.items.orEmpty().take(10)
@@ -1314,7 +1326,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = "Failed to stream: ${e.message}"
+                            error = e.userMessage("Couldn't play this song. Try again.")
                         )
                     }
 
@@ -1432,18 +1444,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun seekTo(positionMs: Long) {
         playbackManager.seekTo(positionMs)
-        _uiState.update { it.copy(position = positionMs) }
+        _position.value = positionMs
     }
 
     fun updateProgress() {
         val currentPos = playbackManager.getCurrentPosition()
         val durationMs = playbackManager.getDuration()
-        _uiState.update { state ->
-            state.copy(
-                position = currentPos,
-                duration = if (durationMs > 0) durationMs else state.duration
-            )
-        }
+        _position.value = currentPos
+        if (durationMs > 0 && durationMs != _uiState.value.duration) _uiState.update { it.copy(duration = durationMs) }
     }
 
     fun downloadAndPlay(song: SpotdownSong) {
@@ -1645,6 +1653,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                         // Update playback manager queue with new local file path
                         playbackManager.replaceTrackInQueue(track.uuid, track, seamlessIfPlaying = true)
+                        // The notification hides its Download button on this signal, as after promoteTrackToDownload.
+                        playbackManager.emitTrackPromoted(track.uuid)
                     }
 
                     // Play if requested
@@ -1675,7 +1685,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         state.copy(
                             currentDownload = nextItem.copy(
                                 status = DownloadStatus.FAILED,
-                                error = e.message
+                                error = e.userMessage("Download failed. Try again.")
                             )
                         )
                     }
@@ -1895,7 +1905,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     /** A song saved without a cover (or whose cover file is gone) gets it from Spotify by id, once per session. */
     private fun refreshArtwork(track: Track) {
         val art = track.thumbnailUri
-        val missing = art.isNullOrBlank() || (!art.startsWith("http") && !java.io.File(art.removePrefix("file://")).exists())
+        val missing = art.isNullOrBlank() || (!art.startsWith("http") && !File(art.removePrefix("file://")).exists())
         val spotifyId = track.spotifyId
         if (!missing || spotifyId.isNullOrBlank() || !artworkTried.add(track.uuid)) return
         viewModelScope.launch {
@@ -2203,7 +2213,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val first = songs.first()
                 playInstant(first)
                 // Wait until the first song really plays (it may need a while on a slow network), not a fixed delay
-                withTimeoutOrNull(FIRST_SONG_WAIT_MS) {
+                withTimeoutOrNull(FIRST_SONG_WAIT_MS.milliseconds) {
                     uiState.first { st -> st.isPlaying && st.currentTrack?.let { isSameSong(it, first) } == true }
                 }
                 val placed = mutableListOf<Track>()
@@ -2410,7 +2420,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 throw e
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Refetch failed for ${track.title}: ${e.message}", e)
-                Toast.makeText(getApplication(), "Couldn't refetch: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), e.userMessage("Couldn't refetch this song. Try again."), Toast.LENGTH_LONG).show()
             } finally {
                 refetchingUuids.remove(track.uuid)
             }
@@ -2453,7 +2463,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = "Download failed: ${e.message}"
+                        error = e.userMessage("Download failed. Try again.")
                     )
                 }
             }

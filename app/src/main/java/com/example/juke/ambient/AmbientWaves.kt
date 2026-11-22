@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,7 +26,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -103,8 +107,24 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
         }
     }
 
-    val blur = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) BlurEffect(56f, 56f, TileMode.Decal) else null
-    Canvas(modifier.fillMaxSize().graphicsLayer { renderEffect = blur }) {
+    val blur = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) BlurEffect(56f / SCALE, 56f / SCALE, TileMode.Decal) else null
+    }
+    // Drawn and blurred at 1/SCALE size, then stretched to fill: soft colour looks the same and the
+    // full-screen blur stops dominating the frame (issue #41).
+    Canvas(
+        modifier.fillMaxSize()
+            .layout { m, c ->
+                val p = m.measure(Constraints.fixed((c.maxWidth + SCALE - 1) / SCALE, (c.maxHeight + SCALE - 1) / SCALE))
+                layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
+            }
+            .graphicsLayer {
+                scaleX = SCALE.toFloat()
+                scaleY = SCALE.toFloat()
+                transformOrigin = TransformOrigin(0f, 0f)
+                renderEffect = blur
+            }
+    ) {
         tick // redraw on every frame of the loop
         val visible = wave.visible.value
         if (visible < FADED) return@Canvas
@@ -147,6 +167,24 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
     }
 }
 
+/**
+ * A still glow in the artwork's colours, for under the glass (issue #41). Glass re-renders whenever
+ * its source changes, so this changes only with the song (colour fade) or play state (fade in/out);
+ * the moving [AmbientWaves] stay outside the glass source.
+ */
+@Composable
+fun AmbientGlow(playing: Boolean, colors: List<Color>, dark: Boolean, modifier: Modifier = Modifier) {
+    val on = AmbientPrefs.enabled && colors.isNotEmpty()
+    val strength by animateFloatAsState(if (on && playing) 1f else 0f, tween(700), label = "glow")
+    val c0 by animateColorAsState(colors.getOrElse(0) { Color.Transparent }, tween(1200), label = "glow0")
+    val c1 by animateColorAsState(colors.getOrElse(1) { colors.getOrElse(0) { Color.Transparent } }, tween(1200), label = "glow1")
+    Canvas(modifier.fillMaxSize()) { // state read here, in draw: no recomposition while it fades
+        if (strength < FADED) return@Canvas
+        val a = strength * (if (dark) 0.22f else 0.14f)
+        drawRect(Brush.verticalGradient(0.45f to Color.Transparent, 0.72f to c0.copy(alpha = a), 1f to c1.copy(alpha = a * 0.8f)))
+    }
+}
+
 /** What the waves are doing, smoothed so beats swell rather than flicker. */
 private class WaveState {
     val visible = Envelope(attackMs = 500f, releaseMs = 700f)
@@ -177,3 +215,4 @@ private fun isPowerSave(context: Context) =
 private val IDLE = Levels(energy = 0.35f, bass = 0.3f, treble = 0.15f)
 private const val FADED = 0.003f
 private const val FRAME_MS = 32f
+private const val SCALE = 4

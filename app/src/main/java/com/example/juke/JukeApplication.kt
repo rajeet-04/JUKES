@@ -1,6 +1,8 @@
 package com.example.juke
 
 import android.app.Application
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
@@ -9,6 +11,7 @@ import coil.request.CachePolicy
 
 class JukeApplication : Application(), ImageLoaderFactory {
 
+    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         // Saves crashes to send on the next launch; PostHog adds its own handler in front once it's set up, a moment

@@ -132,6 +132,21 @@ object LibrarySync {
         else null
     }
 
+    /**
+     * A message when this device's own library is mostly gone compared with what it last agreed with the account
+     * ([base]), else null. That is a reset or wiped database, not the user deleting things (those come a few at a
+     * time), and merging it would tell the account "everything was removed" and spread it to every device. Syncing
+     * stops until the user logs out and in, which forgets the base and brings the account's copy back.
+     */
+    fun wiped(base: Doc?, local: Doc): String? {
+        if (base == null) return null
+        val songsGone = base.songs.keys.count { it !in local.songs }
+        val playlistsGone = base.playlists.keys.count { it !in local.playlists }
+        val wiped = (base.songs.size >= 20 && songsGone * 2 > base.songs.size) ||
+            (base.playlists.size >= 5 && playlistsGone * 2 > base.playlists.size)
+        return if (wiped) "Sync paused: most of this device's library is gone since the last sync, so nothing was uploaded. Log out and back in to restore it from your account." else null
+    }
+
     private fun baseFile(c: Context) = File(c.filesDir, "library_sync_base.json")
     fun forgetBase(c: Context) { baseFile(c).delete() }
 
@@ -146,6 +161,7 @@ object LibrarySync {
                     val remote = json.decodeFromString<Remote>(raw)
                     val base = runCatching { json.decodeFromString<Doc>(baseFile(c).readText()) }.getOrNull()
                     val local = snapshot(c).informedBy(base)
+                    wiped(base, local)?.let { _status.value = it; Log.w(TAG, it); return@withContext false }
                     val merged = merge(base, local, remote.doc ?: Doc())
                     lost(local, merged)?.let { _status.value = it; Log.w(TAG, it); return@withContext false }
                     apply(c, local, merged)

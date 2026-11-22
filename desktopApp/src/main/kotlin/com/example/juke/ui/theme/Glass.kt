@@ -14,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -34,9 +36,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.glass.ChromaticAberrationMode
+import dev.chrisbanes.haze.glass.GlassStyle
+import dev.chrisbanes.haze.glass.OpticalSizeValue
+import dev.chrisbanes.haze.glass.RefractionProfile
+import dev.chrisbanes.haze.glass.hazeGlass
 
 /**
  * Liquid glass design system for JUKE.
@@ -61,6 +66,13 @@ val LocalHazeState = compositionLocalOf<HazeState?> { null }
 
 /** The accent the ambient field and glass tint pick up (album art when available). */
 val LocalGlassAccent = compositionLocalOf { Color(0xFF8E7CFF) }
+
+/** The player and sheets ask for a stronger lens; Android scales its refraction by this. */
+val LocalGlassBoost = compositionLocalOf { false }
+
+/** True when real backdrop glass is drawn (a haze source exists and solid mode is off). */
+@Composable
+fun glassIsLive(): Boolean = LocalHazeState.current != null && !GlassPrefs.solid
 
 object GlassShapes {
     val Pill = RoundedCornerShape(percent = 50)
@@ -153,7 +165,7 @@ private fun Modifier.glassShadow(shape: Shape, elevation: Dp, alpha: Float): Mod
         }
     }
 
-/** In-flow glass: tinted fill + rim + sheen + soft lifted shadow. No blur. */
+/** In-flow glass: clear liquid over the app backdrop, rim, sheen and a soft lifted shadow. */
 @Composable
 fun Modifier.glassPane(
     shape: Shape = GlassShapes.Card,
@@ -163,14 +175,27 @@ fun Modifier.glassPane(
     val dark = isGlassDark()
     val spec = level.spec(dark)
     val base = glassBase(tint ?: LocalGlassAccent.current, dark)
-    return this
-        .glassShadow(shape, spec.elevation, 0.30f)
-        .clip(shape)
-        .background(
-            if (GlassPrefs.solid) solidBase(base, tint ?: LocalGlassAccent.current, dark).copy(alpha = 0.94f)
-            else base.copy(alpha = spec.fill)
+    val source = LocalHazeState.current
+    val lifted = this.glassShadow(shape, spec.elevation, 0.30f)
+    if (source == null || GlassPrefs.solid) {
+        return lifted
+            .clip(shape)
+            .background(
+                if (GlassPrefs.solid) solidBase(base, tint ?: LocalGlassAccent.current, dark).copy(alpha = 0.94f)
+                else base.copy(alpha = spec.fill)
+            )
+            .glassRim(shape, spec.rimAlpha, dark)
+    }
+    // Same recipe as Android: a whisper of neutral body, rim refraction and specular carry the material.
+    val boost = LocalGlassBoost.current
+    val clearTint = if (dark) Color.White.copy(alpha = 0.035f + 0.01f * level.ordinal) else Color.White.copy(alpha = 0.28f)
+    val style = remember(clearTint, shape, dark, boost) {
+        liquidStyle(
+            boost = boost, shape = shape, tint = clearTint, dark = dark, blur = 3.dp,
+            displacement = 48.dp, edge = 24.dp, fold = 0.25f, clear = true, rainbow = { 0.6f },
         )
-        .glassRim(shape, spec.rimAlpha, dark)
+    }
+    return lifted.hazeLiquid(source, shape, style)
 }
 
 /**
@@ -209,10 +234,63 @@ half4 main(float2 fc) {
 """
 
 /**
- * Liquid glass (after Apple's design): a clear pane that only lightly blurs what is behind it and
- * bends it at the rim through an AGSL refraction shader (Android 13+), with a specular rim. Below
- * Android 13, without a haze source, or in solid mode it falls back to a tinted pane.
- * [strength] (0..1) is read every frame and swells the refraction, e.g. while the pane moves.
+ * The one liquid-glass recipe every surface uses (same optics as Android): a wide, bending rim with
+ * a meniscus fold, spectral dispersion for the rainbow, a Fresnel edge and a highlight placed by
+ * [GlassLight] (the pointer on desktop). Snapshot reads inside [rainbow] are observed per frame.
+ */
+private fun liquidStyle(
+    shape: Shape,
+    tint: Color,
+    dark: Boolean,
+    blur: Dp,
+    displacement: Dp = 64.dp,
+    edge: Dp = 30.dp,
+    fold: Float = 0.35f,
+    specular: Float = 0.7f,
+    clear: Boolean = false,
+    boost: Boolean = false,
+    rainbow: () -> Float = { 0.85f },
+    detail: Float = 0.45f,
+): GlassStyle = (if (clear) GlassStyle.clear else GlassStyle.regular).shaped(shape).then {
+    val displacement = if (boost) displacement * 1.3f else displacement
+    val edge = if (boost) edge + 8.dp else edge
+    val fold = if (boost) (fold + 0.15f).coerceAtMost(1f) else fold
+    val specular = if (boost) (specular + 0.1f).coerceAtMost(1f) else specular
+    optics {
+        copy(
+            blurRadius = OpticalSizeValue.Fixed(blur),
+            depth = OpticalSizeValue.Fixed(if (clear) 0.6f else 1f),
+            refractionStrength = if (clear) 1f else 0.95f,
+            refractionDisplacement = displacement,
+            refractionProfile = RefractionProfile.Edge(edge),
+            refractionFoldStrength = fold,
+            refractionDetailIntensity = detail,
+        )
+    }
+    chromaticAberrationMode(ChromaticAberrationMode.Full)
+    fresnelExponent(2f)
+    tint(tint)
+    if (!clear) {
+        whitePoint(if (dark) 0.06f else 0.5f)
+        contrast(0f)
+        ambientResponse(0.22f)
+    }
+    specularIntensity(specular)
+    lightPosition(GlassLight.position)
+    chromaticAberrationStrength((if (boost) rainbow() * 1.25f + 0.1f else rainbow()).coerceIn(0f, 1f))
+}
+
+private fun Modifier.hazeLiquid(source: HazeState, shape: Shape, style: GlassStyle): Modifier =
+    hazeGlass(HazeInput.Sources(source), style).clip(shape)
+
+/** Applies [shape] to a glass style when it is a rounded rectangle (the only shape Haze glass takes). */
+private fun GlassStyle.shaped(shape: Shape): GlassStyle =
+    (shape as? RoundedCornerShape)?.let { rounded -> then { shape(rounded) } } ?: this
+
+/**
+ * Liquid glass: a clear pane that bends what is behind it at the rim, with a specular highlight
+ * and a rainbow edge that grows with [strength] (0..1, read every frame). Without a haze source,
+ * or in solid mode, it falls back to a tinted pane.
  */
 @Composable
 fun Modifier.liquidGlass(
@@ -223,6 +301,13 @@ fun Modifier.liquidGlass(
     rimAlpha: Float = 0.5f,
     source: HazeState? = LocalHazeState.current,
     strength: () -> Float = { 0f },
+    displacement: Dp = 64.dp,
+    edge: Dp = 30.dp,
+    fold: Float = 0.4f,
+    /** False: a fully frosted body (sheets, where text sits over the page); the rim still bends. */
+    clear: Boolean = true,
+    /** The surface's fine ripple; 0 over artwork, where it reads as streaks. */
+    detail: Float = 0.45f,
 ): Modifier {
     val dark = isGlassDark()
     val lifted = if (shadow > 0.dp) glassShadow(shape, shadow, 0.34f) else this
@@ -230,19 +315,16 @@ fun Modifier.liquidGlass(
         val solid = fill.copy(alpha = (fill.alpha + if (GlassPrefs.solid) 0.6f else 0.3f).coerceAtMost(0.96f))
         return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
-    val style = remember(fill, blur) {
-        HazeStyle(
-            backgroundColor = Color.Transparent,
-            tint = HazeTint(fill),
-            blurRadius = blur,
-            noiseFactor = 0.02f,
-            fallbackTint = HazeTint(fill.copy(alpha = (fill.alpha + 0.3f).coerceAtMost(0.96f)))
+    val boost = LocalGlassBoost.current
+    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold, clear, detail) {
+        liquidStyle(
+            boost = boost, shape = shape, tint = fill, dark = dark, blur = blur,
+            displacement = displacement, edge = edge, fold = fold, specular = 0.66f, clear = clear,
+            rainbow = { 0.45f + 0.5f * strength() },
+            detail = detail,
         )
     }
-    return lifted
-        .clip(shape)
-        .hazeEffect(source, style)
-        .glassRim(shape, rimAlpha, dark)
+    return lifted.hazeLiquid(source, shape, style)
 }
 
 /**
@@ -275,7 +357,7 @@ object GlassPrefs {
     var solid by androidx.compose.runtime.mutableStateOf(false)
 }
 
-/** Floating glass: real backdrop blur of whatever scrolls beneath, plus tint, rim and sheen. */
+/** Floating glass: liquid glass over whatever scrolls beneath, plus tint, rim and sheen. */
 @Composable
 fun Modifier.glassFloat(
     shape: Shape = GlassShapes.Bar,
@@ -286,26 +368,65 @@ fun Modifier.glassFloat(
     val dark = isGlassDark()
     val spec = level.spec(dark)
     val base = glassBase(tint ?: LocalGlassAccent.current, dark)
-    val style = remember(base, spec) {
-        HazeStyle(
-            backgroundColor = Color.Transparent,
-            tint = HazeTint(base.copy(alpha = spec.fill)),
-            blurRadius = spec.blur,
-            noiseFactor = 0.04f,
-            fallbackTint = HazeTint(base.copy(alpha = (spec.fill + 0.30f).coerceAtMost(0.9f)))
-        )
-    }
-    return this
-        .glassShadow(shape, spec.elevation, 0.36f)
-        .clip(shape)
-        .then(
-            if (source != null && !GlassPrefs.solid) Modifier.hazeEffect(source, style)
-            else Modifier.background(
+    val lifted = this.glassShadow(shape, spec.elevation, 0.36f)
+    if (source == null || GlassPrefs.solid) {
+        return lifted
+            .clip(shape)
+            .background(
                 if (GlassPrefs.solid) solidBase(base, tint ?: LocalGlassAccent.current, dark).copy(alpha = 0.96f)
                 else base.copy(alpha = (spec.fill + 0.30f).coerceAtMost(0.9f))
             )
-        )
-        .glassRim(shape, spec.rimAlpha, dark)
+            .glassRim(shape, spec.rimAlpha, dark)
+    }
+    val boost = LocalGlassBoost.current
+    val style = remember(base, spec, shape, dark, boost) {
+        liquidStyle(shape = shape, tint = base.copy(alpha = spec.fill * 1.1f), dark = dark, blur = spec.blur, boost = boost)
+    }
+    return lifted.hazeLiquid(source, shape, style)
+}
+
+/**
+ * Where the light sits for glass highlights. Android steers it with the gravity sensor; on desktop
+ * the pointer does, so the specular rim leans toward the cursor. Biases are in the material's frame,
+ * beyond -1..1 the light sits outside the pane (a distant light); at rest it is above the top edge.
+ */
+object GlassLight {
+    private const val REACH = 1.6f
+    val Rest = androidx.compose.ui.BiasAlignment(0f, -REACH)
+    var position: androidx.compose.ui.Alignment by androidx.compose.runtime.mutableStateOf(Rest)
+        private set
+
+    private var x = 0f
+    private var y = -REACH
+
+    /** Aims the light at a pointer position given as fractions of the window (0..1, y down). */
+    fun aim(fx: Float, fy: Float) {
+        val tx = ((fx - 0.5f) * 2f).coerceIn(-1f, 1f) * REACH
+        val ty = ((fy - 0.5f) * 2f).coerceIn(-1f, 1f) * REACH
+        // Low-pass filter so the highlight glides.
+        x += (tx - x) * 0.12f
+        y += (ty - y) * 0.12f
+        val current = position as? androidx.compose.ui.BiasAlignment
+        // Only publish visible moves; each publish re-resolves every glass style.
+        if (current == null || kotlin.math.abs(current.horizontalBias - x) > 0.015f ||
+            kotlin.math.abs(current.verticalBias - y) > 0.015f
+        ) position = androidx.compose.ui.BiasAlignment(x, y)
+    }
+
+    fun reset() { x = 0f; y = -REACH; position = Rest }
+}
+
+/** Steers [GlassLight] with the pointer. Wrap the app root; harmless when glass is solid. */
+fun Modifier.glassPointerLight(): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val p = event.changes.firstOrNull()?.position
+            if (p != null && size.width > 0 && size.height > 0 && !GlassPrefs.solid) {
+                GlassLight.aim(p.x / size.width, p.y / size.height)
+            }
+        }
+    }
 }
 
 /** The one app backdrop: true black in dark, a soft off-white in light. No gradients, no motion. */

@@ -22,6 +22,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
+import androidx.core.content.edit
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Hand playback to your other device, Spotify Connect style. Two devices pair once with a short code; after
@@ -58,10 +60,17 @@ object Handoff {
     @Volatile private var wake = false // an action just happened: poll again at once
 
     private fun prefs(c: Context) = c.applicationContext.getSharedPreferences("handoff", Context.MODE_PRIVATE)
-    private fun me(c: Context) = prefs(c).getString("id", null) ?: UUID.randomUUID().toString().replace("-", "").also { prefs(c).edit().putString("id", it).apply() }
+    private fun me(c: Context) = prefs(c).getString("id", null) ?: UUID.randomUUID().toString().replace("-", "").also { prefs(c).edit {
+        putString(
+            "id",
+            it
+        )
+    } }
 
-    fun load(c: Context) { _code.value = prefs(c).getString("code", null) }
-    private fun save(c: Context, code: String?) { prefs(c).edit().putString("code", code).apply(); _code.value = code }
+    fun load(c: Context) { _code.value = prefs(c).getString("code", null)
+    }
+
+    private fun save(c: Context, code: String?) { prefs(c).edit {putString("code", code)}; _code.value = code }
 
     fun pairNew(c: Context) = save(c, (1..6).map { ALPHABET.random() }.joinToString(""))
     /** False if [input] isn't a pairing code. */
@@ -125,7 +134,7 @@ object Handoff {
         val pm = vm.playbackManager
         while (true) {
             var waited = 0
-            while (!wake && waited < (if (pendingId != null) 1000 else 4000)) { delay(100); waited += 100 }
+            while (!wake && waited < (if (pendingId != null) 1000 else 4000)) { delay(100.milliseconds); waited += 100 }
             wake = false
             if (com.example.juke.account.Account.token != null) continue // logged in: Connect does this, live
             val code = _code.value ?: continue
@@ -167,7 +176,7 @@ object Handoff {
         while (System.currentTimeMillis() - started < LOAD_WAIT_MS) {
             val cur = vm.uiState.value.currentTrack
             if (cur != null && JamFollower.sameSong(cur, JamItem("", first.spotifyId, first.title, first.artist)) && pm.getDuration() > 0 && pm.isPlayingFlow.value) break
-            delay(250)
+            delay(250.milliseconds)
         }
         if (!JamFollower.sameSong(vm.uiState.value.currentTrack, JamItem("", first.spotifyId, first.title, first.artist))) {
             _status.value = "Couldn't load \"${first.title}\" here"; return

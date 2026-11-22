@@ -81,6 +81,7 @@ import com.example.juke.ui.screens.SearchScreen
 import com.example.juke.ui.theme.GlassBackdrop
 import com.example.juke.ui.theme.JUKETheme
 import com.example.juke.ui.theme.LocalHazeState
+import com.example.juke.ui.theme.glassPointerLight
 import com.example.juke.ui.theme.isGlassDark
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.AlbumDetailViewModel
@@ -365,6 +366,9 @@ fun JukeApp() {
             )
         }
 
+        // Menus are drawn in this window (GlassSheetLayer at the bottom) so their glass can refract the app.
+        val sheetHost = remember { com.example.juke.ui.components.GlassSheetHost() }
+        CompositionLocalProvider(com.example.juke.ui.components.LocalGlassSheetHost provides sheetHost) {
         com.example.juke.ui.components.PlayerTransitionHost(expanded = showPlayerModal, musicViewModel = musicViewModel) {
         val openMedia = remember(navController) {
             com.example.juke.ui.components.OpenMedia(
@@ -524,11 +528,19 @@ fun JukeApp() {
                 bottom = 0.dp
             )
 
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().glassPointerLight()) {
             // Backdrop source: the ambient light field and every screen scroll inside it,
             // so the floating glass (tab bar, mini player) blurs what is really behind it.
+            // Ambient layer below the page source: cards inside the page refract it.
+            Box(Modifier.fillMaxSize().hazeSource(hazeState, zIndex = -1f).background(GlassBackdrop.color(isGlassDark()))) {
+                val art = uiState.extractedColors
+                com.example.juke.ambient.AmbientWaves(
+                    playing = uiState.isPlaying && !showPlayerModal,
+                    colors = art?.let { listOf(it.primary, it.secondary, it.tertiary) }.orEmpty(),
+                    dark = isGlassDark()
+                )
+            }
             Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
-            Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
             Row(modifier = Modifier.fillMaxSize().then(if (desktop) Modifier.padding(top = innerPadding.calculateTopPadding(), bottom = innerPadding.calculateBottomPadding(), start = 8.dp, end = 8.dp) else Modifier),
                 horizontalArrangement = Arrangement.Start) {
                 if (desktop) com.example.juke.desktop.LibrarySidebar(
@@ -741,6 +753,28 @@ fun JukeApp() {
                     showPlayerModal = false
                     activityViewModelProvider[AlbumDetailViewModel::class].loadAlbumDetailsById(albumId)
                     navController.navigate("album/$albumId")
+                },
+                onOpenPlayingFrom = { from ->
+                    showPlayerModal = false
+                    when (from.kind) {
+                        com.example.juke.viewmodels.PlayContext.Kind.LIBRARY_PLAYLIST -> {
+                            com.example.juke.viewmodels.PlayContext.openLibraryPlaylist.value = from.id
+                            onNavigate(Screen.Library)
+                        }
+                        com.example.juke.viewmodels.PlayContext.Kind.LIBRARY -> onNavigate(Screen.Library)
+                        com.example.juke.viewmodels.PlayContext.Kind.PLAYLIST -> from.playlist?.let { playlist ->
+                            activityViewModelProvider[PlaylistDetailViewModel::class].loadPlaylistDetails(playlist)
+                            navController.navigate("playlist/${playlist.id}")
+                        }
+                        com.example.juke.viewmodels.PlayContext.Kind.ALBUM -> {
+                            activityViewModelProvider[AlbumDetailViewModel::class].loadAlbumDetailsById(from.id)
+                            navController.navigate("album/${from.id}")
+                        }
+                        com.example.juke.viewmodels.PlayContext.Kind.ARTIST -> {
+                            activityViewModelProvider[SearchViewModel::class].loadArtistDetailsById(from.id)
+                            navController.navigate("artist/${from.id}")
+                        }
+                    }
                 }
             ) else PlayerScreen(
                 musicViewModel = musicViewModel,
@@ -770,6 +804,9 @@ fun JukeApp() {
                     context.startActivity(shareIntent)
                 }
             )
+        }
+        // Above the pages and the player: open menus.
+        com.example.juke.ui.components.GlassSheetLayer(sheetHost)
         }
         }
     }

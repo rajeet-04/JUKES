@@ -1,11 +1,17 @@
 package com.example.juke.models
 
 /** Never count streams as offline audio, even though they also have a localUri. */
-fun SpotifySimplifiedTrack.findOfflineTrack(library: List<Track>): Track? = library.find {
+fun SpotifySimplifiedTrack.findOfflineTrack(library: List<Track>): Track? =
+    library.findOffline(id, name, artists.joinToString(", ") { it.name }, durationMs)
+
+/** The downloaded copy of a search, artist, playlist or Home result, if there is one. */
+fun SpotifyTrack.findOfflineTrack(library: List<Track>): Track? =
+    library.findOffline(id, name, artists.joinToString(", ") { it.name }, durationMs)
+
+private fun List<Track>.findOffline(id: String?, name: String, artists: String, durationMs: Int): Track? = find {
     !it.isStream && !it.localUri.isNullOrBlank() &&
         ((id != null && it.spotifyId == id) ||
-            (it.title.equals(name, ignoreCase = true) &&
-                it.artist.equals(artists.joinToString(", ") { artist -> artist.name }, ignoreCase = true) &&
+            (it.title.equals(name, ignoreCase = true) && it.artist.equals(artists, ignoreCase = true) &&
                 kotlin.math.abs(it.durationSec - durationMs / 1000) <= 2))
 }
 

@@ -1,36 +1,29 @@
 package com.example.juke.ui.components.player
 
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.runtime.key
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,9 +33,11 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +54,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -120,7 +116,8 @@ private fun Modifier.fadingEdges(
 @Composable
 fun LyricsOverlay(
     currentTrack: Track,
-    currentPosition: Long,
+    /** Read where needed (the active line, the karaoke sweep), so a tick doesn't recompose the view. */
+    currentPosition: () -> Long,
     musicViewModel: MusicViewModel,
     isTablet: Boolean,
     onDismiss: () -> Unit,
@@ -198,9 +195,10 @@ fun LyricsOverlay(
             val listState = rememberLazyListState()
             val playing = musicViewModel.uiState.collectAsState().value.isPlaying
             // Before the first timestamp the first line is the active one.
-            val currentLineIndex = remember(lyricLines, currentPosition) {
-                lyricLines.indexOfLast { it.timeMs <= currentPosition }.coerceAtLeast(0)
+            val currentLineIndex by remember(lyricLines) {
+                androidx.compose.runtime.derivedStateOf { lyricLines.indexOfLast { it.timeMs <= currentPosition() }.coerceAtLeast(0) }
             }
+            val clock = if (lyricLines.any { it.words.isNotEmpty() }) rememberFrameClock(currentPosition, playing) else null
             var isFirstScroll by remember(currentTrack.uuid) { mutableStateOf(true) }
 
             // Keyed on the line, not the position: a per-tick key cancels the glide mid-flight and
@@ -242,21 +240,13 @@ fun LyricsOverlay(
                         label = "lyricRest"
                     )
 
-                    // Word-synced lyrics are sung word by word on the active line; its upcoming
-                    // words are as dim as the lines still to come.
-                    val text = if (isCurrentLine && line.words.isNotEmpty()) {
-                        val now = rememberFrameClock(currentPosition, playing)
-                        karaokeText(line, now(), Color.White, dimAlpha = AHEAD_ALPHA)
-                    } else androidx.compose.ui.text.AnnotatedString(line.text)
-                    Text(
-                        text = text,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontSize = if (embedded) 22.sp else 25.sp,
-                            lineHeight = if (embedded) 29.sp else 32.sp,
-                            letterSpacing = (-0.4).sp
-                        ),
-                        color = Color.White,
-                        modifier = Modifier
+                    val style = MaterialTheme.typography.headlineSmall.copy(
+                        fontSize = if (embedded) 22.sp else 25.sp,
+                        lineHeight = if (embedded) 29.sp else 32.sp,
+                        letterSpacing = (-0.4).sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    val lineModifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer {
                                 val e = emphasis.value
@@ -265,15 +255,16 @@ fun LyricsOverlay(
                                 scaleX = scale
                                 scaleY = scale
                                 transformOrigin = TransformOrigin(0f, 0.5f)
+                                // Fade each draw instead of an offscreen copy: no re-blur of the glow per frame.
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
                             }
                             .clickable(onClick = {
                                 musicViewModel.seekTo(line.timeMs)
-                            }),
-                        textAlign = TextAlign.Start,
-                        fontWeight = FontWeight.Bold,
-                        overflow = TextOverflow.Clip,
-                        softWrap = true
-                    )
+                            })
+                    // The active line is lit white with a glow (swept word by word when the lyrics
+                    // have word timings); the others stay plain, faded by the layer above.
+                    if (isCurrentLine) KaraokeLine(line, clock?.takeIf { line.words.isNotEmpty() }, style, lineModifier)
+                    else Text(line.text, style = style, color = Color.White, modifier = lineModifier, textAlign = TextAlign.Start)
                 }
             }
         } else if (shown == 1) {
@@ -523,8 +514,9 @@ private suspend fun androidx.compose.foundation.lazy.LazyListState.glideTo(index
     if (item == null) {
         animateScrollToItem(index, 0)
     } else {
-        val delta = item.offset - layoutInfo.beforeContentPadding
-        if (delta != 0) animateScrollBy(delta.toFloat(), spring(dampingRatio = 1f, stiffness = 180f))
+        // Offsets count from the end of the top padding (viewportStartOffset is -beforeContentPadding),
+        // so 0 is the resting spot. Subtracting the padding again parked the line twice as low.
+        if (item.offset != 0) animateScrollBy(item.offset.toFloat(), spring(dampingRatio = 1f, stiffness = 180f))
     }
 }
 

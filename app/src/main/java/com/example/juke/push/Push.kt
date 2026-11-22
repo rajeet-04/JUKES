@@ -8,12 +8,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.example.juke.BuildConfig
 import com.example.juke.MainActivity
 import com.google.firebase.FirebaseApp
@@ -66,7 +66,7 @@ object Push {
     internal fun show(c: Context, title: String, body: String, link: String?) {
         if (!NotificationManagerCompat.from(c).areNotificationsEnabled()) return
         createChannel(c)
-        val open = link?.let { Intent(Intent.ACTION_VIEW, Uri.parse(it)) }
+        val open = link?.let { Intent(Intent.ACTION_VIEW, it.toUri()) }
             ?: Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val id = (title + body).hashCode()
         val n = NotificationCompat.Builder(c, CHANNEL)

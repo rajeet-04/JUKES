@@ -1,5 +1,7 @@
 package com.example.juke.viewmodels
 
+import com.example.juke.network.userMessage
+
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -71,7 +73,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                 Log.e("PlaylistDetailViewModel", "Error loading playlist details: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.message
+                    error = e.userMessage("Couldn't load this playlist. Try again.")
                 )
             }
         }
@@ -99,7 +101,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                     tracks
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = "Failed to save playlist offline: ${e.message}")
+                _uiState.value = _uiState.value.copy(error = e.userMessage("Couldn't save the playlist offline. Try again."))
             }
         }
     }

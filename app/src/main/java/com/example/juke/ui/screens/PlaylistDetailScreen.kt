@@ -56,7 +56,7 @@ fun PlaylistDetailScreen(
 
     // This playlist "owns" playback when the loaded song is one of its tracks: Play then pauses/resumes instead of restarting.
     val musicState = musicViewModel.uiState.collectAsStateWithLifecycle()
-    val trackIds = androidx.compose.runtime.remember(uiState.tracks) { uiState.tracks.mapNotNullTo(HashSet<String>()) { it.id } }
+    val trackIds = androidx.compose.runtime.remember(uiState.tracks) { uiState.tracks.mapNotNullTo(HashSet()) { it.id } }
     val isThisPlaylist by androidx.compose.runtime.remember(trackIds) {
         androidx.compose.runtime.derivedStateOf { musicState.value.currentTrack?.spotifyId?.let { it in trackIds } == true }
     }

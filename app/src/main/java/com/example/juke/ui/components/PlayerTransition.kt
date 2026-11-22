@@ -1,25 +1,32 @@
 package com.example.juke.ui.components
 
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -86,6 +93,17 @@ fun Modifier.playerArtworkEndpoint(expanded: Boolean, enabled: Boolean = true, f
         .graphicsLayer {
             alpha = if (state.moving && state.hasArtwork && state.miniBounds != null && state.playerBounds != null) 0f else 1f
         }
+}
+
+/**
+ * The app under the player. Android draws covered views too, so while the player fully covers the
+ * app (settled open, no drag) the app isn't drawn at all: its page, glass, tab bar, mini player and
+ * ambient layers cost nothing. Read in the draw phase only, so it never recomposes.
+ */
+@Composable
+fun Modifier.hiddenUnderPlayer(): Modifier {
+    val state = LocalPlayerTransition.current ?: return this
+    return graphicsLayer { alpha = if (state.progress >= 1f) 0f else 1f }
 }
 
 /**
@@ -225,7 +243,7 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
 // A critically damped spring: no bounce, but it takes over the finger's velocity on release, and it
 // retargets mid-flight without a seam. Closing is stiffer than opening (exit faster than entrance).
 private fun playerExpansionSpec(expanding: Boolean) =
-    spring<Float>(dampingRatio = 1f, stiffness = if (expanding) 380f else 560f, visibilityThreshold = 0.0005f)
+    spring(dampingRatio = 1f, stiffness = if (expanding) 380f else 560f, visibilityThreshold = 0.0005f)
 
 /**
  * Staggers one part of the player sheet: it fades in and rises while the expansion progress passes

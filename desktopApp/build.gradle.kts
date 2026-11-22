@@ -24,13 +24,16 @@ val androidOnly = listOf(
     "services/ArtworkProvider.kt", "utils/HapticHelper.kt", "analytics/AnalyticsManager.kt",
     "ui/screens/YoutubeSignInScreen.kt",
     "ui/icons/JukeIconPreview.kt", "database/MusicDatabase.kt", "push/Push.kt",
+    "ambient/AmbientWaves.kt", "ambient/LevelMeterProcessor.kt",
 ).map { "com/example/juke/$it" }
-val stageAndroid by tasks.registering(Sync::class) {
+val stageAndroid = tasks.register<Sync>("stageAndroid") {
     from(androidSrc) {
         androidOnly.forEach { exclude(it) }
         // every viewModel() goes through ours, which always uses the app factory (nav entries bring their own, which can't build AndroidViewModels on desktop)
         filesMatching("**/*.kt") {
             filter { it.replace("import androidx.lifecycle.viewmodel.compose.viewModel", "import com.example.juke.desktop.viewModel") }
+            // a right click opens the song menu, like a long press on the phone
+            filter { it.replace("import androidx.compose.foundation.combinedClickable", "import com.example.juke.desktop.combinedClickable") }
         }
         // desktop's one search bar lives in the top bar
         filesMatching("**/SearchScreen.kt") {
@@ -43,6 +46,14 @@ val stageAndroid by tasks.registering(Sync::class) {
         // Android-only blur mask -> Skia's
         filesMatching("**/GlassNavigation.kt") {
             filter { it.replace("var librarySection by rememberSaveable { mutableStateOf(0) }", "var librarySection by rememberSaveable { mutableStateOf(if (uiState.selectedPlaylist != null) 1 else 0) }") }
+            filter {
+                it.replace("import androidx.compose.ui.graphics.PaintingStyle", "import androidx.compose.ui.graphics.PaintingStyle\nimport androidx.compose.ui.graphics.nativeCanvas")
+                .replace("import androidx.compose.ui.graphics.nativePaint", "") // Android-only
+                .replace("paint.nativePaint.maskFilter =",
+                    "val skiaPaint = org.jetbrains.skia.Paint().also { sp -> val c = neon.copy(alpha = 0.6f + 0.35f * e); sp.color = org.jetbrains.skia.Color.makeARGB((c.alpha * 255).toInt(), (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt()); sp.mode = org.jetbrains.skia.PaintMode.STROKE; sp.strokeWidth = 4.dp.toPx() }; skiaPaint.maskFilter =")
+                    .replace("canvas.drawRoundRect(0f, 0f, size.width, size.height, r, r, paint)",
+                        "canvas.nativeCanvas.drawRRect(org.jetbrains.skia.RRect.makeXYWH(0f, 0f, size.width, size.height, r), skiaPaint)")
+            }
             filter { it.replace("android.graphics.BlurMaskFilter(bloomPx, android.graphics.BlurMaskFilter.Blur.NORMAL)", "org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, bloomPx / 2f)") }
         }
     }
@@ -50,21 +61,25 @@ val stageAndroid by tasks.registering(Sync::class) {
 }
 sourceSets.main { kotlin.srcDir(stageAndroid) }
 
+// One version for both apps: the APK's, so the two can't drift again.
+val appBuild = rootProject.file("app/build.gradle.kts").readText()
+val appVersionName = Regex("versionName = \"([^\"]+)\"").find(appBuild)!!.groupValues[1]
+val appVersionCode = Regex("versionCode = (\\d+)").find(appBuild)!!.groupValues[1]
+
 // BuildConfig, from the same local.properties the APK reads
-val genBuildConfig by tasks.registering {
+val genBuildConfig = tasks.register("genBuildConfig") {
     val out = layout.buildDirectory.dir("generated/buildconfig")
     val props = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load) }
     fun p(k: String, d: String) = props.getProperty(k, d)
     outputs.dir(out)
-    doLast {
-        val f = out.get().file("com/example/juke/BuildConfig.kt").asFile
-        f.parentFile.mkdirs()
-        f.writeText("""
+    inputs.property("version", "$appVersionName/$appVersionCode")
+    // Resolved at configuration time: doLast must not reach back into the script (configuration cache).
+    val text = """
             package com.example.juke
             object BuildConfig {
                 const val DEBUG = false
-                const val VERSION_NAME = "3.1.0-stable"
-                const val VERSION_CODE = 31
+                const val VERSION_NAME = "$appVersionName"
+                const val VERSION_CODE = $appVersionCode
                 const val SPOTIFY_TOKEN_URL = "${p("SPOTIFY_TOKEN_URL", "https://spotdown-kv-worker.meek.workers.dev/spotify-token")}"
                 const val SHARE_BASE_URL = "${p("SHARE_BASE_URL", "https://j.rajeet.in")}"
                 const val SPOTIFY_TOKEN_KEY = "${p("SPOTIFY_TOKEN_KEY", "")}"
@@ -74,7 +89,12 @@ val genBuildConfig by tasks.registering {
                 const val JUKE_BACKEND_KEY = "${p("JUKE_BACKEND_KEY", "unused")}"
                 const val JUKE_BACKEND_V1 = ${p("JUKE_BACKEND_V1", "true")}
             }
-        """.trimIndent())
+        """.trimIndent()
+    inputs.property("text", text)
+    doLast {
+        val f = out.get().file("com/example/juke/BuildConfig.kt").asFile
+        f.parentFile.mkdirs()
+        f.writeText(text)
     }
 }
 sourceSets.main { kotlin.srcDir(genBuildConfig) }
@@ -93,7 +113,9 @@ dependencies {
     implementation(libs.jb.lifecycle.viewmodel)
     implementation(libs.jb.lifecycle.runtime.compose)
     implementation(libs.jb.navigation.compose)
-    implementation(libs.haze)
+    implementation(libs.haze2)
+    implementation(libs.haze2.blur)
+    implementation(libs.haze2.glass)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.swing)
@@ -220,7 +242,7 @@ compose.desktop.application {
             iconFile.set(project.file("icons/JUKE.png"))
             shortcut = true // application-menu entry (found by the launcher search)
         }
-        packageVersion = "3.1.0"
+        packageVersion = appVersionName.substringBefore("-")
         modules("java.base", "java.desktop", "java.logging", "java.sql", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http", "java.xml", "java.management")
     }
 }

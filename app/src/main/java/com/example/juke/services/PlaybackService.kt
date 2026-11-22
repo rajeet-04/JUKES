@@ -1,9 +1,6 @@
 package com.example.juke.services
 
-import kotlin.time.Duration.Companion.milliseconds
-import androidx.core.content.edit
 import android.annotation.SuppressLint
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -21,16 +18,13 @@ import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import com.example.juke.jam.JamControls
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import com.example.juke.jam.JamSession
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
@@ -61,6 +55,8 @@ import com.example.juke.analytics.EventType
 import com.example.juke.database.MusicDatabase
 import com.example.juke.database.toEntity
 import com.example.juke.database.toTrack
+import com.example.juke.jam.JamControls
+import com.example.juke.jam.JamSession
 import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
 import com.google.common.collect.ImmutableList
@@ -79,11 +75,14 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Media Playback Service using Media3 (ExoPlayer) with Android Auto support.
@@ -216,7 +215,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private val jamAwarePlayer: JamAwarePlayer by lazy { JamAwarePlayer(player) }
 
-    private inner class JamAwarePlayer(wrapped: Player) : androidx.media3.common.ForwardingPlayer(wrapped) {
+    private class JamAwarePlayer(wrapped: Player) : androidx.media3.common.ForwardingPlayer(wrapped) {
         private val listeners = java.util.concurrent.CopyOnWriteArraySet<Player.Listener>()
 
         fun roomHasQueue(): Boolean = JamSession.state.value.let { it.active && it.status == JamSession.Status.CONNECTED && it.queue.size > 1 }
@@ -228,8 +227,8 @@ class PlaybackService : MediaLibraryService() {
             val base = super.getAvailableCommands()
             if (!roomHasQueue()) return base
             return base.buildUpon().addAll(
-                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-                Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
+                COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                COMMAND_SEEK_TO_PREVIOUS, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
             ).build()
         }
 
@@ -589,7 +588,7 @@ class PlaybackService : MediaLibraryService() {
             .setMediaId(track.uuid)
             .setUri(track.localUri)
             .setMediaMetadata(metadataBuilder.build())
-            .let { PlaybackService.applyStreamHints(it, track.localUri) }
+            .let { applyStreamHints(it, track.localUri) }
             .build()
     }
 
@@ -610,7 +609,7 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private val artworkLoader by lazy {
         object : androidx.media3.common.util.BitmapLoader {
-            private val delegate = DataSourceBitmapLoader(this@PlaybackService)
+            private val delegate = DataSourceBitmapLoader.Builder(this@PlaybackService).build()
             // Current, next and previous in both directions of a skip; about 1.6 MB each at 640x640.
             private val remote = android.util.LruCache<String, android.graphics.Bitmap>(6)
             private val inFlight = java.util.concurrent.ConcurrentHashMap<String, ListenableFuture<android.graphics.Bitmap>>()
@@ -725,7 +724,7 @@ class PlaybackService : MediaLibraryService() {
                 // correct thumbnail once it's available.
                 serviceScope.launch {
                     try {
-                        kotlinx.coroutines.delay(3_000L.milliseconds)
+                        delay(3_000L.milliseconds)
                         // Only refresh if this track is still playing (user hasn't skipped)
                         if (currentPlayingTrackId != trackId) return@launch
                         val track = database.trackDao().getTrackByUuid(trackId)?.toTrack()
@@ -781,7 +780,7 @@ class PlaybackService : MediaLibraryService() {
                                 // Wait 3 seconds before cleaning up the finished stream file.
                                 // ExoPlayer's CacheDataSource may still be draining its read
                                 // handle on the old file (closing buffers) at transition time.
-                                kotlinx.coroutines.delay(3_000L.milliseconds)
+                                delay(3_000L.milliseconds)
 
                                 // Clear ExoPlayer's overlay cache entry for this URI
                                 StreamCacheManager.removeTrackCache(oldTrack.localUri)
@@ -874,8 +873,12 @@ class PlaybackService : MediaLibraryService() {
                 enableAudioTrackPlaybackParams: Boolean
             ) = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(false) // boost processor works on 16-bit PCM
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioOffloadSupportProvider(offloadSupportProvider)
+                .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
+                .setAudioOutputProvider(
+                    androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider.Builder(context)
+                        .setAudioOffloadSupportProvider(offloadSupportProvider)
+                        .build()
+                )
                 .setAudioProcessorChain(
                     JukeAudioChain(audioEffectController.edgeSilence, audioEffectController.boostProcessor, com.example.juke.ambient.LevelMeterProcessor())
                 )
@@ -1183,9 +1186,9 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun updateCustomLayout(isFavorite: Boolean, isStream: Boolean) {
         val button = if (isStream) {
-            CommandButton.Builder()
+            CommandButton.Builder(CommandButton.ICON_UNDEFINED) // Media3 has no download icon
                 .setDisplayName("Download")
-                .setIconResId(R.drawable.baseline_download_24)
+                .setCustomIconResId(R.drawable.baseline_download_24)
                 .setSessionCommand(
                     SessionCommand(
                         CUSTOM_COMMAND_DOWNLOAD_TRACK_ACTION_ID,
@@ -1196,9 +1199,9 @@ class PlaybackService : MediaLibraryService() {
         } else {
             val iconResId =
                 if (isFavorite) R.drawable.baseline_favorite_24 else R.drawable.baseline_favorite_border_24
-            CommandButton.Builder()
+            CommandButton.Builder(if (isFavorite) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
                 .setDisplayName("Favorite")
-                .setIconResId(iconResId)
+                .setCustomIconResId(iconResId)
                 .setSessionCommand(
                     SessionCommand(
                         CUSTOM_COMMAND_TOGGLE_FAVORITE_ACTION_ID,
@@ -1266,7 +1269,8 @@ class PlaybackService : MediaLibraryService() {
                         )
                     )
                     .build()
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            // Empty builder: both command sets are set explicitly below.
+            return MediaSession.ConnectionResult.AcceptedResultBuilder()
                 .setAvailableSessionCommands(sessionCommands)
                 .setAvailablePlayerCommands(
                     MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
@@ -1341,13 +1345,13 @@ class PlaybackService : MediaLibraryService() {
         ): Int {
             // In a Jam, controls that come from outside the app (notification, lock screen, headset, car) drive the room.
             // The app's own controller is routed by PlaybackManager, so its commands pass through untouched.
-            if (com.example.juke.jam.JamSession.state.value.active &&
+            if (JamSession.state.value.active &&
                 (session.isMediaNotificationController(controller) || controller.packageName != packageName)
             ) {
                 val taken = when (playerCommand) {
-                    Player.COMMAND_PLAY_PAUSE -> com.example.juke.jam.JamControls.togglePlayPause()
-                    Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> com.example.juke.jam.JamControls.next()
-                    Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> com.example.juke.jam.JamControls.previous()
+                    Player.COMMAND_PLAY_PAUSE -> JamControls.togglePlayPause()
+                    Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> JamControls.next()
+                    Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> JamControls.previous()
                     else -> false
                 }
                 if (taken) return SessionResult.RESULT_INFO_SKIPPED
@@ -1639,7 +1643,7 @@ class PlaybackManager private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     // Serial background dispatcher for queue mutations: keeps disk work off the main thread while
     // preserving the order in which setQueue/addToQueue calls were made.
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val musicService: MusicService by lazy { MusicService(context) }
 
@@ -1722,8 +1726,8 @@ class PlaybackManager private constructor(private val context: Context) {
         val spotifyId = track.spotifyId ?: return null
         val timeoutMs = if (track.isStream) 30_000L else 120_000L
         if (!audioBeingRecovered.add(track.uuid)) {
-            kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
-                while (track.uuid in audioBeingRecovered) kotlinx.coroutines.delay(250)
+            kotlinx.coroutines.withTimeoutOrNull(timeoutMs.milliseconds) {
+                while (track.uuid in audioBeingRecovered) delay(250.milliseconds)
             }
             return withContext(Dispatchers.IO) {
                 database.trackDao().getTrackByUuid(track.uuid)?.toTrack()
@@ -1731,7 +1735,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
         return try {
             withContext(Dispatchers.IO) {
-                kotlinx.coroutines.withTimeout(timeoutMs) {
+                kotlinx.coroutines.withTimeout(timeoutMs.milliseconds) {
                     val song = SpotifyApi.spotifyTrackToSong(SpotifyApi.getTrack(spotifyId))
                     val refreshed = if (track.isStream) {
                         musicService.streamTrack(
@@ -1945,7 +1949,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                     if (retriedAfter429.add(trackId)) {
                                         Log.w(tag, "HTTP 429 for track $trackId, retrying once in 5 s")
                                         scope.launch {
-                                            delay(5_000)
+                                            delay(5_000.milliseconds)
                                             withContext(Dispatchers.Main) {
                                                 controller?.takeIf { it.currentMediaItem?.mediaId == trackId }?.prepare()
                                             }
@@ -2360,7 +2364,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                         savePlaybackState()
                                     }
                                 }
-                                kotlinx.coroutines.delay(5000.milliseconds)
+                                delay(5000.milliseconds)
                             } catch (e: Exception) {
                                 Log.w(tag, "Polling loop error: ${e.message}")
                                 break
@@ -2536,7 +2540,7 @@ class PlaybackManager private constructor(private val context: Context) {
     @Volatile var jamApplying = false
 
     fun togglePlayPause() {
-        if (!jamApplying && com.example.juke.jam.JamControls.togglePlayPause()) return // in a Jam the room plays/pauses
+        if (!jamApplying && JamControls.togglePlayPause()) return // in a Jam the room plays/pauses
         controller?.let {
             if (it.isPlaying) {
                 it.pause()
@@ -2571,13 +2575,13 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun skipToNext() {
-        if (!jamApplying && com.example.juke.jam.JamControls.next()) return
+        if (!jamApplying && JamControls.next()) return
         runTrackChangeStartingPlaybackIfTrackChanged { it.seekToNext() }
         Log.d(tag, "Skip to next")
     }
 
     fun skipToPrevious() {
-        if (!jamApplying && com.example.juke.jam.JamControls.previous()) return
+        if (!jamApplying && JamControls.previous()) return
         runTrackChangeStartingPlaybackIfTrackChanged {
             if (it.currentPosition > 3000) {
                 it.seekTo(0)
@@ -2650,7 +2654,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        if (!jamApplying && com.example.juke.jam.JamControls.seekTo(positionMs)) return
+        if (!jamApplying && JamControls.seekTo(positionMs)) return
         val ctrl = controller ?: return
         val item = ctrl.currentMediaItem ?: return
         val target = positionMs.coerceAtLeast(0)
@@ -2952,7 +2956,7 @@ class PlaybackManager private constructor(private val context: Context) {
             var remaining = durationMs
             while (remaining > 0) {
                 _sleepTimerRemaining.value = remaining
-                kotlinx.coroutines.delay(1000.milliseconds)
+                delay(1000.milliseconds)
                 remaining -= 1000
             }
 
@@ -3078,7 +3082,7 @@ class PlaybackManager private constructor(private val context: Context) {
             val queueUuids = allTracks.map { it.uuid }.toSet()
             val current = allTracks[startIdx]
             val resolvedCurrent = if (isLocalAudioMissing(current)) {
-                kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                kotlinx.coroutines.withTimeoutOrNull(15_000L.milliseconds) {
                     recoverMissingAudio(current, queueUuids)
                 }
             } else null
@@ -3086,7 +3090,7 @@ class PlaybackManager private constructor(private val context: Context) {
             // Missing-file tracks with a spotifyId stay in the queue (pointing at their expected
             // file path) so they're re-downloaded before they play; anything else unplayable is
             // dropped. Restore starts at the first on-disk track >= the saved index.
-            val playable = ArrayList<Pair<Track, androidx.media3.common.MediaItem>>()
+            val playable = ArrayList<Pair<Track, MediaItem>>()
             var restoredIdx = -1
             allTracks.forEachIndexed { i, t ->
                 var track = if (i == startIdx && resolvedCurrent != null) resolvedCurrent else t

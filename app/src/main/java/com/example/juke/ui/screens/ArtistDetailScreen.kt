@@ -1,15 +1,10 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.icons.JukeIcons
-
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,15 +25,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,14 +40,16 @@ import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyImage
 import com.example.juke.models.SpotifyTrack
 import com.example.juke.ui.components.FlatTrackRow
-import com.example.juke.ui.components.artistReleases
 import com.example.juke.ui.components.GlassTopAppBar
 import com.example.juke.ui.components.MediaDetailSkeleton
 import com.example.juke.ui.components.SwipeToAddNextContainer
-import com.example.juke.ui.theme.GlassCard
+import com.example.juke.ui.components.artistReleases
+import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.utils.BlacklistManager
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @Composable
@@ -270,7 +264,7 @@ private fun bestImageUrl(images: List<SpotifyImage>?): String? {
 }
 
 /** An artist's top tracks as a list the player can name and reopen. */
-private fun topContext(artist: com.example.juke.models.SpotifyArtist, tracks: List<com.example.juke.models.SpotifyTrack>) =
+private fun topContext(artist: com.example.juke.models.SpotifyArtist, tracks: List<SpotifyTrack>) =
     com.example.juke.viewmodels.PlayContext(
         com.example.juke.viewmodels.PlayContext.Kind.ARTIST, artist.id.orEmpty(), artist.name,
         keys = tracks.mapNotNullTo(HashSet()) { it.id }

@@ -1,8 +1,5 @@
 package com.example.juke.ui.screens
 
-import com.example.juke.ui.components.onRightClick
-import androidx.compose.runtime.rememberCoroutineScope
-import com.example.juke.utils.playFromLine
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -30,8 +27,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.outlined.SearchOff
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
@@ -71,21 +67,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.juke.models.SpotifyAlbum
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.models.Track
+import com.example.juke.models.findOfflineTrack
 import com.example.juke.network.SpotifyApi
 import com.example.juke.ui.components.GlassButton
 import com.example.juke.ui.components.SearchResultItemM3
 import com.example.juke.ui.components.SwipeToAddNextContainer
 import com.example.juke.ui.components.TrackListSkeleton
+import com.example.juke.ui.components.onRightClick
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.ui.theme.GlassLevel
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.glassPane
+import com.example.juke.utils.playFromLine
 import com.example.juke.viewmodels.MusicViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import kotlinx.coroutines.launch
@@ -206,6 +206,7 @@ internal fun SearchResultsList(
     bottomPadding: Dp,
     keyboardController: androidx.compose.ui.platform.SoftwareKeyboardController? = null
 ) {
+    val owned by musicViewModel.offlineTracks.collectAsStateWithLifecycle()
     val hideKeyboardOnScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -291,7 +292,7 @@ SwipeToAddNextContainer(
                     SearchResultItemM3(
                         track = track,
                         isDownloading = uiState.downloadingId == track.id,
-                        onDownload = { com.example.juke.ui.components.downloadSpotifyTrack(musicViewModel, track) },
+                        onDownload = if (track.findOfflineTrack(owned) == null) { { com.example.juke.ui.components.downloadSpotifyTrack(musicViewModel, track) } } else null,
                         onPlayNext = {
                             scope.launch {
                                 searchViewModel.setDownloading(track.id)

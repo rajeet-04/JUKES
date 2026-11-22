@@ -36,6 +36,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
+import androidx.core.content.edit
 
 /**
  * Spotify Connect between the devices of one account (spotdown-kv-worker/src/connect.ts). Every logged-in device
@@ -143,7 +144,12 @@ object Connect {
         val c = vm.getApplication<Application>()
         Account.load(c)
         me = c.getSharedPreferences("account", android.content.Context.MODE_PRIVATE).getString("device_id", null)
-            ?: UUID.randomUUID().toString().replace("-", "").also { c.getSharedPreferences("account", android.content.Context.MODE_PRIVATE).edit().putString("device_id", it).apply() }
+            ?: UUID.randomUUID().toString().replace("-", "").also { c.getSharedPreferences("account", android.content.Context.MODE_PRIVATE).edit {
+                putString(
+                    "device_id",
+                    it
+                )
+            } }
         Account.email.collectLatest { email ->
             _devices.value = emptyList()
             _states.value = emptyMap()
@@ -242,7 +248,7 @@ object Connect {
             "welcome" -> _states.value = m.states.orEmpty().associateBy { it.activeId }
             "devices" -> _devices.value = m.devices.orEmpty()
             "state" -> m.state?.let { s ->
-                _states.value = _states.value + (s.activeId to s)
+                _states.value += (s.activeId to s)
                 // "Play there" took (that device now plays our song, not what it had before): stop here
                 if (s.activeId == handingTo && s.playing && s.track != null && vm.uiState.value.currentTrack?.let { same(it.toSong(), s.track) } == true) {
                     handingTo = null
@@ -281,7 +287,7 @@ object Connect {
         val startIndex = resolved.take(cur).count { it != null }
         _message.value = "Playing here from ${from.ifBlank { s.activeName }}…"
         vm.setQueue(tracks, startIndex, startPositionMs = livePos(s).coerceAtLeast(0))
-        val started = kotlinx.coroutines.withTimeoutOrNull(HANDOFF_WAIT_MS) {
+        val started = kotlinx.coroutines.withTimeoutOrNull(HANDOFF_WAIT_MS.milliseconds) {
             kotlinx.coroutines.flow.combine(vm.playbackManager.currentTrackIdFlow, vm.playbackManager.isPlayingFlow) { id, playing ->
                 playing && id == first.uuid
             }.first { it }

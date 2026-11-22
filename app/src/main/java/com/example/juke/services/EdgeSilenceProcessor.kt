@@ -42,14 +42,14 @@ class EdgeSilenceProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun onFlush() {
+    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         leading = true
         held.reset()
         heldFrames = 0
         skippedFrames = 0
     }
 
-    override fun onReset() = onFlush()
+    override fun onReset() = onFlush(AudioProcessor.StreamMetadata.DEFAULT)
 
     override fun onQueueEndOfStream() {
         // Whatever silence is still held is the track's tail: drop it, and re-arm for the next track.

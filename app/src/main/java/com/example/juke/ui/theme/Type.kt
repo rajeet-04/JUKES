@@ -1,7 +1,6 @@
 package com.example.juke.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -15,7 +14,6 @@ import com.example.juke.R
  * backgrounds. Weight steps are wide on purpose: glass hierarchy comes from weight and size,
  * not from extra containers.
  */
-@OptIn(ExperimentalTextApi::class)
 val Figtree = FontFamily(
     listOf(
         FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold

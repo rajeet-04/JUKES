@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
 /** Flat, dense track row shared by the album / artist / playlist detail screens (matches Library). */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FlatTrackRow(
     imageUrl: String?,

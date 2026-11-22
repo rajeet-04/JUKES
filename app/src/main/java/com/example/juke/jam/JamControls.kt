@@ -1,5 +1,7 @@
 package com.example.juke.jam
 
+import kotlin.time.Duration.Companion.milliseconds
+
 /**
  * In a Jam the normal player controls (player screen, mini player, notification, headset) drive the room
  * instead of this phone's player: each call returns true when the Jam took the command, false when the
@@ -21,8 +23,7 @@ object JamControls {
     }
 
     fun seekTo(positionMs: Long): Boolean {
-        if (live()?.playback == null) return false
-        return JamSession.seek(positionMs.coerceAtLeast(0))
+        return live()?.playback != null && JamSession.seek(positionMs.coerceAtLeast(0))
     }
 
     fun next(): Boolean {
@@ -84,7 +85,7 @@ object JamControls {
     private fun ensurePlaying(itemId: String, regenerate: Boolean) {
         JamSession.launch {
             repeat(2) {
-                kotlinx.coroutines.delay(3000)
+                kotlinx.coroutines.delay(3000.milliseconds)
                 val st = JamSession.state.value
                 if (!st.active || st.playback?.itemId == itemId || st.queue.none { it.id == itemId }) return@launch
                 android.util.Log.w("JamControls", "play for $itemId did not land; sending it again")

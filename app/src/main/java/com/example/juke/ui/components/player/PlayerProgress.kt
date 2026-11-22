@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.shadow
@@ -32,7 +33,8 @@ import com.example.juke.viewmodels.MusicViewModel
 
 @Composable
 fun PlayerProgress(
-    currentPosition: Long,
+    /** Read here, so a position tick recomposes only the progress bar. */
+    position: () -> Long,
     uiState: MusicUiState,
     musicViewModel: MusicViewModel,
     modifier: Modifier = Modifier,
@@ -40,9 +42,10 @@ fun PlayerProgress(
     showRemaining: Boolean = false,
     thumbSize: androidx.compose.ui.unit.Dp = 22.dp
 ) {
+    val currentPosition = position()
     val duration = if (uiState.duration > 0) uiState.duration else musicViewModel.playbackManager.getDuration()
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().graphicsLayer()) {
         PlaybackSeekSlider(
             positionMs = currentPosition,
             durationMs = duration,

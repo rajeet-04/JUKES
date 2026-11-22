@@ -7,7 +7,7 @@ benchmark = "1.5.0"
 posthogAndroid = "3.71.4"
 profileinstaller = "1.4.1"
 uiautomator = "2.3.0"
-agp = "9.4.1"
+agp = "9.5.2"
 kotlin = "2.4.21"
 coreKtx = "1.15.0"
 junit = "4.13.2"
@@ -116,5 +116,5 @@ baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineprof
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-ksp = { id = "com.google.devtools.ksp", version = "2.3.6" }
+ksp = { id = "com.google.devtools.ksp", version = "2.3.14" }
 

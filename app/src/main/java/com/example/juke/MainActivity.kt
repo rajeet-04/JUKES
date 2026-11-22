@@ -6,7 +6,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,8 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -44,10 +41,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -59,7 +56,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.juke.analytics.AnalyticsManager
-import com.example.juke.repositories.toSpotifyTrack
 import com.example.juke.models.GithubRelease
 import com.example.juke.network.SpotifyApi
 import com.example.juke.services.UpdateDownloadState
@@ -78,10 +74,9 @@ import com.example.juke.ui.screens.LibraryScreen
 import com.example.juke.ui.screens.PlayerScreen
 import com.example.juke.ui.screens.PlaylistDetailScreen
 import com.example.juke.ui.screens.SearchScreen
-import com.example.juke.ui.theme.GlassBackdrop
+import com.example.juke.ui.components.hiddenUnderPlayer
 import com.example.juke.ui.theme.JUKETheme
 import com.example.juke.ui.theme.LocalHazeState
-import com.example.juke.ui.theme.isGlassDark
 import com.example.juke.utils.rememberJukeHaptics
 import com.example.juke.viewmodels.AlbumDetailViewModel
 import com.example.juke.viewmodels.MusicViewModel
@@ -89,6 +84,8 @@ import com.example.juke.viewmodels.PlaylistDetailViewModel
 import com.example.juke.viewmodels.SearchViewModel
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -228,7 +225,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(resumeOnLaunch.value) {
                     if (!resumeOnLaunch.value) return@LaunchedEffect
                     resumeOnLaunch.value = false
-                    kotlinx.coroutines.delay(800) // the saved queue loads first
+                    delay(800.milliseconds) // the saved queue loads first
                     val s = musicViewModel.uiState.value
                     if (!s.isPlaying && s.currentTrack != null) musicViewModel.togglePlayPause()
                 }
@@ -274,7 +271,7 @@ class MainActivity : ComponentActivity() {
                 }
                 androidx.compose.runtime.LaunchedEffect(Unit) { com.example.juke.jam.Handoff.run(musicViewModel) }
                 androidx.compose.runtime.LaunchedEffect(Unit) { com.example.juke.jam.Connect.run(musicViewModel) }
-                com.example.juke.ui.components.PlaylistAdder.PlaylistAdderHost(androidx.lifecycle.viewmodel.compose.viewModel())
+                com.example.juke.ui.components.PlaylistAdder.PlaylistAdderHost(viewModel())
                 val jamSheetOpen by com.example.juke.jam.JamSession.sheetOpen.collectAsStateWithLifecycle()
                 if (jamSheetOpen) {
                     com.example.juke.ui.components.JamSheet(
@@ -295,7 +292,7 @@ class MainActivity : ComponentActivity() {
                 var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
 
                 LaunchedEffect(currentRoute) { // which screens people actually use
-                    currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); com.example.juke.analytics.AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
+                    currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
                 }
                 LaunchedEffect(currentRoute) {
                     if (
@@ -388,11 +385,12 @@ class MainActivity : ComponentActivity() {
                 }
                 CompositionLocalProvider(
                     LocalHazeState provides hazeState,
+                    dev.chrisbanes.haze.LocalHazePerformanceMode provides com.example.juke.ui.theme.glassPerformanceMode(),
                     com.example.juke.ui.components.LocalOpenMedia provides openMedia,
                     com.example.juke.ui.components.LocalShare provides share
                 ) {
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().hiddenUnderPlayer(),
                     containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     bottomBar = {
@@ -460,6 +458,7 @@ class MainActivity : ComponentActivity() {
                                     MiniPlayer(
                                         musicViewModel = musicViewModel,
                                         onExpand = { showPlayerModal = true },
+                                        covered = showPlayerModal,
                                         modifier = Modifier.weight(1f),
                                         compact = merged
                                     )
@@ -503,17 +502,22 @@ class MainActivity : ComponentActivity() {
                     // Backdrop source: the ambient light field and every screen scroll inside it,
                     // so the floating glass (tab bar, mini player) blurs what is really behind it.
                     // Ambient layer below the page source: cards inside the page refract it.
+                    val art = uiState.extractedColors
+                    val ambientPlaying = uiState.isPlaying && !showPlayerModal
+                    val ambientColors = art?.let { listOf(it.primary, it.secondary, it.tertiary) }.orEmpty()
+                    val ambientDark = com.example.juke.ui.theme.isGlassDark()
                     com.example.juke.ui.theme.GlassAmbient(Modifier.hazeSource(hazeState, zIndex = -1f)) {
-                        // Waves that move with the music, in the artwork's colours. The player has its
-                        // own backdrop, so they settle while it's open.
-                        val art = uiState.extractedColors
-                        com.example.juke.ambient.AmbientWaves(
-                            playing = uiState.isPlaying && !showPlayerModal,
-                            colors = art?.let { listOf(it.primary, it.secondary, it.tertiary) }.orEmpty(),
-                            dark = com.example.juke.ui.theme.isGlassDark()
-                        )
+                        // Still glow in the same colours: the glass tints with the song but only
+                        // re-renders when the song or play state changes.
+                        com.example.juke.ambient.AmbientGlow(ambientPlaying, ambientColors, ambientDark)
                     }
-                    Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
+                    // Waves that move with the music, in the artwork's colours. The player has its
+                    // own backdrop, so they settle while it's open. Kept out of the haze source: as a
+                    // source, every wave frame re-blurred every glass surface (GPU pinned, issue #41).
+                    com.example.juke.ambient.AmbientWaves(ambientPlaying, ambientColors, ambientDark)
+                    @OptIn(dev.chrisbanes.haze.ExperimentalHazeApi::class)
+                    val pageSource = Modifier.hazeSource(hazeState, inputSharing = dev.chrisbanes.haze.HazeInputSharing.Auto)
+                    Box(modifier = Modifier.fillMaxSize().then(pageSource)) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (isExpanded && currentRoute != "settings") {
                             GlassNavRail(items = navItems, modifier = Modifier.statusBarsPadding())

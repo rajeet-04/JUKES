@@ -30,7 +30,6 @@ import coil.compose.AsyncImage
 class SheetAction(val label: String, val icon: ImageVector, val destructive: Boolean = false, val run: () -> Unit)
 
 /** Song options as a bottom sheet: cover, title, artist, then one icon row per action. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun TrackActionSheet(
     title: String,

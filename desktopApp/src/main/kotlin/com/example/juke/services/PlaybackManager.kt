@@ -11,6 +11,8 @@ import com.example.juke.models.Track
 import com.example.juke.network.SpotifyApi
 import javafx.application.Platform
 import javafx.scene.media.Media
+import com.example.juke.ambient.AudioLevels
+import com.example.juke.ambient.levelsFromSpectrum
 import javafx.scene.media.MediaPlayer
 import javafx.util.Duration
 import javax.swing.SwingUtilities
@@ -122,6 +124,14 @@ class PlaybackManager private constructor(private val context: Context) {
             val mp = MediaPlayer(Media(uri))
             player = mp
             audioEffectController.attach(mp)
+            // Feeds the background waves; only while they are drawing (AudioLevels.listening).
+            mp.audioSpectrumInterval = 0.05
+            mp.audioSpectrumThreshold = -60
+            mp.setAudioSpectrumListener { _, _, magnitudes, _ ->
+                if (player === mp && AudioLevels.listening) {
+                    AudioLevels.timeline.push(System.currentTimeMillis(), levelsFromSpectrum(magnitudes))
+                }
+            }
             mp.volume = _volume.value.toDouble()
             var prefetched = false
             fun prepareUpcoming() {

@@ -3,6 +3,7 @@ package com.example.juke.network
 import com.example.juke.models.withWordSync
 import com.example.juke.models.trusted
 import android.content.Context
+import androidx.core.content.edit
 import android.content.SharedPreferences
 import android.util.Log
 import com.example.juke.BuildConfig
@@ -133,18 +134,18 @@ object JukesApi {
 
     fun setPersonalisedRadio(on: Boolean) {
         personalisedRadio = on
-        prefs?.edit()?.putBoolean("personalised", on)?.apply()
+        prefs?.edit { putBoolean("personalised", on) }
     }
 
     private fun setSession(s: Session) {
         _session.value = s
-        prefs?.edit()?.putString("session", s.name)?.apply()
+        prefs?.edit { putString("session", s.name) }
     }
 
     /** Sends the Cookie header captured from music.youtube.com to the backend. Throws [JukesException]. */
     suspend fun connectYoutube(cookie: String) {
         val t = token ?: call<Issued>(ApiClient.httpClient, HttpMethod.Post, "/v1/installations").token
-            .also { prefs?.edit()?.putString("token", it)?.apply() }
+            .also { prefs?.edit { putString("token", it) } }
         check(t.isNotBlank())
         call<Unit>(
             ApiClient.httpClient, HttpMethod.Put, "/v1/me/youtube",
@@ -160,7 +161,7 @@ object JukesApi {
     }
 
     private fun forgetInstallation() {
-        prefs?.edit()?.remove("token")?.apply()
+        prefs?.edit { remove("token") }
         setSession(Session.OFF)
     }
 
@@ -190,7 +191,7 @@ object JukesApi {
 
     /** Returns once no listener-chosen song is loading, or after [maxMs] so fills never starve. */
     suspend fun awaitForegroundIdle(maxMs: Long = 20_000) {
-        kotlinx.coroutines.withTimeoutOrNull(maxMs) { foreground.first { it == 0 } }
+        kotlinx.coroutines.withTimeoutOrNull(maxMs.milliseconds) { foreground.first { it == 0 } }
     }
 
     /** Opens the TLS connection to the backend (a new one costs ~1.2 s) so the first real call reuses it. */

@@ -657,7 +657,7 @@ class QueueManager private constructor(private val context: Context) {
         val favourites = try { favouriteKeys() } catch (e: Exception) { emptySet() }
         while (seed != null && songs.size < MIX_MIN && radios++ < 3) {
             skip += seed
-            val radio = com.example.juke.network.JukesApi.fullRadio(seed)
+            val radio = JukesApi.fullRadio(seed)
             val exposure = try {
                 exposureFor(radio.mapTo(HashSet()) { RecommenderApi.songKey(it.title, it.artist) })
             } catch (e: Exception) { emptyMap() }
@@ -929,7 +929,7 @@ class QueueManager private constructor(private val context: Context) {
             sessionScope.async {
                 if (priority) resolveRecommendation(rec, current)
                 else {
-                    com.example.juke.network.JukesApi.awaitForegroundIdle()
+                    JukesApi.awaitForegroundIdle()
                     resolveSlots.withPermit { resolveRecommendation(rec, current) }
                 }
             }
@@ -1054,7 +1054,7 @@ class QueueManager private constructor(private val context: Context) {
         seen.add("yt:$seedId")
         // Direct YouTube Music and the user's signed-in backend radio (order: personalised setting).
         // If neither source supplies usable tracks, fillWindow falls back to the local library.
-        val radio = com.example.juke.network.JukesApi.fullRadio(seedId)
+        val radio = JukesApi.fullRadio(seedId)
         val blocked = queuedKeys(current)
         val s = session()
         val cooldown = favouriteCooldown()
@@ -1349,8 +1349,7 @@ class QueueManager private constructor(private val context: Context) {
      * Returns whether a local URI is immediately playable (exists, readable, and non-empty).
      */
     private fun isLocalFilePlayable(uri: String?): Boolean {
-        if (uri == null) return false
-        return try {
+        return uri != null && try {
             val file = File(uri)
             file.exists() && file.canRead() && file.length() > 0
         } catch (e: Exception) {

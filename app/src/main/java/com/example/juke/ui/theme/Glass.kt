@@ -230,6 +230,7 @@ private fun liquidStyle(
     clear: Boolean = false,
     boost: Boolean = false,
     rainbow: () -> Float = { 0.85f },
+    detail: Float = 0.45f,
 ): GlassStyle = (if (clear) GlassStyle.clear else GlassStyle.regular).shaped(shape).then {
     val displacement = if (boost) displacement * 1.3f else displacement
     val edge = if (boost) edge + 8.dp else edge
@@ -246,7 +247,7 @@ private fun liquidStyle(
             refractionDisplacement = displacement,
             refractionProfile = RefractionProfile.Edge(edge),
             refractionFoldStrength = fold,
-            refractionDetailIntensity = 0.45f,
+            refractionDetailIntensity = detail,
         )
     }
     chromaticAberrationMode(ChromaticAberrationMode.Full)
@@ -269,7 +270,38 @@ private fun liquidStyle(
  * the content is clipped to [shape] after it so the refraction can sample beyond the edge.
  */
 private fun Modifier.hazeLiquid(source: HazeState, shape: Shape, style: GlassStyle): Modifier =
-    hazeGlass(HazeInput.Sources(source), style).clip(shape)
+    hazeGlass(HazeInput.Sources(source), style).clip(shape) // fidelity: LocalHazePerformanceMode, see glassPerformanceMode()
+
+/**
+ * Glass fidelity that backs off with heat (issue #41): Haze's default (Balanced) while the phone is
+ * cool, Performance (lower-resolution input, ~25% less GPU a frame) once Android reports it warming
+ * (thermal status LIGHT or above) or battery saver is on. Provide as LocalHazePerformanceMode at the root.
+ */
+@Composable
+fun glassPerformanceMode(): dev.chrisbanes.haze.HazePerformanceMode {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val power = remember(context) { context.getSystemService(android.os.PowerManager::class.java) }
+    var warm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var saver by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(power?.isPowerSaveMode == true) }
+    DisposableEffect(power) {
+        if (power == null) return@DisposableEffect onDispose {}
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context, i: android.content.Intent) { saver = power.isPowerSaveMode }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            context, receiver, android.content.IntentFilter(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        val stopThermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            warm = power.currentThermalStatus >= android.os.PowerManager.THERMAL_STATUS_LIGHT
+            val listener = android.os.PowerManager.OnThermalStatusChangedListener { warm = it >= android.os.PowerManager.THERMAL_STATUS_LIGHT }
+            power.addThermalStatusListener(androidx.core.content.ContextCompat.getMainExecutor(context), listener)
+            ({ power.removeThermalStatusListener(listener) })
+        } else ({})
+        onDispose { stopThermal(); context.unregisterReceiver(receiver) }
+    }
+    return if (warm || saver) dev.chrisbanes.haze.HazePerformanceMode.Performance else dev.chrisbanes.haze.HazePerformanceMode.Default
+}
 
 /** Applies [shape] to a glass style when it is a rounded rectangle (the only shape Haze glass takes). */
 private fun GlassStyle.shaped(shape: Shape): GlassStyle =
@@ -295,6 +327,8 @@ fun Modifier.liquidGlass(
     fold: Float = 0.4f,
     /** False: a fully frosted body (sheets, where text sits over the page); the rim still bends. */
     clear: Boolean = true,
+    /** The surface's fine ripple; 0 over artwork, where it reads as streaks. */
+    detail: Float = 0.45f,
 ): Modifier {
     val dark = isGlassDark()
     val lifted = if (shadow > 0.dp) glassShadow(shape, shadow, 0.34f) else this
@@ -303,7 +337,7 @@ fun Modifier.liquidGlass(
         return lifted.clip(shape).background(solid).glassRim(shape, rimAlpha, dark)
     }
     val boost = LocalGlassBoost.current
-    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold, clear) {
+    val style = remember(fill, shape, blur, dark, boost, displacement, edge, fold, clear, detail) {
         liquidStyle(
             boost = boost,
             shape = shape,
@@ -317,6 +351,7 @@ fun Modifier.liquidGlass(
             clear = clear,
             // The rainbow swells while the pane moves.
             rainbow = { 0.45f + 0.5f * strength() },
+            detail = detail,
         )
     }
     return lifted.hazeLiquid(source, shape, style)
@@ -411,7 +446,7 @@ fun GlassTiltLight() {
         val listening = sensor != null && !reducedMotion && !GlassPrefs.solid &&
             sensors?.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME) == true
         if (!listening) GlassLight.reset()
-        onPauseOrDispose { if (listening) sensors?.unregisterListener(listener) }
+        onPauseOrDispose { if (listening) sensors.unregisterListener(listener) }
     }
 }
 

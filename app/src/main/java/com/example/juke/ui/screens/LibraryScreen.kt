@@ -51,6 +51,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -123,7 +124,7 @@ fun LibraryScreen(
     )
     val haptic = rememberJukeHaptics()
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    var librarySection by rememberSaveable { mutableStateOf(0) }
+    var librarySection by rememberSaveable { mutableIntStateOf(0) }
     // opened from outside (the desktop sidebar): show it the way the Playlists tab does
     LaunchedEffect(uiState.selectedPlaylist?.id) { if (uiState.selectedPlaylist != null) librarySection = 1 }
     LaunchedEffect(uiState.showFavoritesOnly) { if (uiState.showFavoritesOnly) librarySection = 0 }

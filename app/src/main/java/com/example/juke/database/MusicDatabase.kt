@@ -515,6 +515,10 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE LOWER(TRIM(title)) = LOWER(TRIM(:title)) AND ABS(duration_sec - :durationSec) <= 2")
     suspend fun findTracksByTitleAndDuration(title: String, durationSec: Int): List<TrackEntity>
 
+    /** The row for a Spotify track, a downloaded copy ahead of a stream entry. */
+    @Query("SELECT * FROM tracks WHERE spotify_id = :spotifyId ORDER BY is_stream ASC LIMIT 1")
+    suspend fun findBySpotifyId(spotifyId: String): TrackEntity?
+
     @Query("SELECT * FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY last_played_at DESC")
     suspend fun searchTracks(query: String): List<TrackEntity>
 
