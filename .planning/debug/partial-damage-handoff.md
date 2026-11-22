@@ -1,6 +1,6 @@
 # Handoff: partial screen redraws on the player
 
-Status: experiment done 2026-11-23. Damage can be confined to the seek strip, but frame cost didn't drop. Not shipped; see "Experiment result".
+Status: experiment done 2026-11-23. Damage can be confined to the seek strip, but frame cost didn't drop. Not shipped; see "Experiment result" and "What others report".
 
 ## Goal
 
@@ -89,6 +89,36 @@ So GPU time per update stays around 13–14 ms even when only 6% of the window i
 Recommendation: don't ship the experiment as is. It replaces the Material slider with ~320 lines of custom input, semantics and drawing for no measured gain. Keep it as a reference if the glass/offscreen question is answered and the gain appears.
 
 Scripts and traces from these runs are in `/private/tmp/jukes-seek-ab/` (temporary): `ab.sh` (alternating runs), `summarize.py`, `frames.sql` (trace processor query), and the `probe/` accessibility/input checker.
+
+## What others report (web search, 2026-11-23)
+
+Searched Stack Overflow, Reddit, Kotlin Slack, the Google issue tracker and the Haze docs. Reddit had nothing relevant. The Kotlin Slack archive blocks automated reads (HTTP 403), so the Slack points below come from search excerpts, not full threads.
+
+- **Same symptom elsewhere.** Several Kotlin Slack threads report the dirty-region overlay turning the whole screen red on any recomposition, including after switching layouts. One reply says the redraw is full-screen because `AndroidComposeView` is full-screen. This matches our trace.
+- **The usual rebuttal.** A Compose team member replied that "all ancestors will redraw but in a smaller portion of the screen", meaning the overlay overstates the real cost. Our result agrees in effect: confining damage to 6% of the window did not lower GPU time.
+- **No official fix found.** No issue-tracker bug or recommended workaround for full-window damage in Compose turned up. Issues 290658423 and 406795500 mention parent-layer invalidation around Compose 1.8.0-alpha05; unconfirmed whether they are related. Nobody mentioned the `RenderNode` + `clipToBounds` approach used in the experiment.
+- **Haze re-records only on source changes.** Haze's docs say its renderer re-records "only" stages invalidated by changes to source content, parameters, topology or resources, and that glass cost grows with surface area. Player glass reads from `ArtBackdrop` (`hazeSource(playerHaze)`). If anything inside that source changes on each position update, every glass pass reruns regardless of damage size.
+- **GPU wake-up latency.** Mozilla bug 930926 measured ~35 ms for the GPU to wake for the first frame after idle. A Pixel device commit (pantah `fa3f3de`) held GPU power during app launch to avoid "jank from GPU power on latency". At one update per 300 ms the GPU may power down between updates. That would explain one janky frame per update and GPU time that stays flat whatever we draw.
+
+### Suggested next tests
+
+1. **Wake-up test.** Run the player with a constant, tiny always-on animation that keeps the GPU busy (for example a 1 px layer toggling every frame). If janky frames vanish and per-update GPU time drops, wake-up latency is the main cost and confining damage can't fix it.
+2. **Glass re-run test.** In Perfetto, check whether Haze slices run on each position update. If they do, find what changes inside the `playerHaze` source per update and move it out. This is a smaller change than replacing the slider.
+
+Sources:
+
+- [Kotlin Slack: exploring the Compose drawing mechanism](https://slack-chats.kotlinlang.org/t/27120951/hi-team-i-am-exploring-the-drawing-rendering-mechanism-of-co)
+- [Kotlin Slack: "found from the source code of Compose that…"](https://slack-chats.kotlinlang.org/t/27155429/hi-compose-team-i-found-from-the-source-code-of-compose-that)
+- [Kotlin Slack: demo app with only two Texts](https://slack-chats.kotlinlang.org/t/27140661/hi-compose-team-i-wrote-a-demoapp-with-only-two-text-in-the-)
+- [Kotlin Slack: research on Compose rendering](https://slack-chats.kotlinlang.org/t/27120384/hi-compose-team-i-m-doing-some-research-on-compose-rendering?t=v2)
+- [Kotlin Slack: forcing Compose to repaint a region](https://slack-chats.kotlinlang.org/t/32707222/is-there-any-elegant-way-to-force-compose-to-repaint-a-regio)
+- [Kotlin Slack: adding graphicsLayer](https://slack-chats.kotlinlang.org/t/519132/i-have-just-disovered-that-adding-modifier-graphicslayer-to-?t=v2)
+- [Issue 290658423](https://issuetracker.google.com/issues/290658423), [Issue 406795500](https://issuetracker.google.com/issues/406795500)
+- [Haze: performance](https://chrisbanes.github.io/haze/performance)
+- [Compose phases](https://developer.android.com/develop/ui/compose/performance/phases)
+- [Mozilla bug 930926: GPU wake-up on first frame](https://bugzilla.mozilla.org/show_bug.cgi?id=930926)
+- [AOSP pantah commit fa3f3de: GPU power hold at launch](https://android.googlesource.com/device/google/pantah/+/fa3f3de)
+- [AOSP: identify capacity-related jank](https://source.android.com/docs/core/tests/debug/jank_capacity?hl=en)
 
 ## Ideas not yet tried
 
