@@ -136,6 +136,7 @@ internal fun LyricTicker(
     val next = lines.getOrNull(index + 1)
     Row(
         modifier
+            .graphicsLayer()
             .fillMaxWidth()
             .height(TICKER_HEIGHT)
             .clip(RoundedCornerShape(6.dp))
