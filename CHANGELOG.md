@@ -4,6 +4,33 @@
 
 ## [Unreleased]
 
+## [3.2.1-stable] - 2026-11-23
+
+Android and desktop. Fixes and optimisations since 3.2.0-stable, from 2026-11-21.
+
+### Added
+
+- **Frosted glass lyrics.** Lyrics are white frosted text. The active line glows white, and word-synced lines fill white as each word plays.
+- **Rolling lyric ticker.** The one- or two-line lyrics under the player artwork roll up to the next line instead of swapping in place. The accent line beside them is gone.
+- **Glass artwork tile.** The player artwork sits under a clear glass lens with a bright rim, and its shadow is no longer cut off at the sides.
+- **Desktop: keep playing from the menu bar.** Closing the window while a song plays hides it and shows a menu bar icon (play/pause, next, previous, open, quit). Closing in silence quits.
+
+### Changed
+
+- **Background waves no longer pin the GPU** ([#41](https://github.com/rajeet-04/JUKES/issues/41)). The waves are drawn outside the glass and at a quarter size. Janky frames while playing went from 56% to about 3%. Glass still tints with the song through a still artwork glow.
+- **Glass backs off with heat.** The page behind the glass is rendered once per frame and shared by every glass surface. Glass drops to a lighter quality when the phone warms up or battery saver is on.
+- **Lighter player.** Position updates redraw only the seek bar, the time and the lyrics, not the whole player. The screen and waves under the open player stop drawing, and the hidden mini player stops polling.
+- **Plain error messages.** Errors read as plain sentences ("Search failed. Try again.") instead of raw exception text with URLs.
+- **Desktop: Haze 2.1 liquid glass**, right-click menus, a pointer light and Playing from. The desktop version now follows the Android version.
+- **Build.** AGP 9.5.2, Gradle 9.9.1, KSP 2.3.14, Media3 1.11 API updates, and a Kotlin cleanup pass.
+
+### Fixed
+
+- **Download on songs you already have.** Search, artist, playlist and Home menus no longer offer Download for a saved song. Owned songs with slightly different Spotify credits play the saved copy instead of streaming.
+- **Full lyrics view position.** The active line rests a third of the way down again instead of two-thirds.
+- **Safer upgrades.** Library sync refuses to merge or upload when most of the device's library has vanished since the last sync, so a reset database can't wipe the account. Desktop backs up its database before any version change.
+- **Desktop builds again** (database v13 migration, ambient waves, glass API parity).
+
 ## [3.2.0-stable] - 2026-11-21
 
 Android and desktop. Changes since 3.1.1-stable, from 2026-11-20.
