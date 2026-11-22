@@ -1,5 +1,7 @@
 package com.example.juke.viewmodels
 
+import com.example.juke.network.userMessage
+
 import android.util.Log
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -74,7 +76,7 @@ class AlbumDetailViewModel(application: Application) : AndroidViewModel(applicat
             } catch (e: Exception) {
                 Log.e("AlbumDetailViewModel", "Error loading album details: ${e.message}", e)
                 _uiState.update {
-                    it.copy(isLoading = false, error = e.message)
+                    it.copy(isLoading = false, error = e.userMessage("Couldn't load this album. Try again."))
                 }
             }
         }
@@ -94,7 +96,7 @@ class AlbumDetailViewModel(application: Application) : AndroidViewModel(applicat
                 throw e
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(isLoading = false, error = e.message)
+                    it.copy(isLoading = false, error = e.userMessage("Couldn't load this album. Try again."))
                 }
             }
         }

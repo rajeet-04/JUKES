@@ -1,5 +1,7 @@
 package com.example.juke.viewmodels
 
+import com.example.juke.network.userMessage
+
 import android.app.Application
 import android.util.Log
 import androidx.core.content.edit
@@ -487,7 +489,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isSearching = false,
-                    error = e.message ?: "Search failed"
+                    error = e.userMessage("Search failed. Try again.")
                 )
             }
         }
@@ -604,7 +606,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 _artistDetailState.value = _artistDetailState.value.copy(
                     isLoading = false,
-                    error = e.message ?: "Failed to load artist details"
+                    error = e.userMessage("Couldn't load this artist. Try again.")
                 )
             }
         }
@@ -621,7 +623,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 loadArtistDetails(artist)
             } catch (e: Exception) {
                 _artistDetailState.update {
-                    it.copy(isLoading = false, error = e.message)
+                    it.copy(isLoading = false, error = e.userMessage("Couldn't load this artist. Try again."))
                 }
             }
         }
@@ -657,7 +659,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     tracks
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = "Failed to import playlist: ${e.message}")
+                _uiState.value = _uiState.value.copy(error = e.userMessage("Couldn't import the playlist. Try again."))
             }
         }
     }

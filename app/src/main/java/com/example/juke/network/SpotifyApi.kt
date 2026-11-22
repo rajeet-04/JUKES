@@ -210,7 +210,7 @@ object SpotifyApi {
                     throw OfflineException()
                 }
                 Log.e(TAG, "Error obtaining OAuth token: ${e.message}", e)
-                throw Exception("Failed to authenticate with Spotify: ${e.message}")
+                throw Exception("Failed to authenticate with Spotify", e)
             }
         }
     }
@@ -473,7 +473,7 @@ object SpotifyApi {
             if (statusCode != 200) {
                 val raw = response.bodyAsText()
                 Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
-                throw Exception("The playlist is either private or does not exist.")
+                throw ShownException("The playlist is either private or does not exist.")
             }
 
             return response.body()
@@ -548,7 +548,7 @@ object SpotifyApi {
                 if (statusCode != 200) {
                     val raw = response.bodyAsText()
                     Log.e(TAG, "Spotify API failed with status $statusCode: ${raw.take(200)}")
-                    throw Exception("The playlist is either private or does not exist.")
+                    throw ShownException("The playlist is either private or does not exist.")
                 }
 
                 val pageResponse: SpotifyPlaylistTracksResponse = response.body()

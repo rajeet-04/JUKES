@@ -1,5 +1,7 @@
 ﻿package com.example.juke.viewmodels
 
+import com.example.juke.network.userMessage
+
 import android.app.Application
 import android.util.Log
 import android.widget.Toast
@@ -1112,7 +1114,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Toast.makeText(getApplication(), "Couldn’t load the album: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(getApplication(), e.userMessage("Couldn’t load the album."), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1314,7 +1316,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = "Failed to stream: ${e.message}"
+                            error = e.userMessage("Couldn't play this song. Try again.")
                         )
                     }
 
@@ -1675,7 +1677,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         state.copy(
                             currentDownload = nextItem.copy(
                                 status = DownloadStatus.FAILED,
-                                error = e.message
+                                error = e.userMessage("Download failed. Try again.")
                             )
                         )
                     }
@@ -2410,7 +2412,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 throw e
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Refetch failed for ${track.title}: ${e.message}", e)
-                Toast.makeText(getApplication(), "Couldn't refetch: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), e.userMessage("Couldn't refetch this song. Try again."), Toast.LENGTH_LONG).show()
             } finally {
                 refetchingUuids.remove(track.uuid)
             }
@@ -2453,7 +2455,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = "Download failed: ${e.message}"
+                        error = e.userMessage("Download failed. Try again.")
                     )
                 }
             }

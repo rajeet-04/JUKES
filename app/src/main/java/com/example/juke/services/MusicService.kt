@@ -133,7 +133,7 @@ class MusicService(private val context: Context) {
         forceSpotmateFirst: Boolean = false
     ): String {
         if (!song.url.startsWith("https://open.spotify.com/track/")) {
-            throw Exception("Invalid Spotify URL format")
+            throw com.example.juke.network.ShownException("That isn't a Spotify link this app can open.")
         }
 
         // Keep stream files in app-internal files dir so they survive cache eviction.
@@ -394,7 +394,7 @@ class MusicService(private val context: Context) {
         try {
             Log.d(tag, "Validating Spotify URL: ${song.url}")
             if (!song.url.startsWith("https://open.spotify.com/track/")) {
-                throw Exception("Invalid Spotify URL format")
+                throw com.example.juke.network.ShownException("That isn't a Spotify link this app can open.")
             }
 
             // Backend (when configured), then Spotsaver; preserve the legacy fallback order.
@@ -565,7 +565,7 @@ class MusicService(private val context: Context) {
         onLocalFileReady: suspend (Track) -> Unit
     ): Track {
         if (!song.url.startsWith("https://open.spotify.com/track/")) {
-            throw Exception("Invalid Spotify URL format")
+            throw com.example.juke.network.ShownException("That isn't a Spotify link this app can open.")
         }
 
         val durationSec = SpotifyApi.parseDuration(song.duration)
