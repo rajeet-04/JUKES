@@ -72,7 +72,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juke.models.SpotifyAlbum
+import com.example.juke.models.findOfflineTrack
 import com.example.juke.models.SpotifyArtist
 import com.example.juke.models.SpotifyPlaylist
 import com.example.juke.models.Track
@@ -206,6 +208,7 @@ internal fun SearchResultsList(
     bottomPadding: Dp,
     keyboardController: androidx.compose.ui.platform.SoftwareKeyboardController? = null
 ) {
+    val owned by musicViewModel.offlineTracks.collectAsStateWithLifecycle()
     val hideKeyboardOnScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -291,7 +294,7 @@ SwipeToAddNextContainer(
                     SearchResultItemM3(
                         track = track,
                         isDownloading = uiState.downloadingId == track.id,
-                        onDownload = { com.example.juke.ui.components.downloadSpotifyTrack(musicViewModel, track) },
+                        onDownload = if (track.findOfflineTrack(owned) == null) { { com.example.juke.ui.components.downloadSpotifyTrack(musicViewModel, track) } } else null,
                         onPlayNext = {
                             scope.launch {
                                 searchViewModel.setDownloading(track.id)

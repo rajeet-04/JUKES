@@ -343,16 +343,25 @@ class MusicService(private val context: Context) {
         }
     }
 
+    /**
+     * The library row for [song]: by Spotify id first (a downloaded copy ahead of a stream entry),
+     * then by title, length and artists. Text alone missed owned songs whose Spotify title or
+     * artist credit differed slightly, so they streamed (and offered Download) instead.
+     */
+    private suspend fun findExisting(song: SpotdownSong, durationSec: Int): com.example.juke.database.TrackEntity? {
+        val id = song.spotifyId ?: song.url.substringAfter("/track/", "").substringBefore('?').ifBlank { null }
+        id?.let { trackDao.findBySpotifyId(it) }?.let { return it }
+        return trackDao.findTracksByTitleAndDuration(song.title, durationSec)
+            .find { com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist) }
+    }
+
     suspend fun smartDownloadAndIndex(
         song: SpotdownSong
     ): Track {
         val durationSec = SpotifyApi.parseDuration(song.duration)
 
         // Check if track already exists in database
-        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-        val existingTrack = candidates.find {
-            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
-        }
+        val existingTrack = findExisting(song, durationSec)
 
         // If track exists with a remote/streaming URL, we'll update it with the downloaded file
         // Otherwise, if it has a local file, just return it
@@ -571,10 +580,7 @@ class MusicService(private val context: Context) {
         val durationSec = SpotifyApi.parseDuration(song.duration)
 
         // Check for an existing permanent download first — no streaming needed.
-        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-        val existing = candidates.find {
-            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
-        }
+        val existing = findExisting(song, durationSec)
         if (existing != null && !existing.isStream && existing.localUri != null &&
             !existing.localUri.startsWith("http") && File(existing.localUri).exists()
         ) {
@@ -886,10 +892,7 @@ class MusicService(private val context: Context) {
 
         // Check if track already exists as a PERMANENT download in the database
         val existingByUuid = preferredUuid?.let { trackDao.getTrackByUuid(it) }
-        val candidates = trackDao.findTracksByTitleAndDuration(song.title, durationSec)
-        val existing = existingByUuid ?: candidates.find {
-            com.example.juke.utils.ArtistUtils.areArtistsEqual(it.artist, song.artist)
-        }
+        val existing = existingByUuid ?: findExisting(song, durationSec)
 
         // If it's already a permanent download, return it directly (no streaming needed)
         if (existing != null && !existing.isStream && existing.localUri != null && !existing.localUri.startsWith(
