@@ -182,13 +182,14 @@ fun parseSyncedLyrics(syncedLyrics: String, offsetMs: Long = 0L): List<LyricLine
 private fun CurrentLyricLine(
     syncedLyrics: String,
     offsetMs: Long,
-    position: Long,
+    position: () -> Long,
     playing: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val lines = remember(syncedLyrics, offsetMs) { parseSyncedLyrics(syncedLyrics, offsetMs) }
-    val line = lines.lastOrNull { it.timeMs <= position }
+    val line by remember(lines) { androidx.compose.runtime.derivedStateOf { lines.lastOrNull { it.timeMs <= position() } } }
+    val clock = if (lines.any { it.words.isNotEmpty() }) com.example.juke.ui.components.player.rememberFrameClock(position, playing) else null
     androidx.compose.animation.Crossfade(
         targetState = line,
         animationSpec = androidx.compose.animation.core.tween(220),
@@ -199,21 +200,11 @@ private fun CurrentLyricLine(
     ) { shown ->
         // Left-aligned on the title's edge, bold and bright, as the line reads in Spotify.
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
-            val ink = MaterialTheme.colorScheme.onSurface
             // With word timings the line is sung word by word, as in the full lyrics.
-            val sung = if (shown == null || shown.words.isEmpty()) null else com.example.juke.ui.components.player.rememberFrameClock(position, playing)
-            Text(
-                text = if (shown == null || sung == null) androidx.compose.ui.text.AnnotatedString(shown?.text.orEmpty())
-                else com.example.juke.ui.components.player.karaokeText(shown, sung(), ink, dimAlpha = 0.42f),
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    lineHeight = 22.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Start,
-                maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            if (shown != null) com.example.juke.ui.components.player.KaraokeLine(
+                shown, clock?.takeIf { shown.words.isNotEmpty() },
+                MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 22.sp),
+                maxLines = 2
             )
         }
     }
@@ -242,6 +233,10 @@ fun PlayerScreen(
 
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
+    // Never read here: only the progress bar and lyrics read it (through positionNow), so a 300 ms
+    // tick recomposes them alone, not this whole screen and the glass on it.
+    val positionState = musicViewModel.position.collectAsStateWithLifecycle()
+    val positionNow: () -> Long = remember(positionState) { { positionState.value } }
     val currentTrack = uiState.currentTrack
     val playingFrom by musicViewModel.playingFrom.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
@@ -477,7 +472,7 @@ fun PlayerScreen(
                                                     queue = if (showRoom) roomQueue else uiState.queue,
                                                     queueIndex = if (showRoom) roomIndex else uiState.queueIndex,
                                                     currentTrack = displayTrack,
-                                                    currentPosition = uiState.position,
+                                                    currentPosition = positionNow,
                                                     showLyrics = false,
                                                     musicViewModel = musicViewModel,
                                                     isTablet = isTablet,
@@ -489,9 +484,8 @@ fun PlayerScreen(
                                             if (synced != null) LyricTicker(
                                                 syncedLyrics = synced,
                                                 offsetMs = displayTrack.lyricsOffsetMs,
-                                                position = uiState.position,
+                                                position = positionNow,
                                                 playing = uiState.isPlaying,
-                                                accent = MaterialTheme.colorScheme.primary,
                                                 onOpen = { haptic.click(); stage = PlayerStage.Lyrics },
                                                 modifier = m
                                             )
@@ -554,7 +548,7 @@ fun PlayerScreen(
                                         when (shown) {
                                             PlayerStage.Lyrics -> com.example.juke.ui.components.player.LyricsOverlay(
                                                 currentTrack = displayTrack,
-                                                currentPosition = uiState.position,
+                                                currentPosition = positionNow,
                                                 musicViewModel = musicViewModel,
                                                 isTablet = isTablet,
                                                 onDismiss = { stage = PlayerStage.Art },
@@ -594,7 +588,7 @@ fun PlayerScreen(
                         Spacer(Modifier.height(spacerSm))
                         Box(Modifier.playerStage(0.58f, 0.86f)) {
                             PlayerProgress(
-                                currentPosition = uiState.position,
+                                position = positionNow,
                                 uiState = uiState,
                                 musicViewModel = musicViewModel,
                                 showRemaining = true,
@@ -699,7 +693,7 @@ fun PlayerScreen(
                                         queue = if (showRoom) roomQueue else uiState.queue,
                                         queueIndex = if (showRoom) roomIndex else uiState.queueIndex,
                                         currentTrack = displayTrack,
-                                        currentPosition = uiState.position,
+                                        currentPosition = positionNow,
                                         showLyrics = showLyrics,
                                         musicViewModel = musicViewModel,
                                         isTablet = isTablet,
@@ -710,7 +704,7 @@ fun PlayerScreen(
                                     CurrentLyricLine(
                                         syncedLyrics = syncedLyrics,
                                         offsetMs = displayTrack.lyricsOffsetMs,
-                                        position = uiState.position,
+                                        position = positionNow,
                                         playing = uiState.isPlaying,
                                         onOpen = { showLyrics = true },
                                         // comes in as the card shrinks back to the artwork
@@ -801,7 +795,7 @@ fun PlayerScreen(
                         // Progress
                         Box(Modifier.playerStage(0.58f, 0.86f)) {
                             PlayerProgress(
-                                currentPosition = uiState.position,
+                                position = positionNow,
                                 uiState = uiState,
                                 musicViewModel = musicViewModel
                             )

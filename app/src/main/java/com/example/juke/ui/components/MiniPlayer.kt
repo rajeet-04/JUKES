@@ -119,12 +119,16 @@ fun MiniPlayer(
     onExpand: () -> Unit,
     modifier: Modifier = Modifier,
     /** Sharing a row with the folded tab bar: one lyric line, play/pause as the only button. */
-    compact: Boolean = false
+    compact: Boolean = false,
+    /** Under the open full player: hidden, so it stops polling and following the time. */
+    covered: Boolean = false
 ) {
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     val currentTrack = uiState.currentTrack
-    val currentPosition = uiState.position
-    val isPlaying = uiState.isPlaying
+    val positionState = musicViewModel.position.collectAsStateWithLifecycle()
+    // Not read while covered, so the full player's ticks don't recompose this hidden bar.
+    val currentPosition = if (covered) 0L else positionState.value
+    val isPlaying = uiState.isPlaying && !covered
     val isRomanizedLyricsEnabled by musicViewModel.isRomanizedLyricsEnabled.collectAsStateWithLifecycle()
     val isMiniPlayerLyricsEnabled by musicViewModel.isMiniPlayerLyricsEnabled.collectAsStateWithLifecycle()
     val haptic = rememberJukeHaptics()
@@ -134,9 +138,9 @@ fun MiniPlayer(
 
     // Poll for progress updates when playing
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner, uiState.isPlaying) {
+    LaunchedEffect(lifecycleOwner, uiState.isPlaying, covered) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (uiState.isPlaying) {
+            while (uiState.isPlaying && !covered) {
                 musicViewModel.updateProgress()
                 delay(300.milliseconds)
             }
@@ -505,7 +509,7 @@ fun MiniPlayer(
 
                 // Progress line at the bottom
                 val progress = if (uiState.duration > 0) {
-                    (uiState.position.toFloat() / uiState.duration.toFloat()).coerceIn(0f, 1f)
+                    (currentPosition.toFloat() / uiState.duration.toFloat()).coerceIn(0f, 1f)
                 } else {
                     0f
                 }

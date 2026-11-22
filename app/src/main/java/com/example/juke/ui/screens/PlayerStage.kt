@@ -63,14 +63,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.juke.models.Track
-import com.example.juke.ui.components.player.karaokeText
 import com.example.juke.ui.components.player.rememberFrameClock
 import com.example.juke.ui.components.playerArtworkEndpoint
 import com.example.juke.ui.icons.JukeIcons
@@ -118,20 +116,22 @@ internal fun ArtBackdrop(colors: ExtractedColors?, stage: PlayerStage, modifier:
 
 /**
  * The line being sung under the artwork, with the next line dimmed beneath it. The block has a
- * fixed height so the title and controls never shift as lines change. Tap opens the lyrics view.
+ * fixed height so the title and controls never shift as lines change; a new line rolls up into it.
+ * Tap opens the lyrics view. [position] is read only to find the line, so a tick redraws nothing
+ * until the line changes.
  */
 @Composable
 internal fun LyricTicker(
     syncedLyrics: String,
     offsetMs: Long,
-    position: Long,
+    position: () -> Long,
     playing: Boolean,
-    accent: Color,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val lines = remember(syncedLyrics, offsetMs) { parseSyncedLyrics(syncedLyrics, offsetMs) }
-    val index = lines.indexOfLast { it.timeMs <= position }
+    val index by remember(lines) { androidx.compose.runtime.derivedStateOf { lines.indexOfLast { it.timeMs <= position() } } }
+    val clock = if (lines.any { it.words.isNotEmpty() }) rememberFrameClock(position, playing) else null
     val current = lines.getOrNull(index)
     val next = lines.getOrNull(index + 1)
     Row(
@@ -140,38 +140,38 @@ internal fun LyricTicker(
             .height(TICKER_HEIGHT)
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClickLabel = "Open lyrics", onClick = onOpen)
+            // The text lines up with the artwork; the clip (which makes the roll) stays wider so
+            // the glow fades out inside it instead of being cut at the text's edge.
+            .padding(horizontal = com.example.juke.ui.components.player.ART_INSET)
     ) {
-        Box(Modifier.width(2.dp).fillMaxHeight().background(accent))
-        Spacer(Modifier.width(12.dp))
         AnimatedContent(
             targetState = current to next,
-            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+            // Rolls like a drum: the sung line leaves upward as the next comes up from below. Slide
+            // only, no fade: fading glowing text re-blurs it in an offscreen layer every frame.
+            transitionSpec = {
+                val roll = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.9f, stiffness = 380f)
+                // No clip here: the ticker's own (wider) clip contains the roll and leaves room for the glow.
+                (androidx.compose.animation.slideInVertically(roll) { it } togetherWith androidx.compose.animation.slideOutVertically(roll) { -it })
+                    .using(androidx.compose.animation.SizeTransform(clip = false))
+            },
             label = "lyricTicker",
             modifier = Modifier.weight(1f).fillMaxHeight()
         ) { (now, upcoming) ->
             var nowLines by remember(now) { mutableIntStateOf(1) }
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
-                val ink = Color.White
-                val clock = if (now != null && now.words.isNotEmpty()) rememberFrameClock(position, playing) else null
-                Text(
-                    text = when {
-                        now == null -> AnnotatedString(upcoming?.text ?: "♪")
-                        clock != null -> karaokeText(now, clock(), ink, dimAlpha = 0.45f)
-                        else -> AnnotatedString(now.text)
-                    },
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 21.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = if (now == null) ink.copy(alpha = 0.55f) else ink,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    onTextLayout = { nowLines = it.lineCount }
+                val style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold)
+                if (now == null) Text(
+                    upcoming?.text ?: "♪", style = style, color = Color.White.copy(alpha = com.example.juke.ui.components.player.FROST_ALPHA),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                ) else com.example.juke.ui.components.player.KaraokeLine(
+                    now, clock?.takeIf { now.words.isNotEmpty() }, style, maxLines = 2, onLineCount = { nowLines = it }
                 )
                 // A two-line current line takes the whole block; the next line would only be clipped.
                 if (now != null && upcoming != null && nowLines < 2) {
                     Text(
                         upcoming.text,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 18.sp),
-                        color = ink.copy(alpha = 0.5f),
+                        color = Color.White.copy(alpha = com.example.juke.ui.components.player.FROST_ALPHA),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 4.dp)

@@ -96,6 +96,17 @@ fun Modifier.playerArtworkEndpoint(expanded: Boolean, enabled: Boolean = true, f
 }
 
 /**
+ * The app under the player. Android draws covered views too, so while the player fully covers the
+ * app (settled open, no drag) the app isn't drawn at all: its page, glass, tab bar, mini player and
+ * ambient layers cost nothing. Read in the draw phase only, so it never recomposes.
+ */
+@Composable
+fun Modifier.hiddenUnderPlayer(): Modifier {
+    val state = LocalPlayerTransition.current ?: return this
+    return graphicsLayer { alpha = if (state.progress >= 1f) 0f else 1f }
+}
+
+/**
  * Marks the mini-player bar. The player sheet morphs from/to this rect, and the bar itself fades out
  * as the sheet takes over (and back in as it lands), so it reads as one surface changing size.
  */

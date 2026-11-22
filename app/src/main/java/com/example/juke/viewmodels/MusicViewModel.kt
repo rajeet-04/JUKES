@@ -87,7 +87,6 @@ data class MusicUiState(
     val queue: List<Track> = emptyList(),
     val queueIndex: Int = -1,
     val isPlaying: Boolean = false,
-    val position: Long = 0,
     val duration: Long = 0,
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -206,6 +205,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
+
+    private val _position = MutableStateFlow(0L)
+    /**
+     * Where playback is, polled every 300 ms while playing. Kept out of [uiState] so a tick redraws only
+     * what shows the time (progress bar, lyrics), not every screen that reads the state.
+     */
+    val position: StateFlow<Long> = _position.asStateFlow()
 
     // Saved like the queue, so "Playing from" is still there after a restart.
     private val playContextPrefs = application.getSharedPreferences("play_context", android.content.Context.MODE_PRIVATE)
@@ -525,12 +531,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         // Another song: show where the player is in it (its start). While paused
                         // nothing polls the position, so the last song's time would stay on screen.
                         val moved = currentState.queueIndex != index
-                        val position = if (moved) playbackManager.getCurrentPosition() else null
+                        if (moved) _position.value = playbackManager.getCurrentPosition()
                         _uiState.update {
                             it.copy(
                                 currentTrack = track,
-                                queueIndex = index,
-                                position = position ?: it.position
+                                queueIndex = index
                             )
                         }
                         Log.d(
@@ -865,14 +870,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // Seek to the track in the playback manager
             playbackManager.seekToIndex(trackIndex)
 
+            // a different song starts from its beginning, also while paused
+            if (trackIndex != currentState.queueIndex) _position.value = 0L
             // Update UI state to reflect the new current track
             _uiState.update {
                 it.copy(
                     currentTrack = track,
                     queueIndex = trackIndex,
                     isPlaying = shouldResumePlayback,
-                    // a different song starts from its beginning, also while paused
-                    position = if (trackIndex != currentState.queueIndex) 0L else it.position,
                     duration = track.durationSec.toLong() * 1000
                 )
             }
@@ -1439,18 +1444,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun seekTo(positionMs: Long) {
         playbackManager.seekTo(positionMs)
-        _uiState.update { it.copy(position = positionMs) }
+        _position.value = positionMs
     }
 
     fun updateProgress() {
         val currentPos = playbackManager.getCurrentPosition()
         val durationMs = playbackManager.getDuration()
-        _uiState.update { state ->
-            state.copy(
-                position = currentPos,
-                duration = if (durationMs > 0) durationMs else state.duration
-            )
-        }
+        _position.value = currentPos
+        if (durationMs > 0 && durationMs != _uiState.value.duration) _uiState.update { it.copy(duration = durationMs) }
     }
 
     fun downloadAndPlay(song: SpotdownSong) {

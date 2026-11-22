@@ -74,6 +74,7 @@ import com.example.juke.ui.screens.LibraryScreen
 import com.example.juke.ui.screens.PlayerScreen
 import com.example.juke.ui.screens.PlaylistDetailScreen
 import com.example.juke.ui.screens.SearchScreen
+import com.example.juke.ui.components.hiddenUnderPlayer
 import com.example.juke.ui.theme.JUKETheme
 import com.example.juke.ui.theme.LocalHazeState
 import com.example.juke.utils.rememberJukeHaptics
@@ -389,7 +390,7 @@ class MainActivity : ComponentActivity() {
                     com.example.juke.ui.components.LocalShare provides share
                 ) {
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().hiddenUnderPlayer(),
                     containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     bottomBar = {
@@ -457,6 +458,7 @@ class MainActivity : ComponentActivity() {
                                     MiniPlayer(
                                         musicViewModel = musicViewModel,
                                         onExpand = { showPlayerModal = true },
+                                        covered = showPlayerModal,
                                         modifier = Modifier.weight(1f),
                                         compact = merged
                                     )

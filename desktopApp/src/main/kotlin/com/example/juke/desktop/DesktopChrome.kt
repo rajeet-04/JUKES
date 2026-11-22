@@ -318,7 +318,7 @@ fun NowPlayingPanel(state: MusicUiState, musicViewModel: MusicViewModel, onClose
                             Text("Show all", style = MaterialTheme.typography.labelMedium, color = Dim, modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenFullscreen).padding(4.dp))
                         }
                         Spacer(Modifier.height(8.dp))
-                        LyricsView(track, state.position, big = false, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.fillMaxWidth().height(250.dp))
+                        LyricsView(track, musicViewModel.positionNow(), big = false, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.fillMaxWidth().height(250.dp))
                     }
                     Spacer(Modifier.height(14.dp))
                 }
@@ -393,9 +393,9 @@ fun DesktopPlayerBar(state: MusicUiState, musicViewModel: MusicViewModel, panelO
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val dur = if (state.duration > 0) state.duration else pm.getDuration()
-                Text(fmt(state.position), style = MaterialTheme.typography.labelSmall, color = Dim, modifier = Modifier.width(38.dp))
+                Text(fmt(musicViewModel.positionNow()), style = MaterialTheme.typography.labelSmall, color = Dim, modifier = Modifier.width(38.dp))
                 if (preparing != null) Text("Preparing ${preparing.orEmpty()}…", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                else PlaybackSeekSlider(state.position, dur, musicViewModel::seekTo, Modifier.weight(1f))
+                else PlaybackSeekSlider(musicViewModel.positionNow(), dur, musicViewModel::seekTo, Modifier.weight(1f))
                 Text(fmt(dur), style = MaterialTheme.typography.labelSmall, color = Dim, modifier = Modifier.width(38.dp))
             }
         }
@@ -556,8 +556,8 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                         Tip(if (track.isFavourite) JukeIcons.HeartSelected else JukeIcons.Heart, "Favourite", { musicViewModel.toggleFavorite(track) }, size = 44.dp, tint = if (track.isFavourite) MaterialTheme.colorScheme.primary else Dim)
                     }
                     Spacer(Modifier.height(10.dp))
-                    PlaybackSeekSlider(state.position, if (state.duration > 0) state.duration else musicViewModel.playbackManager.getDuration(), musicViewModel::seekTo)
-                    Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(fmt(state.position), style = MaterialTheme.typography.labelMedium, color = Dim); Text(fmt(state.duration), style = MaterialTheme.typography.labelMedium, color = Dim) }
+                    PlaybackSeekSlider(musicViewModel.positionNow(), if (state.duration > 0) state.duration else musicViewModel.playbackManager.getDuration(), musicViewModel::seekTo)
+                    Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(fmt(musicViewModel.positionNow()), style = MaterialTheme.typography.labelMedium, color = Dim); Text(fmt(state.duration), style = MaterialTheme.typography.labelMedium, color = Dim) }
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Tip(JukeIcons.Shuffle, "Shuffle", musicViewModel::toggleShuffle, size = 48.dp, selected = state.isShuffleEnabled)
                         Tip(JukeIcons.Previous, "Previous", musicViewModel::skipToPrevious, size = 56.dp, tint = MaterialTheme.colorScheme.onSurface)
@@ -582,7 +582,7 @@ fun DesktopPlayerScreen(state: MusicUiState, musicViewModel: MusicViewModel, onD
                 }
                 Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp)) {
                     when (tab) {
-                        PlayerTab.Lyrics -> LyricsView(track, state.position, big = true, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.fillMaxSize().padding(top = 14.dp))
+                        PlayerTab.Lyrics -> LyricsView(track, musicViewModel.positionNow(), big = true, onSeek = { ms -> musicViewModel.playbackManager.seekPrecise(ms); musicViewModel.updateProgress() }, musicViewModel = musicViewModel, modifier = Modifier.fillMaxSize().padding(top = 14.dp))
                         PlayerTab.Queue -> PlayerQueue(state, musicViewModel)
                     }
                 }
@@ -678,3 +678,7 @@ private fun TopSearchField(query: String, focusTrigger: Int, onQueryChange: (Str
         else Text(if (System.getProperty("os.name").orEmpty().startsWith("Mac")) "⌘K" else "Ctrl K", color = Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = 10.dp))
     }
 }
+
+/** The playback position (its own flow, apart from the UI state, so ticks only redraw what shows it). */
+@Composable
+private fun MusicViewModel.positionNow(): Long = position.collectAsState().value
