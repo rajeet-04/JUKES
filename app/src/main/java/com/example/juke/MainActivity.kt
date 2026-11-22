@@ -388,6 +388,7 @@ class MainActivity : ComponentActivity() {
                 }
                 CompositionLocalProvider(
                     LocalHazeState provides hazeState,
+                    dev.chrisbanes.haze.LocalHazePerformanceMode provides com.example.juke.ui.theme.glassPerformanceMode(),
                     com.example.juke.ui.components.LocalOpenMedia provides openMedia,
                     com.example.juke.ui.components.LocalShare provides share
                 ) {
@@ -516,7 +517,9 @@ class MainActivity : ComponentActivity() {
                     // own backdrop, so they settle while it's open. Kept out of the haze source: as a
                     // source, every wave frame re-blurred every glass surface (GPU pinned, issue #41).
                     com.example.juke.ambient.AmbientWaves(ambientPlaying, ambientColors, ambientDark)
-                    Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
+                    @OptIn(dev.chrisbanes.haze.ExperimentalHazeApi::class)
+                    val pageSource = Modifier.hazeSource(hazeState, inputSharing = dev.chrisbanes.haze.HazeInputSharing.Auto)
+                    Box(modifier = Modifier.fillMaxSize().then(pageSource)) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (isExpanded && currentRoute != "settings") {
                             GlassNavRail(items = navItems, modifier = Modifier.statusBarsPadding())

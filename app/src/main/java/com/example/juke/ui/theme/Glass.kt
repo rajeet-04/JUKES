@@ -269,7 +269,38 @@ private fun liquidStyle(
  * the content is clipped to [shape] after it so the refraction can sample beyond the edge.
  */
 private fun Modifier.hazeLiquid(source: HazeState, shape: Shape, style: GlassStyle): Modifier =
-    hazeGlass(HazeInput.Sources(source), style).clip(shape)
+    hazeGlass(HazeInput.Sources(source), style).clip(shape) // fidelity: LocalHazePerformanceMode, see glassPerformanceMode()
+
+/**
+ * Glass fidelity that backs off with heat (issue #41): Haze's default (Balanced) while the phone is
+ * cool, Performance (lower-resolution input, ~25% less GPU a frame) once Android reports it warming
+ * (thermal status LIGHT or above) or battery saver is on. Provide as LocalHazePerformanceMode at the root.
+ */
+@Composable
+fun glassPerformanceMode(): dev.chrisbanes.haze.HazePerformanceMode {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val power = remember(context) { context.getSystemService(android.os.PowerManager::class.java) }
+    var warm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var saver by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(power?.isPowerSaveMode == true) }
+    DisposableEffect(power) {
+        if (power == null) return@DisposableEffect onDispose {}
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context, i: android.content.Intent) { saver = power.isPowerSaveMode }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            context, receiver, android.content.IntentFilter(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        val stopThermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            warm = power.currentThermalStatus >= android.os.PowerManager.THERMAL_STATUS_LIGHT
+            val listener = android.os.PowerManager.OnThermalStatusChangedListener { warm = it >= android.os.PowerManager.THERMAL_STATUS_LIGHT }
+            power.addThermalStatusListener(androidx.core.content.ContextCompat.getMainExecutor(context), listener)
+            ({ power.removeThermalStatusListener(listener) })
+        } else ({})
+        onDispose { stopThermal(); context.unregisterReceiver(receiver) }
+    }
+    return if (warm || saver) dev.chrisbanes.haze.HazePerformanceMode.Performance else dev.chrisbanes.haze.HazePerformanceMode.Default
+}
 
 /** Applies [shape] to a glass style when it is a rounded rectangle (the only shape Haze glass takes). */
 private fun GlassStyle.shaped(shape: Shape): GlassStyle =
