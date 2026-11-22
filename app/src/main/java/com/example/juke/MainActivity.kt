@@ -503,16 +503,16 @@ class MainActivity : ComponentActivity() {
                     // Backdrop source: the ambient light field and every screen scroll inside it,
                     // so the floating glass (tab bar, mini player) blurs what is really behind it.
                     // Ambient layer below the page source: cards inside the page refract it.
-                    com.example.juke.ui.theme.GlassAmbient(Modifier.hazeSource(hazeState, zIndex = -1f)) {
-                        // Waves that move with the music, in the artwork's colours. The player has its
-                        // own backdrop, so they settle while it's open.
-                        val art = uiState.extractedColors
-                        com.example.juke.ambient.AmbientWaves(
-                            playing = uiState.isPlaying && !showPlayerModal,
-                            colors = art?.let { listOf(it.primary, it.secondary, it.tertiary) }.orEmpty(),
-                            dark = com.example.juke.ui.theme.isGlassDark()
-                        )
-                    }
+                    com.example.juke.ui.theme.GlassAmbient(Modifier.hazeSource(hazeState, zIndex = -1f))
+                    // Waves that move with the music, in the artwork's colours. The player has its
+                    // own backdrop, so they settle while it's open. Kept out of the haze source: as a
+                    // source, every wave frame re-blurred every glass surface (GPU pinned, issue #41).
+                    val art = uiState.extractedColors
+                    com.example.juke.ambient.AmbientWaves(
+                        playing = uiState.isPlaying && !showPlayerModal,
+                        colors = art?.let { listOf(it.primary, it.secondary, it.tertiary) }.orEmpty(),
+                        dark = com.example.juke.ui.theme.isGlassDark()
+                    )
                     Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState)) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (isExpanded && currentRoute != "settings") {

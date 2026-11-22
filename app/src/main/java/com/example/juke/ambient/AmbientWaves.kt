@@ -25,7 +25,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -103,8 +106,24 @@ fun AmbientWaves(playing: Boolean, colors: List<Color>, dark: Boolean, modifier:
         }
     }
 
-    val blur = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) BlurEffect(56f, 56f, TileMode.Decal) else null
-    Canvas(modifier.fillMaxSize().graphicsLayer { renderEffect = blur }) {
+    val blur = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) BlurEffect(56f / SCALE, 56f / SCALE, TileMode.Decal) else null
+    }
+    // Drawn and blurred at 1/SCALE size, then stretched to fill: soft colour looks the same and the
+    // full-screen blur stops dominating the frame (issue #41).
+    Canvas(
+        modifier.fillMaxSize()
+            .layout { m, c ->
+                val p = m.measure(Constraints.fixed((c.maxWidth + SCALE - 1) / SCALE, (c.maxHeight + SCALE - 1) / SCALE))
+                layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
+            }
+            .graphicsLayer {
+                scaleX = SCALE.toFloat()
+                scaleY = SCALE.toFloat()
+                transformOrigin = TransformOrigin(0f, 0f)
+                renderEffect = blur
+            }
+    ) {
         tick // redraw on every frame of the loop
         val visible = wave.visible.value
         if (visible < FADED) return@Canvas
@@ -177,3 +196,4 @@ private fun isPowerSave(context: Context) =
 private val IDLE = Levels(energy = 0.35f, bass = 0.3f, treble = 0.15f)
 private const val FADED = 0.003f
 private const val FRAME_MS = 32f
+private const val SCALE = 4
