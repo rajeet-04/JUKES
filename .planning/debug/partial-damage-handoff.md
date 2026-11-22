@@ -1,6 +1,6 @@
 # Handoff: partial screen redraws on the player
 
-Status: experiment done 2026-11-23. Damage can be confined to the seek strip, but frame cost didn't drop. Not shipped; see "Experiment result" and "What others report".
+Status: resolved as "not worth fixing", 2026-11-23. The per-update cost is GPU wake-up, not repaint area; see "GPU wake-up test". The damage-confining experiment is on the `experiment/seek-partial-damage` branch, not shipped.
 
 ## Goal
 
@@ -102,7 +102,7 @@ Searched Stack Overflow, Reddit, Kotlin Slack, the Google issue tracker and the 
 
 ### Suggested next tests
 
-1. **Wake-up test.** Run the player with a constant, tiny always-on animation that keeps the GPU busy (for example a 1 px layer toggling every frame). If janky frames vanish and per-update GPU time drops, wake-up latency is the main cost and confining damage can't fix it.
+1. **Wake-up test.** Done; see "GPU wake-up test" below. Wake-up latency is the main cost.
 2. **Glass re-run test.** In Perfetto, check whether Haze slices run on each position update. If they do, find what changes inside the `playerHaze` source per update and move it out. This is a smaller change than replacing the slider.
 
 Sources:
@@ -119,6 +119,51 @@ Sources:
 - [Mozilla bug 930926: GPU wake-up on first frame](https://bugzilla.mozilla.org/show_bug.cgi?id=930926)
 - [AOSP pantah commit fa3f3de: GPU power hold at launch](https://android.googlesource.com/device/google/pantah/+/fa3f3de)
 - [AOSP: identify capacity-related jank](https://source.android.com/docs/core/tests/debug/jank_capacity?hl=en)
+
+## GPU wake-up test (2026-11-23)
+
+Stock 3.2.1 release, full player open, playing Sukh Hai (no lyric ticker running), 10 s Perfetto trace with the KGSL power-state ftrace event. No test build was needed: the trace records the GPU's power state next to each frame's GPU time.
+
+**The GPU sleeps between every position update.** Each update follows the same cycle in `kgsl_pwr_set_state`: the GPU leaves a deep state (`state=128`) through `32` and becomes active (`2`) within ~1 ms, stays active for 90–370 ms, then powers down (`0` → `128`). There were 36 cycles in 10 s, about one per update. Median time asleep between updates was 207 ms. (State numbers are raw KGSL values; names vary between kernel versions.)
+
+**The first frame after each wake is the slow one.** GPU time per frame, from the `GPU completion` counter (submit to fence signal):
+
+| Frame | Count | GPU time median | Mean |
+|---|---:|---:|---:|
+| First frame after the GPU wakes | 35 | 13.1 ms | 11.0 ms |
+| Later frames in the same active window | 45 | 3.1 ms | 4.8 ms |
+
+Both kinds repaint the same full window. The ~10 ms difference is wake-up and clock ramp-up.
+
+What this explains:
+
+- One janky frame per update: the first frame after each wake misses the 16 ms deadline.
+- Why confining damage to 6% of the window (the experiment) didn't lower GPU time.
+- Why GPU time per update stays at 13–14 ms whatever is drawn.
+
+**Conclusion: not worth fixing.** Keeping the GPU awake would cost more energy: warm frames at 60 fps are ~180 ms of GPU work per second, against ~13 ms per 300 ms update now. The late frame only moves the seek bar by about a pixel every 300 ms, so it counts as janky in `gfxinfo` but isn't visible stutter. Visible smoothness matters during continuous animation (scrolling, opening the player), where the GPU stays warm and a frame costs ~3 ms.
+
+**Loose end.** Each update produces about 2.3 frames (81 GPU jobs over 36 wakes), not one. The extra frames run on a warm GPU and cost little, but finding what schedules them could save a few ms per update.
+
+**How to repeat.** The KGSL clock files (`/sys/class/kgsl/kgsl-3d0/*`) aren't readable without root, but the ftrace event is. Config:
+
+```
+buffers { size_kb: 32768 }
+data_sources { config { name: "linux.ftrace" ftrace_config {
+  ftrace_events: "kgsl/kgsl_pwr_set_state"
+  ftrace_events: "power/gpu_frequency"
+  atrace_categories: "gfx" atrace_categories: "view"
+  atrace_apps: "com.example.juke" } } }
+duration_ms: 10000
+```
+
+```sh
+adb push gpufreq.cfg /data/local/tmp/gpufreq.cfg
+adb shell 'cat /data/local/tmp/gpufreq.cfg | perfetto --txt -c - -o /data/misc/perfetto-traces/gpufreq.pftrace'
+adb pull /data/misc/perfetto-traces/gpufreq.pftrace
+```
+
+In trace processor, read the power states from `ftrace_event` (name `kgsl_pwr_set_state`, arg `state`). Per-frame GPU time comes from the `GPU completion` counter track: pair each rise (submit) with the next fall (fence signalled) in order. `power/gpu_frequency` produced no events on this phone.
 
 ## Ideas not yet tried
 
