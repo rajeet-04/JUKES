@@ -23,8 +23,7 @@ object JamControls {
     }
 
     fun seekTo(positionMs: Long): Boolean {
-        if (live()?.playback == null) return false
-        return JamSession.seek(positionMs.coerceAtLeast(0))
+        return live()?.playback != null && JamSession.seek(positionMs.coerceAtLeast(0))
     }
 
     fun next(): Boolean {
