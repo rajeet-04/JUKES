@@ -106,11 +106,19 @@ test('a PostHog failure is a 502, or the old answer when there is one', async ()
     expect((await res.json() as any).plays).toBe(9);
 });
 
+test('a year closed only recently is refreshed, then frozen once late uploads have settled', async () => {
+    const { isFinal } = await import('./wrapped');
+    const jan1 = Date.UTC(2027, 0, 1);
+    expect(isFinal(2026, Date.UTC(2026, 11, 20))).toBe(false); // computed in December: partial
+    expect(isFinal(2026, jan1 + 3 * 86_400_000)).toBe(false); // days 31 Dec may still be uploading
+    expect(isFinal(2026, jan1 + 15 * 86_400_000)).toBe(true);
+});
+
 test('a closed year is never recomputed', async () => {
     const env = fakeEnv(configured);
     const t = await login(env);
     const sent = stubPostHog();
-    await env.DB.prepare('INSERT INTO wrapped_cache (user_id, year, body, computed_at) SELECT id, 2026, ?, 0 FROM users').bind(JSON.stringify({ plays: 4 })).run();
+    await env.DB.prepare('INSERT INTO wrapped_cache (user_id, year, body, computed_at) SELECT id, 2026, ?, ?  FROM users').bind(JSON.stringify({ plays: 4 }), Date.UTC(2027, 1, 1)).run();
     // only a past year is final; the test runs in 2026 or later, so skip the check when 2026 is still the current year
     if (new Date().getUTCFullYear() > 2026) {
         expect((await (await get(env, t, '?year=2026')).json() as any).plays).toBe(4);

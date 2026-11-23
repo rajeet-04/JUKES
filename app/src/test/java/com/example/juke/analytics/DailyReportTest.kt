@@ -69,6 +69,15 @@ class DailyReportTest {
         assertTrue(dao.rows.isEmpty())
     }
 
+    @Test fun anonymousAndSignedInListeningOfOneDayGoOutAsOneReport() = runBlocking {
+        // distinctId() is me@example.com: the anonymous rows resolve to the same person as the signed-in ones
+        val dao = FakeDao(listOf(row("2023-11-13", "a - x"), row("2023-11-13", "b - x", owner = "me@example.com")))
+        val sent = mutableListOf<JsonObject>()
+        uploader(dao, today = "2023-11-20", sent = sent).uploadPending()
+        assertEquals(1, sent.size)
+        assertTrue(dao.rows.isEmpty())
+    }
+
     @Test fun ifOneOwnerFailsTheDayIsKept() = runBlocking {
         val dao = FakeDao(listOf(row("2023-11-13", owner = "a@x.com"), row("2023-11-13", owner = "b@x.com")))
         var calls = 0

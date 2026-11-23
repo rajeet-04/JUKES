@@ -14,6 +14,11 @@ const EVENT = 'daily_listening_report';
 const MIN_YEAR = 2026;
 const FRESH_MS = 6 * 3600_000;
 const EMPTY_FRESH_MS = 3600_000;
+/** Days of a closed year still arrive after it ends (the app uploads a day only once it is over, and on its next open). */
+const YEAR_SETTLE_MS = 14 * 86_400_000;
+
+/** A past year's result is final only if it was computed after late uploads had a chance to land. */
+export const isFinal = (year: number, computedAt: number) => computedAt >= Date.UTC(year + 1, 0, 1) + YEAR_SETTLE_MS;
 
 /** Every query reads only this account's reports for the year, by the local date each report carries. */
 export function filterFor(email: string, year: number): string {
@@ -184,7 +189,7 @@ export async function wrapped(request: Request, env: Env): Promise<Response> {
         .bind(me.userId, year).first<{ body: string; computed_at: number }>();
     const cached = row ? JSON.parse(row.body) as Wrapped : null;
     const age = row ? Date.now() - row.computed_at : Infinity;
-    const fresh = row && (year < thisYear ? true : age < (cached?.plays ? FRESH_MS : EMPTY_FRESH_MS));
+    const fresh = row && (year < thisYear && isFinal(year, row.computed_at) ? true : age < (cached?.plays ? FRESH_MS : EMPTY_FRESH_MS));
     if (cached && fresh) return Response.json(cached);
 
     const w = await compute(env, user.email, year);

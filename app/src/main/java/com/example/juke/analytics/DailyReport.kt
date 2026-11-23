@@ -122,9 +122,10 @@ class DailyReportUploader(
             val rows = dao.forDate(date)
             if (rows.isEmpty()) continue
             // Each row reports under whoever was listening: their email, or this install when anonymous.
+            // Group by that resolved id: anonymous rows from a day the user later signed in share the
+            // email's id, and two payloads with one id would get one uuid, so PostHog would drop one.
             var allOk = true
-            for ((owner, list) in rows.groupBy { it.owner }) {
-                val id = owner ?: distinctId()
+            for ((id, list) in rows.groupBy { it.owner ?: distinctId() }) {
                 val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
                 val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone)
                 val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
