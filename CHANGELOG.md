@@ -2,7 +2,14 @@
 
 ## Changelog
 
-## [Unreleased]
+## [3.2.3-stable] - 2026-11-23
+
+Android and desktop. Changes since 3.2.1-stable, from 2026-11-23.
+
+### Added
+
+- **Listening history for Wrapped.** Each finished local day of listening is reported once to the Wrapped backend, so year-end Wrapped can total it. Listens are timed while the song plays (pauses don't count). Signing out or turning off analytics stops new reports, and deleting an account removes its listens. Wrapped itself is not in the app yet.
+- **Landscape player.** The player works in landscape. Rotating no longer changes the song.
 
 ### Fixed
 
