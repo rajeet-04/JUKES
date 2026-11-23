@@ -130,6 +130,7 @@ class DailyReportUploader(
             for ((id, list) in rows.groupBy { it.owner ?: distinctId() }) {
                 val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
                 val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone, batch = list.minOf { it.id })
+                if (!enabled()) return done // consent withdrawn mid-run: send nothing more
                 val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
                 if (!ok) { allOk = false; break }
             }

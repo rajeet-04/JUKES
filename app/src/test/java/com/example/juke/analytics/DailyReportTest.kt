@@ -108,6 +108,28 @@ class DailyReportTest {
         assertEquals(uuids[0], uuids[1])
     }
 
+    @Test fun anAnonymousListenKeepsItsInstallIdWhateverAccountIsActiveAtUpload() = runBlocking {
+        // listened anonymously as install-1, later signed in as someone else: it must not move to them
+        val dao = FakeDao(listOf(row("2023-11-13", "a - x", owner = "install-1"), row("2023-11-13", "b - x", owner = "me@example.com")))
+        val sent = mutableListOf<JsonObject>()
+        uploader(dao, today = "2023-11-20", sent = sent).uploadPending()
+        val ids = sent.map { it["batch"]!!.jsonArray.single().jsonObject["distinct_id"]!!.jsonPrimitive.content }.toSet()
+        assertEquals(setOf("install-1", "me@example.com"), ids)
+    }
+
+    @Test fun nothingMoreIsSentOnceConsentIsWithdrawnMidRun() = runBlocking {
+        val dao = FakeDao(listOf(row("2023-11-13", owner = "a@x.com"), row("2023-11-13", owner = "b@x.com")))
+        val sent = mutableListOf<JsonObject>()
+        var on = true
+        DailyReportUploader(
+            dao = dao, distinctId = { "me@example.com" }, deviceId = { "dev1" }, enabled = { on },
+            today = { LocalDate.parse("2023-11-20") }, apiKey = { "key" },
+            send = { sent += it; on = false; true } // the user opts out while the first report is in flight
+        ).uploadPending()
+        assertEquals(1, sent.size)
+        assertEquals(2, dao.rows.size) // the day is kept whole; the first report repeats under its same uuid later
+    }
+
     @Test fun ifOneOwnerFailsTheDayIsKept() = runBlocking {
         val dao = FakeDao(listOf(row("2023-11-13", owner = "a@x.com"), row("2023-11-13", owner = "b@x.com")))
         var calls = 0

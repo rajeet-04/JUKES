@@ -1649,7 +1649,12 @@ class PlaybackManager private constructor(private val context: Context) {
                 scope.launch { runCatching { database.playEventDao().insert(e) } }
             }
         },
-        owner = { com.example.juke.account.Account.email.value?.trim()?.lowercase() },
+        // Who the listen reports under: the account email, else this install's anonymous id as it is right now.
+        // Fixed at listen start, so a later login, logout or account switch cannot move it to someone else.
+        owner = {
+            com.example.juke.account.Account.email.value?.trim()?.lowercase()
+                ?: com.example.juke.analytics.AnalyticsManager.getInstance(context).installId()
+        },
         enabled = { com.example.juke.analytics.AnalyticsManager.isEnabled(context) },
         epoch = { com.example.juke.analytics.AnalyticsManager.consentEpoch() }
     )

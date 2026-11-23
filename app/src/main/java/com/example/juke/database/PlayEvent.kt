@@ -36,7 +36,11 @@ data class PlayEventEntity(
     @ColumnInfo(name = "album_spotify_id") val albumSpotifyId: String? = null,
     @ColumnInfo(name = "artist_spotify_ids") val artistSpotifyIds: List<String>? = null,
     @ColumnInfo(name = "yt_video_id") val ytVideoId: String? = null,
-    /** Account email when the listener was logged in, null when anonymous. */
+    /**
+     * The distinct id the listen reports under, fixed when it starts: the account email when logged in, else the
+     * install's anonymous id (PostHog merges that into the account if the user signs in). Null only for rows
+     * written before this was recorded.
+     */
     val owner: String? = null
 )
 
