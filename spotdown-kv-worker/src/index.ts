@@ -3,6 +3,8 @@ export { HandBox } from './hand';
 export { ConnectHub } from './connect';
 import { createCrash } from './crash';
 import { account, authed } from './account';
+import { wrapped } from './wrapped';
+import { spotifyToken } from './spotify';
 import { createReport, REPORT_KEEP_MS } from './report';
 
 export interface Env {
@@ -20,9 +22,6 @@ export interface Env {
     POSTHOG_PROJECT_ID?: string;
     POSTHOG_PERSONAL_API_KEY?: string; // secret: personal API key with query read
 }
-
-const REFRESH_MARGIN_MS = 300_000; // app-side buffer is the same; never hand out a nearly-dead token
-const KV_TTL_S = 3300;             // Spotify tokens live 3600s
 
 const SHARE_TTL_S = 7 * 86400;               // sliding: reads push expiry out again
 const SHARE_MAX_AGE_MS = 30 * 86400 * 1000;  // ...but never past this from creation
@@ -136,6 +135,7 @@ export default {
             if (!me) return Response.json({ error: 'Logged out' }, { status: 401 });
             return env.CONNECT.get(env.CONNECT.idFromName(me.userId)).fetch(request);
         }
+        if (pathname === '/account/wrapped' && request.method === 'GET') return wrapped(request, env);
         const acct = pathname.match(/^\/account\/(register|login|logout|library|password|delete)$/);
         if (acct) return account(request, env, acct[1]);
         const hand = pathname.match(/^\/hand\/([A-HJKMNP-Za-hjkmnp-z2-9]{6})$/);
@@ -151,21 +151,8 @@ export default {
         if (pathname !== '/spotify-token') return new Response('Not Found', { status: 404 });
         if (request.headers.get('X-App-Secret') !== env.APP_SECRET) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-        let hit = await env.KV.get<{ token: string; exp: number }>('spotify', 'json');
-        if (!hit || hit.exp - Date.now() < REFRESH_MARGIN_MS) {
-            const res = await fetch('https://accounts.spotify.com/api/token', {
-                method: 'POST',
-                headers: {
-                    Authorization: 'Basic ' + btoa(`${env.SPOTIFY_CLIENT_ID}:${env.SPOTIFY_CLIENT_SECRET}`),
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'grant_type=client_credentials',
-            });
-            if (!res.ok) return Response.json({ error: 'spotify ' + res.status }, { status: 502 });
-            const { access_token, expires_in } = await res.json<{ access_token: string; expires_in: number }>();
-            hit = { token: access_token, exp: Date.now() + expires_in * 1000 };
-            await env.KV.put('spotify', JSON.stringify(hit), { expirationTtl: KV_TTL_S });
-        }
+        const hit = await spotifyToken(env);
+        if (!hit) return Response.json({ error: 'spotify refused the token request' }, { status: 502 });
         return Response.json({ access_token: hit.token, expires_in: Math.floor((hit.exp - Date.now()) / 1000) });
     },
 };

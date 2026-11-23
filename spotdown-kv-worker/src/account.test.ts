@@ -7,6 +7,7 @@ import { account } from './account';
 function fakeEnv() {
     const db = new Database(':memory:');
     db.exec(readFileSync(new URL('../migrations/0004_accounts.sql', import.meta.url), 'utf8'));
+    db.exec(readFileSync(new URL('../migrations/0005_wrapped_cache.sql', import.meta.url), 'utf8'));
     const stmt = (sql: string, args: unknown[] = []) => ({
         bind: (...a: unknown[]) => stmt(sql, a),
         first: async () => db.query(sql).get(...(args as any[])) ?? null,
