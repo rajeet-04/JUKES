@@ -13,6 +13,7 @@ interface ReportIn {
     app?: Record<string, unknown>;
     jam?: Record<string, unknown> | null;
     logs?: string;
+    kind?: string;
 }
 
 // The app scrubs first; this is a second pass so a missed pattern never lands in a public issue or the log store.
@@ -65,9 +66,17 @@ export async function createReport(request: Request, env: Env): Promise<Response
     if ((mine?.n ?? 0) >= PER_INSTALL_PER_DAY || (all?.n ?? 0) >= PER_DAY) return Response.json({ error: 'Too many reports today' }, { status: 429 });
 
     const reportId = id();
-    const logs = scrub(clip(body.logs, MAX_LOG_BYTES));
-    const title = `[Report] ${description.split('\n')[0].slice(0, 80)}`;
-    const issueBody = [
+    const feature = body.kind === 'feature';
+    const logs = feature ? '' : scrub(clip(body.logs, MAX_LOG_BYTES));
+    const title = `[${feature ? 'Feature' : 'Report'}] ${description.split('\n')[0].slice(0, 80)}`;
+    const issueBody = feature ? [
+        description,
+        '',
+        '### App',
+        table(body.app),
+        '',
+        `Request \`${reportId}\` (install \`${installId.slice(0, 8)}\`).`,
+    ].join('\n') : [
         description,
         '',
         '### App',
@@ -80,7 +89,7 @@ export async function createReport(request: Request, env: Env): Promise<Response
             `\`bunx wrangler d1 execute jukes-shares --remote --command "SELECT logs FROM reports WHERE id='${reportId}'"\``,
     ].join('\n');
 
-    const issue = await fileIssue(env, title, issueBody, 'user-report');
+    const issue = await fileIssue(env, title, issueBody, feature ? 'feature-request' : 'user-report');
     if (issue === null) return Response.json({ error: 'Could not file the report' }, { status: 502 });
 
     await env.DB.prepare('INSERT INTO reports (id, install_id, created_at, issue, logs) VALUES (?, ?, ?, ?, ?)')
