@@ -94,6 +94,7 @@ object Account {
                 putString("token", s.token).putString("email", s.email).putString("hand", s.hand)
             }
             load(c)
+            deleted -= s.email.trim().lowercase() // a recreated account must not inherit the deleted one's suppression
             null
         } catch (ex: CancellationException) { throw ex } catch (ex: Exception) { "Couldn't reach JUKES. Check your connection." }
     }

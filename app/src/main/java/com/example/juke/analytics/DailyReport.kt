@@ -100,8 +100,27 @@ object DailyReport {
  * Reports every closed day that still has rows, oldest first, and deletes a day's rows only when [send]
  * says PostHog accepted it. Today is never reported. A failed day is kept for the next run.
  */
+/**
+ * The row ids each report was frozen to before it was first sent, by "distinct id|date". A report whose
+ * response was lost is retried with exactly those rows and the same uuid, so PostHog drops the repeat; rows
+ * that arrived since go out as their own report instead of being folded into one PostHog may already hold.
+ */
+interface PendingBatches {
+    fun get(key: String): List<Long>?
+    fun put(key: String, ids: List<Long>)
+    fun remove(key: String)
+}
+
+class InMemoryPendingBatches : PendingBatches {
+    private val map = mutableMapOf<String, List<Long>>()
+    override fun get(key: String) = map[key]
+    override fun put(key: String, ids: List<Long>) { map[key] = ids }
+    override fun remove(key: String) { map.remove(key) }
+}
+
 class DailyReportUploader(
     private val dao: PlayEventDao,
+    private val pending: PendingBatches = InMemoryPendingBatches(),
     private val distinctId: () -> String,
     /** Stable for this install, never changed by login or logout. */
     private val deviceId: () -> String,
@@ -130,14 +149,25 @@ class DailyReportUploader(
             var allOk = true
             for ((id, list) in rows.groupBy { it.owner ?: distinctId() }) {
                 val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
-                val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone, batch = list.map { it.id }.sorted().joinToString(","))
-                if (!enabled()) return done // consent withdrawn mid-run: send nothing more
-                val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
-                if (!ok) { allOk = false; break }
+                val key = "$id|$date"
+                var left = list
+                while (left.isNotEmpty()) {
+                    // A report that may already have been accepted keeps exactly its rows; anything newer is its own report.
+                    val frozen = pending.get(key)
+                    val batch = if (frozen != null) left.filter { it.id in frozen }.ifEmpty { left } else left
+                    val ids = batch.map { it.id }.sorted()
+                    pending.put(key, ids)
+                    val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, batch, platform), zone, batch = ids.joinToString(","))
+                    if (!enabled()) return done // consent withdrawn mid-run: send nothing more
+                    val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
+                    if (!ok) { allOk = false; break }
+                    pending.remove(key)
+                    dao.deleteIds(ids) // exactly what was reported: a listen that finished meanwhile stays for the next report
+                    left = left - batch.toSet()
+                }
+                if (!allOk) break
             }
-            if (!allOk) break // offline or rejected: keep this and later days, try again next time (same uuid, no double count)
-            // Delete exactly what was reported: a listen that finished meanwhile stays for the next run.
-            dao.deleteIds(rows.map { it.id })
+            if (!allOk) break // offline or rejected: keep this and later days, try again next time (same rows, same uuid)
             done++
         }
         done
@@ -166,6 +196,7 @@ object DailyReports {
             runCatching {
                 DailyReportUploader(
                     dao = com.example.juke.database.MusicDatabase.getDatabase(app).playEventDao(),
+                    pending = PrefsPendingBatches(app),
                     distinctId = { distinctId(app) },
                     deviceId = { deviceId(app) },
                     enabled = { AnalyticsManager.isEnabled(app) },
@@ -181,4 +212,12 @@ object DailyReports {
             }
         }
     }
+}
+
+/** Keeps the frozen batches across restarts, so a retry after a crash still repeats the same report. */
+class PrefsPendingBatches(context: android.content.Context) : PendingBatches {
+    private val prefs = context.applicationContext.getSharedPreferences("daily_report_pending", android.content.Context.MODE_PRIVATE)
+    override fun get(key: String): List<Long>? = prefs.getString(key, null)?.split(',')?.mapNotNull { it.toLongOrNull() }
+    override fun put(key: String, ids: List<Long>) { prefs.edit().putString(key, ids.joinToString(",")).apply() }
+    override fun remove(key: String) { prefs.edit().remove(key).apply() }
 }

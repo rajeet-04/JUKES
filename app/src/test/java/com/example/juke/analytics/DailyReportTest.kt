@@ -97,9 +97,9 @@ class DailyReportTest {
         assertNotEquals(uuids[0], uuids[1]) // the late report is not dropped as a duplicate of the first
     }
 
-    @Test fun aRetryThatGainedALateListenGetsANewUuid() = runBlocking {
-        // the first report may have been accepted with its response lost: the retry holds one more row,
-        // so it must not share the uuid PostHog already saw
+    @Test fun aRetryKeepsTheFrozenRowsAndAnyLateListenGoesOutSeparately() = runBlocking {
+        // the first report may have been accepted with its response lost: the retry must repeat it exactly
+        // (same rows, same uuid) and report the late listen as its own event, so nothing is lost or counted twice
         val dao = FakeDao(listOf(row("2023-11-13", "a - x")))
         val sent = mutableListOf<JsonObject>()
         var ok = false
@@ -109,8 +109,10 @@ class DailyReportTest {
         ok = true
         up.uploadPending()
         val uuids = sent.map { it["batch"]!!.jsonArray.single().jsonObject["uuid"]!!.jsonPrimitive.content }
-        assertEquals(2, uuids.size)
-        assertNotEquals(uuids[0], uuids[1])
+        assertEquals(3, uuids.size) // failed attempt, the same report again, then the late listen alone
+        assertEquals(uuids[0], uuids[1])
+        assertNotEquals(uuids[1], uuids[2])
+        assertEquals(1, sent[1]["batch"]!!.jsonArray.single().jsonObject["properties"]!!.jsonObject["plays"]!!.jsonPrimitive.content.toInt())
         assertTrue(dao.rows.isEmpty())
     }
 
@@ -144,14 +146,14 @@ class DailyReportTest {
             send = { sent += it; on = false; true } // the user opts out while the first report is in flight
         ).uploadPending()
         assertEquals(1, sent.size)
-        assertEquals(2, dao.rows.size) // the day is kept whole; the first report repeats under its same uuid later
+        assertEquals(1, dao.rows.size) // the report that went out is cleared, the other waits
     }
 
     @Test fun ifOneOwnerFailsTheDayIsKept() = runBlocking {
         val dao = FakeDao(listOf(row("2023-11-13", owner = "a@x.com"), row("2023-11-13", owner = "b@x.com")))
         var calls = 0
         uploader(dao, today = "2023-11-20", sent = mutableListOf(), ok = { ++calls == 1 }).uploadPending()
-        assertEquals(2, dao.rows.size)
+        assertEquals(1, dao.rows.size)
     }
 
     @Test fun sameDayAndUserGiveTheSameEventUuid() {
