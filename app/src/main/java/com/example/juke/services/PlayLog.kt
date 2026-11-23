@@ -17,7 +17,9 @@ class PlayLog(
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
     /** The account email listening right now, or null; read when the listen starts. */
-    private val owner: () -> String? = { null }
+    private val owner: () -> String? = { null },
+    /** Checked when a listen starts: one that begins while this is false is never recorded, even if it turns true before the song ends. */
+    private val enabled: () -> Boolean = { true }
 ) {
     private class Current(val track: Track, val startedAt: Long, val source: String?, val owner: String?) {
         val durationMs = track.durationSec * 1000L
@@ -28,6 +30,7 @@ class PlayLog(
     private var current: Current? = null
 
     fun start(track: Track, playingNow: Boolean, source: String? = null) {
+        if (!enabled()) { current = null; return }
         val now = clock()
         val c = Current(track, now, source, owner())
         if (playingNow) c.playingSince = now

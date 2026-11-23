@@ -1648,7 +1648,8 @@ class PlaybackManager private constructor(private val context: Context) {
                 scope.launch { runCatching { database.playEventDao().insert(e) } }
             }
         },
-        owner = { com.example.juke.account.Account.email.value?.trim()?.lowercase() }
+        owner = { com.example.juke.account.Account.email.value?.trim()?.lowercase() },
+        enabled = { com.example.juke.analytics.AnalyticsManager.isEnabled(context) }
     )
     // Serial background dispatcher for queue mutations: keeps disk work off the main thread while
     // preserving the order in which setQueue/addToQueue calls were made.

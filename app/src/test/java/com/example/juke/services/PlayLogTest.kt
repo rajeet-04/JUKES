@@ -53,6 +53,19 @@ class PlayLogTest {
         assertEquals("Asia/Tokyo", rows.single().timeZone)
     }
 
+    @Test fun aListenThatStartsWhileOptedOutIsNeverRecorded() {
+        var on = false
+        val gated = PlayLog({ rows += it }, { now }, { ZoneId.of("UTC") }, enabled = { on })
+        gated.start(track(200), playingNow = true)
+        now += 30_000
+        on = true // opting back in mid-song must not retro-record it
+        gated.end(completed = false)
+        assertTrue(rows.isEmpty())
+        gated.start(track(200), playingNow = true)
+        now += 30_000; gated.end(completed = false)
+        assertEquals(1, rows.size)
+    }
+
     @Test fun endWithoutStartDoesNothing() {
         log.end(completed = true)
         assertTrue(rows.isEmpty())

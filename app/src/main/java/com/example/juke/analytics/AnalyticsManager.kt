@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.content.edit
 import kotlinx.coroutines.launch
 import com.example.juke.BuildConfig
+import com.posthog.PersonProfiles
 import com.posthog.PostHog
 import com.posthog.android.PostHogAndroid
 import com.posthog.android.PostHogAndroidConfig
@@ -19,6 +20,7 @@ import java.util.TimeZone
 import java.util.UUID
 
 class AnalyticsManager private constructor(context: Context) {
+    private val appContext: Context = context.applicationContext
 
     companion object {
         private const val TAG = "AnalyticsManager"
@@ -28,6 +30,8 @@ class AnalyticsManager private constructor(context: Context) {
         private const val KEY_FIRST_INSTALL_TIME = "first_install_time"
         private const val KEY_ENABLED = "analytics_enabled"
         private const val KEY_LINKED_EMAIL = "linked_email"
+        /** Set once an install has a fresh, never-identified PostHog id (older builds identified the install id, which blocks merging into an account later). */
+        private const val KEY_IDENTITY_V2 = "identity_v2"
 
         @SuppressLint("StaticFieldLeak")
         @Volatile
@@ -70,11 +74,26 @@ class AnalyticsManager private constructor(context: Context) {
             app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit { putBoolean(KEY_ENABLED, enabled) }
             ensurePostHogInitialized(app)
             if (enabled) PostHog.optIn() else PostHog.optOut()
+            // PostHog ignores identity changes while opted out, so any login or logout in that time is applied now
+            if (enabled) instance?.reconcileIdentity()
             if (!enabled) {
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                     runCatching { com.example.juke.database.MusicDatabase.getDatabase(app).playEventDao().deleteAll() }
                 }
             }
+        }
+
+        /** The anonymous id of this install, created on first use. It is what PostHog uses for anyone not logged in. */
+        private fun installId(context: Context): String {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.getString(KEY_USER_ID, null)?.let { return it }
+            val fresh = UUID.randomUUID().toString()
+            prefs.edit {
+                putString(KEY_USER_ID, fresh)
+                    .putBoolean(KEY_IS_NEW_USER, true)
+                    .putLong(KEY_FIRST_INSTALL_TIME, System.currentTimeMillis())
+            }
+            return fresh
         }
 
         /** PostHog alone, without starting a session: the Application does this first so crashes from any entry point (a cold-started service too) are captured. */
@@ -95,6 +114,9 @@ class AnalyticsManager private constructor(context: Context) {
                 config.optOut = !isEnabled(context)
                 // 4.x turns surveys on by default; the app has none
                 config.surveys = false
+                // The install id is the anonymous id, so nobody is "identified" until they log in, and a login can then merge into the account
+                config.getAnonymousId = { default -> runCatching { UUID.fromString(installId(context)) }.getOrDefault(default) }
+                config.personProfiles = PersonProfiles.ALWAYS
                 PostHogAndroid.setup(context, config)
                 isPostHogInitialized = true
             }
@@ -108,33 +130,57 @@ class AnalyticsManager private constructor(context: Context) {
     private val telephonyManager =
         context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
 
-    @Volatile private var userId: String = prefs.getString(KEY_USER_ID, null) ?: generateAndStoreUserId()
+    @Volatile private var userId: String = installId(context)
     private val isNewUser: Boolean = prefs.getBoolean(KEY_IS_NEW_USER, false)
     private var sessionStartTime: Long = 0
     private var isAppFromBackground = false
 
     init {
-        // Sent with every event by the SDK, so events themselves only carry what is specific to them.
+        registerBaseProperties()
+        // Person fields only: the install id is the anonymous id, and identify() is kept for the login
+        PostHog.setPersonProperties(
+            userPropertiesToSet = mapOf(EventProperty.APP_VERSION to BuildConfig.VERSION_NAME, EventProperty.DEVICE_MODEL to Build.MODEL),
+            userPropertiesToSetOnce = mapOf(EventProperty.FIRST_INSTALL_TIME to prefs.getLong(KEY_FIRST_INSTALL_TIME, System.currentTimeMillis()))
+        )
+        reconcileIdentity()
+        startSession()
+    }
+
+    /** Sent with every event by the SDK, so events themselves only carry what is specific to them. Reset() clears them, so this runs again after it. */
+    private fun registerBaseProperties() {
         mapOf(
             EventProperty.USER_ID to userId,
             EventProperty.DEVICE_MANUFACTURER to Build.MANUFACTURER,
             EventProperty.DEVICE_MODEL to Build.MODEL,
             EventProperty.DEVICE_NAME to Build.DEVICE,
-            EventProperty.DEVICE_TYPE to if (context.resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "phone",
+            EventProperty.DEVICE_TYPE to if (appContext.resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "phone",
             EventProperty.OS to "Android ${Build.VERSION.RELEASE}",
             EventProperty.OS_NAME to "Android",
             EventProperty.OS_VERSION to Build.VERSION.RELEASE,
             EventProperty.TIMEZONE to TimeZone.getDefault().id,
             EventProperty.APP_VERSION to BuildConfig.VERSION_NAME
         ).forEach { (k, v) -> PostHog.register(k, v) }
-        // One id per install is the person in PostHog, so events from the same phone group together across sessions
-        PostHog.identify(
-            userId,
-            userProperties = mapOf(EventProperty.APP_VERSION to BuildConfig.VERSION_NAME, EventProperty.DEVICE_MODEL to Build.MODEL),
-            userPropertiesSetOnce = mapOf(EventProperty.FIRST_INSTALL_TIME to prefs.getLong(KEY_FIRST_INSTALL_TIME, System.currentTimeMillis()))
-        )
+    }
+
+    @Synchronized
+    fun reconcileIdentity() {
+        migrateIdentity()
         syncAccount(com.example.juke.account.Account.email.value)
-        startSession()
+    }
+
+    /**
+     * Older builds identified the install id on every start. PostHog then treats that person as identified, and
+     * refuses to merge two identified persons, so a returning login could never join its account. Once, per
+     * install, start over with a fresh anonymous id and let the next sync log the account in again.
+     */
+    private fun migrateIdentity() {
+        if (prefs.getBoolean(KEY_IDENTITY_V2, false)) return
+        if (!isEnabled(appContext)) return // PostHog ignores reset() while opted out; retried when it is turned back on
+        startFreshIdentity()
+        prefs.edit {
+            remove(KEY_LINKED_EMAIL)
+            putBoolean(KEY_IDENTITY_V2, true)
+        }
     }
 
     /**
@@ -148,15 +194,15 @@ class AnalyticsManager private constructor(context: Context) {
         val now = email?.trim()?.lowercase()
         val before = prefs.getString(KEY_LINKED_EMAIL, null)
         if (now == before) return
+        if (!isEnabled(appContext)) return // PostHog ignores identify() and reset() while opted out; retried when it is turned back on
         try {
             if (now != null) {
-                if (before != null) rotateInstallId() // switched account without logging out first
-                PostHog.alias(now)
+                if (before != null) startFreshIdentity() // switched account without logging out first
+                // The install's anonymous person is not identified, so PostHog can merge it into the account's
                 PostHog.identify(now, userProperties = mapOf("email" to now, EventProperty.APP_VERSION to BuildConfig.VERSION_NAME))
                 PostHog.register(EventProperty.USER_ID, now)
             } else {
-                PostHog.reset()
-                rotateInstallId()
+                startFreshIdentity()
             }
             prefs.edit { if (now != null) putString(KEY_LINKED_EMAIL, now) else remove(KEY_LINKED_EMAIL) }
         } catch (e: Exception) {
@@ -164,22 +210,13 @@ class AnalyticsManager private constructor(context: Context) {
         }
     }
 
-    private fun rotateInstallId() {
+    /** A new anonymous id for whoever uses this phone next. The SDK asks [installId] for it when it resets. */
+    private fun startFreshIdentity() {
         val fresh = UUID.randomUUID().toString()
         prefs.edit { putString(KEY_USER_ID, fresh) }
         userId = fresh
-        PostHog.register(EventProperty.USER_ID, fresh)
-        PostHog.identify(fresh, userProperties = mapOf(EventProperty.APP_VERSION to BuildConfig.VERSION_NAME))
-    }
-
-    private fun generateAndStoreUserId(): String {
-        val newUserId = UUID.randomUUID().toString()
-        prefs.edit {
-            putString(KEY_USER_ID, newUserId)
-                .putBoolean(KEY_IS_NEW_USER, true)
-                .putLong(KEY_FIRST_INSTALL_TIME, System.currentTimeMillis())
-        }
-        return newUserId
+        PostHog.reset()
+        registerBaseProperties()
     }
 
     private fun networkProperties(): Map<String, Any> {
