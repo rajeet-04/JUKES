@@ -106,6 +106,25 @@ test('a failing Spotify token fetch only skips the names', async () => {
     expect(w.top_artists[0].name).toBe(null);
 });
 
+test('an account deleted while its Wrapped is computing does not get its cache back', async () => {
+    const env = fakeEnv(configured);
+    const t = await login(env);
+    stubPostHog();
+    const inner = globalThis.fetch;
+    let deleted = false;
+    globalThis.fetch = (async (url: any, init: any) => {
+        if (!deleted && String(url).startsWith('https://ph/')) {
+            deleted = true; // the account is deleted while the first PostHog query is in flight
+            await env.DB.prepare('DELETE FROM users').run();
+            await env.DB.prepare('DELETE FROM wrapped_cache').run();
+        }
+        return inner(url, init);
+    }) as any;
+    const res = await get(env, t, `?year=${new Date().getUTCFullYear()}`);
+    expect(res.status).toBe(401);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM wrapped_cache').first()).toEqual({ n: 0 });
+});
+
 test('a PostHog failure is a 502, or the old answer when there is one', async () => {
     const env = fakeEnv(configured);
     const t = await login(env);

@@ -248,15 +248,20 @@ export async function wrapped(request: Request, env: Env): Promise<Response> {
     const snapshot = await compute(env, user.email, year, now);
     if (!snapshot) return cached ? Response.json(cached.report) : err('Could not read your listening right now. Try again later.', 502);
     if (closed && cached && lostCoverage(cached, snapshot)) return Response.json(cached.report);
-    // Only replace the snapshot we compared against, so concurrent refreshes cannot regress it.
+    // Only replace the snapshot we compared against, so concurrent refreshes cannot regress it. The insert also
+    // requires the user to still exist: an account deleted while this request was waiting on PostHog must not get
+    // its cache row back (wrapped_cache has no foreign key).
     const result = await env.DB.prepare(`INSERT INTO wrapped_cache (user_id, year, body, computed_at)
-        VALUES (?, ?, ?, ?) ON CONFLICT (user_id, year) DO UPDATE
+        SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+        ON CONFLICT (user_id, year) DO UPDATE
         SET body = excluded.body, computed_at = excluded.computed_at
         WHERE wrapped_cache.computed_at = ? AND wrapped_cache.body = ?`)
-        .bind(me.userId, year, JSON.stringify(snapshot), now, row?.computed_at ?? null, row?.body ?? null).run();
+        .bind(me.userId, year, JSON.stringify(snapshot), now, me.userId, row?.computed_at ?? null, row?.body ?? null).run();
     if (!result.meta.changes) {
         const winner = await load();
         if (winner) return Response.json(decodeSnapshot(winner.body).report);
+        const still = await env.DB.prepare('SELECT 1 AS ok FROM users WHERE id = ?').bind(me.userId).first();
+        if (!still) return err('Logged out. Log in again.', 401);
     }
     return Response.json(snapshot.report);
 }
