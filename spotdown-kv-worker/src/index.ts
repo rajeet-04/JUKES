@@ -16,6 +16,9 @@ export interface Env {
     APP_SECRET: string;
     GITHUB_TOKEN?: string; // fine-grained PAT, Issues: read and write on the app repo only
     CERT_SHA256?: string; // comma-separated app signing cert fingerprints for assetlinks.json
+    POSTHOG_API_HOST?: string; // private query API host, e.g. https://us.posthog.com
+    POSTHOG_PROJECT_ID?: string;
+    POSTHOG_PERSONAL_API_KEY?: string; // secret: personal API key with query read
 }
 
 const REFRESH_MARGIN_MS = 300_000; // app-side buffer is the same; never hand out a nearly-dead token

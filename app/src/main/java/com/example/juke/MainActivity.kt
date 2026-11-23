@@ -293,6 +293,7 @@ class MainActivity : ComponentActivity() {
                 var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
 
                 LaunchedEffect(currentRoute) { // which screens people actually use
+                    com.example.juke.viewmodels.PlayContext.screen = currentRoute
                     currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
                 }
                 LaunchedEffect(currentRoute) {

@@ -50,11 +50,17 @@ data class PlayContext(
         /** The context of the queue now playing, kept in memory so the player can read it without decoding the saved copy. */
         @Volatile var latest: PlayContext? = null
 
+        /** The route of the screen showing now (set by MainActivity). */
+        @Volatile var screen: String? = null
+
+        /** The screen showing when playback was last started by the listener: where a lone song was picked. */
+        @Volatile var pickedOn: String? = null
+
         /**
          * Where a listen came from, for analytics: jam, radio (the queue's own picks), the kind of list it was
-         * started from, or direct for a song picked on its own (search, home, a single tap).
+         * started from, or for a song picked on its own the tab it was picked on (home, search), else direct.
          */
-        fun sourceOf(from: PlayContext?, track: Track, radio: Boolean, jam: Boolean): String = when {
+        fun sourceOf(from: PlayContext?, track: Track, radio: Boolean, jam: Boolean, pickedOn: String? = null): String = when {
             jam -> "jam"
             radio -> "radio"
             else -> when (from?.takeIf { it.owns(track) }?.kind) {
@@ -62,7 +68,7 @@ data class PlayContext(
                 Kind.ALBUM -> "album"
                 Kind.ARTIST -> "artist"
                 Kind.LIBRARY -> "library"
-                null -> "direct"
+                null -> when (pickedOn) { "home" -> "home"; "search" -> "search"; else -> "direct" }
             }
         }
 

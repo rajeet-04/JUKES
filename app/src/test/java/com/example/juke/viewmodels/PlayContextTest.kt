@@ -34,6 +34,10 @@ class PlayContextTest {
     @Test fun `source falls back to direct, and jam and radio win`() {
         assertEquals("direct", PlayContext.sourceOf(null, track("u1"), radio = false, jam = false))
         assertEquals("direct", PlayContext.sourceOf(ctx, track("u9"), radio = false, jam = false)) // not in the list
+        assertEquals("home", PlayContext.sourceOf(null, track("u1"), radio = false, jam = false, pickedOn = "home"))
+        assertEquals("search", PlayContext.sourceOf(null, track("u1"), radio = false, jam = false, pickedOn = "search"))
+        assertEquals("direct", PlayContext.sourceOf(null, track("u1"), radio = false, jam = false, pickedOn = "album/1"))
+        assertEquals("playlist", PlayContext.sourceOf(ctx, track("u1"), radio = false, jam = false, pickedOn = "search")) // a list wins
         assertEquals("radio", PlayContext.sourceOf(ctx, track("u1"), radio = true, jam = false))
         assertEquals("jam", PlayContext.sourceOf(ctx, track("u1"), radio = true, jam = true))
     }

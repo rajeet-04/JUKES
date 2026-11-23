@@ -2309,7 +2309,8 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 from = com.example.juke.viewmodels.PlayContext.latest,
                                                 track = track,
                                                 radio = queueManager.isRadioSong(track),
-                                                jam = com.example.juke.jam.JamSession.state.value.active
+                                                jam = com.example.juke.jam.JamSession.state.value.active,
+                                                pickedOn = com.example.juke.viewmodels.PlayContext.pickedOn
                                             )
                                             withContext(Dispatchers.Main) {
                                                 // A quick skip may have moved on before this lookup finished.
@@ -2414,6 +2415,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun playTrack(track: Track) {
+        com.example.juke.viewmodels.PlayContext.pickedOn = com.example.juke.viewmodels.PlayContext.screen
         val mediaItem = createValidatedMediaItem(track)
         if (mediaItem == null) {
             Log.e(tag, "Cannot play track without local URI")
@@ -2443,6 +2445,7 @@ class PlaybackManager private constructor(private val context: Context) {
         startPositionMs: Long = C.TIME_UNSET,
         keepShuffleMode: Boolean = false
     ) {
+        com.example.juke.viewmodels.PlayContext.pickedOn = com.example.juke.viewmodels.PlayContext.screen
         initialize()
 
         if (!keepShuffleMode) {
