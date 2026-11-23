@@ -29,11 +29,12 @@ object DailyReport {
     /**
      * Same user, device and day always give the same uuid, so a retry after a lost response is not counted
      * twice. The device is part of it so a phone and a desktop reporting the same day under one email do not
-     * collide and get one of them dropped as a duplicate. [batch] is the lowest row id in the report: a listen
-     * that finishes after its day was already reported lands in a later batch with its own uuid instead of
-     * being dropped as a duplicate of the accepted one, while a retry of the same rows keeps the same uuid.
+     * collide and get one of them dropped as a duplicate. [batch] names exactly which rows the report holds
+     * (their ids): a retry of the same rows keeps the same uuid, while a report with a different set of rows,
+     * such as one that gained a listen finishing late, gets its own uuid and is never dropped as a duplicate
+     * of an accepted report that did not contain that listen.
      */
-    fun eventUuid(distinctId: String, date: String, deviceId: String, batch: Long = 0): String =
+    fun eventUuid(distinctId: String, date: String, deviceId: String, batch: String = ""): String =
         UUID.nameUUIDFromBytes("$EVENT|$distinctId|$deviceId|$date|$batch".toByteArray()).toString()
 
     /** The day's rows (all one local date) as event properties; songs are grouped by title and artist. */
@@ -79,7 +80,7 @@ object DailyReport {
     }
 
     /** The body for PostHog's /batch endpoint. */
-    fun batchBody(apiKey: String, distinctId: String, deviceId: String, date: String, props: JsonObject, zone: ZoneId, batch: Long = 0): JsonObject {
+    fun batchBody(apiKey: String, distinctId: String, deviceId: String, date: String, props: JsonObject, zone: ZoneId, batch: String = ""): JsonObject {
         // Noon of the local day, so the event lands on that day whatever the viewer's time zone does at midnight.
         val at = LocalDate.parse(date).atTime(12, 0).atZone(zone).toInstant().toString()
         return buildJsonObject {
@@ -129,7 +130,7 @@ class DailyReportUploader(
             var allOk = true
             for ((id, list) in rows.groupBy { it.owner ?: distinctId() }) {
                 val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
-                val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone, batch = list.minOf { it.id })
+                val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone, batch = list.map { it.id }.sorted().joinToString(","))
                 if (!enabled()) return done // consent withdrawn mid-run: send nothing more
                 val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
                 if (!ok) { allOk = false; break }

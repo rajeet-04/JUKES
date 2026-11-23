@@ -97,6 +97,23 @@ class DailyReportTest {
         assertNotEquals(uuids[0], uuids[1]) // the late report is not dropped as a duplicate of the first
     }
 
+    @Test fun aRetryThatGainedALateListenGetsANewUuid() = runBlocking {
+        // the first report may have been accepted with its response lost: the retry holds one more row,
+        // so it must not share the uuid PostHog already saw
+        val dao = FakeDao(listOf(row("2023-11-13", "a - x")))
+        val sent = mutableListOf<JsonObject>()
+        var ok = false
+        val up = uploader(dao, today = "2023-11-20", sent = sent, ok = { ok })
+        up.uploadPending()
+        dao.insert(row("2023-11-13", "late - x"))
+        ok = true
+        up.uploadPending()
+        val uuids = sent.map { it["batch"]!!.jsonArray.single().jsonObject["uuid"]!!.jsonPrimitive.content }
+        assertEquals(2, uuids.size)
+        assertNotEquals(uuids[0], uuids[1])
+        assertTrue(dao.rows.isEmpty())
+    }
+
     @Test fun aRetryOfTheSameRowsKeepsTheSameUuid() = runBlocking {
         val dao = FakeDao(listOf(row("2023-11-13")))
         val sent = mutableListOf<JsonObject>()
