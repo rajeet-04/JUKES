@@ -22,17 +22,18 @@ private class FakeDao(rows: List<PlayEventEntity>) : PlayEventDao {
     override suspend fun dates() = rows.map { it.localDate }.distinct().sorted()
     override suspend fun forDate(date: String) = rows.filter { it.localDate == date }
     override suspend fun deleteDate(date: String): Int { val n = rows.count { it.localDate == date }; rows.removeAll { it.localDate == date }; return n }
+    override suspend fun deleteAll(): Int { val n = rows.size; rows.clear(); return n }
 }
 
 class DailyReportTest {
     // 2023-11-14 22:13 UTC
     private val t0 = 1_700_000_000_000L
 
-    private fun row(date: String, key: String = "t - a", listened: Long = 60_000, skipped: Boolean = false, at: Long = t0) =
+    private fun row(date: String, key: String = "t - a", listened: Long = 60_000, skipped: Boolean = false, at: Long = t0, owner: String? = null) =
         PlayEventEntity(
             trackUuid = "u-$key", songKey = key, startedAt = at, localDate = date, timeZone = "UTC",
             listenedMs = listened, durationMs = 200_000, completed = !skipped, skipped = skipped,
-            title = key.substringBefore(" - "), artist = key.substringAfter(" - "), spotifyId = "sp-$key"
+            title = key.substringBefore(" - "), artist = key.substringAfter(" - "), spotifyId = "sp-$key", owner = owner
         )
 
     private fun uploader(dao: PlayEventDao, today: String, sent: MutableList<JsonObject>, ok: () -> Boolean = { true }) =
@@ -57,6 +58,22 @@ class DailyReportTest {
         assertEquals(0, n)
         assertEquals(listOf("2023-11-13", "2023-11-14"), dao.dates())
         assertEquals(1, sent.size) // stops at the first failure
+    }
+
+    @Test fun eachOwnersListeningIsReportedUnderThemAndAnonymousUnderThisInstall() = runBlocking {
+        val dao = FakeDao(listOf(row("2023-11-13", owner = "a@x.com"), row("2023-11-13", owner = "b@x.com"), row("2023-11-13")))
+        val sent = mutableListOf<JsonObject>()
+        uploader(dao, today = "2023-11-20", sent = sent).uploadPending()
+        val ids = sent.map { it["batch"]!!.jsonArray.single().jsonObject["distinct_id"]!!.jsonPrimitive.content }.toSet()
+        assertEquals(setOf("a@x.com", "b@x.com", "me@example.com"), ids)
+        assertTrue(dao.rows.isEmpty())
+    }
+
+    @Test fun ifOneOwnerFailsTheDayIsKept() = runBlocking {
+        val dao = FakeDao(listOf(row("2023-11-13", owner = "a@x.com"), row("2023-11-13", owner = "b@x.com")))
+        var calls = 0
+        uploader(dao, today = "2023-11-20", sent = mutableListOf(), ok = { ++calls == 1 }).uploadPending()
+        assertEquals(2, dao.rows.size)
     }
 
     @Test fun sameDayAndUserGiveTheSameEventUuid() {

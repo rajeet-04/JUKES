@@ -224,6 +224,13 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+/** Each play_events row records which account (email) was listening, null when anonymous. */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE play_events ADD COLUMN owner TEXT")
+    }
+}
+
 /** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -256,7 +263,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class, PlayEventEntity::class],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -291,7 +298,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_11_12,
                         MIGRATION_12_13,
                         MIGRATION_13_14,
-                        MIGRATION_14_15
+                        MIGRATION_14_15,
+                        MIGRATION_15_16
                     )
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()

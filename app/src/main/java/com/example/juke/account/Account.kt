@@ -50,6 +50,7 @@ object Account {
         val p = prefs(c)
         token = p.getString("token", null)
         _email.value = if (token != null) p.getString("email", null) else null
+        com.example.juke.analytics.AnalyticsManager.getIfInitialized()?.syncAccount(_email.value)
     }
 
     /** Same input, same output on every device; the Worker salts and hashes it again. */

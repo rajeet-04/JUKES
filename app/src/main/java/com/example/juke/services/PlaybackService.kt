@@ -1642,9 +1642,14 @@ class PlaybackManager private constructor(private val context: Context) {
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Times real listening for the daily report; touched from the main thread only. */
-    private val playLog = PlayLog(sink = { e ->
-        scope.launch { runCatching { database.playEventDao().insert(e) } }
-    })
+    private val playLog = PlayLog(
+        sink = { e ->
+            if (com.example.juke.analytics.AnalyticsManager.isEnabled(context)) {
+                scope.launch { runCatching { database.playEventDao().insert(e) } }
+            }
+        },
+        owner = { com.example.juke.account.Account.email.value?.trim()?.lowercase() }
+    )
     // Serial background dispatcher for queue mutations: keeps disk work off the main thread while
     // preserving the order in which setQueue/addToQueue calls were made.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -2267,10 +2272,10 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                             streamSeekHandoff.trackChanged(mediaItem?.mediaId)
-                            playLog.end(completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+                            val listened = playLog.end(completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
                             when (reason) {
-                                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> AnalyticsManager.getIfInitialized()?.songTransition(true)
-                                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> AnalyticsManager.getIfInitialized()?.songTransition(false)
+                                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> AnalyticsManager.getIfInitialized()?.songTransition(true, listened)
+                                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> AnalyticsManager.getIfInitialized()?.songTransition(false, listened)
                             }
                             mediaItem?.let { item ->
                                 val trackId = item.mediaId
@@ -2316,7 +2321,10 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 songArtist = track.artist,
                                                 songDuration = track.durationSec * 1000L,
                                                 positionInQueue = currentIndex,
-                                                isStream = track.isStream
+                                                isStream = track.isStream,
+                                                trackUuid = track.uuid,
+                                                spotifyId = track.spotifyId,
+                                                ytVideoId = track.ytVideoId
                                             )
                                         } else {
                                             Log.w(

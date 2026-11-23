@@ -112,11 +112,16 @@ class DailyReportUploader(
             if (!day.isBefore(today())) break
             val rows = dao.forDate(date)
             if (rows.isEmpty()) continue
-            val id = distinctId()
-            val zone = runCatching { ZoneId.of(rows.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
-            val body = DailyReport.batchBody(apiKey(), id, date, DailyReport.properties(date, rows, platform), zone)
-            val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
-            if (!ok) break // offline or rejected: keep this and later days, try again next time
+            // Each row reports under whoever was listening: their email, or this install when anonymous.
+            var allOk = true
+            for ((owner, list) in rows.groupBy { it.owner }) {
+                val id = owner ?: distinctId()
+                val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
+                val body = DailyReport.batchBody(apiKey(), id, date, DailyReport.properties(date, list, platform), zone)
+                val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
+                if (!ok) { allOk = false; break }
+            }
+            if (!allOk) break // offline or rejected: keep this and later days, try again next time (same uuid, no double count)
             dao.deleteDate(date)
             done++
         }
@@ -141,7 +146,7 @@ object DailyReports {
                 DailyReportUploader(
                     dao = com.example.juke.database.MusicDatabase.getDatabase(app).playEventDao(),
                     distinctId = { distinctId(app) },
-                    enabled = { true },
+                    enabled = { AnalyticsManager.isEnabled(app) },
                     apiKey = { com.example.juke.BuildConfig.POSTHOG_API_KEY },
                     send = { body ->
                         val url = com.example.juke.BuildConfig.POSTHOG_HOST.trimEnd('/') + "/batch/"

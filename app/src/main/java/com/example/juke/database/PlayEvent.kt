@@ -35,7 +35,9 @@ data class PlayEventEntity(
     @ColumnInfo(name = "spotify_id") val spotifyId: String? = null,
     @ColumnInfo(name = "album_spotify_id") val albumSpotifyId: String? = null,
     @ColumnInfo(name = "artist_spotify_ids") val artistSpotifyIds: List<String>? = null,
-    @ColumnInfo(name = "yt_video_id") val ytVideoId: String? = null
+    @ColumnInfo(name = "yt_video_id") val ytVideoId: String? = null,
+    /** Account email when the listener was logged in, null when anonymous. */
+    val owner: String? = null
 )
 
 @Dao
@@ -52,4 +54,7 @@ interface PlayEventDao {
 
     @Query("DELETE FROM play_events WHERE local_date = :date")
     suspend fun deleteDate(date: String): Int
+
+    @Query("DELETE FROM play_events")
+    suspend fun deleteAll(): Int
 }

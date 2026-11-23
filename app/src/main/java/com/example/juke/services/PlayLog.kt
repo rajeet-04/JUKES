@@ -15,9 +15,11 @@ import java.time.ZoneId
 class PlayLog(
     private val sink: (PlayEventEntity) -> Unit,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() }
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    /** The account email listening right now, or null; read when the listen starts. */
+    private val owner: () -> String? = { null }
 ) {
-    private class Current(val track: Track, val startedAt: Long, val source: String?) {
+    private class Current(val track: Track, val startedAt: Long, val source: String?, val owner: String?) {
         val durationMs = track.durationSec * 1000L
         var listenedMs = 0L
         var playingSince: Long? = null
@@ -27,7 +29,7 @@ class PlayLog(
 
     fun start(track: Track, playingNow: Boolean, source: String? = null) {
         val now = clock()
-        val c = Current(track, now, source)
+        val c = Current(track, now, source, owner())
         if (playingNow) c.playingSince = now
         current = c
     }
@@ -44,13 +46,16 @@ class PlayLog(
         }
     }
 
-    /** Finish the current listen. [completed] when it ran to its end, otherwise it counts as skipped. */
-    fun end(completed: Boolean) {
-        val c = current ?: return
+    /**
+     * Finish the current listen. [completed] when it ran to its end, otherwise it counts as skipped.
+     * @return the time actually listened in ms, or null when nothing was playing.
+     */
+    fun end(completed: Boolean): Long? {
+        val c = current ?: return null
         current = null
         setPlayingOn(c)
         val listened = if (c.durationMs > 0) minOf(c.listenedMs, c.durationMs) else c.listenedMs
-        if (listened < MIN_LISTEN_MS) return
+        if (listened < MIN_LISTEN_MS) return listened
         val z = zone()
         sink(
             PlayEventEntity(
@@ -69,9 +74,11 @@ class PlayLog(
                 spotifyId = c.track.spotifyId,
                 albumSpotifyId = c.track.albumSpotifyId,
                 artistSpotifyIds = c.track.artistSpotifyIds,
-                ytVideoId = c.track.ytVideoId
+                ytVideoId = c.track.ytVideoId,
+                owner = c.owner
             )
         )
+        return listened
     }
 
     /** Fold in time still running when the listen ends. */
