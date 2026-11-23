@@ -1650,7 +1650,8 @@ class PlaybackManager private constructor(private val context: Context) {
             }
         },
         owner = { com.example.juke.account.Account.email.value?.trim()?.lowercase() },
-        enabled = { com.example.juke.analytics.AnalyticsManager.isEnabled(context) }
+        enabled = { com.example.juke.analytics.AnalyticsManager.isEnabled(context) },
+        epoch = { com.example.juke.analytics.AnalyticsManager.consentEpoch() }
     )
     // Serial background dispatcher for queue mutations: keeps disk work off the main thread while
     // preserving the order in which setQueue/addToQueue calls were made.

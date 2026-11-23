@@ -20,9 +20,16 @@ const YEAR_SETTLE_MS = 14 * 86_400_000;
 /** A past year's result is final only if it was computed after late uploads had a chance to land. */
 export const isFinal = (year: number, computedAt: number) => computedAt >= Date.UTC(year + 1, 0, 1) + YEAR_SETTLE_MS;
 
-/** Every query reads only this account's reports for the year, by the local date each report carries. */
+/**
+ * Every query reads only this account's reports for the year, by the local date each report carries.
+ * It matches the person, not just the email: reports uploaded anonymously before the login were merged into
+ * the account's person and keep their old distinct id.
+ */
 export function filterFor(email: string, year: number): string {
-    return `event = '${EVENT}' AND distinct_id = ${lit(email)}
+    return `event = '${EVENT}'
+        AND person_id IN (SELECT person_id FROM events WHERE distinct_id = ${lit(email)}
+            AND timestamp >= toDateTime('${MIN_YEAR}-01-01 00:00:00')
+            AND timestamp < toDateTime('${year + 1}-01-01 00:00:00') + INTERVAL 2 DAY)
         AND timestamp >= toDateTime('${year}-01-01 00:00:00') - INTERVAL 2 DAY
         AND timestamp < toDateTime('${year + 1}-01-01 00:00:00') + INTERVAL 2 DAY
         AND properties.date >= '${year}-01-01' AND properties.date <= '${year}-12-31'`;
@@ -36,9 +43,19 @@ export const queries = (email: string, year: number) => {
         days: `SELECT properties.date AS day, sum(toFloat(properties.total_listened_ms)) AS ms,
                  sum(toInt(properties.plays)) AS plays, sum(toInt(properties.skips)) AS skips
                FROM events WHERE ${f} GROUP BY day ORDER BY day LIMIT 400`,
-        small: `SELECT JSONExtractRaw(properties, 'listened_ms_by_hour') AS hours,
-                  JSONExtractRaw(properties, 'listened_ms_by_source') AS sources
-                FROM events WHERE ${f} LIMIT 800`,
+        // Summed in PostHog over every report (reports are per device and per late batch, so their number is unbounded).
+        // Rows are [kind, key, ms]: kind 'h' is an hour of day 0-23, kind 's' a listening source.
+        small: `SELECT kind, k, sum(v) AS v FROM (
+                  SELECT 'h' AS kind, toString(tupleElement(p, 1)) AS k, tupleElement(p, 2) AS v FROM (
+                    SELECT arrayJoin(arrayMap(i -> tuple(i, arrayElement(JSONExtract(properties, 'listened_ms_by_hour', 'Array(Float64)'), i + 1)), range(24))) AS p
+                    FROM events WHERE ${f}
+                  )
+                  UNION ALL
+                  SELECT 's', tupleElement(p, 1), tupleElement(p, 2) FROM (
+                    SELECT arrayJoin(JSONExtractKeysAndValues(properties, 'listened_ms_by_source', 'Float64')) AS p
+                    FROM events WHERE ${f}
+                  )
+                ) GROUP BY kind, k LIMIT 100`,
         songs: `SELECT song_key, any(t_title) AS title, any(t_artist) AS artist, any(t_spotify) AS spotify_id,
                   any(t_album) AS album_id, sum(ms) AS ms, sum(plays) AS plays, sum(skips) AS skips
                 FROM (
@@ -80,7 +97,6 @@ export function longestStreak(dates: string[]): number {
 /** Monday = 0 ... Sunday = 6, for a local yyyy-mm-dd date. */
 export const weekday = (date: string) => (new Date(date + 'T12:00:00Z').getUTCDay() + 6) % 7;
 
-const parseJson = (raw: unknown): unknown => { try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; } };
 
 export interface Ranked { id?: string; name: string | null; minutes: number }
 export interface Wrapped {
@@ -105,10 +121,9 @@ export function shape(year: number, now: number, r: {
         ms += num(m); plays += num(p); skips += num(s);
         byWeekday[weekday(d)] += num(m);
     }
-    for (const [h, s] of r.small) {
-        const hours = parseJson(h), sources = parseJson(s);
-        if (Array.isArray(hours)) hours.slice(0, 24).forEach((v, i) => { byHour[i] += num(v); });
-        if (sources && typeof sources === 'object') for (const [k, v] of Object.entries(sources)) bySource[k] = (bySource[k] ?? 0) + num(v);
+    for (const [kind, key, v] of r.small) {
+        if (kind === 'h') { const i = num(key); if (i >= 0 && i < 24) byHour[i] += num(v); }
+        else if (kind === 's') bySource[String(key)] = (bySource[String(key)] ?? 0) + num(v);
     }
     return {
         year, generated_at: now, plays, skips, skip_rate: plays ? Math.round((skips / plays) * 1000) / 1000 : 0,

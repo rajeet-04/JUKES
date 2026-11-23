@@ -65,6 +65,11 @@ class AnalyticsManager private constructor(context: Context) {
         }
 
         /** Listening stats and usage events are sent unless the listener turned this off. */
+        private val consentEpoch = java.util.concurrent.atomic.AtomicInteger()
+
+        /** Bumped each time analytics is switched off, so a listen that began before it can tell. */
+        fun consentEpoch(): Int = consentEpoch.get()
+
         fun isEnabled(context: Context): Boolean =
             context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, true)
 
@@ -77,6 +82,7 @@ class AnalyticsManager private constructor(context: Context) {
             // PostHog ignores identity changes while opted out, so any login or logout in that time is applied now
             if (enabled) instance?.reconcileIdentity()
             if (!enabled) {
+                consentEpoch.incrementAndGet()
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                     runCatching { com.example.juke.database.MusicDatabase.getDatabase(app).playEventDao().deleteAll() }
                 }

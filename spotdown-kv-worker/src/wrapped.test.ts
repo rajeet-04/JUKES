@@ -33,10 +33,7 @@ test('weekday is Monday-first from the local date', () => {
 test('shape folds the query results into the numbers', () => {
     const w = shape(2026, 1, {
         days: [['2026-12-01', 600000, 10, 2], ['2026-12-02', 1200000, 20, 4], ['2026-12-04', 60000, 1, 0]],
-        small: [
-            [JSON.stringify([...new Array(22).fill(0), 600000, 0]), JSON.stringify({ playlist: 500000, radio: 100000 })],
-            [JSON.stringify([...new Array(22).fill(0), 1200000, 60000]), JSON.stringify({ playlist: 1000000 })],
-        ],
+        small: [['h', '22', 1800000], ['h', '23', 60000], ['s', 'playlist', 1500000], ['s', 'radio', 100000]],
         songs: [['x - a', 'x', 'a', 'sp1', 'al1', 1800000, 25]],
         artists: [['ar1', 1800000]],
         albums: [['al1', 1800000]],

@@ -66,6 +66,19 @@ class PlayLogTest {
         assertEquals(1, rows.size)
     }
 
+    @Test fun aListenThatSpansAnOptOutIsNeverRecorded() {
+        var epoch = 0
+        val gated = PlayLog({ rows += it }, { now }, { ZoneId.of("UTC") }, epoch = { epoch })
+        gated.start(track(200), playingNow = true)
+        now += 30_000
+        epoch++ // opted out, then back in, while the song played
+        gated.end(completed = false)
+        assertTrue(rows.isEmpty())
+        gated.start(track(200), playingNow = true)
+        now += 30_000; gated.end(completed = false)
+        assertEquals(1, rows.size)
+    }
+
     @Test fun endWithoutStartDoesNothing() {
         log.end(completed = true)
         assertTrue(rows.isEmpty())

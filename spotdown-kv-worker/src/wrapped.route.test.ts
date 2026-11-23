@@ -44,7 +44,7 @@ function stubPostHog(opts: { fail?: boolean } = {}) {
             sent.push(sql);
             const rows =
                 sql.includes('GROUP BY day') ? [['2026-12-01', 600000, 5, 1]] :
-                sql.includes('listened_ms_by_hour') ? [[JSON.stringify(new Array(24).fill(0)), JSON.stringify({ playlist: 600000 })]] :
+                sql.includes('listened_ms_by_hour') ? [['h', '20', 600000], ['s', 'playlist', 600000]] :
                 sql.includes('GROUP BY song_key') ? [['x - a', 'x', 'a', 'sp', 'al', 600000, 5]] :
                 sql.includes('GROUP BY aid') ? [['ar1', 600000]] :
                 sql.includes('GROUP BY album') ? [['al1', 600000]] : [[3]];
