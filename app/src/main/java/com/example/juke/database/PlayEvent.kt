@@ -55,6 +55,9 @@ interface PlayEventDao {
     @Query("DELETE FROM play_events WHERE local_date = :date")
     suspend fun deleteDate(date: String): Int
 
+    @Query("DELETE FROM play_events WHERE id IN (:ids)")
+    suspend fun deleteIds(ids: List<Long>): Int
+
     @Query("DELETE FROM play_events")
     suspend fun deleteAll(): Int
 }

@@ -29,10 +29,12 @@ object DailyReport {
     /**
      * Same user, device and day always give the same uuid, so a retry after a lost response is not counted
      * twice. The device is part of it so a phone and a desktop reporting the same day under one email do not
-     * collide and get one of them dropped as a duplicate.
+     * collide and get one of them dropped as a duplicate. [batch] is the lowest row id in the report: a listen
+     * that finishes after its day was already reported lands in a later batch with its own uuid instead of
+     * being dropped as a duplicate of the accepted one, while a retry of the same rows keeps the same uuid.
      */
-    fun eventUuid(distinctId: String, date: String, deviceId: String): String =
-        UUID.nameUUIDFromBytes("$EVENT|$distinctId|$deviceId|$date".toByteArray()).toString()
+    fun eventUuid(distinctId: String, date: String, deviceId: String, batch: Long = 0): String =
+        UUID.nameUUIDFromBytes("$EVENT|$distinctId|$deviceId|$date|$batch".toByteArray()).toString()
 
     /** The day's rows (all one local date) as event properties; songs are grouped by title and artist. */
     fun properties(date: String, rows: List<PlayEventEntity>, platform: String): JsonObject {
@@ -77,7 +79,7 @@ object DailyReport {
     }
 
     /** The body for PostHog's /batch endpoint. */
-    fun batchBody(apiKey: String, distinctId: String, deviceId: String, date: String, props: JsonObject, zone: ZoneId): JsonObject {
+    fun batchBody(apiKey: String, distinctId: String, deviceId: String, date: String, props: JsonObject, zone: ZoneId, batch: Long = 0): JsonObject {
         // Noon of the local day, so the event lands on that day whatever the viewer's time zone does at midnight.
         val at = LocalDate.parse(date).atTime(12, 0).atZone(zone).toInstant().toString()
         return buildJsonObject {
@@ -86,7 +88,7 @@ object DailyReport {
                 put("event", EVENT)
                 put("distinct_id", distinctId)
                 put("timestamp", at)
-                put("uuid", eventUuid(distinctId, date, deviceId))
+                put("uuid", eventUuid(distinctId, date, deviceId, batch))
                 put("properties", props)
             })))
         }
@@ -127,12 +129,13 @@ class DailyReportUploader(
             var allOk = true
             for ((id, list) in rows.groupBy { it.owner ?: distinctId() }) {
                 val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
-                val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone)
+                val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone, batch = list.minOf { it.id })
                 val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
                 if (!ok) { allOk = false; break }
             }
             if (!allOk) break // offline or rejected: keep this and later days, try again next time (same uuid, no double count)
-            dao.deleteDate(date)
+            // Delete exactly what was reported: a listen that finished meanwhile stays for the next run.
+            dao.deleteIds(rows.map { it.id })
             done++
         }
         done

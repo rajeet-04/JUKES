@@ -17,8 +17,11 @@ import org.junit.Test
 import java.time.LocalDate
 
 private class FakeDao(rows: List<PlayEventEntity>) : PlayEventDao {
-    val rows = rows.toMutableList()
-    override suspend fun insert(event: PlayEventEntity) { rows += event }
+    private var nextId = 1L
+    val rows = rows.map { it.copy(id = nextId++) }.toMutableList()
+    var beforeDelete: () -> Unit = {}
+    override suspend fun insert(event: PlayEventEntity) { rows += event.copy(id = nextId++) }
+    override suspend fun deleteIds(ids: List<Long>): Int { beforeDelete(); val n = rows.count { it.id in ids }; rows.removeAll { it.id in ids }; return n }
     override suspend fun dates() = rows.map { it.localDate }.distinct().sorted()
     override suspend fun forDate(date: String) = rows.filter { it.localDate == date }
     override suspend fun deleteDate(date: String): Int { val n = rows.count { it.localDate == date }; rows.removeAll { it.localDate == date }; return n }
@@ -76,6 +79,32 @@ class DailyReportTest {
         uploader(dao, today = "2023-11-20", sent = sent).uploadPending()
         assertEquals(1, sent.size)
         assertTrue(dao.rows.isEmpty())
+    }
+
+    @Test fun aListenThatFinishesWhileTheDayIsBeingClearedIsKeptAndReportedLater() = runBlocking {
+        val dao = FakeDao(listOf(row("2023-11-13", "a - x")))
+        var late = true
+        dao.beforeDelete = { if (late) { late = false; kotlinx.coroutines.runBlocking { dao.insert(row("2023-11-13", "late - x")) } } }
+        val sent = mutableListOf<JsonObject>()
+        val up = uploader(dao, today = "2023-11-20", sent = sent)
+        up.uploadPending()
+        assertEquals(listOf("late - x"), dao.rows.map { it.songKey }) // not deleted unreported
+        up.uploadPending()
+        assertTrue(dao.rows.isEmpty())
+        val uuids = sent.map { it["batch"]!!.jsonArray.single().jsonObject["uuid"]!!.jsonPrimitive.content }
+        assertEquals(2, uuids.size)
+        assertNotEquals(uuids[0], uuids[1]) // the late report is not dropped as a duplicate of the first
+    }
+
+    @Test fun aRetryOfTheSameRowsKeepsTheSameUuid() = runBlocking {
+        val dao = FakeDao(listOf(row("2023-11-13")))
+        val sent = mutableListOf<JsonObject>()
+        var ok = false
+        val up = uploader(dao, today = "2023-11-20", sent = sent, ok = { ok })
+        up.uploadPending(); ok = true; up.uploadPending()
+        val uuids = sent.map { it["batch"]!!.jsonArray.single().jsonObject["uuid"]!!.jsonPrimitive.content }
+        assertEquals(2, uuids.size)
+        assertEquals(uuids[0], uuids[1])
     }
 
     @Test fun ifOneOwnerFailsTheDayIsKept() = runBlocking {

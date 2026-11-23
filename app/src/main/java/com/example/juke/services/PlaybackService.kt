@@ -2273,9 +2273,11 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                             streamSeekHandoff.trackChanged(mediaItem?.mediaId)
-                            val listened = playLog.end(completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+                            // Repeat-one reaching the end is a transition too, with its own reason: still a full listen.
+                            val ranToEnd = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                            val listened = playLog.end(completed = ranToEnd)
                             when (reason) {
-                                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> AnalyticsManager.getIfInitialized()?.songTransition(true, listened)
+                                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO, Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> AnalyticsManager.getIfInitialized()?.songTransition(true, listened)
                                 Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> AnalyticsManager.getIfInitialized()?.songTransition(false, listened)
                             }
                             mediaItem?.let { item ->
