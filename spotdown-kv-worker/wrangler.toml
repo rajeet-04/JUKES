@@ -13,11 +13,11 @@ routes = [{ pattern = "j.rajeet.in", custom_domain = true }]
 CERT_SHA256 = "D7:2C:E0:E4:30:5C:D1:36:A1:9C:F6:42:3D:40:FF:33:40:42:F9:E7:C6:6D:35:6C:9B:C4:5B:1C:F4:D3:09:A7"
 
 # Wrapped read-back: PostHog's private query API (the app posts to us.i.posthog.com; queries go to us.posthog.com).
-# POSTHOG_PROJECT_ID is the number in the project's URL in PostHog; the Worker answers 503 until it is set.
+# POSTHOG_PROJECT_ID is the JUKE project in PostHog; the Worker answers 503 if it is empty.
 # The personal API key (scope: query read) is a secret, never a var:
 #   wrangler secret put POSTHOG_PERSONAL_API_KEY
 POSTHOG_API_HOST = "https://us.posthog.com"
-POSTHOG_PROJECT_ID = ""
+POSTHOG_PROJECT_ID = "272270"
 
 # Share snapshots (schema in migrations/); expired rows are swept daily
 [[d1_databases]]
