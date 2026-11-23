@@ -128,7 +128,8 @@ export function shape(year: number, now: number, r: {
 
 /** Artist and album names, and the genres of the top artists weighted by listening, from Spotify. Quietly skipped on failure. */
 async function addNames(env: Env, w: Wrapped): Promise<void> {
-    const tok = await spotifyToken(env);
+    let tok: Awaited<ReturnType<typeof spotifyToken>> = null;
+    try { tok = await spotifyToken(env); } catch { return; } // the names are optional: a failed token fetch must not fail the route
     if (!tok) return;
     const get = async <T>(path: string): Promise<T | null> => {
         try {

@@ -103,6 +103,19 @@ object Account {
         forget(c)
     }
 
+    /** Emails deleted in this process: a listen still in progress for one must not be buffered when it ends. */
+    private val deleted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun wasDeleted(email: String) = email.trim().lowercase() in deleted
+
+    /** Drops what is buffered for the daily report under this account, so nothing is sent for it after deletion. */
+    private suspend fun purgeListening(c: Context, email: String) {
+        val owner = email.trim().lowercase()
+        deleted += owner // first, so a listen ending now is not inserted behind the delete
+        withContext(Dispatchers.IO) {
+            runCatching { com.example.juke.database.MusicDatabase.getDatabase(c.applicationContext).playEventDao().deleteOwner(owner) }
+        }
+    }
+
     /** The token stopped working (logged out elsewhere, account deleted): drop it locally. */
     fun forget(c: Context) {
         prefs(c).edit {clear()}
@@ -119,7 +132,7 @@ object Account {
                 auth(); contentType(ContentType.Application.Json); setBody(json.encodeToString(keys))
             }
             if (!res.status.isSuccess()) return message(res.body<String>(), "Something went wrong (${res.status.value})")
-            if (newPassword == null) forget(c)
+            if (newPassword == null) { purgeListening(c, e); forget(c) }
             null
         } catch (ex: CancellationException) { throw ex } catch (ex: Exception) { "Couldn't reach JUKES. Check your connection." }
     }

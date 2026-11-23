@@ -21,6 +21,7 @@ private class FakeDao(rows: List<PlayEventEntity>) : PlayEventDao {
     val rows = rows.map { it.copy(id = nextId++) }.toMutableList()
     var beforeDelete: () -> Unit = {}
     override suspend fun insert(event: PlayEventEntity) { rows += event.copy(id = nextId++) }
+    override suspend fun deleteOwner(owner: String): Int { val n = rows.count { it.owner == owner }; rows.removeAll { it.owner == owner }; return n }
     override suspend fun deleteIds(ids: List<Long>): Int { beforeDelete(); val n = rows.count { it.id in ids }; rows.removeAll { it.id in ids }; return n }
     override suspend fun dates() = rows.map { it.localDate }.distinct().sorted()
     override suspend fun forDate(date: String) = rows.filter { it.localDate == date }

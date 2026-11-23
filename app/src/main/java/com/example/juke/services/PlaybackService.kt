@@ -1644,7 +1644,8 @@ class PlaybackManager private constructor(private val context: Context) {
     /** Times real listening for the daily report; touched from the main thread only. */
     private val playLog = PlayLog(
         sink = { e ->
-            if (com.example.juke.analytics.AnalyticsManager.isEnabled(context)) {
+            val deletedAccount = e.owner?.let { com.example.juke.account.Account.wasDeleted(it) } == true
+            if (com.example.juke.analytics.AnalyticsManager.isEnabled(context) && !deletedAccount) {
                 scope.launch { runCatching { database.playEventDao().insert(e) } }
             }
         },

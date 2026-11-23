@@ -94,6 +94,18 @@ test('computes from PostHog, adds Spotify names, then serves the cache', async (
     expect(sent.length).toBe(6); // second request came from the cache
 });
 
+test('a failing Spotify token fetch only skips the names', async () => {
+    // no cached token, and the stub throws on the token request: the numbers must still come back
+    const env = fakeEnv({ ...configured, KV: { get: async () => null, put: async () => {} } });
+    const t = await login(env);
+    stubPostHog();
+    const res = await get(env, t, `?year=${new Date().getUTCFullYear()}`);
+    expect(res.status).toBe(200);
+    const w = await res.json() as any;
+    expect(w.plays).toBe(5);
+    expect(w.top_artists[0].name).toBe(null);
+});
+
 test('a PostHog failure is a 502, or the old answer when there is one', async () => {
     const env = fakeEnv(configured);
     const t = await login(env);
