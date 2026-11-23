@@ -26,9 +26,13 @@ object DailyReport {
     const val EVENT = "daily_listening_report"
     private const val VERSION = 1
 
-    /** Same user and day always give the same uuid, so a retry after a lost response is not counted twice. */
-    fun eventUuid(distinctId: String, date: String): String =
-        UUID.nameUUIDFromBytes("$EVENT|$distinctId|$date".toByteArray()).toString()
+    /**
+     * Same user, device and day always give the same uuid, so a retry after a lost response is not counted
+     * twice. The device is part of it so a phone and a desktop reporting the same day under one email do not
+     * collide and get one of them dropped as a duplicate.
+     */
+    fun eventUuid(distinctId: String, date: String, deviceId: String): String =
+        UUID.nameUUIDFromBytes("$EVENT|$distinctId|$deviceId|$date".toByteArray()).toString()
 
     /** The day's rows (all one local date) as event properties; songs are grouped by title and artist. */
     fun properties(date: String, rows: List<PlayEventEntity>, platform: String): JsonObject {
@@ -73,7 +77,7 @@ object DailyReport {
     }
 
     /** The body for PostHog's /batch endpoint. */
-    fun batchBody(apiKey: String, distinctId: String, date: String, props: JsonObject, zone: ZoneId): JsonObject {
+    fun batchBody(apiKey: String, distinctId: String, deviceId: String, date: String, props: JsonObject, zone: ZoneId): JsonObject {
         // Noon of the local day, so the event lands on that day whatever the viewer's time zone does at midnight.
         val at = LocalDate.parse(date).atTime(12, 0).atZone(zone).toInstant().toString()
         return buildJsonObject {
@@ -82,7 +86,7 @@ object DailyReport {
                 put("event", EVENT)
                 put("distinct_id", distinctId)
                 put("timestamp", at)
-                put("uuid", eventUuid(distinctId, date))
+                put("uuid", eventUuid(distinctId, date, deviceId))
                 put("properties", props)
             })))
         }
@@ -96,6 +100,8 @@ object DailyReport {
 class DailyReportUploader(
     private val dao: PlayEventDao,
     private val distinctId: () -> String,
+    /** Stable for this install, never changed by login or logout. */
+    private val deviceId: () -> String,
     private val enabled: () -> Boolean,
     private val today: () -> LocalDate = { LocalDate.now() },
     private val platform: String = "android",
@@ -120,7 +126,7 @@ class DailyReportUploader(
             for ((owner, list) in rows.groupBy { it.owner }) {
                 val id = owner ?: distinctId()
                 val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
-                val body = DailyReport.batchBody(apiKey(), id, date, DailyReport.properties(date, list, platform), zone)
+                val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, list, platform), zone)
                 val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
                 if (!ok) { allOk = false; break }
             }
@@ -141,6 +147,12 @@ object DailyReports {
         com.example.juke.account.Account.email.value?.trim()?.lowercase()
             ?: AnalyticsManager.getInstance(context).installId()
 
+    /** One id per install that outlives login and logout, so a report's uuid is the same on every retry. */
+    fun deviceId(context: android.content.Context): String {
+        val prefs = context.applicationContext.getSharedPreferences("analytics_prefs", android.content.Context.MODE_PRIVATE)
+        return prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also { prefs.edit().putString("device_id", it).apply() }
+    }
+
     /** Fire and forget; safe to call on every app open. */
     fun uploadPending(context: android.content.Context) {
         val app = context.applicationContext
@@ -149,6 +161,7 @@ object DailyReports {
                 DailyReportUploader(
                     dao = com.example.juke.database.MusicDatabase.getDatabase(app).playEventDao(),
                     distinctId = { distinctId(app) },
+                    deviceId = { deviceId(app) },
                     enabled = { AnalyticsManager.isEnabled(app) },
                     apiKey = { com.example.juke.BuildConfig.POSTHOG_API_KEY },
                     send = { body ->

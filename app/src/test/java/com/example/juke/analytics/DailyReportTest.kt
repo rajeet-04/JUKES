@@ -38,7 +38,7 @@ class DailyReportTest {
 
     private fun uploader(dao: PlayEventDao, today: String, sent: MutableList<JsonObject>, ok: () -> Boolean = { true }) =
         DailyReportUploader(
-            dao = dao, distinctId = { "me@example.com" }, enabled = { true },
+            dao = dao, distinctId = { "me@example.com" }, deviceId = { "dev1" }, enabled = { true },
             today = { LocalDate.parse(today) }, apiKey = { "key" },
             send = { sent += it; ok() }
         )
@@ -77,9 +77,11 @@ class DailyReportTest {
     }
 
     @Test fun sameDayAndUserGiveTheSameEventUuid() {
-        assertEquals(DailyReport.eventUuid("a@b.c", "2023-11-14"), DailyReport.eventUuid("a@b.c", "2023-11-14"))
-        assertNotEquals(DailyReport.eventUuid("a@b.c", "2023-11-14"), DailyReport.eventUuid("a@b.c", "2023-11-15"))
-        assertNotEquals(DailyReport.eventUuid("a@b.c", "2023-11-14"), DailyReport.eventUuid("x@b.c", "2023-11-14"))
+        assertEquals(DailyReport.eventUuid("a@b.c", "2023-11-14", "d1"), DailyReport.eventUuid("a@b.c", "2023-11-14", "d1"))
+        assertNotEquals(DailyReport.eventUuid("a@b.c", "2023-11-14", "d1"), DailyReport.eventUuid("a@b.c", "2023-11-15", "d1"))
+        assertNotEquals(DailyReport.eventUuid("a@b.c", "2023-11-14", "d1"), DailyReport.eventUuid("x@b.c", "2023-11-14", "d1"))
+        // a phone and a desktop reporting the same day under one email must not share a uuid
+        assertNotEquals(DailyReport.eventUuid("a@b.c", "2023-11-14", "phone"), DailyReport.eventUuid("a@b.c", "2023-11-14", "desktop"))
     }
 
     @Test fun reportSumsTracksAndHours() {
@@ -105,7 +107,7 @@ class DailyReportTest {
 
     @Test fun batchBodyCarriesTheIdentityAndTimestamp() {
         val props = DailyReport.properties("2023-11-14", listOf(row("2023-11-14")), "android")
-        val body = DailyReport.batchBody("k", "me@example.com", "2023-11-14", props, java.time.ZoneId.of("UTC"))
+        val body = DailyReport.batchBody("k", "me@example.com", "dev1", "2023-11-14", props, java.time.ZoneId.of("UTC"))
         val ev = body["batch"]!!.jsonArray.single().jsonObject
         assertEquals("daily_listening_report", ev["event"]!!.jsonPrimitive.content)
         assertEquals("me@example.com", ev["distinct_id"]!!.jsonPrimitive.content)
