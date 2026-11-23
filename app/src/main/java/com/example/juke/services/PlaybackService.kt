@@ -1641,6 +1641,10 @@ class PlaybackManager private constructor(private val context: Context) {
     val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Times real listening for the daily report; touched from the main thread only. */
+    private val playLog = PlayLog(sink = { e ->
+        scope.launch { runCatching { database.playEventDao().insert(e) } }
+    })
     // Serial background dispatcher for queue mutations: keeps disk work off the main thread while
     // preserving the order in which setQueue/addToQueue calls were made.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -1911,11 +1915,14 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onIsPlayingChanged(isPlaying: Boolean) {
                             _isPlaying.value = isPlaying
+                            playLog.setPlaying(isPlaying)
                             Log.d(tag, "PlayerListener onIsPlayingChanged: $isPlaying")
                         }
 
                         override fun onPlaybackStateChanged(playbackState: Int) {
                             Log.d(tag, "PlayerListener playbackStateChanged: $playbackState")
+                            // The last song of the queue ends without a media item transition.
+                            if (playbackState == Player.STATE_ENDED) playLog.end(completed = true)
                             if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
                                 savePlaybackState()
                             }
@@ -2260,6 +2267,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                             streamSeekHandoff.trackChanged(mediaItem?.mediaId)
+                            playLog.end(completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
                             when (reason) {
                                 Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> AnalyticsManager.getIfInitialized()?.songTransition(true)
                                 Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> AnalyticsManager.getIfInitialized()?.songTransition(false)
@@ -2292,6 +2300,17 @@ class PlaybackManager private constructor(private val context: Context) {
                                         val track =
                                             database.trackDao().getTrackByUuid(trackId)?.toTrack()
                                         if (track != null) {
+                                            withContext(Dispatchers.Main) {
+                                                // A quick skip may have moved on before this lookup finished.
+                                                if (_currentTrackId.value == trackId) {
+                                                    playLog.start(
+                                                        trackUuid = track.uuid,
+                                                        songKey = "${track.title} - ${track.artist}",
+                                                        durationMs = track.durationSec * 1000L,
+                                                        playingNow = controller?.isPlaying == true
+                                                    )
+                                                }
+                                            }
                                             Log.d(
                                                 tag,
                                                 "Analytics: Found track '${track.title}' by ${track.artist}, calling trackSongPlayed"
@@ -2982,6 +3001,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun release() {
         cancelSleepTimer()
+        playLog.end(completed = false) // keep the song in progress
         savePlaybackState() // Save state before releasing
         MediaController.releaseFuture(controllerFuture ?: return)
         // remove player listener if attached

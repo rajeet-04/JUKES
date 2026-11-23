@@ -201,6 +201,20 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+/** Short-lived buffer of finished listens, summarised into a daily report. */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS play_events (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, track_uuid TEXT NOT NULL, " +
+                "song_key TEXT NOT NULL, started_at INTEGER NOT NULL, local_date TEXT NOT NULL, " +
+                "tz TEXT NOT NULL, listened_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, " +
+                "completed INTEGER NOT NULL, skipped INTEGER NOT NULL, source TEXT)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_play_events_local_date ON play_events(local_date)")
+    }
+}
+
 /** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -232,8 +246,8 @@ class Converters {
  * Room Database for JUKE music player.
  */
 @Database(
-    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class],
-    version = 13,
+    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class, PlayEventEntity::class],
+    version = 14,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -241,6 +255,7 @@ abstract class MusicDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun songExposureDao(): SongExposureDao
+    abstract fun playEventDao(): PlayEventDao
 
     companion object {
         @Volatile
@@ -265,7 +280,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_9_10,
                         MIGRATION_10_11,
                         MIGRATION_11_12,
-                        MIGRATION_12_13
+                        MIGRATION_12_13,
+                        MIGRATION_13_14
                     )
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
