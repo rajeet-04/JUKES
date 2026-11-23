@@ -651,6 +651,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private var listenLookup: Job? = null
+    /** The queue ended and its listen was closed; replaying the same item brings no media item transition. */
+    private var listenEnded = false
     private val playLog = PlayLog(
         sink = { event ->
             val generation = Account.listeningGeneration(event.owner)
@@ -730,6 +732,7 @@ class PlaybackService : MediaLibraryService() {
             when (playbackState) {
                 Player.STATE_ENDED -> {
                     listenLookup?.cancel()
+                    listenEnded = true
                     playLog.end(completed = true)?.let {
                         AnalyticsManager.getIfInitialized()?.songTransition(true, it)
                     }
@@ -748,6 +751,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             listenLookup?.cancel()
+            listenEnded = false
             val ranToEnd = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
             val listened = playLog.end(completed = ranToEnd)
@@ -890,6 +894,11 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying && listenEnded) {
+                // Previous or a backward seek replayed the item that just ended, with no transition to start a listen.
+                listenEnded = false
+                player.currentMediaItem?.let(::startListen)
+            }
             playLog.setPlaying(isPlaying)
             Log.d(tag, "Is playing: $isPlaying")
             armOffloadWatchdog()
