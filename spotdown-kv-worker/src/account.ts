@@ -1,4 +1,5 @@
 import type { Env } from './index';
+import { deletePerson } from './posthog';
 
 /**
  * Accounts: email + password, no email sending (free plan). The app stretches the password with PBKDF2
@@ -129,8 +130,10 @@ export async function account(request: Request, env: Env, action: string): Promi
             await env.DB.batch([
                 env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
                 env.DB.prepare('DELETE FROM libraries WHERE user_id = ?').bind(user.id),
+                env.DB.prepare('DELETE FROM wrapped_cache WHERE user_id = ?').bind(user.id),
                 env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
             ]);
+            await deletePerson(env, user.email); // their listening reports in PostHog go too; best effort
             return Response.json({ ok: true });
         }
         if (!KEY.test(newKey)) return err('Enter a new password', 400);

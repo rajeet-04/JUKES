@@ -57,6 +57,7 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
     var cooldown by remember { mutableIntStateOf(settings.getInt("favourite_cooldown", 20).coerceIn(10, 40)) }
     var doubleTap by remember { mutableStateOf(power.getBoolean("mini_double_tap_play_pause", false)) }
     var longPress by remember { mutableStateOf(power.getBoolean("mini_long_press_favorite", false)) }
+    var shareStats by remember { mutableStateOf(com.example.juke.analytics.AnalyticsManager.isEnabled(context)) }
     var stats by remember { mutableStateOf<ListeningStats?>(null) }
     LaunchedEffect(Unit) { stats = Diagnostics.stats(context) }
 
@@ -122,6 +123,20 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
                         memory.resetRejected()
                         rejected = 0
                     }) { Text("Reset rejected sources") }
+                }
+            }
+
+            if (!com.example.juke.account.Account.isDesktop) item {
+                Section("Privacy") {
+                    SwitchRow(
+                        "Share usage and listening stats",
+                        "A daily summary of what you play (songs, minutes) goes to JUKES analytics, under your account email when logged in. Needed for your year-end Wrapped. Turning it off stops sending and clears what is saved on this device.",
+                        shareStats
+                    ) {
+                        haptic.toggle()
+                        shareStats = it
+                        com.example.juke.analytics.AnalyticsManager.setEnabled(context, it)
+                    }
                 }
             }
 

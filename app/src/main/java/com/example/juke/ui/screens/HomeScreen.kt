@@ -41,6 +41,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,9 +109,16 @@ fun HomeScreen(
         return
     }
 
+    var showRequestFeature by remember { mutableStateOf(false) }
+    if (showRequestFeature) com.example.juke.ui.components.RequestFeatureDialog(onDismiss = { showRequestFeature = false })
+
     Column(modifier = Modifier.fillMaxSize()) {
         HomeHeader(
             greeting = uiState.greeting,
+            onRequestFeatureClick = {
+                haptic.click()
+                showRequestFeature = true
+            },
             onSettingsClick = {
                 haptic.click()
                 onSettingsClick()
@@ -285,7 +294,8 @@ private fun MoodChipsPlaceholder() {
 private fun HomeHeader(
     greeting: String,
     onSettingsClick: () -> Unit,
-    onJamClick: () -> Unit
+    onJamClick: () -> Unit,
+    onRequestFeatureClick: () -> Unit
 ) {
     val inJam by com.example.juke.jam.JamSession.state.collectAsStateWithLifecycle()
     Row(
@@ -302,6 +312,15 @@ private fun HomeHeader(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
+
+        GlassIconButton(
+            onClick = onRequestFeatureClick,
+            contentDescription = "Request a feature"
+        ) {
+            Icon(JukeIcons.RequestFeature, contentDescription = null)
+        }
+
+        Spacer(Modifier.width(12.dp))
 
         GlassIconButton(
             onClick = onJamClick,

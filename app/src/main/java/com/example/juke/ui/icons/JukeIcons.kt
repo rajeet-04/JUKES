@@ -38,6 +38,8 @@ object JukeIcons {
     val ChevronUp: ImageVector by lazy { glyph("ChevronUp", "M6 15 L12 9 L18 15", "", false) }
     val Close: ImageVector by lazy { glyph("Close", "M6 6 L18 18 M18 6 L6 18", "", false) }
     val Add: ImageVector by lazy { glyph("Add", "M12 5 V19 M5 12 H19", "", false) }
+    /** A bulb with a plus inside: "suggest an idea". Plain plus-in-circle would read as "add to playlist" next to Jam and Settings. */
+    val RequestFeature: ImageVector by lazy { glyph("RequestFeature", "M9 17.5 V15.8 C6.8 14.5 5.5 12.4 5.5 9.8 A6.5 6.5 0 0 1 18.5 9.8 C18.5 12.4 17.2 14.5 15 15.8 V17.5 Z M9.5 20.5 H14.5 M12 7.6 V12 M9.8 9.8 H14.2", "", false) }
     val AddCircle: ImageVector by lazy { glyph("AddCircle", "M21 12 A9 9 0 1 1 3 12 A9 9 0 1 1 21 12 M12 8 V16 M8 12 H16", "", false) }
     val Check: ImageVector by lazy { glyph("Check", "M4.5 12 L9.5 17 L19.5 7", "", false) }
     val Delete: ImageVector by lazy { glyph("Delete", "M3.5 6 H20.5 M9 6 V3.5 H15 V6 M6 6 L7 19 Q7 20.5 8.5 20.5 H15.5 Q17 20.5 17 19 L18 6 M10 10 V16 M14 10 V16", "", false) }

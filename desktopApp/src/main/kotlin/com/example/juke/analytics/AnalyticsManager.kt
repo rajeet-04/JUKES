@@ -12,6 +12,9 @@ class AnalyticsManager private constructor() {
         fun getIfInitialized(): AnalyticsManager? = instance
         fun log(eventName: String, properties: Map<String, Any> = emptyMap()) {}
         fun setup(context: Context) {}
+        fun isEnabled(context: Context) = false
+        fun setEnabled(context: Context, enabled: Boolean) {}
+        internal suspend fun purgeListening(context: Context, owner: String) {}
     }
     fun songTransition(completed: Boolean) {}
     fun trackSongPlayed(songId: String, songTitle: String, songArtist: String, songDuration: Long, positionInQueue: Int = 0, isStream: Boolean = false) {}
@@ -19,6 +22,7 @@ class AnalyticsManager private constructor() {
     fun trackAppOpened() {}
     fun trackAppClosed() {}
     fun installId(): String = "desktop"
+    fun syncAccount(email: String?) {}
     fun endSession() {}
     fun track(eventName: String, properties: Map<String, Any> = emptyMap()) {}
 }

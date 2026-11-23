@@ -161,7 +161,8 @@ class MainActivity : ComponentActivity() {
                     SpotifyApi.setDefaultMarket(savedMarket)
                 }
                 val context = LocalContext.current
-                var showPlayerModal by remember { mutableStateOf(false) }
+                // Saved, so turning the phone does not close an open player
+                var showPlayerModal by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
                 var searchFocusTrigger by remember { mutableIntStateOf(0) }
                 // No keyboard while the full player is open: drop the search field's focus too, so
                 // the IME can't come back over the player.
@@ -186,6 +187,7 @@ class MainActivity : ComponentActivity() {
                     launch {
                         delay(1_500.milliseconds)
                         AnalyticsManager.getInstance(context).trackAppOpened()
+                        com.example.juke.analytics.DailyReports.uploadPending(context)
                         com.example.juke.report.CrashReporter.sendPending(context.applicationContext)
                     }
                     updateAvailable = UpdateManager.checkForUpdates(context)
@@ -292,6 +294,7 @@ class MainActivity : ComponentActivity() {
                 var currentMainTab by remember { mutableStateOf(Screen.Home.route) }
 
                 LaunchedEffect(currentRoute) { // which screens people actually use
+                    com.example.juke.viewmodels.PlayContext.screen = currentRoute
                     currentRoute?.let { com.example.juke.report.Breadcrumbs.screen(it); AnalyticsManager.log(com.example.juke.analytics.EventType.SCREEN_VIEWED, mapOf(com.example.juke.analytics.EventProperty.SCREEN to it)) }
                 }
                 LaunchedEffect(currentRoute) {

@@ -36,15 +36,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.juke.viewmodels.MusicViewModel
 
-private class PlayerTransitionState {
+private class PlayerTransitionState(initialProgress: Float = 0f) {
     var miniBounds by mutableStateOf<Rect?>(null)
     /** The whole mini-player bar: the player sheet grows out of / shrinks back into this rect. */
     var barBounds by mutableStateOf<Rect?>(null)
     var playerBounds by mutableStateOf<Rect?>(null)
     var rootBounds by mutableStateOf(Rect.Zero)
-    val animation = Animatable(0f)
+    val animation = Animatable(initialProgress)
     var dragProgress by mutableStateOf<Float?>(null)
-    val progress get() = dragProgress ?: animation.value
+    /** Never NaN: coerceIn lets NaN through, and a NaN here ends up as a NaN corner radius (a crash in createOutline). */
+    val progress get() = (dragProgress ?: animation.value).let { if (it.isNaN()) 0f else it }
     val dragRange get() = ((barBounds ?: miniBounds)?.top?.minus(rootBounds.top) ?: rootBounds.height).coerceAtLeast(1f)
     var expanded by mutableStateOf(false)
     /** Progress units/s from the last drag release, so the settle continues the finger's motion. */
@@ -67,6 +68,18 @@ private fun PlayerTransitionState.morph(size: androidx.compose.ui.geometry.Size,
         barRight + (size.width - barRight) * t,
         barBottom + (size.height - barBottom) * t
     ) to barRadius * (1f - t)
+}
+
+/**
+ * Corner radius (dp) of the artwork flying between the mini player and the full player. The layer is drawn at
+ * the final size and scaled, so the radius is corrected by the scale. Always finite and not negative, even when
+ * a measured bound has no width yet (0 / 0 is NaN, and RoundedCornerShape throws on a NaN corner).
+ */
+internal fun flyingArtworkRadius(startWidth: Float, endWidth: Float, t: Float): Float {
+    val p = if (t.isNaN()) 0f else t.coerceIn(0f, 1f)
+    val scaleX = if (endWidth > 0f) (startWidth + (endWidth - startWidth) * p) / endWidth else 1f
+    val r = (18f / scaleX) * (1f - p) + 32f * p
+    return if (r.isFinite() && r >= 0f) r else 18f * (1f - p) + 32f * p
 }
 
 private val LocalPlayerTransition = staticCompositionLocalOf<PlayerTransitionState?> { null }
@@ -124,7 +137,8 @@ fun PlayerTransitionHost(
     musicViewModel: MusicViewModel,
     content: @Composable () -> Unit
 ) {
-    val state = remember { PlayerTransitionState() }
+    // Start settled open when the player is already open (a rotation recreates the screen), not flying in again
+    val state = remember { PlayerTransitionState(if (expanded) 1f else 0f) }
     state.expanded = expanded
     LaunchedEffect(expanded) {
         // Retarget from the current drag/animation position, never restart at an endpoint.
@@ -144,7 +158,10 @@ fun PlayerTransitionHost(
             val start = state.miniBounds
             val end = state.playerBounds
             val track = uiState.currentTrack
-            if (state.moving && state.hasArtwork && start != null && end != null && track != null) {
+            // Bounds with no size are not laid out yet; flying from or to them divides by zero
+            if (state.moving && state.hasArtwork && start != null && end != null && track != null &&
+                start.width > 0f && end.width > 0f && end.height > 0f
+            ) {
                 // Draw at the final size and transform it: no image remeasurement each frame.
                 AsyncImage(
                     model = track.thumbnailUri,
@@ -160,8 +177,7 @@ fun PlayerTransitionHost(
                             scaleX = (start.width + (end.width - start.width) * t) / end.width
                             scaleY = (start.height + (end.height - start.height) * t) / end.height
                             // Correct the radius for the scaled artwork at the mini-player endpoint.
-                            val radius = (18f / scaleX) * (1f - t) + 32f * t
-                            shape = RoundedCornerShape(radius.dp)
+                            shape = RoundedCornerShape(flyingArtworkRadius(start.width, end.width, t).dp)
                             clip = true
                         }
                 )
