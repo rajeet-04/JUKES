@@ -21,7 +21,7 @@ val androidOnly = listOf(
     "services/PlaybackService.kt", "services/AutoLibrary.kt",
     "services/BoostAudioProcessor.kt", "services/EdgeSilenceProcessor.kt",
     "services/AudioEffectController.kt", "services/PlaylistBypassDataSource.kt",
-    "services/ArtworkProvider.kt", "utils/HapticHelper.kt", "analytics/AnalyticsManager.kt",
+    "services/ArtworkProvider.kt", "utils/HapticHelper.kt", "analytics/AnalyticsManager.kt", "analytics/DailyReports.kt",
     "ui/screens/YoutubeSignInScreen.kt",
     "ui/icons/JukeIconPreview.kt", "database/MusicDatabase.kt", "push/Push.kt",
     "ambient/AmbientWaves.kt", "ambient/LevelMeterProcessor.kt",

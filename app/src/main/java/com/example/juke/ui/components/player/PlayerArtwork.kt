@@ -17,7 +17,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -67,13 +71,21 @@ fun PlayerArtwork(
         }
     }
 
+    // Only a finger can change the song from here. The pager restores its saved page after a rotation, which
+    // can differ from the playing index for a moment; treating that as a swipe skipped to another song.
+    var dragged by remember { mutableStateOf(false) }
+    LaunchedEffect(pagerState) {
+        pagerState.interactionSource.interactions.collect { if (it is DragInteraction.Start) dragged = true }
+    }
+
     // Sync manual user swipes to the ViewModel
     LaunchedEffect(pagerState.settledPage) {
-        if (pagerState.settledPage != queueIndex && pagerState.settledPage in queue.indices) {
-            val swipedTrack = queue[pagerState.settledPage]
-            musicViewModel.playTrackFromQueue(swipedTrack)
+        val page = pagerState.settledPage
+        if (dragged && page != queueIndex && page in queue.indices) {
+            musicViewModel.playTrackFromQueue(queue[page])
             haptic.click()
         }
+        dragged = false
     }
 
     // The caller sizes the slot: a square for the artwork, the whole area while lyrics are open.

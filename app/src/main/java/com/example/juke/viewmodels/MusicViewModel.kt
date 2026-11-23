@@ -217,8 +217,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val playContextPrefs = application.getSharedPreferences("play_context", android.content.Context.MODE_PRIVATE)
     private val playContext = MutableStateFlow(PlayContext.decode(playContextPrefs.getString("current", null)))
 
+    init { PlayContext.latest = playContext.value }
+
     private fun setPlayContext(from: PlayContext?) {
         playContext.value = from
+        PlayContext.latest = from
         viewModelScope.launch(Dispatchers.IO) {
             playContextPrefs.edit {
                 if (from == null) remove("current") else putString(

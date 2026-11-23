@@ -2,6 +2,9 @@ package com.example.juke.account
 
 import android.content.Context
 import com.example.juke.BuildConfig
+import com.example.juke.analytics.AnalyticsManager
+import com.example.juke.database.PlayEventDao
+import com.example.juke.database.PlayEventEntity
 import com.example.juke.network.ApiClient
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
@@ -9,13 +12,17 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -50,6 +57,7 @@ object Account {
         val p = prefs(c)
         token = p.getString("token", null)
         _email.value = if (token != null) p.getString("email", null) else null
+        AnalyticsManager.getIfInitialized()?.syncAccount(_email.value)
     }
 
     /** Same input, same output on every device; the Worker salts and hashes it again. */
@@ -102,6 +110,18 @@ object Account {
         forget(c)
     }
 
+    private val listeningLock = Mutex()
+    internal val listeningUploadLock = Mutex()
+    private val listeningGenerations = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    internal fun listeningGeneration(owner: String?): Int = owner?.let(listeningGenerations::get) ?: 0
+
+    internal suspend fun recordListen(dao: PlayEventDao, event: PlayEventEntity, generation: Int, hasConsent: () -> Boolean) {
+        listeningLock.withLock {
+            if (listeningGeneration(event.owner) == generation && hasConsent()) dao.insert(event)
+        }
+    }
+
     /** The token stopped working (logged out elsewhere, account deleted): drop it locally. */
     fun forget(c: Context) {
         prefs(c).edit {clear()}
@@ -111,15 +131,33 @@ object Account {
     /** Null on success, else a message. With [newPassword] null this deletes the account. */
     suspend fun passwordAction(c: Context, password: String, newPassword: String?): String? {
         val e = _email.value ?: return "Not logged in"
+        val sessionToken = token ?: return "Not logged in"
         if (newPassword != null && newPassword.length < 8) return "Use at least 8 characters for the new password"
         return try {
             val keys = withContext(Dispatchers.Default) { Keys(stretch(e, password), newPassword?.let { stretch(e, it) } ?: "") }
-            val res = ApiClient.httpClient.post("$BASE/account/${if (newPassword == null) "delete" else "password"}") {
-                auth(); contentType(ContentType.Application.Json); setBody(json.encodeToString(keys))
+            suspend fun submit() = ApiClient.httpClient.post("$BASE/account/${if (newPassword == null) "delete" else "password"}") {
+                header("X-App-Secret", BuildConfig.SPOTIFY_TOKEN_KEY)
+                header("Authorization", "Bearer $sessionToken")
+                contentType(ContentType.Application.Json)
+                setBody(json.encodeToString(keys))
             }
-            if (!res.status.isSuccess()) return message(res.body<String>(), "Something went wrong (${res.status.value})")
-            if (newPassword == null) forget(c)
-            null
+            suspend fun checkResponse(res: HttpResponse): String? =
+                if (res.status.isSuccess()) null else message(res.body<String>(), "Something went wrong (${res.status.value})")
+            if (newPassword != null) return checkResponse(submit())
+
+            listeningUploadLock.withLock {
+                val error = checkResponse(submit())
+                if (error != null) return@withLock error
+                withContext(NonCancellable) {
+                    listeningLock.withLock {
+                        val owner = e.trim().lowercase()
+                        listeningGenerations[owner] = listeningGeneration(owner) + 1
+                        if (token == sessionToken) forget(c)
+                        runCatching { AnalyticsManager.purgeListening(c, owner) } // the account is gone either way
+                    }
+                }
+                null
+            }
         } catch (ex: CancellationException) { throw ex } catch (ex: Exception) { "Couldn't reach JUKES. Check your connection." }
     }
 

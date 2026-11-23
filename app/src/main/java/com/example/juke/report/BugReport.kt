@@ -31,7 +31,8 @@ object BugReport {
         val description: String,
         val app: Map<String, String>,
         val jam: Map<String, String>?,
-        val logs: String
+        val logs: String,
+        val kind: String
     )
 
     @Serializable
@@ -91,13 +92,13 @@ object BugReport {
         )
     }
 
-    /** The GitHub issue number, or null if the report couldn't be sent (offline, too many reports today, ...). */
-    suspend fun send(context: Context, description: String, app: Map<String, String>, includeLogs: Boolean): Int? = try {
+    /** [kind] is "bug" or "feature"; the Worker titles and labels the issue by it. The GitHub issue number, or null if the report couldn't be sent (offline, too many reports today, ...). */
+    suspend fun send(context: Context, description: String, app: Map<String, String>, includeLogs: Boolean, kind: String = "bug"): Int? = try {
         val logs = if (includeLogs) recentLogs() else ""
         val res: HttpResponse = ApiClient.httpClient.post("${BuildConfig.SHARE_BASE_URL.trimEnd('/')}/report") {
             header("X-App-Secret", BuildConfig.SPOTIFY_TOKEN_KEY)
             contentType(ContentType.Application.Json)
-            setBody(Payload(AnalyticsManager.getInstance(context).installId(), scrub(description), app, jamInfo(), logs))
+            setBody(Payload(AnalyticsManager.getInstance(context).installId(), scrub(description), app, jamInfo(), logs, kind))
         }
         if (res.status.isSuccess()) res.body<Filed>().issue else null
     } catch (e: CancellationException) {

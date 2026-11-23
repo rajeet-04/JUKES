@@ -49,7 +49,7 @@ private fun IconSheet(dark: Boolean) {
         "Back" to JukeIcons.Back, "Forward" to JukeIcons.Forward,
         "Down" to JukeIcons.ChevronDown, "Up" to JukeIcons.ChevronUp,
         "Close" to JukeIcons.Close, "Add" to JukeIcons.Add,
-        "Add circle" to JukeIcons.AddCircle, "Check" to JukeIcons.Check,
+        "Add circle" to JukeIcons.AddCircle, "Request feature" to JukeIcons.RequestFeature, "Check" to JukeIcons.Check,
         "Delete" to JukeIcons.Delete, "More" to JukeIcons.More,
         "More" to JukeIcons.MoreHorizontal, "Equalizer" to JukeIcons.Equalizer,
         "Music" to JukeIcons.MusicNote, "Share" to JukeIcons.Share,
