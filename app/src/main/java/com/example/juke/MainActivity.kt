@@ -161,7 +161,8 @@ class MainActivity : ComponentActivity() {
                     SpotifyApi.setDefaultMarket(savedMarket)
                 }
                 val context = LocalContext.current
-                var showPlayerModal by remember { mutableStateOf(false) }
+                // Saved, so turning the phone does not close an open player
+                var showPlayerModal by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
                 var searchFocusTrigger by remember { mutableIntStateOf(0) }
                 // No keyboard while the full player is open: drop the search field's focus too, so
                 // the IME can't come back over the player.

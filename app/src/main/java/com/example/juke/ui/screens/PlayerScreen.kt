@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -265,9 +266,8 @@ fun PlayerScreen(
     }
 
     val configuration = LocalConfiguration.current
-    val screenWidth = configuration.screenWidthDp.dp
-    configuration.screenHeightDp.dp
-    val isTablet = screenWidth >= 600.dp
+    // Smallest side, so a phone turned to landscape (800+ dp wide) does not get the tablet sizes
+    val isTablet = configuration.smallestScreenWidthDp >= 600
 
     val lifecycleOwner = LocalLifecycleOwner.current
     // Poll the position only while playing; paused, one read is enough (no 300 ms wakeups).
@@ -378,6 +378,8 @@ fun PlayerScreen(
                     .safeDrawingPadding()
             ) {
                 val screenH = maxHeight
+                // Wider than tall: a phone on its side. The portrait column would leave the artwork no height.
+                val landscape = maxWidth > maxHeight
                 // Scale breakpoints: tight (<640dp), normal (640-800dp), large (>800dp)
                 val isCompact = screenH < 640.dp
                 val spacerSm = if (isCompact) 8.dp else if (screenH < 800.dp) 16.dp else 24.dp
@@ -431,13 +433,10 @@ fun PlayerScreen(
                 val roomIndex = jamNow.playback?.itemId?.let { id -> jamNow.queue.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
                 val showRoom = jamNow.active && roomQueue.isNotEmpty() && roomIndex != null
 
-                if (stagePlayer) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 24.dp)
-                            .padding(bottom = 12.dp)
-                    ) {
+                val synced = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
+
+                @Composable
+                fun StageHeader() {
                         Header(
                             title = when (stage) {
                                 PlayerStage.Art -> if (jamNow.active) "Jam ${jamNow.code ?: ""}".trim() else "Now Playing"
@@ -457,41 +456,10 @@ fun PlayerScreen(
                                 }
                             } else null
                         )
-                        Spacer(Modifier.height(spacerSm))
+                }
 
-                        StageSwitcher(stage, Modifier.weight(1f).fillMaxWidth()) { shown ->
-                            if (shown == PlayerStage.Art) {
-                                Column(Modifier.fillMaxSize()) {
-                                    val synced = displayTrack.syncedLyrics?.takeIf { it.isNotBlank() }
-                                    ArtSlot(
-                                        hasTicker = synced != null,
-                                        modifier = Modifier.weight(1f),
-                                        artwork = { m ->
-                                            Box(m) {
-                                                PlayerArtwork(
-                                                    queue = if (showRoom) roomQueue else uiState.queue,
-                                                    queueIndex = if (showRoom) roomIndex else uiState.queueIndex,
-                                                    currentTrack = displayTrack,
-                                                    currentPosition = positionNow,
-                                                    showLyrics = false,
-                                                    musicViewModel = musicViewModel,
-                                                    isTablet = isTablet,
-                                                    onToggleLyrics = { stage = PlayerStage.Lyrics }
-                                                )
-                                            }
-                                        },
-                                        ticker = { m ->
-                                            if (synced != null) LyricTicker(
-                                                syncedLyrics = synced,
-                                                offsetMs = displayTrack.lyricsOffsetMs,
-                                                position = positionNow,
-                                                playing = uiState.isPlaying,
-                                                onOpen = { haptic.click(); stage = PlayerStage.Lyrics },
-                                                modifier = m
-                                            )
-                                        }
-                                    )
-                                    Spacer(Modifier.height(spacerSm))
+                @Composable
+                fun TitleBlock() {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
@@ -535,8 +503,47 @@ fun PlayerScreen(
                                             )
                                         }
                                     }
-                                }
-                            } else {
+                }
+
+                /** The stage under the header: artwork (with the title under it in portrait), lyrics, the queue or the mix. */
+                @Composable
+                fun StageBody(shown: PlayerStage, landscape: Boolean) {
+                    if (shown == PlayerStage.Art) {
+                        Column(Modifier.fillMaxSize()) {
+                                    ArtSlot(
+                                        hasTicker = synced != null && !landscape,
+                                        modifier = Modifier.weight(1f),
+                                        artwork = { m ->
+                                            Box(m) {
+                                                PlayerArtwork(
+                                                    queue = if (showRoom) roomQueue else uiState.queue,
+                                                    queueIndex = if (showRoom) roomIndex else uiState.queueIndex,
+                                                    currentTrack = displayTrack,
+                                                    currentPosition = positionNow,
+                                                    showLyrics = false,
+                                                    musicViewModel = musicViewModel,
+                                                    isTablet = isTablet,
+                                                    onToggleLyrics = { stage = PlayerStage.Lyrics }
+                                                )
+                                            }
+                                        },
+                                        ticker = { m ->
+                                            if (synced != null) LyricTicker(
+                                                syncedLyrics = synced,
+                                                offsetMs = displayTrack.lyricsOffsetMs,
+                                                position = positionNow,
+                                                playing = uiState.isPlaying,
+                                                onOpen = { haptic.click(); stage = PlayerStage.Lyrics },
+                                                modifier = m
+                                            )
+                                        }
+                                    )
+                            if (!landscape) {
+                                Spacer(Modifier.height(spacerSm))
+                                TitleBlock()
+                            }
+                        }
+                    } else {
                                 Column(Modifier.fillMaxSize()) {
                                     StageMiniHeader(
                                         track = currentTrack,
@@ -582,8 +589,86 @@ fun PlayerScreen(
                                         }
                                     }
                                 }
+                    }
+                }
+
+                if (stagePlayer && landscape) {
+                    // Two panes: the artwork (or lyrics, queue, mix) takes the height on the left; the title,
+                    // progress, controls and dock sit on the right, so nothing is squeezed into a short column.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp)
+                            .padding(bottom = 8.dp)
+                    ) {
+                        StageHeader()
+                        Spacer(Modifier.height(spacerSm))
+                        Row(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(32.dp)
+                        ) {
+                            StageSwitcher(stage, Modifier.weight(1f).fillMaxHeight()) { shown -> StageBody(shown, landscape = true) }
+                            Column(
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    if (stage == PlayerStage.Art) {
+                                        TitleBlock()
+                                        if (synced != null) {
+                                            Spacer(Modifier.height(spacerSm))
+                                            LyricTicker(
+                                                syncedLyrics = synced,
+                                                offsetMs = displayTrack.lyricsOffsetMs,
+                                                position = positionNow,
+                                                playing = uiState.isPlaying,
+                                                onOpen = { haptic.click(); stage = PlayerStage.Lyrics }
+                                            )
+                                        }
+                                    }
+                                }
+                                Column {
+                                    Box(Modifier.playerStage(0.58f, 0.86f)) {
+                                        PlayerProgress(
+                                            position = positionNow,
+                                            uiState = uiState,
+                                            musicViewModel = musicViewModel,
+                                            showRemaining = true,
+                                            thumbSize = 16.dp
+                                        )
+                                    }
+                                    Box(Modifier.playerStage(0.64f, 0.92f)) {
+                                        PlayerControls(
+                                            uiState = uiState,
+                                            musicViewModel = musicViewModel,
+                                            isLarge = isTablet,
+                                            playButtonSize = ctrlPlaySize,
+                                            buttonSize = ctrlBtnSize,
+                                            iconSize = ctrlIconSize,
+                                            smallIconSize = ctrlSmallIconSize
+                                        )
+                                    }
+                                    Spacer(Modifier.height(spacerSm))
+                                    StageDock(
+                                        stage = stage,
+                                        onSelect = { haptic.click(); lyricsSyncOpen = false; stage = it },
+                                        modifier = Modifier.playerStage(0.72f, 1f)
+                                    )
+                                }
                             }
                         }
+                    }
+                } else if (stagePlayer) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp)
+                            .padding(bottom = 12.dp)
+                    ) {
+                        StageHeader()
+                        Spacer(Modifier.height(spacerSm))
+
+                        StageSwitcher(stage, Modifier.weight(1f).fillMaxWidth()) { shown -> StageBody(shown, landscape = false) }
 
                         Spacer(Modifier.height(spacerSm))
                         Box(Modifier.playerStage(0.58f, 0.86f)) {

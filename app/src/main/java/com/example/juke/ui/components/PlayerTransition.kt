@@ -36,13 +36,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.juke.viewmodels.MusicViewModel
 
-private class PlayerTransitionState {
+private class PlayerTransitionState(initialProgress: Float = 0f) {
     var miniBounds by mutableStateOf<Rect?>(null)
     /** The whole mini-player bar: the player sheet grows out of / shrinks back into this rect. */
     var barBounds by mutableStateOf<Rect?>(null)
     var playerBounds by mutableStateOf<Rect?>(null)
     var rootBounds by mutableStateOf(Rect.Zero)
-    val animation = Animatable(0f)
+    val animation = Animatable(initialProgress)
     var dragProgress by mutableStateOf<Float?>(null)
     /** Never NaN: coerceIn lets NaN through, and a NaN here ends up as a NaN corner radius (a crash in createOutline). */
     val progress get() = (dragProgress ?: animation.value).let { if (it.isNaN()) 0f else it }
@@ -137,7 +137,8 @@ fun PlayerTransitionHost(
     musicViewModel: MusicViewModel,
     content: @Composable () -> Unit
 ) {
-    val state = remember { PlayerTransitionState() }
+    // Start settled open when the player is already open (a rotation recreates the screen), not flying in again
+    val state = remember { PlayerTransitionState(if (expanded) 1f else 0f) }
     state.expanded = expanded
     LaunchedEffect(expanded) {
         // Retarget from the current drag/animation position, never restart at an endpoint.
