@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Transaction
 
 /**
  * One finished listen. Rows are a short-lived buffer: a daily report summarises each closed local day
@@ -61,6 +62,12 @@ interface PlayEventDao {
 
     @Query("DELETE FROM play_events WHERE id IN (:ids)")
     suspend fun deleteIds(ids: List<Long>): Int
+
+    @Transaction
+    suspend fun deleteBatch(ids: List<Long>) {
+        // Stay below SQLite's bind limit without leaving a partially acknowledged batch.
+        for (chunk in ids.chunked(900)) deleteIds(chunk)
+    }
 
     @Query("DELETE FROM play_events WHERE owner = :owner")
     suspend fun deleteOwner(owner: String): Int

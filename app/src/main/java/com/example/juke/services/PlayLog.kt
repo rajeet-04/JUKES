@@ -21,9 +21,14 @@ class PlayLog(
     /** Checked when a listen starts: one that begins while this is false is never recorded, even if it turns true before the song ends. */
     private val enabled: () -> Boolean = { true },
     /** Changes whenever consent is withdrawn: a listen that spans a change is never recorded. */
-    private val epoch: () -> Int = { 0 }
+    private val epoch: () -> Int = { 0 },
+    /** Changes for an owner when their account is deleted, including if the email is later reused. */
+    private val ownerGeneration: (String?) -> Int = { 0 }
 ) {
-    private class Current(val track: Track, val startedAt: Long, val source: String?, val owner: String?, val epoch: Int) {
+    private class Current(
+        val track: Track, val startedAt: Long, val source: String?, val owner: String?,
+        val epoch: Int, val ownerGeneration: Int
+    ) {
         val durationMs = track.durationSec * 1000L
         var listenedMs = 0L
         var playingSince: Long? = null
@@ -34,7 +39,8 @@ class PlayLog(
     fun start(track: Track, playingNow: Boolean, source: String? = null) {
         if (!enabled()) { current = null; return }
         val now = clock()
-        val c = Current(track, now, source, owner(), epoch())
+        val id = owner()
+        val c = Current(track, now, source, id, epoch(), ownerGeneration(id))
         if (playingNow) c.playingSince = now
         current = c
     }
@@ -61,7 +67,7 @@ class PlayLog(
         setPlayingOn(c)
         val listened = if (c.durationMs > 0) minOf(c.listenedMs, c.durationMs) else c.listenedMs
         if (listened < MIN_LISTEN_MS) return listened
-        if (c.epoch != epoch()) return listened // consent was withdrawn while it played
+        if (c.epoch != epoch() || c.ownerGeneration != ownerGeneration(c.owner)) return listened
         val z = zone()
         sink(
             PlayEventEntity(

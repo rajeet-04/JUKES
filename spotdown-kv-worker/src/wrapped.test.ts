@@ -13,6 +13,7 @@ test('every query reads only that account, that event, and that year', () => {
     for (const sql of Object.values(q)) {
         expect(sql).toContain("event = 'daily_listening_report'");
         expect(sql).toContain("distinct_id = 'me@x.com'");
+        expect(sql).toContain("SELECT person_id FROM person_distinct_ids WHERE distinct_id = 'me@x.com'");
         expect(sql).toContain("properties.date >= '2026-01-01'");
         expect(sql).toContain("properties.date <= '2026-12-31'");
     }

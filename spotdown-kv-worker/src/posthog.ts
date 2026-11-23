@@ -13,14 +13,26 @@ const call = (env: Env, path: string, init: RequestInit) =>
         signal: AbortSignal.timeout(15_000),
     });
 
+const queryBackoff = new Map<string, number>();
+
 /**
  * Runs one HogQL query and returns its rows, or null when PostHog fails.
  * ponytail: PostHog suggests saved Endpoints for backend code; this one function is the only caller of /query/,
  * so switching is a one-function change.
  */
 export async function hogql(env: Env, query: string): Promise<unknown[][] | null> {
+    const project = `${env.POSTHOG_API_HOST}/${env.POSTHOG_PROJECT_ID}`;
+    if ((queryBackoff.get(project) ?? 0) > Date.now()) return null;
+    queryBackoff.delete(project);
     try {
         const res = await call(env, '/query/', { method: 'POST', body: JSON.stringify({ query: { kind: 'HogQLQuery', query } }) });
+        if (res.status === 429) {
+            const value = res.headers.get('Retry-After');
+            const now = Date.now();
+            const delay = value == null ? NaN : /^\d+$/.test(value) ? Number(value) * 1000 : Date.parse(value) - now;
+            const until = now + (Number.isFinite(delay) ? Math.max(1000, delay) : 60_000);
+            queryBackoff.set(project, Math.max(queryBackoff.get(project) ?? 0, until));
+        }
         if (!res.ok) return null;
         const { results } = await res.json<{ results?: unknown[][] }>();
         return results ?? [];

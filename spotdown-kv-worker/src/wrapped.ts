@@ -7,7 +7,7 @@ import { spotifyToken } from './spotify';
  * Wrapped: the year in listening for one account, read back from the daily_listening_report events the app
  * posts straight to PostHog. The aggregation runs inside PostHog (HogQL), because a free-plan Worker has about
  * 10 ms of CPU and a year of reports is far more JSON than that. Names and genres come from Spotify by id.
- * One row per account and year is cached in D1; a closed year never changes, so it is never recomputed.
+ * One row per account and year is cached in D1; past years settle before the result is frozen.
  */
 
 const EVENT = 'daily_listening_report';
@@ -19,6 +19,8 @@ const YEAR_SETTLE_MS = 14 * 86_400_000;
 
 /** A past year's result is final only if it was computed after late uploads had a chance to land. */
 export const isFinal = (year: number, computedAt: number) => computedAt >= Date.UTC(year + 1, 0, 1) + YEAR_SETTLE_MS;
+// PostHog's 12-month retention drops whole UTC months. January can disappear starting in February.
+const retentionCutoff = (year: number) => Date.UTC(year + 1, 1, 1);
 
 /**
  * Every query reads only this account's reports for the year, by the local date each report carries.
@@ -27,9 +29,8 @@ export const isFinal = (year: number, computedAt: number) => computedAt >= Date.
  */
 export function filterFor(email: string, year: number): string {
     return `event = '${EVENT}'
-        AND person_id IN (SELECT person_id FROM events WHERE distinct_id = ${lit(email)}
-            AND timestamp >= toDateTime('${MIN_YEAR}-01-01 00:00:00')
-            AND timestamp < toDateTime('${year + 1}-01-01 00:00:00') + INTERVAL 2 DAY)
+        AND (distinct_id = ${lit(email)}
+            OR person_id IN (SELECT person_id FROM person_distinct_ids WHERE distinct_id = ${lit(email)}))
         AND timestamp >= toDateTime('${year}-01-01 00:00:00') - INTERVAL 2 DAY
         AND timestamp < toDateTime('${year + 1}-01-01 00:00:00') + INTERVAL 2 DAY
         AND properties.date >= '${year}-01-01' AND properties.date <= '${year}-12-31'`;
@@ -173,16 +174,42 @@ async function addNames(env: Env, w: Wrapped): Promise<void> {
     w.top_artists = w.top_artists.slice(0, 5);
 }
 
-async function compute(env: Env, email: string, year: number): Promise<Wrapped | null> {
+type Coverage = Record<string, { plays: number; ms: number }>;
+type Snapshot = { report: Wrapped; coverage?: Coverage };
+
+function decodeSnapshot(body: string): Snapshot {
+    const old = JSON.parse(body) as Snapshot | Wrapped;
+    return 'report' in old ? old : { report: old };
+}
+
+/** A refresh can add listening but must preserve every previously observed day. */
+function lostCoverage(before: Snapshot, after: Snapshot): boolean {
+    if (before.coverage && after.coverage) {
+        const coverage = after.coverage;
+        return Object.entries(before.coverage).some(([day, total]) =>
+            !coverage[day] || coverage[day].plays < total.plays || coverage[day].ms < total.ms);
+    }
+    // Compatibility with existing cached bodies that don't have per-day totals.
+    return after.report.plays < before.report.plays ||
+        after.report.minutes < before.report.minutes ||
+        after.report.active_days < before.report.active_days ||
+        (!!before.report.first_day && (!after.report.first_day || after.report.first_day > before.report.first_day));
+}
+
+async function compute(env: Env, email: string, year: number, now: number): Promise<Snapshot | null> {
     const q = queries(email, year);
     // One at a time: PostHog limits how many queries a personal key may run at once, and this is cached.
-    const run: (unknown[][] | null)[] = [];
-    for (const sql of [q.days, q.small, q.songs, q.artists, q.albums, q.distinct]) run.push(await hogql(env, sql));
+    const run: unknown[][][] = [];
+    for (const sql of [q.days, q.small, q.songs, q.artists, q.albums, q.distinct]) {
+        const rows = await hogql(env, sql);
+        if (!rows) return null;
+        run.push(rows);
+    }
     const [days, small, songs, artists, albums, distinct] = run;
-    if (!days || !small || !songs || !artists || !albums || !distinct) return null;
-    const w = shape(year, Date.now(), { days, small, songs, artists, albums, distinct });
+    const w = shape(year, now, { days, small, songs, artists, albums, distinct });
     if (w.plays) await addNames(env, w);
-    return w;
+    const coverage = Object.fromEntries(days.map(([day, ms, plays]) => [String(day), { ms: num(ms), plays: num(plays) }]));
+    return { report: w, coverage };
 }
 
 const err = (error: string, status: number) => Response.json({ error }, { status });
@@ -193,7 +220,8 @@ export async function wrapped(request: Request, env: Env): Promise<Response> {
     if (!me) return err('Logged out. Log in again.', 401);
     if (!posthogReady(env)) return err('Wrapped is not set up yet', 503);
 
-    const thisYear = new Date().getUTCFullYear();
+    const now = Date.now();
+    const thisYear = new Date(now).getUTCFullYear();
     const asked = new URL(request.url).searchParams.get('year');
     const year = asked === null ? thisYear : Number(asked);
     if (!Number.isInteger(year) || year < MIN_YEAR || year > thisYear) return err('Bad year', 400);
@@ -201,16 +229,34 @@ export async function wrapped(request: Request, env: Env): Promise<Response> {
     const user = await env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(me.userId).first<{ email: string }>();
     if (!user) return err('Logged out. Log in again.', 401);
 
-    const row = await env.DB.prepare('SELECT body, computed_at FROM wrapped_cache WHERE user_id = ? AND year = ?')
+    const load = () => env.DB.prepare('SELECT body, computed_at FROM wrapped_cache WHERE user_id = ? AND year = ?')
         .bind(me.userId, year).first<{ body: string; computed_at: number }>();
-    const cached = row ? JSON.parse(row.body) as Wrapped : null;
-    const age = row ? Date.now() - row.computed_at : Infinity;
-    const fresh = row && (year < thisYear && isFinal(year, row.computed_at) ? true : age < (cached?.plays ? FRESH_MS : EMPTY_FRESH_MS));
-    if (cached && fresh) return Response.json(cached);
+    const row = await load();
+    const cached = row ? decodeSnapshot(row.body) : null;
+    const closed = year < thisYear;
+    if (row && cached) {
+        const settled = closed && isFinal(year, row.computed_at);
+        const beforeClose = closed && row.computed_at < Date.UTC(year + 1, 0, 1);
+        if (settled || (!beforeClose && now - row.computed_at < (cached.report.plays ? FRESH_MS : EMPTY_FRESH_MS))) {
+            return Response.json(cached.report);
+        }
+    }
+    if (now >= retentionCutoff(year)) {
+        return cached ? Response.json(cached.report) : err('The source data for this year has expired.', 410);
+    }
 
-    const w = await compute(env, user.email, year);
-    if (!w) return cached ? Response.json(cached) : err('Could not read your listening right now. Try again later.', 502);
-    await env.DB.prepare('INSERT INTO wrapped_cache (user_id, year, body, computed_at) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, year) DO UPDATE SET body = excluded.body, computed_at = excluded.computed_at')
-        .bind(me.userId, year, JSON.stringify(w), Date.now()).run();
-    return Response.json(w);
+    const snapshot = await compute(env, user.email, year, now);
+    if (!snapshot) return cached ? Response.json(cached.report) : err('Could not read your listening right now. Try again later.', 502);
+    if (closed && cached && lostCoverage(cached, snapshot)) return Response.json(cached.report);
+    // Only replace the snapshot we compared against, so concurrent refreshes cannot regress it.
+    const result = await env.DB.prepare(`INSERT INTO wrapped_cache (user_id, year, body, computed_at)
+        VALUES (?, ?, ?, ?) ON CONFLICT (user_id, year) DO UPDATE
+        SET body = excluded.body, computed_at = excluded.computed_at
+        WHERE wrapped_cache.computed_at = ? AND wrapped_cache.body = ?`)
+        .bind(me.userId, year, JSON.stringify(snapshot), now, row?.computed_at ?? null, row?.body ?? null).run();
+    if (!result.meta.changes) {
+        const winner = await load();
+        if (winner) return Response.json(decodeSnapshot(winner.body).report);
+    }
+    return Response.json(snapshot.report);
 }

@@ -49,6 +49,7 @@ import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.example.juke.R
+import com.example.juke.account.Account
 import com.example.juke.analytics.AnalyticsManager
 import com.example.juke.analytics.EventProperty
 import com.example.juke.analytics.EventType
@@ -63,9 +64,11 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -647,12 +650,91 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    private var listenLookup: Job? = null
+    private val playLog = PlayLog(
+        sink = { event ->
+            val generation = Account.listeningGeneration(event.owner)
+            val consent = AnalyticsManager.consentEpoch()
+            serviceScope.launch {
+                runCatching {
+                    Account.recordListen(database.playEventDao(), event, generation) {
+                        AnalyticsManager.isEnabled(applicationContext) && AnalyticsManager.consentEpoch() == consent
+                    }
+                }.onFailure { Log.w(tag, "Could not save listen", it) }
+            }
+        },
+        owner = ::listeningOwner,
+        enabled = { AnalyticsManager.isEnabled(applicationContext) },
+        epoch = AnalyticsManager::consentEpoch,
+        ownerGeneration = Account::listeningGeneration
+    )
+
+    private fun listeningOwner(): String =
+        Account.email.value?.trim()?.lowercase()
+            ?: AnalyticsManager.getInstance(applicationContext).installId()
+
+    private fun startListen(mediaItem: MediaItem) {
+        if (!AnalyticsManager.isEnabled(applicationContext)) return
+        val trackId = mediaItem.mediaId
+        val index = player.currentMediaItemIndex
+        val from = com.example.juke.viewmodels.PlayContext.latest
+        val pickedOn = com.example.juke.viewmodels.PlayContext.pickedOn
+        val consent = AnalyticsManager.consentEpoch()
+        val owner = listeningOwner()
+        val generation = Account.listeningGeneration(owner)
+
+        fun start(track: Track) {
+            if (consent != AnalyticsManager.consentEpoch() ||
+                owner != listeningOwner() || generation != Account.listeningGeneration(owner) ||
+                player.playbackState == Player.STATE_ENDED
+            ) return
+            val source = com.example.juke.viewmodels.PlayContext.sourceOf(
+                from = from, track = track, radio = queueManager.isRadioSong(track),
+                jam = JamSession.state.value.active, pickedOn = pickedOn
+            )
+            playLog.start(track, playingNow = player.isPlaying, source = source)
+            AnalyticsManager.getInstance(applicationContext).trackSongPlayed(
+                songId = "${track.title} - ${track.artist}",
+                songTitle = track.title,
+                songArtist = track.artist,
+                songDuration = track.durationSec * 1000L,
+                positionInQueue = index,
+                isStream = track.isStream,
+                trackUuid = track.uuid,
+                spotifyId = track.spotifyId,
+                ytVideoId = track.ytVideoId,
+                source = source
+            )
+        }
+
+        val queued = queueManager.currentQueue.value.find { it.uuid == trackId }
+        if (queued != null) {
+            start(queued)
+        } else {
+            listenLookup = serviceScope.launch {
+                try {
+                    database.trackDao().getTrackByUuid(trackId)?.toTrack()?.let(::start)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(tag, "Could not start listening analytics", e)
+                }
+            }
+        }
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = preloadArtwork()
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_ENDED -> Log.d(tag, "Playback ended")
+                Player.STATE_ENDED -> {
+                    listenLookup?.cancel()
+                    playLog.end(completed = true)?.let {
+                        AnalyticsManager.getIfInitialized()?.songTransition(true, it)
+                    }
+                    Log.d(tag, "Playback ended")
+                }
                 Player.STATE_READY -> Log.d(tag, "Player ready")
                 Player.STATE_BUFFERING -> Log.d(tag, "Buffering...")
                 Player.STATE_IDLE -> Log.d(tag, "Player idle")
@@ -665,6 +747,15 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            listenLookup?.cancel()
+            val ranToEnd = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+            val listened = playLog.end(completed = ranToEnd)
+            if (ranToEnd || reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+                AnalyticsManager.getIfInitialized()?.songTransition(ranToEnd, listened)
+            }
+            mediaItem?.let(::startListen)
+
             preloadArtwork()
             // Prevent infinite loops from metadata updates
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
@@ -799,6 +890,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            playLog.setPlaying(isPlaying)
             Log.d(tag, "Is playing: $isPlaying")
             armOffloadWatchdog()
             if (isPlaying) {
@@ -864,6 +956,8 @@ class PlaybackService : MediaLibraryService() {
         })
 
         database = MusicDatabase.getDatabase(applicationContext)
+        // A headset or media key can start this service before the UI loads the session.
+        Account.load(applicationContext)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         val renderersFactory = object : DefaultRenderersFactory(this) {
@@ -1125,6 +1219,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        listenLookup?.cancel()
+        playLog.end(completed = false)
         // Clean up pending resume operations
         mainHandler.removeCallbacks(resumeAfterCall)
         mainHandler.removeCallbacks(foregroundGuard)
@@ -1641,23 +1737,6 @@ class PlaybackManager private constructor(private val context: Context) {
     val isPlayingFlow: StateFlow<Boolean> = _isPlaying.asStateFlow()
     private val database: MusicDatabase = MusicDatabase.getDatabase(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    /** Times real listening for the daily report; touched from the main thread only. */
-    private val playLog = PlayLog(
-        sink = { e ->
-            val deletedAccount = e.owner?.let { com.example.juke.account.Account.wasDeleted(it) } == true
-            if (com.example.juke.analytics.AnalyticsManager.isEnabled(context) && !deletedAccount) {
-                scope.launch { runCatching { database.playEventDao().insert(e) } }
-            }
-        },
-        // Who the listen reports under: the account email, else this install's anonymous id as it is right now.
-        // Fixed at listen start, so a later login, logout or account switch cannot move it to someone else.
-        owner = {
-            com.example.juke.account.Account.email.value?.trim()?.lowercase()
-                ?: com.example.juke.analytics.AnalyticsManager.getInstance(context).installId()
-        },
-        enabled = { com.example.juke.analytics.AnalyticsManager.isEnabled(context) },
-        epoch = { com.example.juke.analytics.AnalyticsManager.consentEpoch() }
-    )
     // Serial background dispatcher for queue mutations: keeps disk work off the main thread while
     // preserving the order in which setQueue/addToQueue calls were made.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -1928,14 +2007,11 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onIsPlayingChanged(isPlaying: Boolean) {
                             _isPlaying.value = isPlaying
-                            playLog.setPlaying(isPlaying)
                             Log.d(tag, "PlayerListener onIsPlayingChanged: $isPlaying")
                         }
 
                         override fun onPlaybackStateChanged(playbackState: Int) {
                             Log.d(tag, "PlayerListener playbackStateChanged: $playbackState")
-                            // The last song of the queue ends without a media item transition.
-                            if (playbackState == Player.STATE_ENDED) playLog.end(completed = true)
                             if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
                                 savePlaybackState()
                             }
@@ -2280,13 +2356,6 @@ class PlaybackManager private constructor(private val context: Context) {
 
                         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                             streamSeekHandoff.trackChanged(mediaItem?.mediaId)
-                            // Repeat-one reaching the end is a transition too, with its own reason: still a full listen.
-                            val ranToEnd = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
-                            val listened = playLog.end(completed = ranToEnd)
-                            when (reason) {
-                                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO, Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> AnalyticsManager.getIfInitialized()?.songTransition(true, listened)
-                                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> AnalyticsManager.getIfInitialized()?.songTransition(false, listened)
-                            }
                             mediaItem?.let { item ->
                                 val trackId = item.mediaId
                                 _currentTrackId.value = trackId
@@ -2306,54 +2375,6 @@ class PlaybackManager private constructor(private val context: Context) {
 
                                 // Re-download evicted stream files for the next few songs ahead of time
                                 validateUpcomingStreams()
-
-
-                                // Track song play in analytics
-                                scope.launch {
-                                    try {
-                                        Log.d(tag, "Analytics: Looking up track with ID: $trackId")
-                                        val track =
-                                            database.trackDao().getTrackByUuid(trackId)?.toTrack()
-                                        if (track != null) {
-                                            val source = com.example.juke.viewmodels.PlayContext.sourceOf(
-                                                from = com.example.juke.viewmodels.PlayContext.latest,
-                                                track = track,
-                                                radio = queueManager.isRadioSong(track),
-                                                jam = com.example.juke.jam.JamSession.state.value.active,
-                                                pickedOn = com.example.juke.viewmodels.PlayContext.pickedOn
-                                            )
-                                            withContext(Dispatchers.Main) {
-                                                // A quick skip may have moved on before this lookup finished.
-                                                if (_currentTrackId.value == trackId) {
-                                                    playLog.start(track, playingNow = controller?.isPlaying == true, source = source)
-                                                }
-                                            }
-                                            Log.d(
-                                                tag,
-                                                "Analytics: Found track '${track.title}' by ${track.artist}, calling trackSongPlayed"
-                                            )
-                                            AnalyticsManager.getInstance(context).trackSongPlayed(
-                                                songId = "${track.title} - ${track.artist}",
-                                                songTitle = track.title,
-                                                songArtist = track.artist,
-                                                songDuration = track.durationSec * 1000L,
-                                                positionInQueue = currentIndex,
-                                                isStream = track.isStream,
-                                                trackUuid = track.uuid,
-                                                spotifyId = track.spotifyId,
-                                                ytVideoId = track.ytVideoId,
-                                                source = source
-                                            )
-                                        } else {
-                                            Log.w(
-                                                tag,
-                                                "Analytics: Track not found in database for ID: $trackId"
-                                            )
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e(tag, "Error tracking song play: ${e.message}", e)
-                                    }
-                                }
                             }
                         }
 
@@ -3024,7 +3045,6 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun release() {
         cancelSleepTimer()
-        playLog.end(completed = false) // keep the song in progress
         savePlaybackState() // Save state before releasing
         MediaController.releaseFuture(controllerFuture ?: return)
         // remove player listener if attached

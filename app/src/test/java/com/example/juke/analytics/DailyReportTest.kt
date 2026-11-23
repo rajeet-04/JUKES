@@ -2,7 +2,11 @@ package com.example.juke.analytics
 
 import com.example.juke.database.PlayEventDao
 import com.example.juke.database.PlayEventEntity
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
@@ -116,6 +120,23 @@ class DailyReportTest {
         assertTrue(dao.rows.isEmpty())
     }
 
+    @Test fun aFrozenBatchWithSomeRowsGoneStillUploadsTheRest() = runBlocking {
+        val dao = FakeDao(listOf(row("2023-11-13", "a - x", owner = "a@x.com"), row("2023-11-13", "b - x", owner = "a@x.com")))
+        val sent = mutableListOf<JsonObject>()
+        var ok = false
+        val pending = InMemoryPendingBatches()
+        val up = DailyReportUploader(
+            dao = dao, pending = pending, distinctId = { "me@example.com" }, deviceId = { "dev1" }, enabled = { true },
+            today = { LocalDate.parse("2023-11-20") }, apiKey = { "key" }, send = { sent += it; ok }
+        )
+        up.uploadPending() // fails: both rows are now frozen as one batch
+        dao.deleteIds(listOf(dao.rows.first().id)) // one of them is purged meanwhile
+        ok = true
+        up.uploadPending() // must not throw or wedge
+        assertEquals(2, sent.size)
+        assertTrue(dao.rows.isEmpty())
+    }
+
     @Test fun aRetryOfTheSameRowsKeepsTheSameUuid() = runBlocking {
         val dao = FakeDao(listOf(row("2023-11-13")))
         val sent = mutableListOf<JsonObject>()
@@ -125,6 +146,76 @@ class DailyReportTest {
         val uuids = sent.map { it["batch"]!!.jsonArray.single().jsonObject["uuid"]!!.jsonPrimitive.content }
         assertEquals(2, uuids.size)
         assertEquals(uuids[0], uuids[1])
+    }
+
+    @Test fun restartAfterAnAcknowledgementRetriesTheFrozenRowsBeforeLateRows() = runBlocking {
+        val day = "2023-11-13"
+        val dao = FakeDao(listOf(row(day)))
+        val pending = InMemoryPendingBatches()
+        val sent = mutableListOf<JsonObject>()
+        fun newUploader() = DailyReportUploader(
+            dao = dao, pending = pending, distinctId = { "me@example.com" }, deviceId = { "dev1" },
+            enabled = { true }, today = { LocalDate.parse("2023-11-20") }, apiKey = { "key" },
+            send = { sent += it; true }
+        )
+        dao.beforeDelete = { error("Stopped after acknowledgement") }
+        assertTrue(runCatching { newUploader().uploadPending() }.isFailure)
+        dao.beforeDelete = {}
+        dao.insert(row(day, "late - x"))
+        newUploader().uploadPending()
+        assertEquals(3, sent.size)
+        assertEquals(sent[0], sent[1])
+        assertNotEquals(sent[1], sent[2])
+        assertTrue(dao.rows.isEmpty())
+    }
+
+    @Test fun restartAfterRowDeletionSendsOnlyTheLateRows() = runBlocking {
+        val day = "2023-11-13"
+        val dao = FakeDao(listOf(row(day)))
+        val pending = InMemoryPendingBatches()
+        val sent = mutableListOf<JsonObject>()
+        fun newUploader(store: PendingBatches) = DailyReportUploader(
+            dao = dao, pending = store, distinctId = { "me@example.com" }, deviceId = { "dev1" },
+            enabled = { true }, today = { LocalDate.parse("2023-11-20") }, apiKey = { "key" },
+            send = { sent += it; true }
+        )
+        val stopped = object : PendingBatches by pending {
+            override fun remove(key: String) = error("Stopped after deleting acknowledged rows")
+        }
+        assertTrue(runCatching { newUploader(stopped).uploadPending() }.isFailure)
+        assertTrue(dao.rows.isEmpty())
+        dao.insert(row(day, "late - x"))
+        newUploader(pending).uploadPending()
+        assertEquals(2, sent.size)
+        assertNotEquals(sent[0], sent[1])
+        assertTrue(dao.rows.isEmpty())
+    }
+
+    @Test fun uploadersWithTheSameLockDoNotReadOverlappingBatches() = runBlocking {
+        val day = "2023-11-13"
+        val dao = FakeDao(listOf(row(day)))
+        val pending = InMemoryPendingBatches()
+        val lock = Mutex()
+        val release = CompletableDeferred<Unit>()
+        val sent = mutableListOf<JsonObject>()
+        fun newUploader() = DailyReportUploader(
+            dao = dao, pending = pending, lock = lock, distinctId = { "me@example.com" }, deviceId = { "dev1" },
+            enabled = { true }, today = { LocalDate.parse("2023-11-20") }, apiKey = { "key" },
+            send = { sent += it; release.await(); true }
+        )
+        val first = async(start = CoroutineStart.UNDISPATCHED) { newUploader().uploadPending() }
+        dao.insert(row(day, "late - x"))
+        val second = async(start = CoroutineStart.UNDISPATCHED) { newUploader().uploadPending() }
+        try {
+            assertEquals(1, sent.size)
+        } finally {
+            release.complete(Unit)
+        }
+        assertEquals(1, first.await())
+        assertEquals(1, second.await())
+        assertEquals(listOf(1, 1), sent.map {
+            it["batch"]!!.jsonArray.single().jsonObject["properties"]!!.jsonObject["plays"]!!.jsonPrimitive.int
+        })
     }
 
     @Test fun anAnonymousListenKeepsItsInstallIdWhateverAccountIsActiveAtUpload() = runBlocking {
@@ -147,6 +238,19 @@ class DailyReportTest {
         ).uploadPending()
         assertEquals(1, sent.size)
         assertEquals(1, dao.rows.size) // the report that went out is cleared, the other waits
+    }
+
+    @Test fun reEnablingConsentDoesNotResumeAnOldUploadRun() = runBlocking {
+        val dao = FakeDao(listOf(row("2023-11-13", owner = "a@x.com"), row("2023-11-13", owner = "b@x.com")))
+        var epoch = 0
+        val sent = mutableListOf<JsonObject>()
+        DailyReportUploader(
+            dao = dao, distinctId = { "me@example.com" }, deviceId = { "dev1" },
+            enabled = { true }, consentEpoch = { epoch },
+            today = { LocalDate.parse("2023-11-20") }, apiKey = { "key" },
+            send = { sent += it; epoch++; true }
+        ).uploadPending()
+        assertEquals(1, sent.size)
     }
 
     @Test fun ifOneOwnerFailsTheDayIsKept() = runBlocking {

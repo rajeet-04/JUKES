@@ -2,12 +2,6 @@ package com.example.juke.analytics
 
 import com.example.juke.database.PlayEventDao
 import com.example.juke.database.PlayEventEntity
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
@@ -97,10 +91,6 @@ object DailyReport {
 }
 
 /**
- * Reports every closed day that still has rows, oldest first, and deletes a day's rows only when [send]
- * says PostHog accepted it. Today is never reported. A failed day is kept for the next run.
- */
-/**
  * The row ids each report was frozen to before it was first sent, by "distinct id|date". A report whose
  * response was lost is retried with exactly those rows and the same uuid, so PostHog drops the repeat; rows
  * that arrived since go out as their own report instead of being folded into one PostHog may already hold.
@@ -118,6 +108,7 @@ class InMemoryPendingBatches : PendingBatches {
     override fun remove(key: String) { map.remove(key) }
 }
 
+/** Reports closed days oldest first, retaining failed batches for the next run. */
 class DailyReportUploader(
     private val dao: PlayEventDao,
     private val pending: PendingBatches = InMemoryPendingBatches(),
@@ -129,13 +120,15 @@ class DailyReportUploader(
     private val platform: String = "android",
     /** Posts one event body; true only on a success response from PostHog. */
     private val send: suspend (body: JsonObject) -> Boolean,
-    private val apiKey: () -> String
+    private val apiKey: () -> String,
+    private val lock: Mutex = Mutex(),
+    private val consentEpoch: () -> Int = { 0 }
 ) {
-    private val lock = Mutex()
-
     /** @return how many days were reported and cleared. */
     suspend fun uploadPending(): Int = lock.withLock {
+        val epoch = consentEpoch()
         if (!enabled() || apiKey().isBlank()) return 0
+        val installId = deviceId()
         var done = 0
         for (date in dao.dates()) {
             val day = runCatching { LocalDate.parse(date) }.getOrNull()
@@ -143,26 +136,36 @@ class DailyReportUploader(
             if (!day.isBefore(today())) break
             val rows = dao.forDate(date)
             if (rows.isEmpty()) continue
-            // Each row reports under whoever was listening: their email, or this install when anonymous.
-            // Group by that resolved id: anonymous rows from a day the user later signed in share the
-            // email's id, and two payloads with one id would get one uuid, so PostHog would drop one.
+            // New rows carry their original identity. Resolve legacy null owners once per day.
+            val legacyOwner = distinctId()
             var allOk = true
-            for ((id, list) in rows.groupBy { it.owner ?: distinctId() }) {
-                val zone = runCatching { ZoneId.of(list.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
+            for ((id, list) in rows.groupBy { it.owner ?: legacyOwner }) {
                 val key = "$id|$date"
                 var left = list
                 while (left.isNotEmpty()) {
+                    if (!enabled() || consentEpoch() != epoch) return done
                     // A report that may already have been accepted keeps exactly its rows; anything newer is its own report.
                     val frozen = pending.get(key)
-                    val batch = if (frozen != null) left.filter { it.id in frozen }.ifEmpty { left } else left
+                    val batch = if (frozen != null) {
+                        val frozenIds = frozen.toSet()
+                        val remaining = left.filter { it.id in frozenIds }
+                        if (remaining.isEmpty()) {
+                            // The rows were purged, or acknowledged and deleted before the marker was cleared.
+                            pending.remove(key)
+                            continue
+                        }
+                        // Some frozen rows may be gone (purged); send the rest under the same uuid rather than wedge every later run.
+                        remaining
+                    } else left
                     val ids = batch.map { it.id }.sorted()
                     pending.put(key, ids)
-                    val body = DailyReport.batchBody(apiKey(), id, deviceId(), date, DailyReport.properties(date, batch, platform), zone, batch = ids.joinToString(","))
-                    if (!enabled()) return done // consent withdrawn mid-run: send nothing more
+                    val zone = runCatching { ZoneId.of(batch.first().timeZone) }.getOrDefault(ZoneId.systemDefault())
+                    val body = DailyReport.batchBody(apiKey(), id, installId, date, DailyReport.properties(date, batch, platform), zone, batch = ids.joinToString(","))
+                    if (!enabled() || consentEpoch() != epoch) return done
                     val ok = try { send(body) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
                     if (!ok) { allOk = false; break }
+                    dao.deleteBatch(ids) // a listen that finished meanwhile stays for the next report
                     pending.remove(key)
-                    dao.deleteIds(ids) // exactly what was reported: a listen that finished meanwhile stays for the next report
                     left = left - batch.toSet()
                 }
                 if (!allOk) break
@@ -172,52 +175,4 @@ class DailyReportUploader(
         }
         done
     }
-}
-
-/** Wires the uploader to PostHog's /batch endpoint, the account email and the install id. */
-object DailyReports {
-    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
-
-    /** The account email when logged in, so every platform reports under one person; else the install id. */
-    fun distinctId(context: android.content.Context): String =
-        com.example.juke.account.Account.email.value?.trim()?.lowercase()
-            ?: AnalyticsManager.getInstance(context).installId()
-
-    /** One id per install that outlives login and logout, so a report's uuid is the same on every retry. */
-    fun deviceId(context: android.content.Context): String {
-        val prefs = context.applicationContext.getSharedPreferences("analytics_prefs", android.content.Context.MODE_PRIVATE)
-        return prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also { prefs.edit().putString("device_id", it).apply() }
-    }
-
-    /** Fire and forget; safe to call on every app open. */
-    fun uploadPending(context: android.content.Context) {
-        val app = context.applicationContext
-        scope.launch {
-            runCatching {
-                DailyReportUploader(
-                    dao = com.example.juke.database.MusicDatabase.getDatabase(app).playEventDao(),
-                    pending = PrefsPendingBatches(app),
-                    distinctId = { distinctId(app) },
-                    deviceId = { deviceId(app) },
-                    enabled = { AnalyticsManager.isEnabled(app) },
-                    apiKey = { com.example.juke.BuildConfig.POSTHOG_API_KEY },
-                    send = { body ->
-                        val url = com.example.juke.BuildConfig.POSTHOG_HOST.trimEnd('/') + "/batch/"
-                        com.example.juke.network.ApiClient.httpClient.post(url) {
-                            contentType(ContentType.Application.Json)
-                            setBody(body.toString())
-                        }.status.isSuccess()
-                    }
-                ).uploadPending()
-            }
-        }
-    }
-}
-
-/** Keeps the frozen batches across restarts, so a retry after a crash still repeats the same report. */
-class PrefsPendingBatches(context: android.content.Context) : PendingBatches {
-    private val prefs = context.applicationContext.getSharedPreferences("daily_report_pending", android.content.Context.MODE_PRIVATE)
-    override fun get(key: String): List<Long>? = prefs.getString(key, null)?.split(',')?.mapNotNull { it.toLongOrNull() }
-    override fun put(key: String, ids: List<Long>) { prefs.edit().putString(key, ids.joinToString(",")).apply() }
-    override fun remove(key: String) { prefs.edit().remove(key).apply() }
 }

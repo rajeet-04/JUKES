@@ -79,6 +79,28 @@ class PlayLogTest {
         assertEquals(1, rows.size)
     }
 
+    @Test fun recreatingAnAccountDoesNotRestoreItsDeletedListen() {
+        val email = "me@example.com"
+        var owner: String? = email
+        var generation = 0
+        val gated = PlayLog(
+            { rows += it }, { now }, { ZoneId.of("UTC") }, owner = { owner },
+            ownerGeneration = { if (it == email) generation else 0 }
+        )
+        gated.start(track(200), playingNow = true)
+        now += 30_000
+        generation++
+        owner = null
+        owner = email
+        gated.end(completed = true)
+        assertTrue(rows.isEmpty())
+
+        gated.start(track(200), playingNow = true)
+        now += 30_000
+        gated.end(completed = true)
+        assertEquals(email, rows.single().owner)
+    }
+
     @Test fun endWithoutStartDoesNothing() {
         log.end(completed = true)
         assertTrue(rows.isEmpty())

@@ -4,11 +4,9 @@ How listening gets from the phone to a Wrapped, and how to deploy the Worker sid
 
 ## Data flow
 
-1. **Phone, while playing.** `PlayLog` (`services/PlayLog.kt`) times what is actually heard, pauses excluded, and writes one `play_events` row per listen (Room, `database/PlayEvent.kt`). Each row keeps a snapshot of the song, the account email that was listening (null when anonymous), and `source`: `playlist`, `album`, `artist`, `library`, `radio`, `jam`, `home`, `search` or `direct`.
-2. **Phone, once a local day has closed.** `DailyReportUploader` (`analytics/DailyReport.kt`) sends one `daily_listening_report` event per day and owner **directly to PostHog** (`POSTHOG_HOST/batch/`). A day's rows are deleted only after PostHog answers with a success status. It runs on app open and never reports today. Rows whose day failed stay for the next run.
-   - The event uuid is fixed per email, device and day, so a retry is not counted twice and a phone and a desktop do not collide.
-   - Reports go under the account email when logged in, otherwise under the install id.
-3. **Worker, on request.** `GET /account/wrapped?year=` (`src/wrapped.ts`) reads that account's reports back from PostHog's private API with a personal API key, aggregates them in HogQL, adds artist and album names and genres from Spotify, and caches one row per account and year in D1 (`wrapped_cache`). A closed year is never recomputed; the current year is refreshed after 6 hours.
+1. **Phone, while playing.** The playback service uses `PlayLog` (`services/PlayLog.kt`) to time listening while audio is playing, including when the UI is closed. Each `play_events` row stores a song snapshot, a playback source, and the identity at the start of the listen. That identity is the account email or the anonymous install ID.
+2. **Phone, once a local day has closed.** `DailyReportUploader` (`analytics/DailyReport.kt`) sends `daily_listening_report` events directly to PostHog (`POSTHOG_HOST/batch/`) on app open. Each batch freezes its row IDs before sending and uses those same IDs to generate its UUID on retry. After PostHog acknowledges it, the uploader deletes the reported rows before clearing the batch record. Late listens get a separate batch.
+3. **Worker, on request.** `GET /account/wrapped?year=` (`src/wrapped.ts`) queries the account's current PostHog person, aggregates reports in HogQL, and adds artist and album names and genres from Spotify. The current year's D1 snapshot refreshes after six hours, or after one hour for an empty result. A past year refreshes after rollover and can become final after two weeks.
 4. **Delete account.** `/account/delete` also clears the cache and deletes the person and their events in PostHog (best effort).
 
 The phone never holds a PostHog read key; the personal key lives only in the Worker.
@@ -20,7 +18,7 @@ The phone never holds a PostHog read key; the personal key lives only in the Wor
 
 ## Retention
 
-The PostHog project keeps events for 12 months (the plan's maximum). Compute Wrapped in December, while that year's January events still exist; the D1 cache keeps the result after that.
+The PostHog project keeps events for 12 months. A January refresh keeps the latest snapshot that still covers previously observed listening days. Starting February 1, the Worker serves the stored snapshot for the prior year, or returns HTTP 410 if it never saved one. [PostHog retention and cleanup](https://posthog.com/docs/privacy/data-storage#when-expired-events-are-deleted)
 
 ## Deploy the Worker
 

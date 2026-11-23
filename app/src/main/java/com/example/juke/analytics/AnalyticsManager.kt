@@ -73,6 +73,10 @@ class AnalyticsManager private constructor(context: Context) {
         fun isEnabled(context: Context): Boolean =
             context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, true)
 
+        internal suspend fun purgeListening(context: Context, owner: String) {
+            com.example.juke.database.MusicDatabase.getDatabase(context.applicationContext).playEventDao().deleteOwner(owner)
+        }
+
         /** Off stops PostHog capture and daily reports, and drops what is buffered for the next report. */
         fun setEnabled(context: Context, enabled: Boolean) {
             val app = context.applicationContext

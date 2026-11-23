@@ -126,7 +126,7 @@ fun PowerToolsScreen(onNavigateBack: () -> Unit, bottomPadding: androidx.compose
                 }
             }
 
-            item {
+            if (!com.example.juke.account.Account.isDesktop) item {
                 Section("Privacy") {
                     SwitchRow(
                         "Share usage and listening stats",
