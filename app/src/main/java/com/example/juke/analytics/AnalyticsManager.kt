@@ -249,13 +249,15 @@ class AnalyticsManager private constructor(context: Context) {
         isStream: Boolean = false,
         trackUuid: String? = null,
         spotifyId: String? = null,
-        ytVideoId: String? = null
+        ytVideoId: String? = null,
+        source: String? = null
     ) {
         // song_id stays "Title - Artist" so old charts keep working; the real ids let plays be joined to tracks.
         val ids = listOfNotNull(
             trackUuid?.let { EventProperty.TRACK_UUID to it },
             spotifyId?.let { EventProperty.SPOTIFY_ID to it },
-            ytVideoId?.let { EventProperty.YT_VIDEO_ID to it }
+            ytVideoId?.let { EventProperty.YT_VIDEO_ID to it },
+            source?.let { EventProperty.SOURCE to it }
         ).toMap()
         playing = Playing(songId, songTitle, songArtist, songDuration, System.currentTimeMillis(), ids)
         trackEvent(

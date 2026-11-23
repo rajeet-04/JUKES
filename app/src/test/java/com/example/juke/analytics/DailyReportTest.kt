@@ -99,6 +99,7 @@ class DailyReportTest {
         assertEquals(90_000L, x["listened_ms"]!!.jsonPrimitive.long)
         val hours = p["listened_ms_by_hour"] as JsonArray
         assertEquals(24, hours.size)
+        assertEquals(100_000L, p["listened_ms_by_source"]!!.jsonObject["unknown"]!!.jsonPrimitive.long)
         assertEquals(100_000L, hours[22].jsonPrimitive.long) // t0 is 22:13 UTC
     }
 

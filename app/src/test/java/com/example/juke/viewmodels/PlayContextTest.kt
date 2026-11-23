@@ -1,6 +1,7 @@
 package com.example.juke.viewmodels
 
 import com.example.juke.models.Track
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,6 +19,23 @@ class PlayContextTest {
     @Test fun `does not own a song from elsewhere or nothing`() {
         assertFalse(ctx.owns(track("u9", spotifyId = "s9")))
         assertFalse(ctx.owns(null))
+    }
+
+    @Test fun `source is the kind of list the song was started from`() {
+        fun src(kind: PlayContext.Kind) =
+            PlayContext.sourceOf(PlayContext(kind, "i", "n", setOf("u1")), track("u1"), radio = false, jam = false)
+        assertEquals("playlist", src(PlayContext.Kind.PLAYLIST))
+        assertEquals("playlist", src(PlayContext.Kind.LIBRARY_PLAYLIST))
+        assertEquals("album", src(PlayContext.Kind.ALBUM))
+        assertEquals("artist", src(PlayContext.Kind.ARTIST))
+        assertEquals("library", src(PlayContext.Kind.LIBRARY))
+    }
+
+    @Test fun `source falls back to direct, and jam and radio win`() {
+        assertEquals("direct", PlayContext.sourceOf(null, track("u1"), radio = false, jam = false))
+        assertEquals("direct", PlayContext.sourceOf(ctx, track("u9"), radio = false, jam = false)) // not in the list
+        assertEquals("radio", PlayContext.sourceOf(ctx, track("u1"), radio = true, jam = false))
+        assertEquals("jam", PlayContext.sourceOf(ctx, track("u1"), radio = true, jam = true))
     }
 
     @Test fun `is checks kind and id`() {

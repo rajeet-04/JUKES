@@ -2305,10 +2305,16 @@ class PlaybackManager private constructor(private val context: Context) {
                                         val track =
                                             database.trackDao().getTrackByUuid(trackId)?.toTrack()
                                         if (track != null) {
+                                            val source = com.example.juke.viewmodels.PlayContext.sourceOf(
+                                                from = com.example.juke.viewmodels.PlayContext.latest,
+                                                track = track,
+                                                radio = queueManager.isRadioSong(track),
+                                                jam = com.example.juke.jam.JamSession.state.value.active
+                                            )
                                             withContext(Dispatchers.Main) {
                                                 // A quick skip may have moved on before this lookup finished.
                                                 if (_currentTrackId.value == trackId) {
-                                                    playLog.start(track, playingNow = controller?.isPlaying == true)
+                                                    playLog.start(track, playingNow = controller?.isPlaying == true, source = source)
                                                 }
                                             }
                                             Log.d(
@@ -2324,7 +2330,8 @@ class PlaybackManager private constructor(private val context: Context) {
                                                 isStream = track.isStream,
                                                 trackUuid = track.uuid,
                                                 spotifyId = track.spotifyId,
-                                                ytVideoId = track.ytVideoId
+                                                ytVideoId = track.ytVideoId,
+                                                source = source
                                             )
                                         } else {
                                             Log.w(

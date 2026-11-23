@@ -65,6 +65,9 @@ object DailyReport {
             put("skips", rows.count { it.skipped })
             put("total_listened_ms", rows.sumOf { it.listenedMs })
             put("listened_ms_by_hour", JsonArray(hours.map(::JsonPrimitive)))
+            put("listened_ms_by_source", buildJsonObject {
+                rows.groupBy { it.source ?: "unknown" }.toSortedMap().forEach { (src, list) -> put(src, list.sumOf { it.listenedMs }) }
+            })
             put("tracks", JsonArray(tracks))
         }
     }

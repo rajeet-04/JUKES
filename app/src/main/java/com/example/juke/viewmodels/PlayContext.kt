@@ -47,6 +47,25 @@ data class PlayContext(
         fun keysOf(tracks: List<Track>): Set<String> =
             tracks.flatMapTo(HashSet()) { listOfNotNull(it.uuid, it.spotifyId) }
 
+        /** The context of the queue now playing, kept in memory so the player can read it without decoding the saved copy. */
+        @Volatile var latest: PlayContext? = null
+
+        /**
+         * Where a listen came from, for analytics: jam, radio (the queue's own picks), the kind of list it was
+         * started from, or direct for a song picked on its own (search, home, a single tap).
+         */
+        fun sourceOf(from: PlayContext?, track: Track, radio: Boolean, jam: Boolean): String = when {
+            jam -> "jam"
+            radio -> "radio"
+            else -> when (from?.takeIf { it.owns(track) }?.kind) {
+                Kind.LIBRARY_PLAYLIST, Kind.PLAYLIST -> "playlist"
+                Kind.ALBUM -> "album"
+                Kind.ARTIST -> "artist"
+                Kind.LIBRARY -> "library"
+                null -> "direct"
+            }
+        }
+
         /** Asks the Library tab to open one of its playlists (set by the player, taken by the Library screen). */
         val openLibraryPlaylist = MutableStateFlow<String?>(null)
     }
