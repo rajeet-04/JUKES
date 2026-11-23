@@ -87,12 +87,14 @@ class AnalyticsManager private constructor(context: Context) {
                 if (isPostHogInitialized) return
 
                 val config = PostHogAndroidConfig(
-                    apiKey = BuildConfig.POSTHOG_API_KEY,
+                    projectToken = BuildConfig.POSTHOG_API_KEY,
                     host = BuildConfig.POSTHOG_HOST
                 )
                 // Uncaught exceptions go to PostHog Error tracking ($exception), sent on the next launch if the process dies first
                 config.errorTrackingConfig.autoCapture = true
                 config.optOut = !isEnabled(context)
+                // 4.x turns surveys on by default; the app has none
+                config.surveys = false
                 PostHogAndroid.setup(context, config)
                 isPostHogInitialized = true
             }
