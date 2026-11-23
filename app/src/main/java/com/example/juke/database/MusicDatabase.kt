@@ -215,6 +215,15 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+/** Each play_events row keeps a snapshot of its song, since stream tracks are purged before reporting. */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        for (col in listOf("title", "artist", "spotify_id", "album_spotify_id", "artist_spotify_ids", "yt_video_id")) {
+            db.execSQL("ALTER TABLE play_events ADD COLUMN $col TEXT")
+        }
+    }
+}
+
 /** Migration from version 11 to 12: a playlist holds each song once (imports used to add repeats). */
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -247,7 +256,7 @@ class Converters {
  */
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, PendingImportEntity::class, SongExposureEntity::class, PlayEventEntity::class],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -281,7 +290,8 @@ abstract class MusicDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12,
                         MIGRATION_12_13,
-                        MIGRATION_13_14
+                        MIGRATION_13_14,
+                        MIGRATION_14_15
                     )
                     .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()

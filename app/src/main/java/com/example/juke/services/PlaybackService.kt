@@ -2303,12 +2303,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                             withContext(Dispatchers.Main) {
                                                 // A quick skip may have moved on before this lookup finished.
                                                 if (_currentTrackId.value == trackId) {
-                                                    playLog.start(
-                                                        trackUuid = track.uuid,
-                                                        songKey = "${track.title} - ${track.artist}",
-                                                        durationMs = track.durationSec * 1000L,
-                                                        playingNow = controller?.isPlaying == true
-                                                    )
+                                                    playLog.start(track, playingNow = controller?.isPlaying == true)
                                                 }
                                             }
                                             Log.d(

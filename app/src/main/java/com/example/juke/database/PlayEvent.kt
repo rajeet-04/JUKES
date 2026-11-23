@@ -28,7 +28,14 @@ data class PlayEventEntity(
     val completed: Boolean,
     val skipped: Boolean,
     /** playlist, search, radio, jam or library; null when unknown. */
-    val source: String? = null
+    val source: String? = null,
+    // Snapshot of the song, because stream tracks are purged from `tracks` before the day is reported.
+    val title: String? = null,
+    val artist: String? = null,
+    @ColumnInfo(name = "spotify_id") val spotifyId: String? = null,
+    @ColumnInfo(name = "album_spotify_id") val albumSpotifyId: String? = null,
+    @ColumnInfo(name = "artist_spotify_ids") val artistSpotifyIds: List<String>? = null,
+    @ColumnInfo(name = "yt_video_id") val ytVideoId: String? = null
 )
 
 @Dao

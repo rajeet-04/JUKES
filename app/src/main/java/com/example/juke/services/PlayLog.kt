@@ -1,6 +1,7 @@
 package com.example.juke.services
 
 import com.example.juke.database.PlayEventEntity
+import com.example.juke.models.Track
 import java.time.Instant
 import java.time.ZoneId
 
@@ -16,22 +17,17 @@ class PlayLog(
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: () -> ZoneId = { ZoneId.systemDefault() }
 ) {
-    private class Current(
-        val trackUuid: String,
-        val songKey: String,
-        val durationMs: Long,
-        val startedAt: Long,
-        val source: String?
-    ) {
+    private class Current(val track: Track, val startedAt: Long, val source: String?) {
+        val durationMs = track.durationSec * 1000L
         var listenedMs = 0L
         var playingSince: Long? = null
     }
 
     private var current: Current? = null
 
-    fun start(trackUuid: String, songKey: String, durationMs: Long, playingNow: Boolean, source: String? = null) {
+    fun start(track: Track, playingNow: Boolean, source: String? = null) {
         val now = clock()
-        val c = Current(trackUuid, songKey, durationMs, now, source)
+        val c = Current(track, now, source)
         if (playingNow) c.playingSince = now
         current = c
     }
@@ -58,8 +54,8 @@ class PlayLog(
         val z = zone()
         sink(
             PlayEventEntity(
-                trackUuid = c.trackUuid,
-                songKey = c.songKey,
+                trackUuid = c.track.uuid,
+                songKey = "${c.track.title} - ${c.track.artist}",
                 startedAt = c.startedAt,
                 localDate = Instant.ofEpochMilli(c.startedAt).atZone(z).toLocalDate().toString(),
                 timeZone = z.id,
@@ -67,7 +63,13 @@ class PlayLog(
                 durationMs = c.durationMs,
                 completed = completed,
                 skipped = !completed,
-                source = c.source
+                source = c.source,
+                title = c.track.title,
+                artist = c.track.artist,
+                spotifyId = c.track.spotifyId,
+                albumSpotifyId = c.track.albumSpotifyId,
+                artistSpotifyIds = c.track.artistSpotifyIds,
+                ytVideoId = c.track.ytVideoId
             )
         )
     }

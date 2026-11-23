@@ -1,6 +1,7 @@
 package com.example.juke.services
 
 import com.example.juke.database.PlayEventEntity
+import com.example.juke.models.Track
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,10 +11,11 @@ import java.time.ZoneId
 class PlayLogTest {
     private var now = 1_700_000_000_000L
     private val rows = mutableListOf<PlayEventEntity>()
+    private fun track(durationSec: Int) = Track(uuid = "u1", title = "t", artist = "a", durationSec = durationSec, spotifyId = "sp1")
     private val log = PlayLog({ rows += it }, { now }, { ZoneId.of("UTC") })
 
     @Test fun pausedTimeIsNotCounted() {
-        log.start("u1", "t - a", 200_000, playingNow = true)
+        log.start(track(200), playingNow = true)
         now += 30_000; log.setPlaying(false)
         now += 600_000; log.setPlaying(true)
         now += 20_000; log.end(completed = false)
@@ -22,7 +24,7 @@ class PlayLogTest {
     }
 
     @Test fun listenedIsCappedAtDuration() {
-        log.start("u1", "t - a", 10_000, playingNow = true)
+        log.start(track(10), playingNow = true)
         now += 99_000; log.end(completed = true)
         assertEquals(10_000L, rows.single().listenedMs)
         assertTrue(rows.single().completed)
@@ -30,13 +32,13 @@ class PlayLogTest {
     }
 
     @Test fun shortListensAreDropped() {
-        log.start("u1", "t - a", 200_000, playingNow = true)
+        log.start(track(200), playingNow = true)
         now += 500; log.end(completed = false)
         assertTrue(rows.isEmpty())
     }
 
     @Test fun songStartedPausedCountsOnlyAfterPlay() {
-        log.start("u1", "t - a", 200_000, playingNow = false)
+        log.start(track(200), playingNow = false)
         now += 60_000; log.setPlaying(true)
         now += 5_000; log.end(completed = false)
         assertEquals(5_000L, rows.single().listenedMs)
@@ -45,7 +47,7 @@ class PlayLogTest {
     @Test fun localDateFollowsTheZone() {
         val tokyo = PlayLog({ rows += it }, { now }, { ZoneId.of("Asia/Tokyo") })
         now = 1_700_000_000_000L // 2023-11-14 22:13 UTC = 2023-11-15 07:13 JST
-        tokyo.start("u1", "t - a", 200_000, playingNow = true)
+        tokyo.start(track(200), playingNow = true)
         now += 5_000; tokyo.end(completed = true)
         assertEquals("2023-11-15", rows.single().localDate)
         assertEquals("Asia/Tokyo", rows.single().timeZone)
