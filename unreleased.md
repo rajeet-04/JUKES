@@ -1,6 +1,10 @@
 # Unreleased
 
-## Overview
+## Since 3.2.4-stable (2026-11-26)
+
+Nothing yet.
+
+## Overview (earlier work, after v2.3.2-beta, 2026-04-27)
 
 This document tracks changes, features, and bug fixes implemented after the **v2.3.2-beta** release (2026-04-27).
 

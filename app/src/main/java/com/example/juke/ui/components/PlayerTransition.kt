@@ -128,7 +128,7 @@ fun Modifier.playerBarEndpoint(): Modifier {
     val state = LocalPlayerTransition.current ?: return this
     return this
         .onGloballyPositioned { state.barBounds = it.boundsInRoot() }
-        .graphicsLayer { alpha = (1f - state.progress * 4f).coerceIn(0f, 1f) }
+        .graphicsLayer { alpha = 1f - transitionEase(state.progress, 0.5f) }
 }
 
 @Composable
@@ -147,7 +147,7 @@ fun PlayerTransitionHost(
         // Compose honors the system animator duration scale, including disabled animations.
         val velocity = state.releaseVelocity
         state.releaseVelocity = 0f
-        state.animation.animateTo(if (expanded) 1f else 0f, playerExpansionSpec(expanded), initialVelocity = velocity)
+        state.animation.animateTo(if (expanded) 1f else 0f, playerExpansionSpec(), initialVelocity = velocity)
     }
     val uiState by musicViewModel.uiState.collectAsStateWithLifecycle()
     state.hasArtwork = uiState.currentTrack?.thumbnailUri != null
@@ -211,7 +211,7 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
             clip = true
         }.drawBehind {
             // Transparent at the bar so the glass mini player shows through, solid before it is full size.
-            drawRect(Color.Black, alpha = (state.progress * 2.2f).coerceIn(0f, 1f))
+            drawRect(Color.Black, alpha = transitionEase(state.progress, 0.85f))
             // A faint glass rim while it is still bar-sized, so it reads as the glass bar growing.
             val rimAlpha = (1f - state.progress * 3f).coerceIn(0f, 1f) * 0.22f
             if (rimAlpha > 0f) {
@@ -244,7 +244,7 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
                         if (dismiss) {
                             state.releaseVelocity = progressVelocity
                             onDismiss()
-                        } else state.animation.animateTo(1f, playerExpansionSpec(true), initialVelocity = progressVelocity)
+                        } else state.animation.animateTo(1f, playerExpansionSpec(), initialVelocity = progressVelocity)
                     }
                 }
             )
@@ -258,8 +258,15 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
 
 // A critically damped spring: no bounce, but it takes over the finger's velocity on release, and it
 // retargets mid-flight without a seam. Closing is stiffer than opening (exit faster than entrance).
-private fun playerExpansionSpec(expanding: Boolean) =
-    spring(dampingRatio = 1f, stiffness = if (expanding) 380f else 560f, visibilityThreshold = 0.0005f)
+// Same stiffness both ways, so opening and closing are one motion played in reverse.
+private fun playerExpansionSpec() =
+    spring(dampingRatio = 1f, stiffness = 440f, visibilityThreshold = 0.0005f)
+
+/** Smoothstep of [progress] over 0..[end]: eases in and out, so the glass and bar clear without a hard edge. */
+internal fun transitionEase(progress: Float, end: Float): Float {
+    val t = (progress / end).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
 
 /**
  * Staggers one part of the player sheet: it fades in and rises while the expansion progress passes

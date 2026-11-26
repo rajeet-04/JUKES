@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,6 +85,7 @@ fun HomeScreen(
     onSeeAllClick: () -> Unit = {},
     onSearchClick: (query: String?) -> Unit = {},
     onAlbumClick: (SpotifyAlbum) -> Unit = {},
+    onOpenMix: (String, List<com.example.juke.home.FeedSong>) -> Unit = { _, _ -> },
     bottomPadding: Dp = 0.dp
 ) {
     val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
@@ -141,6 +143,7 @@ fun HomeScreen(
                 musicViewModel = musicViewModel,
                 onSeeAllClick = onSeeAllClick,
                 onAlbumClick = onAlbumClick,
+                onOpenMix = onOpenMix,
                 onSearchClick = onSearchClick,
                 onRetry = { homeViewModel.refresh() },
                 onLoadMore = { homeViewModel.loadMore() },
@@ -161,6 +164,7 @@ private fun HomeFeed(
     musicViewModel: MusicViewModel,
     onSeeAllClick: () -> Unit,
     onAlbumClick: (SpotifyAlbum) -> Unit,
+    onOpenMix: (String, List<com.example.juke.home.FeedSong>) -> Unit,
     onSearchClick: (String?) -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
@@ -174,7 +178,15 @@ private fun HomeFeed(
     val inMood = state.selectedMood != null
     val emptyLibrary = !inMood && state.recentlyPlayed.isEmpty() && state.mostPlayed.isEmpty() && state.favorites.isEmpty()
     // A new mood starts at the top.
-    LaunchedEffect(state.selectedMood) { if (listState.firstVisibleItemIndex > 1) listState.scrollToItem(0) }
+    // Only on a change: the first run also happens when coming back from a detail screen, and
+    // must keep the restored scroll position.
+    var shownMood by rememberSaveable { mutableStateOf(state.selectedMood) }
+    LaunchedEffect(state.selectedMood) {
+        if (shownMood != state.selectedMood) {
+            shownMood = state.selectedMood
+            if (listState.firstVisibleItemIndex > 1) listState.scrollToItem(0)
+        }
+    }
     val nearEnd by remember {
         derivedStateOf {
             val info = listState.layoutInfo
@@ -217,7 +229,7 @@ private fun HomeFeed(
 
         items(shown, key = { it.id }, contentType = { it::class.simpleName }) { section ->
             Column(Modifier.animateItem(fadeInSpec = tween(320), placementSpec = spring(dampingRatio = 0.85f, stiffness = 300f))) {
-                HomeSectionView(section, musicViewModel, onAlbumClick, onSeeAllClick)
+                HomeSectionView(section, musicViewModel, onAlbumClick, onSeeAllClick, onOpenMix)
                 Spacer(Modifier.height(28.dp))
             }
         }

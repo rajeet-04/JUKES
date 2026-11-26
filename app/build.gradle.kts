@@ -21,8 +21,8 @@ android {
         applicationId = "com.example.juke"
         minSdk = 26
         targetSdk = 36
-        versionCode = 34
-        versionName = "3.2.3"
+        versionCode = 35
+        versionName = "3.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -89,12 +89,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // AGP 9.3+ DSL: R8 code + resource optimization with the optimize defaults.
+            optimization {
+                enable = true
+            }
+            proguardFiles("proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         }
@@ -110,8 +109,19 @@ android {
                 "META-INF/*.version",
                 "META-INF/*.kotlin_module",
                 "DebugProbesKt.bin",
-                "kotlin-tooling-metadata.json"
+                "kotlin-tooling-metadata.json",
+                // Only kotlin-reflect reads these; the app doesn't ship it.
+                "**/*.kotlin_builtins",
+                // Firebase's .proto sources, never read at runtime.
+                "/*.proto",
+                // Six identical copies of the Apache-2.0 text; one copy
+                // (META-INF/org/jetbrains/...) stays in the APK.
+                "META-INF/androidx/**/LICENSE.txt"
             )
+        }
+        jniLibs {
+            // Compress the .so files in the APK (smaller download); they're extracted on install.
+            useLegacyPackaging = true
         }
     }
     dependenciesInfo {

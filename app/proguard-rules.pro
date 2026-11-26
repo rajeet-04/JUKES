@@ -38,11 +38,10 @@
 # -----------------------------------------------------------------
 # 2. SAFETY RULES (Prevent Release Crashes)
 # -----------------------------------------------------------------
-# Keep your data models. If R8 renames these, JSON parsing and Room DB will fail.
--keep class com.example.juke.models.** { *; }
-
-# Keep Room Database classes
--keep class com.example.juke.database.** { *; }
+# No package-wide keeps on our own models, Room entities or API classes: they cost ~1.6% of the
+# program (R8 config analyzer, 3.2.4). kotlinx.serialization ships its own -if rules for every
+# @Serializable class, Room keeps RoomDatabase subclasses (the _Impl lookup), and Gson here only
+# writes Maps and reads JsonObject, so nothing reaches our classes by reflected name.
 
 # Keep JNI/Native methods if you use any (Standard safety)
 -keepclasseswithmembernames class * {
@@ -51,11 +50,6 @@
 
 
 
-
-# Keep network API response models (@Serializable). The API classes themselves (SpotifyApi,
-# RecommenderApi, ...) are left to R8 so they can be shrunk and optimised; Gson only parses
-# into JsonObject, so it needs no keep on our classes.
--keep @kotlinx.serialization.Serializable class com.example.juke.network.** { *; }
 
 # Keep attributes for serialization
 -keepattributes *Annotation*, InnerClasses
@@ -73,15 +67,8 @@
 -keepattributes EnclosingMethod
 -keepattributes InnerClasses
 
-# Gson specific: Keep the TypeAdapter and TypeToken which are used via reflection
--keep class com.google.gson.reflect.TypeToken { *; }
--keep class * extends com.google.gson.TypeAdapter
-
-
-# Gson JsonElement and subclasses (JsonObject, JsonArray)
--keep class com.google.gson.JsonElement { *; }
--keep class com.google.gson.JsonObject { *; }
--keep class com.google.gson.JsonArray { *; }
+# Gson's own consumer rules cover TypeToken/TypeAdapter; JsonObject and friends are called
+# directly, so they need no keep.
 
 # Note: an earlier "-assumenosideeffects class androidx.media3.extractor.<fmt>.** { *; }" block
 # was removed. It saved nothing (DefaultExtractorsFactory still references every extractor) and
