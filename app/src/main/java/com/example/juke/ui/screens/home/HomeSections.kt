@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -79,6 +80,7 @@ fun HomeSectionView(
     musicViewModel: MusicViewModel,
     onAlbumClick: (SpotifyAlbum) -> Unit,
     onSeeAll: () -> Unit,
+    onOpenMix: (title: String, songs: List<FeedSong>) -> Unit = { _, _ -> },
 ) {
     val loadingId by musicViewModel.recLoading.collectAsStateWithLifecycle()
     val play: (FeedSong) -> Unit = { musicViewModel.playRec(it) }
@@ -93,7 +95,7 @@ fun HomeSectionView(
             SpeedDialGrid(section.tracks, musicViewModel)
         }
         is HomeSection.SongRow -> {
-            SectionHeader(section.title)
+            SectionHeader(section.title, action = "See all") { onOpenMix(section.title, section.songs) }
             ArrowRow {
                 items(section.songs, key = { it.videoId }) { song ->
                     CoverCard(
@@ -136,8 +138,8 @@ fun HomeSectionView(
             }
         }
         is HomeSection.HeroMix -> {
-            SectionHeader(section.title)
-            HeroMixCard(section, loadingId, play, feedMenu)
+            SectionHeader(section.title, action = "See all") { onOpenMix(section.subtitle, section.songs) }
+            HeroMixCard(section, loadingId, play, feedMenu, onOpen = { onOpenMix(section.subtitle, section.songs) })
         }
         is HomeSection.Ranked -> {
             SectionHeader(section.title, action = "Play all") { section.songs.firstOrNull()?.let(play) }
@@ -216,7 +218,7 @@ private fun RankedPane(songs: List<FeedSong>, loadingId: String?, play: (FeedSon
 }
 
 @Composable
-private fun SongLine(song: FeedSong, loading: Boolean, leading: String?, menu: FeedMenu, onClick: () -> Unit) {
+internal fun SongLine(song: FeedSong, loading: Boolean, leading: String?, menu: FeedMenu, onClick: () -> Unit) {
     val haptic = rememberJukeHaptics()
     var menuOpen by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
@@ -321,13 +323,14 @@ private fun DialTile(track: Track, modifier: Modifier, menu: MenuSlot, onClick: 
 
 /** One mix as a big clear-glass card: a 2×2 cover collage, its name, Play, and a few songs. */
 @Composable
-private fun HeroMixCard(section: HomeSection.HeroMix, loadingId: String?, play: (FeedSong) -> Unit, menu: FeedMenu) {
+private fun HeroMixCard(section: HomeSection.HeroMix, loadingId: String?, play: (FeedSong) -> Unit, menu: FeedMenu, onOpen: () -> Unit) {
     val songs = section.songs
     Box(
         Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .glassPane(GlassShapes.Card, GlassLevel.Thick)
+            .clickable(role = Role.Button, onClickLabel = "Open ${section.subtitle}", onClick = onOpen)
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -451,4 +454,4 @@ internal fun ArtImage(url: String?, modifier: Modifier) {
 private typealias MenuSlot = @Composable (Boolean, () -> Unit) -> Unit
 
 /** The long-press menu for one feed song: (song, open, close). */
-private typealias FeedMenu = @Composable (FeedSong, Boolean, () -> Unit) -> Unit
+internal typealias FeedMenu = @Composable (FeedSong, Boolean, () -> Unit) -> Unit

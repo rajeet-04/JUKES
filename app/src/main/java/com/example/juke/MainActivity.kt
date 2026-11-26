@@ -562,6 +562,18 @@ class MainActivity : ComponentActivity() {
                                             .loadAlbumDetails(album)
                                         navController.navigate("album/${album.id}")
                                     },
+                                    onOpenMix = { title, songs ->
+                                        com.example.juke.ui.screens.home.MixPreview.title = title
+                                        com.example.juke.ui.screens.home.MixPreview.songs = songs
+                                        navController.navigate("mix")
+                                    },
+                                    bottomPadding = bottomPadding
+                                )
+                            }
+                            composable("mix") {
+                                com.example.juke.ui.screens.home.MixPreviewScreen(
+                                    musicViewModel = musicViewModel,
+                                    onNavigateBack = { navController.popBackStack() },
                                     bottomPadding = bottomPadding
                                 )
                             }

@@ -351,7 +351,9 @@ fun PlayerScreen(
         }
     }
 
-    val displayTrack = if (romanizeLyrics) romanizedTrack ?: currentTrack else currentTrack
+    // The romanized copy is built only when the lyrics change, so it carries the offset from back
+    // then; the saved offset always comes from the live track.
+    val displayTrack = if (romanizeLyrics) romanizedTrack?.copy(lyricsOffsetMs = currentTrack.lyricsOffsetMs) ?: currentTrack else currentTrack
 
     // The host owns expansion so artwork and player share one coordinate space.
     Box(Modifier.fillMaxSize()) {
@@ -1136,26 +1138,158 @@ fun PlayerHeader(
     onOpenPlayingFrom: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(top = 16.dp)
     ) {
-        GlassIconButton(onClick = onDismiss, contentDescription = "Close") {
-            Icon(
-                imageVector = JukeIcons.ChevronDown,
-                contentDescription = null,
-                modifier = Modifier.size(28.dp)
-            )
-        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GlassIconButton(onClick = onDismiss, contentDescription = "Close") {
+                Icon(
+                    imageVector = JukeIcons.ChevronDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
 
+            Spacer(Modifier.weight(1f))
+            if (extraAction != null) extraAction()
+            if (showMenuOption) {
+                var showMenu by remember { mutableStateOf(false) }
+                Box {
+                    GlassIconButton(onClick = { showMenu = true }, contentDescription = "Menu") {
+                        Icon(JukeIcons.More, contentDescription = null)
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        shape = GlassShapes.Control,
+                        containerColor = glassSheetColor(),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 12.dp
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Speed ${if (playbackSpeed % 1f == 0f) playbackSpeed.toInt().toString() else playbackSpeed.toString()}×") },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Speed, contentDescription = null)
+                            },
+                            onClick = onCycleSpeed
+                        )
+                        if (onShare != null) DropdownMenuItem(
+                            text = { Text("Share") },
+                            leadingIcon = { Icon(JukeIcons.Share, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onShare()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sleep Timer") },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Timer, contentDescription = null)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onShowSleepTimer()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Save queue as playlist") },
+                            leadingIcon = {
+                                Icon(JukeIcons.PlaylistAdd, contentDescription = null)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onSaveQueue()
+                            }
+                        )
+                        if (isAlbumAvailable) {
+                            DropdownMenuItem(
+                                text = { Text("Go to Album") },
+                                leadingIcon = {
+                                    Icon(JukeIcons.Album, contentDescription = null)
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onNavigateToAlbum()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Refresh Lyrics") },
+                            leadingIcon = {
+                                Icon(JukeIcons.Refresh, contentDescription = null)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onRefreshLyrics()
+                            }
+                        )
+                        if (canRefetchSong) {
+                            DropdownMenuItem(
+                                text = { Text("Wrong song? Refetch") },
+                                leadingIcon = {
+                                    Icon(JukeIcons.Refresh, contentDescription = null)
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onRefetchSong()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isRomanizedLyricsEnabled) {
+                                        "Romanized Lyrics: On"
+                                    } else {
+                                        "Romanized Lyrics: Off"
+                                    }
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Translate, contentDescription = null)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onToggleRomanizedLyrics()
+                            }
+                        )
+                        // Artist Blacklist option
+                        if (currentArtist.isNotBlank()) {
+                            val hasBlacklisted = remember(currentArtist, showMenu) {
+                                BlacklistManager.containsBlacklistedArtist(context, currentArtist)
+                            }
+                            DropdownMenuItem(
+                                text = { Text(if (hasBlacklisted) "Manage Blocked Artists" else "Block Artist") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Outlined.Block,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onShowBlacklistPicker()
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
+                Spacer(modifier = Modifier.size(48.dp))
+            }
+        }
         if (playingFrom != null) {
             Column(
                 Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
+                    .align(Alignment.Center)
+                    .padding(horizontal = 56.dp)
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
                     .clickable(onClickLabel = "Open ${playingFrom.name}", onClick = onOpenPlayingFrom)
                     .padding(vertical = 2.dp),
@@ -1184,136 +1318,8 @@ fun PlayerHeader(
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp)
         )
-
-        if (extraAction != null) extraAction()
-        if (showMenuOption) {
-            var showMenu by remember { mutableStateOf(false) }
-            Box {
-                GlassIconButton(onClick = { showMenu = true }, contentDescription = "Menu") {
-                    Icon(JukeIcons.More, contentDescription = null)
-                }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                    shape = GlassShapes.Control,
-                    containerColor = glassSheetColor(),
-                    tonalElevation = 0.dp,
-                    shadowElevation = 12.dp
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Speed ${if (playbackSpeed % 1f == 0f) playbackSpeed.toInt().toString() else playbackSpeed.toString()}×") },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.Speed, contentDescription = null)
-                        },
-                        onClick = onCycleSpeed
-                    )
-                    if (onShare != null) DropdownMenuItem(
-                        text = { Text("Share") },
-                        leadingIcon = { Icon(JukeIcons.Share, contentDescription = null) },
-                        onClick = {
-                            showMenu = false
-                            onShare()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Sleep Timer") },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.Timer, contentDescription = null)
-                        },
-                        onClick = {
-                            showMenu = false
-                            onShowSleepTimer()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Save queue as playlist") },
-                        leadingIcon = {
-                            Icon(JukeIcons.PlaylistAdd, contentDescription = null)
-                        },
-                        onClick = {
-                            showMenu = false
-                            onSaveQueue()
-                        }
-                    )
-                    if (isAlbumAvailable) {
-                        DropdownMenuItem(
-                            text = { Text("Go to Album") },
-                            leadingIcon = {
-                                Icon(JukeIcons.Album, contentDescription = null)
-                            },
-                            onClick = {
-                                showMenu = false
-                                onNavigateToAlbum()
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("Refresh Lyrics") },
-                        leadingIcon = {
-                            Icon(JukeIcons.Refresh, contentDescription = null)
-                        },
-                        onClick = {
-                            showMenu = false
-                            onRefreshLyrics()
-                        }
-                    )
-                    if (canRefetchSong) {
-                        DropdownMenuItem(
-                            text = { Text("Wrong song? Refetch") },
-                            leadingIcon = {
-                                Icon(JukeIcons.Refresh, contentDescription = null)
-                            },
-                            onClick = {
-                                showMenu = false
-                                onRefetchSong()
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (isRomanizedLyricsEnabled) {
-                                    "Romanized Lyrics: On"
-                                } else {
-                                    "Romanized Lyrics: Off"
-                                }
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.Translate, contentDescription = null)
-                        },
-                        onClick = {
-                            showMenu = false
-                            onToggleRomanizedLyrics()
-                        }
-                    )
-                    // Artist Blacklist option
-                    if (currentArtist.isNotBlank()) {
-                        val hasBlacklisted = remember(currentArtist, showMenu) {
-                            BlacklistManager.containsBlacklistedArtist(context, currentArtist)
-                        }
-                        DropdownMenuItem(
-                            text = { Text(if (hasBlacklisted) "Manage Blocked Artists" else "Block Artist") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Outlined.Block,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            },
-                            onClick = {
-                                showMenu = false
-                                onShowBlacklistPicker()
-                            }
-                        )
-                    }
-                }
-            }
-        } else {
-            Spacer(modifier = Modifier.size(48.dp))
-        }
     }
 }
 

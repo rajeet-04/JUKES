@@ -7,7 +7,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -118,7 +123,7 @@ fun KaraokeLine(
         Text(
             text, style = style.copy(shadow = Shadow(Color.White.copy(alpha = 0.55f), blurRadius = 18f)), color = Color.White,
             maxLines = maxLines, overflow = TextOverflow.Ellipsis,
-            modifier = if (!timed) Modifier else Modifier.drawWithContent {
+            modifier = if (!timed) Modifier else Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
                 val l = layout ?: return@drawWithContent
                 val now = clock!!()
                 val i = words.indexOfLast { it.timeMs <= now }
@@ -132,11 +137,21 @@ fun KaraokeLine(
                 // ponytail: left-to-right sweep; a right-to-left script would fill from the wrong side.
                 val left = if (l.getLineForOffset(from) == row) l.getHorizontalPosition(from, true) else l.getLineLeft(row)
                 val right = l.getHorizontalPosition(to, true).let { if (l.getLineForOffset(to) != row || it < left) l.getLineRight(row) else it }
-                val sweep = androidx.compose.ui.graphics.Path().apply {
-                    for (r in 0 until row) addRect(androidx.compose.ui.geometry.Rect(-glow, l.getLineTop(r) - glow, size.width + glow, l.getLineBottom(r) + glow))
-                    addRect(androidx.compose.ui.geometry.Rect(-glow, l.getLineTop(row) - glow, left + (right - left) * p, l.getLineBottom(row) + glow))
-                }
-                clipPath(sweep) { this@drawWithContent.drawContent() }
+                val edge = left + (right - left) * p
+                val feather = glow
+                drawContent()
+                // Soft right edge on the active row, nothing on the rows below it: a feathered mask
+                // instead of a clip, so the glow neither forms a box nor lights the next row.
+                drawRect(
+                    Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = edge - feather, endX = edge + feather),
+                    topLeft = Offset(edge - feather, l.getLineTop(row)),
+                    size = Size(size.width + glow - (edge - feather), l.getLineBottom(row) - l.getLineTop(row)),
+                    blendMode = BlendMode.DstIn,
+                )
+                if (row < l.lineCount - 1) drawRect(
+                    Color.Transparent, topLeft = Offset(-glow, l.getLineBottom(row)),
+                    size = Size(size.width + 2 * glow, size.height + glow), blendMode = BlendMode.DstIn,
+                )
             }
         )
     }

@@ -188,8 +188,9 @@ private fun ArtworkCard(
                 Box(
                     Modifier.matchParentSize().liquidGlass(
                         shape, Color.Transparent, blur = 0.dp, rimAlpha = 0.7f, source = artHaze,
-                        // No fold: it would mirror the art's edge back in.
-                        displacement = 14.dp, edge = 12.dp, fold = 0f, detail = 0f
+                        // No fold: it would mirror the art's edge back in. Shallow bend: at the full 14 dp the
+                        // rim pulled the art's corners in too far at the end of a swipe.
+                        displacement = 6.dp, edge = 6.dp, fold = 0f, detail = 0f
                     )
                 )
             }

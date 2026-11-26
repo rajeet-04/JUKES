@@ -2,6 +2,27 @@
 
 ## Changelog
 
+## [3.2.4-stable] - 2026-11-26
+
+Android. Changes since 3.2.3-stable, from 2026-11-23.
+
+### Added
+
+- **Mix screen.** "See all" on Home song rows and mixes opens the full list as a Mix screen, and tapping a mix card opens it too.
+
+### Changed
+
+- **Player opens and closes as one motion.** Closing runs the opening animation in reverse at the same speed, and the mini player and backdrop fade with an eased curve instead of a hard edge.
+- **Gentler artwork glass.** The glass rim over the player artwork bends less, so the art's corners don't pull in at the end of a swipe.
+- **Smaller APK.** 4.28 MB to 4.17 MB. R8 no longer keeps every class in our models, database and network packages whole (the R8 config analyzer's optimization score went from 96.6% to 98.2%). Duplicate license texts, Kotlin builtins metadata and Firebase .proto sources are left out, and native libraries are compressed. The release build uses the AGP 9.3+ `optimization {}` DSL.
+
+### Fixed
+
+- **Player title centred.** The "Lyrics" / "Up next" / "Mix" header title sits in the middle of the screen. It used to shift left because the right side has more buttons than the left.
+- **Lyrics sweep.** Word-synced lyrics fill with a soft edge instead of a hard clip, and the glow no longer spills onto the next line.
+- **Romanized lyrics keep their timing.** Turning on romanization no longer drops the saved lyrics offset.
+- **Home scroll position.** Going back from a detail screen keeps your scroll position. The list only jumps to the top when the mood actually changes.
+
 ## [3.2.3-stable] - 2026-11-23
 
 Android and desktop. Changes since 3.2.1-stable, from 2026-11-23.
