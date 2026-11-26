@@ -34,6 +34,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import com.example.juke.viewmodels.MusicViewModel
 
 private class PlayerTransitionState(initialProgress: Float = 0f) {
@@ -186,10 +190,25 @@ fun PlayerTransitionHost(
     }
 }
 
+/**
+ * The player sheet, morphing between the mini-player bar and the full screen.
+ *
+ * Closing reads as the player turning into the glass bar: the opaque player clears to frosted glass
+ * (a blur of [frostSource], the page under it) while it shrinks, and the frost thins to the bar's
+ * clear liquid glass as it lands. Opening plays the same thing in reverse.
+ */
 @Composable
-fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+fun PlayerTransitionContent(
+    onDismiss: () -> Unit,
+    frostSource: dev.chrisbanes.haze.HazeState? = null,
+    content: @Composable () -> Unit,
+) {
     val state = LocalPlayerTransition.current ?: return
     val density = LocalDensity.current
+    // Only while the sheet is small enough for the frost to show: a full-screen blur costs GPU.
+    val frosting by remember { derivedStateOf { state.progress > 0f && state.progress < BACKDROP_CLEAR } }
+    val dark = com.example.juke.ui.theme.isGlassDark()
+    val frostStyle = remember(dark) { frostStyle(dark) }
     val dismissDistance = with(density) { 72.dp.toPx() }
     val dismissVelocity = with(density) { 1200.dp.toPx() }
     val dragState = rememberDraggableState { delta ->
@@ -210,8 +229,8 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
             }
             clip = true
         }.drawBehind {
-            // Transparent at the bar so the glass mini player shows through, solid before it is full size.
-            drawRect(Color.Black, alpha = transitionEase(state.progress, 0.85f))
+            // Solid while the sheet is large, clear by the time it is bar-sized (same curve as the backdrop).
+            drawRect(Color.Black, alpha = playerBackdropAlpha(state.progress))
             // A faint glass rim while it is still bar-sized, so it reads as the glass bar growing.
             val rimAlpha = (1f - state.progress * 3f).coerceIn(0f, 1f) * 0.22f
             if (rimAlpha > 0f) {
@@ -249,6 +268,15 @@ fun PlayerTransitionContent(onDismiss: () -> Unit, content: @Composable () -> Un
                 }
             )
             .pointerInput(Unit) { detectTapGestures { /* Consume taps on the player backdrop. */ } }) {
+            // Frosted glass between the opaque player and the clear bar: shows as the backdrop clears,
+            // and thins out over the last stretch while the bar's own liquid glass fades in.
+            if (frosting && frostSource != null) {
+                Box(
+                    Modifier.fillMaxSize()
+                        .graphicsLayer { alpha = transitionEase(state.progress, FROST_CLEAR) }
+                        .hazeBlur(HazeInput.Sources(frostSource), frostStyle)
+                )
+            }
             // Each part of the sheet fades in on its own window (see playerStage), so nothing shows
             // squashed inside the shrinking container.
             Box(Modifier.fillMaxSize()) { content() }
@@ -263,9 +291,40 @@ private fun playerExpansionSpec() =
     spring(dampingRatio = 1f, stiffness = 440f, visibilityThreshold = 0.0005f)
 
 /** Smoothstep of [progress] over 0..[end]: eases in and out, so the glass and bar clear without a hard edge. */
-internal fun transitionEase(progress: Float, end: Float): Float {
-    val t = (progress / end).coerceIn(0f, 1f)
+internal fun transitionEase(progress: Float, end: Float): Float = transitionWindow(progress, 0f, end)
+
+/** Smoothstep of [progress] over [from]..[to]: 0 below, 1 above. */
+internal fun transitionWindow(progress: Float, from: Float, to: Float): Float {
+    val t = ((progress - from) / (to - from)).coerceIn(0f, 1f)
     return t * t * (3f - 2f * t)
+}
+
+// Closing, progress 1 -> 0: the player stays opaque until BACKDROP_CLEAR (its controls have left by
+// then, see playerStage), clears to frost by BACKDROP_GONE, and the frost thins out below FROST_CLEAR
+// while the mini bar (playerBarEndpoint) comes up underneath.
+private const val BACKDROP_CLEAR = 0.6f
+private const val BACKDROP_GONE = 0.12f
+private const val FROST_CLEAR = 0.3f
+
+/** How opaque the player's backdrop is at [progress]: solid when large, clear near the bar. */
+internal fun playerBackdropAlpha(progress: Float): Float = transitionWindow(progress, BACKDROP_GONE, BACKDROP_CLEAR)
+
+/** Frosted glass, the middle stage of the close: a soft blur with a light body so it reads as a pane. */
+private fun frostStyle(dark: Boolean) = HazeBlurStyle {
+    blurRadius(28.dp)
+    noiseFactor(0f)
+    backgroundColor(if (dark) Color.Black else Color.White)
+    colorEffects(listOf(HazeColorEffect.tint(if (dark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.35f))))
+}
+
+/**
+ * The player's own backdrop (artwork gradient or plain black): fades with the sheet's black fill, so
+ * the frosted glass under it shows as the player closes.
+ */
+@Composable
+fun Modifier.playerBackdrop(): Modifier {
+    val state = LocalPlayerTransition.current ?: return this
+    return graphicsLayer { alpha = playerBackdropAlpha(state.progress) }
 }
 
 /**

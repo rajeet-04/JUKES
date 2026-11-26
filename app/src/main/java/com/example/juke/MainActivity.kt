@@ -701,7 +701,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Player Modal
-                com.example.juke.ui.components.PlayerTransitionContent(onDismiss = { showPlayerModal = false }) {
+                com.example.juke.ui.components.PlayerTransitionContent(onDismiss = { showPlayerModal = false }, frostSource = hazeState) {
                     PlayerScreen(
                         musicViewModel = musicViewModel,
                         onDismiss = { showPlayerModal = false },

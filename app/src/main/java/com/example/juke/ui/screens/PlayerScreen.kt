@@ -83,6 +83,7 @@ import com.example.juke.ui.components.player.QueueBottomSheetContent
 import com.example.juke.ui.components.playerStage
 import com.example.juke.ui.icons.JukeIcons
 import com.example.juke.ui.theme.GlassBackdrop
+import com.example.juke.ui.components.playerBackdrop
 import com.example.juke.ui.theme.GlassCard
 import com.example.juke.ui.theme.GlassShapes
 import com.example.juke.ui.theme.JUKETheme
@@ -368,11 +369,12 @@ fun PlayerScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             if (stagePlayer) ArtBackdrop(
                 uiState.extractedColors, stage,
-                Modifier.hazeSource(playerHaze, zIndex = -1f),
+                // Fade before hazeSource: the player's glass keeps sampling the full backdrop.
+                Modifier.playerBackdrop().hazeSource(playerHaze, zIndex = -1f),
                 artwork = currentTrack.thumbnailUri
             )
             // Plain black backdrop; the artwork is the only color on the screen.
-            else Box(Modifier.fillMaxSize().background(GlassBackdrop.color(isGlassDark())))
+            else Box(Modifier.fillMaxSize().playerBackdrop().background(GlassBackdrop.color(isGlassDark())))
             // Content — fully responsive, adapts to screen height
             BoxWithConstraints(
                 modifier = Modifier
