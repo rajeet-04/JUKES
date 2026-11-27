@@ -380,7 +380,7 @@ object RecommenderApi {
                 val titleLower = item.title.lowercase()
 
                 // Step 1: Skip spam/variant content regardless of anything else
-                if (isSpamOrVariant(item.title) != null) {
+                if (isSpamOrVariant(item.title) != null || isUnrequestedRendition(item.title, songName)) {
                     Log.d(TAG, "Skipping spam item: ${item.title}")
                     return@forEachIndexed
                 }
@@ -475,6 +475,22 @@ object RecommenderApi {
             Log.e(TAG, "Search Network error: ${e.message}", e)
             emptyList()
         }
+    }
+
+    /** Renditions that are a different recording of the song; fine only when the request names them. */
+    private val RENDITION_WORDS = listOf(
+        "version", "instrumental", "lofi", "lo fi", "sped", "flute", "piano", "guitar", "violin", "sitar",
+        "sax", "saxophone", "tabla", "harmonium", "santoor", "shehnai", "veena", "ukulele", "cello",
+        "drum", "drums", "orchestral", "symphony", "ringtone", "bgm", "unplugged", "reprise"
+    )
+    private val NON_LETTER = Regex("""[^\p{L}\p{N}]+""")
+
+    /** True when [title] is an instrument/alternate version of the song that [query] did not ask for. */
+    fun isUnrequestedRendition(title: String, query: String): Boolean {
+        fun words(text: String) = " " + NON_LETTER.replace(text.lowercase(), " ").trim() + " "
+        val t = words(title)
+        val q = words(query)
+        return RENDITION_WORDS.any { " $it " in t && " $it " !in q }
     }
 
     /** True when a title looks like a remix/cover/spam variant that should never be auto-queued. */

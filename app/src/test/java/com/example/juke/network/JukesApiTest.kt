@@ -62,8 +62,8 @@ class JukesApiTest {
         assertEquals("$base/v1/audio/fsiPzT50ZiM", request.url)
         assertTrue(request.probeRanges)
         val body = (requests.single().body as TextContent).text
-        // Main artist only; seconds sent as milliseconds.
-        assertTrue(body, "\"artist\":\"Arijit Singh\"" in body && "\"duration_ms\":262000" in body)
+        // Every artist (the server searches with the first); seconds sent as milliseconds.
+        assertTrue(body, "\"artist\":\"Arijit Singh, Mithoon\"" in body && "\"duration_ms\":262000" in body)
         assertEquals("$base/v1/audio/prepare?wait=10", requests.single().url.toString())
         assertNull(JukesApi.preparing.value)
     }
