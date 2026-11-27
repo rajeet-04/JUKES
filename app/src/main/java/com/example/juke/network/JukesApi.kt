@@ -267,10 +267,11 @@ object JukesApi {
         val prepareQuery = "?" + listOfNotNull(opt.ifEmpty { null }, "wait=$PREPARE_WAIT_SEC").joinToString("&")
         val started = System.nanoTime()
         fun elapsed() = (System.nanoTime() - started) / 1_000_000
-        // Title + main artist: every featured artist in the query pulls in their other songs.
+        // Every artist: Bollywood credits list the composer first, while YouTube Music credits the
+        // singer. The server searches with the first and accepts a match on any of them.
         // A known video id skips the server's 1.5-2 s title search and starts the download at once.
         val body = if (videoId != null) buildJsonObject { put("video_id", videoId) }
-        else track(title, artist.split(", ").first(), durationSec?.let { it * 1000L })
+        else track(title, artist, durationSec?.let { it * 1000L })
         val deadline = System.currentTimeMillis() + PREPARE_BUDGET_MS
         if (showPreparing) { _preparing.value = title; foreground.update { it + 1 } }
         try {
